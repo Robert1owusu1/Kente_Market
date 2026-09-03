@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300">
+  <rect width="400" height="300" fill="#f4eee1"/>
+  <g opacity="0.25">
+    <rect x="40" y="60" width="26" height="140" fill="#8a6d3b"/>
+    <rect x="74" y="60" width="26" height="140" fill="#c22b2b"/>
+    <rect x="108" y="60" width="26" height="140" fill="#2b6cb0"/>
+    <rect x="142" y="60" width="26" height="140" fill="#2f855a"/>
+    <rect x="176" y="60" width="26" height="140" fill="#d69e2e"/>
+    <rect x="210" y="60" width="26" height="140" fill="#6b46c1"/>
+    <rect x="244" y="60" width="26" height="140" fill="#c22b2b"/>
+    <rect x="278" y="60" width="26" height="140" fill="#8a6d3b"/>
+    <rect x="312" y="60" width="26" height="140" fill="#2b6cb0"/>
+    <rect x="346" y="60" width="6" height="140" fill="#2f855a"/>
+  </g>
+  <text x="200" y="235" font-family="sans-serif" font-size="20" fill="#8a6d3b" text-anchor="middle">Kente image coming soon</text>
+</svg>

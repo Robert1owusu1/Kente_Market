@@ -36,6 +36,8 @@ class Product {
     this.productionTime = data.productionTime;
     this.featured = !!data.featured;
     this.basePrice = data.basePrice;
+    this.vendorId = data.vendorId || null;
+    this.description = data.description || null;
   }
 
   // ✅ Get all products with proper LIMIT/OFFSET handling
@@ -94,14 +96,9 @@ class Product {
       // Add LIMIT and OFFSET
       query += ` ORDER BY id DESC LIMIT ${safeLimit} OFFSET ${safeOffset}`;
 
-      console.log('Executing product query:', query);
-      console.log('With params:', params);
-
       const [rows] = params.length > 0 
         ? await connection.execute(query, params)
         : await connection.query(query);
-
-      console.log(`✅ Found ${rows.length} products`);
 
       return rows.map(
         (row) =>
@@ -190,11 +187,7 @@ class Product {
         LIMIT ${safeLimit} OFFSET ${safeOffset}
       `;
 
-      console.log('Executing trending products query:', query);
-
       const [rows] = await connection.query(query);
-
-      console.log(`✅ Found ${rows.length} trending products`);
 
       return rows.map(
         (row) =>
@@ -234,8 +227,8 @@ class Product {
         `INSERT INTO product (
           title, img, rating, price, originalPrice, color, category, 
           sizes, printType, material, reviews, isCustomizable, colors, 
-          tag, fabricType, productionTime, featured, basePrice
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          tag, fabricType, productionTime, featured, basePrice, vendorId, description
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           productData.title.trim(),
           productData.img || null,
@@ -255,14 +248,15 @@ class Product {
           productData.productionTime ?? null,
           productData.featured ? 1 : 0,
           productData.basePrice ? parseFloat(productData.basePrice) : 0,
+          productData.vendorId || null,
+          productData.description || null,
         ]
       );
 
-      console.log('Product created successfully with ID:', result.insertId);
       return await Product.findById(result.insertId);
     } catch (err) {
       console.error("DB Error (create):", err.message);
-      
+
       if (err.code === 'ER_DUP_ENTRY') {
         throw new Error('Product with this title already exists');
       }
@@ -285,11 +279,20 @@ class Product {
 
       connection = await pool.getConnection();
 
+      // Only allow updates to known product columns (prevents arbitrary column
+      // injection / tampering with fields outside the product schema).
+      const allowedColumns = new Set([
+        'title', 'img', 'rating', 'price', 'originalPrice', 'color', 'category',
+        'sizes', 'printType', 'material', 'reviews', 'isCustomizable', 'colors',
+        'tag', 'fabricType', 'productionTime', 'featured', 'basePrice', 'vendorId',
+        'description'
+      ]);
+
       const setClause = [];
       const values = [];
 
       Object.keys(updateData).forEach((key) => {
-        if (updateData[key] !== undefined) {
+        if (updateData[key] !== undefined && allowedColumns.has(key)) {
           if (key === "sizes" || key === "colors") {
             setClause.push(`${key} = ?`);
             values.push(JSON.stringify(updateData[key]));
@@ -302,6 +305,9 @@ class Product {
           } else if (key === "reviews") {
             setClause.push(`${key} = ?`);
             values.push(parseInt(updateData[key]));
+          } else if (key === "vendorId") {
+            setClause.push(`${key} = ?`);
+            values.push(updateData[key] ? parseInt(updateData[key]) : null);
           } else {
             setClause.push(`${key} = ?`);
             values.push(updateData[key]);
@@ -320,7 +326,6 @@ class Product {
         values
       );
 
-      console.log('Product updated successfully:', id);
       return await Product.findById(id);
     } catch (err) {
       console.error("DB Error (update):", err.message);
@@ -347,7 +352,6 @@ class Product {
         [parseInt(id)]
       );
 
-      console.log('Product deleted:', id);
       return result.affectedRows > 0;
     } catch (err) {
       console.error("DB Error (delete):", err.message);

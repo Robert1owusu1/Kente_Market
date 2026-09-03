@@ -60,4 +60,17 @@ const admin = (req, res, next) => {
     }
 };
 
-export { protect, admin };
+/**
+ * Vendor middleware - Check if user is a vendor (or admin)
+ * Must be used after protect middleware
+ */
+const vendor = (req, res, next) => {
+    if (req.user && (req.user.role === 'vendor' || req.user.role === 'admin')) {
+        next();
+    } else {
+        res.status(403);
+        throw new Error('Not authorized as a vendor');
+    }
+};
+
+export { protect, admin, vendor };

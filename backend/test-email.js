@@ -56,7 +56,7 @@ try {
   const info = await transporter.sendMail({
     from: email,
     to: email, // Send to yourself
-    subject: 'Test Email - Branding House',
+    subject: 'Test Email - Bonwire Kente',
     text: 'If you receive this, your email configuration is working correctly!',
     html: '<h1>✅ Success!</h1><p>Your email configuration is working correctly!</p>',
   });
@@ -87,7 +87,7 @@ try {
     console.log('   3. Generate a NEW App Password:');
     console.log('      - Select "Mail" as the app');
     console.log('      - Select "Other" as the device');
-    console.log('      - Name it "Branding House"');
+    console.log('      - Name it "Bonwire Kente"');
     console.log('   4. Copy the 16-character password (NO SPACES!)');
     console.log('   5. Update .env file:');
     console.log('      EMAIL_PASSWORD=yourpasswordwithoutspaces');

@@ -1,33 +1,35 @@
 import React from "react";
 import Slider from "react-slick";
-import Imag1 from "../../assets/women/women.png"
-import Imag2 from "../../assets/women/women2.jpg"
-import Imag3 from "../../assets/women/women3.jpg"
-import Imag4 from "../../assets/women/women4.jpg"
+import "slick-carousel/slick/slick.css";
+import "slick-carousel/slick/slick-theme.css";
+import Imag1 from "../../assets/images/decoration.webp"
+import Imag2 from "../../assets/images/decoration1.webp"
+import Imag3 from "../../assets/images/image1.webp"
+import Imag4 from "../../assets/images/image2.webp"
 
 const TestimonialData = [
   {
     id: 1,
-    name: "Victor",
-    text: "Lorem ipsum dolor sit amet consectetur adipisicing elit. Eaque reiciendis inventore iste ratione ex alias quis magni at optio",
+    name: "Ama K.",
+    text: "The Adweneasa Royal Wrap is breathtaking! The handwoven quality is exceptional - you can feel the heritage in every thread. Shipping from Bonwire was fast.",
     img: Imag1,
   },
   {
     id: 2,
-    name: "Satya Nadella",
-    text: "Lorem ipsum dolor sit amet consectetur adipisicing elit. Eaque reiciendis inventore iste ratione ex alias quis magni at optio",
+    name: "Kwabena Mensah",
+    text: "I wore the Ceremonial Royal Kente for my traditional wedding and received endless compliments. Knowing it's GI-certified from Bonwire makes it truly special.",
     img: Imag2,
   },
   {
     id: 3,
-    name: "Virat Kohli",
-    text: "Lorem ipsum dolor sit amet consectetur adipisicing elit. Eaque reiciendis inventore iste ratione ex alias quis magni at optio",
+    name: "Dr. Owusu",
+    text: "The Kente Table Runner transformed my living room. The AI try-on feature let me preview exactly how it would look before buying - brilliant!",
     img: Imag3,
   },
   {
     id: 4,
-    name: "Sachin Tendulkar",
-    text: "Lorem ipsum dolor sit amet consectetur adipisicing elit. Eaque reiciendis inventore iste ratione ex alias quis magni at optio",
+    name: "Prof. Boateng",
+    text: "As someone who teaches Ghanaian heritage, I appreciate the authenticity and cultural respect in every piece from Bonwire Kente. UNESCO-grade quality.",
     img: Imag4,
   },
 ];
@@ -64,8 +66,8 @@ const Testimonials = () => {
       {
         breakpoint: 640,
         settings: {
-          slidesToShow: 2,
-          slidesToScroll: 2,
+          slidesToShow: 1,
+          slidesToScroll: 1,
         },
       },
     ],
@@ -79,12 +81,12 @@ const Testimonials = () => {
           <p data-aos="fade-up" className="text-sm text-primary">
             What our customers are saying
           </p>
-          <h1 data-aos="fade-up" className="text-3xl font-bold">
+          <h1 data-aos="fade-up" className="text-3xl font-bold dark:text-white">
             Testimonials
           </h1>
           <p data-aos="fade-up" className="text-xs text-gray-400">
-            Lorem ipsum dolor sit amet consectetur, adipisicing elit. Sit
-            asperiores modi Sit asperiores modi
+            Trusted by heritage lovers, wedding couples, and cultural
+            institutions worldwide
           </p>
         </div>
 

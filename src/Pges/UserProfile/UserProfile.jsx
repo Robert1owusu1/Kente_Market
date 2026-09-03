@@ -6,12 +6,13 @@ import { BiLoaderAlt } from "react-icons/bi";
 import { useSelector, useDispatch } from 'react-redux';
 import { useLogoutMutation, useUpdateProfileMutation } from '../../slices/usersApiSlice';
 import { useUploadProfilePictureMutation, useDeleteProfilePictureMutation } from '../../slices/profileApiSlice';
-import { logout, setCredentials } from '../../slices/authSlice';
+import { logout, setCredentials } from '../../slices/authSlice.JS';
 import { toast } from 'react-toastify';
 import { useGetMyOrdersQuery } from '../../slices/ordersApiSlice';
 
 const CustomerProfile = () => {
   const [activeSection, setActiveSection] = useState('dashboard');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -342,7 +343,7 @@ const CustomerProfile = () => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-gray-600 dark:text-gray-400">Total Spent</p>
-              <p className="text-2xl font-bold text-secondary">${customerData.totalSpent.toFixed(2)}</p>
+              <p className="text-2xl font-bold text-secondary">GH₵ {customerData.totalSpent.toFixed(2)}</p>
             </div>
             <FaCreditCard className="text-3xl text-secondary/70" />
           </div>
@@ -464,7 +465,7 @@ const CustomerProfile = () => {
                   </div>
                   <div>
                     <p className="text-sm text-gray-600 dark:text-gray-400">Total</p>
-                    <p className="text-xl font-bold text-primary">${order.totalPrice?.toFixed(2) || '0.00'}</p>
+                    <p className="text-xl font-bold text-primary">GH₵ {order.totalPrice?.toFixed(2) || '0.00'}</p>
                   </div>
                 </div>
 
@@ -586,7 +587,51 @@ const CustomerProfile = () => {
 
       <div className="container mx-auto px-4 py-8">
         <div className="flex flex-col lg:flex-row gap-8">
-          <div className="lg:w-1/4">
+          {/* Mobile profile card + menu toggle */}
+          <div className="lg:hidden">
+            <div className="bg-gradient-to-r from-primary to-secondary text-white rounded-lg shadow-md p-6 mb-4 flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <ProfilePictureUpload />
+                <div className="min-w-0">
+                  <h3 className="font-bold text-lg truncate">{customerData.name}</h3>
+                  <p className="text-white/80 text-sm truncate">{customerData.email}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                className="bg-white/20 hover:bg-white/30 rounded-lg p-2 text-2xl leading-none"
+                aria-expanded={mobileMenuOpen}
+                aria-label="Toggle menu"
+              >
+                {mobileMenuOpen ? '−' : '+'}
+              </button>
+            </div>
+            {mobileMenuOpen && (
+              <nav className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-2 mb-4">
+                {menuItems.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => { setActiveSection(item.id); setMobileMenuOpen(false); }}
+                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors text-left ${
+                        activeSection === item.id
+                          ? 'bg-primary text-white'
+                          : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                      }`}
+                      type="button"
+                    >
+                      <Icon className="text-lg" />
+                      <span>{item.name}</span>
+                    </button>
+                  );
+                })}
+              </nav>
+            )}
+          </div>
+
+          {/* Desktop sidebar */}
+          <div className="hidden lg:block lg:w-1/4">
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden sticky top-24">
               <div className="p-6 bg-gradient-to-r from-primary to-secondary text-white">
                 <div className="flex items-center gap-4">

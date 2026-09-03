@@ -1,6 +1,7 @@
 import express from 'express';
 import upload from '../midleware/uploadMidleware.js';
 import { protect, admin } from '../midleware/authMiddleware.js';
+import { uploadLimiter } from '../midleware/rateLimitMiddleware.js';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
@@ -13,7 +14,7 @@ const __dirname = path.dirname(__filename);
 // @desc    Upload product image
 // @route   POST /api/upload
 // @access  Private/Admin
-router.post('/', protect, admin, (req, res) => {
+router.post('/', protect, admin, uploadLimiter, (req, res) => {
   // Use multer middleware with error handling
   upload.single('image')(req, res, (err) => {
     // Handle multer-specific errors

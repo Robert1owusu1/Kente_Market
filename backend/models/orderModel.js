@@ -16,6 +16,10 @@ class Order {
     this.tax = orderData.tax;
     this.discount = orderData.discount;
     this.notes = orderData.notes;
+    this.paymentReference = orderData.paymentReference || orderData.payment_reference || null;
+    this.escrowStatus = orderData.escrowStatus || 'none';
+    this.escrowReleaseDeadline = orderData.escrowReleaseDeadline;
+    this.escrowAllocations = orderData.escrowAllocations || [];
     this.created_at = orderData.created_at;
     this.updated_at = orderData.updated_at;
     // Include user info if joined
@@ -66,8 +70,8 @@ class Order {
       const [result] = await connection.execute(
         `INSERT INTO orders 
         (userId, orderNumber, items, totalAmount, shippingAddress, billingAddress,
-         paymentMethod, paymentStatus, orderStatus, shippingCost, tax, discount, notes)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         paymentMethod, paymentStatus, orderStatus, shippingCost, tax, discount, notes, paymentReference)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           orderData.userId,
           orderData.orderNumber,
@@ -76,12 +80,13 @@ class Order {
           JSON.stringify(orderData.shippingAddress || {}),
           JSON.stringify(orderData.billingAddress || {}),
           orderData.paymentMethod || 'pending',
-          orderData.paymentStatus || 'unpaid',
+          orderData.paymentStatus || 'pending',
           orderData.orderStatus || 'pending',
           orderData.shippingCost || 0,
           orderData.tax || 0,
           orderData.discount || 0,
           orderData.notes || null,
+          orderData.paymentReference || null,
         ]
       );
       return { id: result.insertId, ...orderData };
@@ -143,8 +148,6 @@ static async findAll(options = {}) {
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
-    console.log('Fetching orders with options:', { page: safePage, limit: safeLimit, offset: safeOffset });
-
     // Get total count
     const countQuery = `SELECT COUNT(*) as total 
                         FROM orders o 
@@ -166,8 +169,6 @@ static async findAll(options = {}) {
     const [rows] = params.length > 0
       ? await connection.execute(dataQuery, params)
       : await connection.query(dataQuery);
-
-    console.log(`Found ${rows.length} orders out of ${countResult[0].total} total`);
 
     return {
       orders: rows.map((row) => new Order(row)),
@@ -239,7 +240,8 @@ static async findAll(options = {}) {
 
       const allowedFields = [
         'orderStatus', 'paymentStatus', 'paymentMethod', 'shippingCost',
-        'tax', 'discount', 'notes', 'items', 'shippingAddress', 'billingAddress'
+        'tax', 'discount', 'notes', 'items', 'shippingAddress', 'billingAddress',
+        'paymentReference'
       ];
 
       const fields = [];
@@ -304,7 +306,7 @@ static async findAll(options = {}) {
           SUM(CASE WHEN orderStatus = 'delivered' THEN 1 ELSE 0 END) as deliveredOrders,
           SUM(CASE WHEN orderStatus = 'cancelled' THEN 1 ELSE 0 END) as cancelledOrders,
           SUM(CASE WHEN paymentStatus = 'paid' THEN 1 ELSE 0 END) as paidOrders,
-          SUM(CASE WHEN paymentStatus = 'unpaid' THEN 1 ELSE 0 END) as unpaidOrders
+          SUM(CASE WHEN paymentStatus IN ('pending', 'failed') THEN 1 ELSE 0 END) as unpaidOrders
         FROM orders
       `);
       return stats[0];

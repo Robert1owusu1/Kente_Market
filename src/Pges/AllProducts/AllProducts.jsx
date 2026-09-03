@@ -4,6 +4,7 @@ import { useCart } from "../../Context/CartContext";
 import Brands from "../../Pges/AllProducts/bands";
 import { useGetProductsQuery } from '../../slices/productsApiSlice';
 import { Link, useSearchParams } from 'react-router-dom';
+import { ProductGridSkeleton } from '../../components/loader/Skeleton';
 
 const AllProducts = ({ handleOrderPopup }) => {
   // ✅ Get URL search params
@@ -250,9 +251,12 @@ const AllProducts = ({ handleOrderPopup }) => {
           <img
             src={product.img}
             alt={product.title}
+            loading="lazy"
+            decoding="async"
             className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
             onError={(e) => {
-              e.target.src = '/placeholder-image.jpg';
+              e.target.onerror = null;
+              e.target.src = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300"><rect fill="#f4eee1" width="400" height="300"/><text x="200" y="155" font-family="sans-serif" font-size="20" fill="#8a6d3b" text-anchor="middle">Kente image coming soon</text></svg>');
             }}
           />
           <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
@@ -272,13 +276,13 @@ const AllProducts = ({ handleOrderPopup }) => {
           </div>
         </div>
 
-        <div className="p-4">
-          <h3 className="font-bold text-lg text-gray-800 dark:text-white mb-2 line-clamp-2">
+        <div className="p-3 sm:p-4">
+          <h3 className="font-bold text-sm sm:text-lg text-gray-800 dark:text-white mb-2 line-clamp-2">
             {product.title}
           </h3>
           
           <div className="flex items-center gap-2 mb-2">
-            <div className="flex text-yellow-400">
+            <div className="flex text-yellow-400 text-xs sm:text-sm">
               {[...Array(5)].map((_, i) => (
                 <FaStar 
                   key={`${product.id}-star-${i}`} 
@@ -286,29 +290,29 @@ const AllProducts = ({ handleOrderPopup }) => {
                 />
               ))}
             </div>
-            <span className="text-sm text-gray-600 dark:text-gray-300">
+            <span className="text-xs sm:text-sm text-gray-600 dark:text-gray-300">
               ({productReviews})
             </span>
           </div>
 
-          <div className="flex items-center gap-2 mb-3">
-            <span className="text-2xl font-bold text-primary">
-              ${productPrice.toFixed(2)}
+          <div className="flex items-center gap-2 mb-3 flex-wrap">
+            <span className="text-lg sm:text-2xl font-bold text-primary">
+              GH₵{productPrice.toFixed(2)}
             </span>
             {product.originalPrice && Number(product.originalPrice) > productPrice && (
-              <span className="text-lg text-gray-500 line-through">
-                ${Number(product.originalPrice).toFixed(2)}
+              <span className="text-sm sm:text-lg text-gray-500 line-through">
+                GH₵{Number(product.originalPrice).toFixed(2)}
               </span>
             )}
           </div>
 
           {productColors.length > 0 && (
             <div className="flex items-center gap-1 mb-3">
-              <span className="text-xs text-gray-600 dark:text-gray-300 mr-2">Colors:</span>
+              <span className="text-[10px] sm:text-xs text-gray-600 dark:text-gray-300 mr-1 hidden xs:inline">Colors:</span>
               {productColors.slice(0, 4).map((color, index) => (
                 <div
                   key={`${product.id}-color-${index}`}
-                  className="w-4 h-4 rounded-full border-2 border-gray-300"
+                  className="w-3 h-3 sm:w-4 sm:h-4 rounded-full border-2 border-gray-300"
                   style={{ backgroundColor: color.toLowerCase() }}
                   title={color}
                 />
@@ -319,16 +323,16 @@ const AllProducts = ({ handleOrderPopup }) => {
             </div>
           )}
 
-          <div className="text-xs text-gray-600 dark:text-gray-300 mb-4">
+          <div className="text-[10px] sm:text-xs text-gray-600 dark:text-gray-300 mb-4">
             <div className="flex justify-between">
-              <span>{product.material || product.fabricType || 'Cotton'}</span>
-              <span>{product.productionTime || '3-5'} days</span>
+              <span className="truncate">{product.material || product.fabricType || 'Cotton'}</span>
+              <span className="whitespace-nowrap ml-1">{product.productionTime || '3-5'} days</span>
             </div>
           </div>
 
           <button
             onClick={() => addToCartHandler(product)}
-            className="w-full bg-gradient-to-r from-primary to-secondary text-white py-2 px-4 rounded-lg hover:from-primary/90 hover:to-secondary/90 transition-all duration-300 transform hover:scale-105 font-medium"
+            className="w-full bg-gradient-to-r from-primary to-secondary text-white py-2 sm:py-2 px-2 sm:px-4 rounded-lg hover:from-primary/90 hover:to-secondary/90 transition-all duration-300 text-xs sm:text-sm font-medium"
           >
             Add to Cart
           </button>
@@ -339,10 +343,13 @@ const AllProducts = ({ handleOrderPopup }) => {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-8 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-xl text-gray-600 dark:text-gray-300">Loading products...</p>
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-12">
+            <div className="skeleton h-10 w-72 mx-auto rounded-lg" />
+            <div className="skeleton h-4 w-96 max-w-full mx-auto mt-4 rounded" />
+          </div>
+          <ProductGridSkeleton count={8} className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-8" />
         </div>
       </div>
     );
@@ -372,20 +379,39 @@ const AllProducts = ({ handleOrderPopup }) => {
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-12">
-          <h1 className="text-4xl md:text-5xl font-bold text-gray-900 dark:text-white mb-4">
+          <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold text-gray-900 dark:text-white mb-4 leading-tight">
             {searchQuery ? `Search Results for "${searchQuery}"` : 'All Products'}
           </h1>
-          <p className="text-xl text-gray-600 dark:text-gray-300 max-w-3xl mx-auto">
-            {searchQuery ? `Found ${filteredProducts.length} matching products` : 'Discover our complete collection of premium custom apparel'}
+          <p className="text-base sm:text-xl text-gray-600 dark:text-gray-300 max-w-3xl mx-auto">
+            {searchQuery ? `Found ${filteredProducts.length} matching products` : 'Discover our complete collection of authentic handwoven Kente cloth, accessories, and home decor'}
           </p>
         </div>
         <div>
           <Brands />
         </div>
 
+        <div className="bg-gradient-to-b from-gray-50 via-white to-gray-100 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 py-16">
+      <div className="container mx-auto px-6">
+        <div data-aos="fade-up" className="text-center">
+          <Link to="/ai-tryon" className="inline-block">
+            <div className="inline-flex items-center gap-4 bg-gradient-to-r from-primary to-secondary text-white rounded-2xl p-6 shadow-xl hover:shadow-2xl hover:scale-105 transition-all duration-300 max-w-xl cursor-pointer">
+              <span className="text-4xl">✨</span>
+              <div className="text-left">
+                <h3 className="text-xl font-bold mb-1">Try It On Before You Buy</h3>
+                <p className="text-sm text-white/80">
+                  Use our AI Virtual Try-On to see yourself wearing the Kente, or preview it in your home
+                </p>
+              </div>
+              <span className="text-2xl">→</span>
+            </div>
+          </Link>
+        </div>
+      </div>
+    </div>
+
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-4 mb-8">
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-            <div className="flex items-center gap-4">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
               <button
                 onClick={() => setShowFilters(!showFilters)}
                 className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors duration-200"
@@ -418,12 +444,12 @@ const AllProducts = ({ handleOrderPopup }) => {
               )}
             </div>
 
-            <div className="flex items-center gap-4">
-              <div className="relative">
+            <div className="flex items-center justify-between gap-2 md:justify-end">
+              <div className="relative flex-1 md:flex-none">
                 <select
                   value={sortBy}
                   onChange={(e) => setSortBy(e.target.value)}
-                  className="appearance-none bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-white px-4 py-2 pr-8 rounded-lg border border-gray-200 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary"
+                  className="appearance-none bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-white px-3 md:px-4 py-2 pr-8 rounded-lg border border-gray-200 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary w-full"
                 >
                   <option value="featured">Featured</option>
                   <option value="newest">Newest</option>
@@ -437,12 +463,14 @@ const AllProducts = ({ handleOrderPopup }) => {
               <div className="flex border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden">
                 <button
                   onClick={() => setViewMode('grid')}
+                  aria-label="Grid view"
                   className={`p-2 ${viewMode === 'grid' ? 'bg-primary text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}
                 >
                   <FaTh />
                 </button>
                 <button
                   onClick={() => setViewMode('list')}
+                  aria-label="List view"
                   className={`p-2 ${viewMode === 'list' ? 'bg-primary text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}
                 >
                   <FaList />
@@ -468,7 +496,7 @@ const AllProducts = ({ handleOrderPopup }) => {
                       setSearchParams(searchParams);
                     }
                   }}
-                  placeholder="Search products by name, category, or material..."
+                  placeholder="Search kente cloth by name, category, or weaving style..."
                   className="w-full bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-white px-4 py-2 pr-10 rounded-lg border border-gray-200 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary"
                 />
                 {searchQuery && (
@@ -533,7 +561,7 @@ const AllProducts = ({ handleOrderPopup }) => {
               {products && products.length > 0 && (
                 <div>
                   <h3 className="font-semibold text-gray-800 dark:text-white mb-3">
-                    Price Range: ${priceRange[0]} - ${priceRange[1]}
+                    Price Range: GH₵{priceRange[0]} - GH₵{priceRange[1]}
                   </h3>
                   <div className="flex gap-2">
                     <input
@@ -636,7 +664,7 @@ const AllProducts = ({ handleOrderPopup }) => {
         ) : (
           <div className={
             viewMode === 'grid' 
-              ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8"
+              ? "grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-8"
               : "space-y-6"
           }>
             {filteredProducts.map(product => (
@@ -645,7 +673,7 @@ const AllProducts = ({ handleOrderPopup }) => {
           </div>
         )}
 
-        <div className="fixed bottom-2 right-6 z-50">
+        <div className="fixed bottom-20 right-6 sm:bottom-2 sm:right-6 z-50">
           <button className="bg-gradient-to-r from-primary to-secondary text-white p-4 rounded-full shadow-2xl hover:shadow-3xl transition-all duration-300 transform hover:scale-110 group">
             <FaPlus className="text-xl group-hover:rotate-180 transition-transform duration-300" />
           </button>

@@ -1,0 +1,163 @@
+/* Bonwire Kente - AI Try-On Styles */
+
+.aitryon-page {
+  min-height: 100vh;
+}
+
+/* Buttons */
+.aitryon-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.75rem 1.5rem;
+  background: linear-gradient(to right, #fea928, #ed8900);
+  color: white;
+  border-radius: 0.75rem;
+  font-weight: 600;
+  transition: all 0.3s;
+  box-shadow: 0 4px 12px rgba(254, 169, 40, 0.3);
+  cursor: pointer;
+}
+
+.aitryon-btn-primary:hover {
+  transform: scale(1.03);
+  box-shadow: 0 6px 20px rgba(254, 169, 40, 0.4);
+}
+
+.aitryon-btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.aitryon-btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.75rem 1.5rem;
+  background: rgba(254, 169, 40, 0.1);
+  color: #fea928;
+  border: 2px solid #fea928;
+  border-radius: 0.75rem;
+  font-weight: 600;
+  transition: all 0.3s;
+  cursor: pointer;
+}
+
+.aitryon-btn-secondary:hover {
+  background: rgba(254, 169, 40, 0.2);
+}
+
+/* Camera */
+.aitryon-camera {
+  width: 100%;
+}
+
+.aitryon-camera-idle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 1rem;
+  background: rgba(128, 128, 128, 0.05);
+  border: 2px dashed rgba(128, 128, 128, 0.3);
+  border-radius: 1rem;
+  text-align: center;
+}
+
+.aitryon-camera-icons {
+  margin-bottom: 1rem;
+  opacity: 0.5;
+}
+
+.aitryon-error {
+  color: #dc2626;
+  background: rgba(220, 38, 38, 0.1);
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  margin-bottom: 1rem;
+  font-size: 0.875rem;
+}
+
+.aitryon-btn-capture {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 3.5rem;
+  height: 3.5rem;
+  background: white;
+  color: #333;
+  border-radius: 9999px;
+  border: 4px solid #fea928;
+  font-size: 1.25rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  transition: all 0.2s;
+  cursor: pointer;
+}
+
+.aitryon-btn-capture:hover {
+  transform: scale(1.1);
+}
+
+/* Upload */
+.aitryon-upload {
+  width: 100%;
+}
+
+.aitryon-upload-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 1rem;
+  border: 2px dashed rgba(128, 128, 128, 0.4);
+  border-radius: 1rem;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.3s;
+  background: rgba(128, 128, 128, 0.03);
+}
+
+.aitryon-upload-area:hover,
+.aitryon-drag-over {
+  border-color: #fea928;
+  background: rgba(254, 169, 40, 0.05);
+}
+
+/* Preview */
+.aitryon-preview {
+  overflow: hidden;
+}
+
+/* Decor mode */
+.aitryon-decor {
+  overflow: hidden;
+}
+
+/* Animations */
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.animate-spin-slow {
+  animation: spin-slow 3s linear infinite;
+}
+
+/* Style cards */
+.aitryon-style-card {
+  cursor: pointer;
+}
+
+.aitryon-style-card:hover {
+  transform: translateY(-2px);
+}
+
+/* Responsive adjustments */
+@media (max-width: 640px) {
+  .aitryon-btn-primary,
+  .aitryon-btn-secondary {
+    padding: 0.625rem 1.25rem;
+    font-size: 0.875rem;
+  }
+}

@@ -1,28 +1,13 @@
 import React from "react";
 
-// Example brand logos (replace with your own in /assets/brands)
-import Nike from "../../assets/brands/nike.jpg";
-import Adidas from "../../assets/brands/adidas.png";
-import Puma from "../../assets/brands/puma.jpg";
-import Gucci from "../../assets/brands/gucci.jpg";
-import Zara from "../../assets/brands/zara.jpg";
-import HnM from "../../assets/brands/hm.png";
-import Uniqlo from "../../assets/brands/uniqlo.png";
-import Levi from "../../assets/brands/levis.png";
-import Lacoste from "../../assets/brands/lacoste.png";
-import Supreme from "../../assets/brands/supreme.png";
-
-const brands = [
-  { id: 1, name: "Nike", logo: Nike },
-  { id: 2, name: "Adidas", logo: Adidas },
-  { id: 3, name: "Puma", logo: Puma },
-  { id: 4, name: "Gucci", logo: Gucci },
-  { id: 5, name: "Zara", logo: Zara },
-  { id: 6, name: "H&M", logo: HnM },
-  { id: 7, name: "Uniqlo", logo: Uniqlo },
-  { id: 8, name: "Levi's", logo: Levi },
-  { id: 9, name: "Lacoste", logo: Lacoste },
-  { id: 10, name: "Supreme", logo: Supreme },
+// Authentic Kente weaving communities of Ghana
+const communities = [
+  { id: 1, name: "Bonwire", detail: "The Birthplace of Kente" },
+  { id: 2, name: "Sakora Wonoo", detail: "Traditional Weaving" },
+  { id: 3, name: "Agotime Kpetoe", detail: "Ewe Kente Heritage" },
+  { id: 4, name: "Ntonso", detail: "Adinkra Symbolism" },
+  { id: 5, name: "Adawomase", detail: "Master Weavers" },
+  { id: 6, name: "Kumasi", detail: "Royal Ashanti Capital" },
 ];
 
 const Brands = () => {
@@ -32,24 +17,36 @@ const Brands = () => {
         {/* Section Title */}
         <h2
           data-aos="fade-up"
-          className="text-3xl sm:text-5xl font-bold text-center mb-14 text-gray-800 dark:text-white"
+          className="text-3xl sm:text-5xl font-bold text-center mb-6 text-gray-800 dark:text-white"
         >
-          Our Trusted <span className="text-orange-500">Brands</span>
+          Authentic Kente From <span className="text-orange-500">Ghana</span>
         </h2>
+        <p
+          data-aos="fade-up"
+          className="text-center text-gray-600 dark:text-gray-300 max-w-2xl mx-auto mb-14"
+        >
+          Every piece is handwoven in a Geographical Indication (GI) approved
+          Ghanaian community - protecting Kente as Ghana's intellectual
+          property.
+        </p>
 
-        {/* Brand Logos */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-8 items-center justify-center">
-          {brands.map((brand) => (
+        {/* Community Cards */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4 items-center justify-center">
+          {communities.map((c) => (
             <div
-              key={brand.id}
+              key={c.id}
               data-aos="zoom-in"
-              className="flex justify-center items-center rounded-2xl bg-white/40 dark:bg-gray-700/50 backdrop-blur-md shadow-lg hover:shadow-orange-400/40 p-6 transition-transform duration-500 hover:scale-110 group"
+              className="flex flex-col justify-center items-center rounded-2xl bg-white/40 dark:bg-gray-700/50 backdrop-blur-md shadow-lg hover:shadow-orange-400/40 p-6 transition-transform duration-500 hover:scale-110 group"
             >
-              <img
-                src={brand.logo}
-                alt={brand.name}
-                className="h-16 sm:h-20 object-contain grayscale group-hover:grayscale-0 transition duration-500"
-              />
+              <div className="w-14 h-14 rounded-full bg-gradient-to-r from-primary to-secondary flex items-center justify-center text-white font-bold text-2xl mb-3 group-hover:rotate-12 transition-transform duration-500">
+                {c.name.charAt(0)}
+              </div>
+              <h3 className="font-bold text-gray-800 dark:text-white text-sm text-center">
+                {c.name}
+              </h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400 text-center mt-1">
+                {c.detail}
+              </p>
             </div>
           ))}
         </div>

@@ -19,6 +19,7 @@ import {
     getVerificationStatus
 } from '../controllers/userController.js';
 import { protect, admin } from "../midleware/authMiddleware.js";
+import { authLimiter, passwordResetLimiter } from "../midleware/rateLimitMiddleware.js";
 
 // ============================================
 // PUBLIC ROUTES (No Authentication Required)
@@ -28,9 +29,9 @@ import { protect, admin } from "../midleware/authMiddleware.js";
 // POST /api/users
 router.post('/', registerUser);
 
-// Login user
+// Login user (rate-limited to prevent brute-force)
 // POST /api/users/auth
-router.post('/auth', authUser);
+router.post('/auth', authLimiter, authUser);
 
 // Logout user
 // POST /api/users/logout
@@ -42,7 +43,7 @@ router.post('/logout', logoutUser);
 
 // Request password reset (sends email with reset link)
 // POST /api/users/forgot-password
-router.post('/forgot-password', forgotPassword);
+router.post('/forgot-password', passwordResetLimiter, forgotPassword);
 
 // Validate reset token (check if token is valid and not expired)
 // GET /api/users/reset-password/:token
@@ -50,19 +51,19 @@ router.get('/reset-password/:token', validateResetToken);
 
 // Reset password with token
 // POST /api/users/reset-password/:token
-router.post('/reset-password/:token', resetPassword);
+router.post('/reset-password/:token', passwordResetLimiter, resetPassword);
 
 // ============================================
 // EMAIL VERIFICATION ROUTES (Protected)
 // ============================================
 
-// Verify email with OTP
+// Verify email with OTP (rate-limited to prevent OTP brute-force)
 // POST /api/users/verify-email
-router.post('/verify-email', protect, verifyEmail);
+router.post('/verify-email', protect, authLimiter, verifyEmail);
 
-// Resend OTP
+// Resend OTP (rate-limited to prevent email spamming)
 // POST /api/users/resend-otp
-router.post('/resend-otp', protect, resendOTP);
+router.post('/resend-otp', protect, authLimiter, resendOTP);
 
 // Get verification status
 // GET /api/users/verification-status

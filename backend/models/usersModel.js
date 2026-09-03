@@ -185,7 +185,7 @@ class User {
       
       const sanitizedEmail = email.toLowerCase().trim();
       const [rows] = await connection.execute(
-        'SELECT * FROM users WHERE email = ?', 
+        'SELECT *, failed_login_attempts AS failedLoginAttempts, locked_until AS lockedUntil FROM users WHERE email = ?', 
         [sanitizedEmail]
       );
       
@@ -435,11 +435,44 @@ class User {
         return null;
       }
 
+      // Check if account is locked due to too many failed attempts
+      if (user.lockedUntil && new Date(user.lockedUntil) > new Date()) {
+        throw new Error('Account is temporarily locked due to too many failed login attempts. Please try again later.');
+      }
+
       const isMatch = await user.comparePassword(password);
-      return isMatch ? user : null;
+
+      if (!isMatch) {
+        // Increment failed attempts
+        const failedAttempts = (user.failedLoginAttempts || 0) + 1;
+        const updates = { failedLoginAttempts: failedAttempts };
+
+        // Lock account after 10 failed attempts for 1 hour
+        if (failedAttempts >= 10) {
+          updates.lockedUntil = new Date(Date.now() + 60 * 60 * 1000);
+          console.warn(`Account locked for user ${user.email} due to ${failedAttempts} failed attempts`);
+        }
+
+        await pool.execute(
+          'UPDATE users SET failed_login_attempts = ?, locked_until = ? WHERE id = ?',
+          [updates.failedLoginAttempts, updates.lockedUntil || null, user.id]
+        );
+
+        return null;
+      }
+
+      // Reset failed attempts on successful login
+      if (user.failedLoginAttempts > 0) {
+        await pool.execute(
+          'UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE id = ?',
+          [user.id]
+        );
+      }
+
+      return user;
     } catch (error) {
       console.error('Error in authenticate:', error.message);
-      return null;
+      throw error;
     }
   }
 

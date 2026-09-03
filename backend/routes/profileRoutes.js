@@ -4,6 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { protect } from '../midleware/authMiddleware.js';
+import { uploadLimiter } from '../midleware/rateLimitMiddleware.js';
 import User from '../models/usersModel.js';
 
 const router = express.Router();
@@ -57,7 +58,7 @@ const upload = multer({
 // @desc    Upload profile picture
 // @route   POST /api/profile/upload
 // @access  Private
-router.post('/upload', protect, upload.single('profilePicture'), async (req, res) => {
+router.post('/upload', protect, uploadLimiter, upload.single('profilePicture'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ message: 'No file uploaded' });

@@ -68,7 +68,7 @@ const ForgotPassword = () => {
     setError('');
 
     try {
-      const response = await fetch(`${API_BASE_URL}/users/forgot-password`, {
+      const response = await fetch(`${API_BASE_URL}/api/users/forgot-password`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -103,7 +103,7 @@ const ForgotPassword = () => {
             <div className="p-2 bg-amber-400/20 rounded-xl backdrop-blur-md">
               <TiShoppingBag className="text-amber-400 text-2xl" />
             </div>
-            <span className="text-white font-bold text-xl">Branding House</span>
+            <span className="text-white font-bold text-xl">Bonwire Kente</span>
           </div>
 
           {!isSuccess ? (

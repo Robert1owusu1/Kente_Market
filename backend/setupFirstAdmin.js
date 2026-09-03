@@ -132,7 +132,7 @@ const setupAdmin = async () => {
 
     // Manually set email as verified (bypass OTP for first admin)
     await pool.query(
-      'UPDATE users SET isEmailVerified = 1, emailVerifiedAt = NOW() WHERE id = ?',
+      'UPDATE users SET is_email_verified = 1 WHERE id = ?',
       [user.id]
     );
 

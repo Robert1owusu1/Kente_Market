@@ -1,53 +1,27 @@
 // FILE: frontend/src/components/TopProducts/TopProducts.jsx
-import React, { useState, useEffect } from "react";
+import React from "react";
 import { FaStar, FaTshirt, FaClock, FaHeart, FaEye, FaShoppingCart, FaTags, FaFire } from "react-icons/fa";
 import { useCart } from "../../Context/CartContext";
 import { Link } from "react-router-dom";
-import axios from "axios";
-
-// ⭐ FIXED: Make sure /api is included
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+import { useGetFeaturedProductsQuery } from "../../slices/productsApiSlice";
+import { ProductGridSkeleton } from "../loader/Skeleton";
 
 const TopProducts = ({ handleOrderPopup }) => {
   const { addToCart } = useCart();
-  
-  // State management for API data
-  const [ProductsData, setProductsData] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
 
-  // Fetch featured products from backend on component mount
-  useEffect(() => {
-    const fetchFeaturedProducts = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        
-        // ⭐ FIXED: Correct URL construction
-        const url = `${API_URL}/products/featured`;
-        console.log('🔍 Fetching featured products from:', url);
-        
-        const response = await axios.get(url, {
-          params: { limit: 6 }
-        });
-        
-        console.log('✅ Featured products received:', response.data);
-        setProductsData(response.data);
-      } catch (err) {
-        console.error('❌ Failed to fetch featured products:', err);
-        console.error('❌ Error details:', {
-          message: err.message,
-          url: err.config?.url,
-          status: err.response?.status
-        });
-        setError('Failed to load products. Please try again later.');
-      } finally {
-        setLoading(false);
-      }
-    };
+  // ⭐ RTK Query hook - cached in the Redux store, no duplicate network calls
+  // when navigating between pages.
+  const {
+    data: ProductsData,
+    isLoading,
+    error: queryError,
+  } = useGetFeaturedProductsQuery({ limit: 6 });
 
-    fetchFeaturedProducts();
-  }, []);
+  // Normalize RTK error object into a displayable string.
+  const error = queryError
+    ? (queryError?.data?.message || queryError?.data?.error || 'Failed to load products. Please try again later.')
+    : null;
+  const loading = isLoading;
 
   const handleAddToCart = (product) => {
     const cartItem = {
@@ -86,10 +60,16 @@ const TopProducts = ({ handleOrderPopup }) => {
     return (
       <div className="py-16 bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center">
-            <div className="inline-block animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-primary"></div>
-            <p className="mt-4 text-lg text-gray-600 dark:text-gray-300">Loading featured products...</p>
+          <div className="text-center mb-16">
+            <div className="inline-flex items-center gap-2 px-4 py-2 bg-primary/10 text-primary rounded-full text-sm font-medium mb-4">
+              <FaFire className="text-primary" />
+              Top Products for you
+            </div>
+            <h1 className="text-4xl md:text-5xl font-bold text-gray-900 dark:text-white mb-4">
+              Best Products
+            </h1>
           </div>
+          <ProductGridSkeleton count={6} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8 place-items-center" />
         </div>
       </div>
     );
@@ -150,7 +130,7 @@ const TopProducts = ({ handleOrderPopup }) => {
             Best Products
           </h1>
           <p data-aos="fade-up" className="text-xl text-gray-600 dark:text-gray-300 max-w-3xl mx-auto">
-            Discover our most popular custom apparel that customers love
+            Discover our most cherished authentic Kente cloth, handwoven in Bonwire, Ghana
           </p>
         </div>
 
@@ -192,9 +172,12 @@ const TopProducts = ({ handleOrderPopup }) => {
                   <img
                     src={product.image || product.img}
                     alt={product.title}
+                    loading="lazy"
+                    decoding="async"
                     className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
                     onError={(e) => {
-                      e.target.src = '/placeholder-image.jpg';
+                      e.target.onerror = null;
+                      e.target.src = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300"><rect fill="#f4eee1" width="400" height="300"/><text x="200" y="155" font-family="sans-serif" font-size="20" fill="#8a6d3b" text-anchor="middle">Kente image coming soon</text></svg>');
                     }}
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
@@ -296,17 +279,17 @@ const TopProducts = ({ handleOrderPopup }) => {
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-2">
                       <span className="text-2xl font-bold text-primary">
-                        ${productPrice.toFixed(2)}
+                        GH₵{productPrice.toFixed(2)}
                       </span>
                       {productOriginalPrice && productOriginalPrice > productPrice && (
                         <span className="text-lg text-gray-500 line-through">
-                          ${productOriginalPrice.toFixed(2)}
+                          GH₵{productOriginalPrice.toFixed(2)}
                         </span>
                       )}
                     </div>
                     {productOriginalPrice && productOriginalPrice > productPrice && (
                       <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full font-medium">
-                        Save ${(productOriginalPrice - productPrice).toFixed(2)}
+                        Save GH₵{(productOriginalPrice - productPrice).toFixed(2)}
                       </span>
                     )}
                   </div>

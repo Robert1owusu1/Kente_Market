@@ -12,6 +12,16 @@ dist
 dist-ssr
 *.local
 
+# Environment files (never commit secrets)
+.env
+.env.local
+.env.*.local
+!.env.example
+backend/.env
+
+# Database schemas (contain structure info)
+branding_house.sql
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

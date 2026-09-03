@@ -2,6 +2,8 @@
 import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import { Strategy as FacebookStrategy } from 'passport-facebook';
+import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 import pool from './db.js';
 import jwt from 'jsonwebtoken';
 
@@ -21,7 +23,6 @@ const findOrCreateOAuthUser = async (provider, profile) => {
     );
     
     if (existingByProvider.length > 0) {
-      console.log(`✅ Found existing user by ${provider}Id`);
       return existingByProvider[0];
     }
     
@@ -35,11 +36,11 @@ const findOrCreateOAuthUser = async (provider, profile) => {
       if (existingByEmail.length > 0) {
         // Link OAuth provider to existing account
         await connection.execute(
-          `UPDATE users SET ${providerId} = ?, isEmailVerified = 1 WHERE id = ?`,
+          `UPDATE users SET ${providerId} = ?, is_email_verified = 1 WHERE id = ?`,
           [profile.id, existingByEmail[0].id]
         );
-        console.log(`✅ Linked ${provider} to existing account`);
-        return { ...existingByEmail[0], [providerId]: profile.id, isEmailVerified: 1 };
+        console.log(`Linked ${provider} to existing account`);
+        return { ...existingByEmail[0], [providerId]: profile.id, is_email_verified: 1 };
       }
     }
     
@@ -47,14 +48,19 @@ const findOrCreateOAuthUser = async (provider, profile) => {
     const firstName = profile.name?.givenName || profile.displayName?.split(' ')[0] || 'User';
     const lastName = profile.name?.familyName || profile.displayName?.split(' ').slice(1).join(' ') || '';
     const profilePicture = profile.photos?.[0]?.value || null;
-    
+
+    // Never store a plaintext placeholder password. Hash a random value so the
+    // bcrypt column is valid but the account cannot be authenticated with a known password.
+    const randomPassword = crypto.randomBytes(32).toString('hex');
+    const hashedPassword = await bcrypt.hash(randomPassword, 12);
+
     const [result] = await connection.execute(
-      `INSERT INTO users (firstName, lastName, email, ${providerId}, password, isEmailVerified, profileImage, role, isActive)
+      `INSERT INTO users (firstName, lastName, email, ${providerId}, password, is_email_verified, profileImage, role, isActive)
        VALUES (?, ?, ?, ?, ?, 1, ?, 'customer', 1)`,
-      [firstName, lastName, email || `${provider}_${profile.id}@oauth.local`, profile.id, 'OAUTH_NO_PASSWORD', profilePicture]
+      [firstName, lastName, email || `${provider}_${profile.id}@oauth.local`, profile.id, hashedPassword, profilePicture]
     );
     
-    console.log(`✅ Created new user via ${provider} OAuth`);
+    console.log(`Created new user via ${provider} OAuth`);
     
     const [newUser] = await connection.execute('SELECT * FROM users WHERE id = ?', [result.insertId]);
     return newUser[0];
@@ -68,9 +74,10 @@ const findOrCreateOAuthUser = async (provider, profile) => {
 };
 
 // Generate JWT token for user
+// NOTE: claim MUST be `id` to match middleware/authMiddleware.js which reads decoded.id
 export const generateToken = (user) => {
   return jwt.sign(
-    { userId: user.id, role: user.role },
+    { id: user.id, role: user.role },
     process.env.JWT_SECRET,
     { expiresIn: '30d' }
   );

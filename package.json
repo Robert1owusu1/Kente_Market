@@ -4,16 +4,15 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --host",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
     "start": "vite --port 3000",
-    "data:import": "node /backend/seeder.js",
-    "data:destroy": "node /backend/seeder.js"
+    "data:import": "node backend/seeder.js -i",
+    "data:destroy": "node backend/seeder.js -d"
   },
   "dependencies": {
-    "@paypal/react-paypal-js": "^8.9.2",
     "@paystack/inline-js": "^2.22.7",
     "@reduxjs/toolkit": "^2.9.0",
     "aos": "^2.3.4",
@@ -36,7 +35,7 @@
     "react-toastify": "^11.0.5",
     "recharts": "^3.4.1",
     "slick-carousel": "^1.8.1",
-    "swiper": "^11.2.10",
+    "swiper": "^14.1.0",
     "tailwind-scrollbar-hide": "^4.0.0"
   },
   "devDependencies": {

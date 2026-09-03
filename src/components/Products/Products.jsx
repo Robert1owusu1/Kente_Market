@@ -1,52 +1,27 @@
 // FILE: frontend/src/components/TrendingProducts/TrendingProducts.jsx
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { FaStar, FaHeart, FaEye, FaShoppingCart, FaFire, FaTags } from "react-icons/fa";
 import { Link } from 'react-router-dom';
 import { useCart } from "../../Context/CartContext";
-import axios from "axios";
-
-// ⭐ FIXED: Make sure /api is included
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+import { useGetTrendingProductsQuery } from "../../slices/productsApiSlice";
+import { ProductGridSkeleton } from "../loader/Skeleton";
 
 const TrendingProducts = ({ handleOrderPopup }) => {
   const { addToCart } = useCart();
 
-  // ⭐ State management for API data
-  const [trendingProductsData, setTrendingProductsData] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  // ⭐ RTK Query hook - cached in the Redux store, no duplicate network calls
+  // when navigating between pages.
+  const {
+    data: trendingProductsData,
+    isLoading,
+    error: queryError,
+  } = useGetTrendingProductsQuery({ limit: 5 });
 
-  // ⭐ Fetch trending products from backend on component mount
-  useEffect(() => {
-    const fetchTrendingProducts = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        
-        const url = `${API_URL}/products/trending`;
-        console.log('🔍 Fetching trending products from:', url);
-        
-        const response = await axios.get(url, {
-          params: { limit: 5 }
-        });
-        
-        console.log('✅ Trending products received:', response.data);
-        setTrendingProductsData(response.data);
-      } catch (err) {
-        console.error('❌ Failed to fetch trending products:', err);
-        console.error('❌ Error details:', {
-          message: err.message,
-          url: err.config?.url,
-          status: err.response?.status
-        });
-        setError('Failed to load trending products. Please try again later.');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchTrendingProducts();
-  }, []);
+  // Normalize RTK error object into a displayable string.
+  const error = queryError
+    ? (queryError?.data?.message || queryError?.data?.error || 'Failed to load trending products. Please try again later.')
+    : null;
+  const loading = isLoading;
 
   const handleAddToCart = (product) => {
     const cartItem = {
@@ -77,15 +52,24 @@ const TrendingProducts = ({ handleOrderPopup }) => {
     return 0;
   };
 
-  // ⭐ Loading State
+  // ⭐ Loading State with skeleton placeholders
   if (loading) {
     return (
       <div className='mt-14 mb-12'>
         <div className='container'>
-          <div className='text-center py-20'>
-            <div className="inline-block animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-primary"></div>
-            <p className="mt-4 text-lg text-gray-600 dark:text-gray-300">Loading trending products...</p>
+          <div data-aos="fade-up" className='text-center mb-10 max-w-[600px] mx-auto'>
+            <p className='text-sm text-primary flex items-center justify-center gap-2'>
+              <FaFire className="text-orange-500" />
+              Top Selling Kente Cloth For You
+            </p>
+            <h1 data-aos="fade-up" className='text-3xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent'>
+              Trending Products
+            </h1>
+            <p data-aos="fade-up" className='text-xs text-gray-400'>
+              Discover our most sought-after Kente patterns loved by heritage enthusiasts worldwide
+            </p>
           </div>
+          <ProductGridSkeleton count={5} className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 place-items-center" />
         </div>
       </div>
     );
@@ -138,15 +122,15 @@ const TrendingProducts = ({ handleOrderPopup }) => {
       <div className='container'>
         {/* Header section */}
         <div className='text-center mb-10 max-w-[600px] mx-auto'>
-          <p data-aos="fade-up" className='text-sm text-primary flex items-center justify-center gap-2'>
-            <FaFire className="text-orange-500" />
-            Top Selling Products For You
-          </p>
+            <p data-aos="fade-up" className='text-sm text-primary flex items-center justify-center gap-2'>
+              <FaFire className="text-orange-500" />
+              Top Selling Kente Cloth For You
+            </p>
           <h1 data-aos="fade-up" className='text-3xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent'>
             Trending Products
           </h1>
           <p data-aos="fade-up" className='text-xs text-gray-400'>
-            Discover our most popular items loved by customers worldwide
+            Discover our most sought-after Kente patterns loved by heritage enthusiasts worldwide
           </p>
         </div>
 
@@ -166,9 +150,12 @@ const TrendingProducts = ({ handleOrderPopup }) => {
                   <img 
                     src={data.image || data.img} 
                     alt={data.title}
+                    loading="lazy"
+                    decoding="async"
                     className='h-[220px] w-full object-cover group-hover:scale-110 transition-transform duration-500'
                     onError={(e) => {
-                      e.target.src = '/placeholder-image.jpg';
+                      e.target.onerror = null;
+                      e.target.src = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300"><rect fill="#f4eee1" width="400" height="300"/><text x="200" y="155" font-family="sans-serif" font-size="20" fill="#8a6d3b" text-anchor="middle">Kente image coming soon</text></svg>');
                     }}
                   />
                   

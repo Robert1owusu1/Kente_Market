@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { FcGoogle } from "react-icons/fc";
-import { FaApple, FaFacebook, FaEye, FaEyeSlash } from "react-icons/fa";
+import { FaEye, FaEyeSlash } from "react-icons/fa";
 import { MdOutlineMailOutline, MdPersonOutline } from "react-icons/md";
 import { RiLockPasswordFill } from "react-icons/ri";
 import { BiLoaderAlt } from "react-icons/bi";
@@ -11,6 +11,8 @@ import { useRegisterMutation } from "../../slices/usersApiSlice";
 import { toast } from "react-toastify";
 import { setCredentials } from "../../slices/authSlice.JS";
 import { useDispatch } from "react-redux";
+import LegalDocument from "../legal/LegalDocument.jsx";
+import { termsOfService, privacyPolicy } from "../legal/legalContent.js";
 
 
 
@@ -216,6 +218,26 @@ const Register = () => {
   });
   const [showForm, setShowForm] = useState(false);
 
+  // Legal acceptance: which document is open in the modal, and which docs
+  // the user has read-and-agreed to (required before they can create an account).
+  const [activeDoc, setActiveDoc] = useState(null); // null | 'terms' | 'privacy'
+  const [acceptedDocs, setAcceptedDocs] = useState(() => {
+    const t = sessionStorage.getItem("bk_agreed_terms") === "1";
+    const p = sessionStorage.getItem("bk_agreed_privacy") === "1";
+    return { terms: t, privacy: p };
+  });
+  const bothAccepted = acceptedDocs.terms && acceptedDocs.privacy;
+
+  const openDoc = (doc) => {
+    if (!acceptedDocs[doc]) setActiveDoc(doc);
+  };
+
+  const handleDocAgree = (doc) => {
+    sessionStorage.setItem(doc === "terms" ? "bk_agreed_terms" : "bk_agreed_privacy", "1");
+    setAcceptedDocs((prev) => ({ ...prev, [doc]: true }));
+    setActiveDoc(null);
+  };
+
   // Enhanced validation
   const validateForm = () => {
     const newErrors = {};
@@ -268,9 +290,9 @@ const Register = () => {
       newErrors.confirmPassword = "Passwords do not match";
     }
 
-    // Terms validation
-    if (!formData.agreeToTerms) {
-      newErrors.agreeToTerms = "You must agree to the terms and conditions";
+    // Terms validation - user must read AND agree to both documents
+    if (!bothAccepted) {
+      newErrors.agreeToTerms = "You must read and accept our Terms of Service and Privacy Policy before creating an account";
     }
 
     setErrors(newErrors);
@@ -342,7 +364,7 @@ const handleSubmit = async (e) => {
     
     // ⭐ Show appropriate success message based on verification status
     if (res.isEmailVerified) {
-      toast.success("Account created successfully! Welcome to Branding House!");
+      toast.success("Account created successfully! Welcome to Bonwire Kente!");
       navigate("/");  // Already verified (shouldn't happen for new users)
     } else {
       toast.success(res.message || "Account created! Please check your email for verification code.");
@@ -414,23 +436,14 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
   // OAuth handler - unchanged
   const handleOAuthLogin = (provider) => {
     setOauthLoading(prev => ({ ...prev, [provider]: true }));
-    
-    // Redirect to backend OAuth endpoint
-    switch (provider) {
-      case 'google':
-        window.location.href = `${API_BASE_URL}/api/auth/google`;
-        break;
-      case 'facebook':
-        window.location.href = `${API_BASE_URL}/api/auth/facebook`;
-        break;
-      case 'apple':
-        // Apple Sign In not implemented yet
-        toast.info('Apple Sign In coming soon!');
-        setOauthLoading(prev => ({ ...prev, [provider]: false }));
-        break;
-      default:
-        setOauthLoading(prev => ({ ...prev, [provider]: false }));
+
+    if (provider === 'google') {
+      window.location.href = `${API_BASE_URL}/api/auth/google`;
+      return;
     }
+
+    // Other providers are not configured
+    setOauthLoading(prev => ({ ...prev, [provider]: false }));
   };
   const handleOAuthRegister = handleOAuthLogin;
 
@@ -447,7 +460,7 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
               <div className="p-2 bg-amber-400/20 rounded-xl backdrop-blur-md">
                 <TiShoppingBag className="text-amber-400 text-2xl" />
               </div>
-              <span className="text-white font-bold text-xl">Branding House</span>
+              <span className="text-white font-bold text-xl">Bonwire Kente</span>
             </div>
 
             {/* Header */}
@@ -470,22 +483,6 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
                   disabled={isRegistering}
                 >
                   <FcGoogle />
-                </IconButton>
-                <IconButton 
-                  text="Continue with Facebook" 
-                  onClick={() => handleOAuthRegister('facebook')}
-                  loading={oauthLoading.facebook}
-                  disabled={isRegistering}
-                >
-                  <FaFacebook className="text-blue-500" />
-                </IconButton>
-                <IconButton 
-                  text="Continue with Apple" 
-                  onClick={() => handleOAuthRegister('apple')}
-                  loading={oauthLoading.apple}
-                  disabled={isRegistering}
-                >
-                  <FaApple className="text-white" />
                 </IconButton>
               </div>
             )}
@@ -580,31 +577,131 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
                   <RiLockPasswordFill />
                 </IconInput>
 
-                {/* Terms Agreement */}
-                <div className="space-y-2">
-                  <label className="flex items-start gap-3 cursor-pointer">
-                    <input 
-                      type="checkbox" 
-                      checked={formData.agreeToTerms}
-                      onChange={(e) => handleInputChange('agreeToTerms', e.target.checked)}
+                {/* Terms Agreement - must read AND accept both docs */}
+                <div className="space-y-3">
+                  <div className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-2">
+                    <p className="text-white/80 text-sm font-medium">
+                      To create your account, please read and accept our legal documents:
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => openDoc("terms")}
+                      disabled={isRegistering}
+                      className="w-full flex items-center justify-between gap-3 px-4 py-3 rounded-lg bg-white/5 hover:bg-white/10 border border-white/15 transition-colors text-left disabled:opacity-50"
+                    >
+                      <span className="text-white text-sm">Terms of Service</span>
+                      <span
+                        className={`text-xs px-2.5 py-1 rounded-full ${
+                          acceptedDocs.terms
+                            ? "bg-green-500/20 text-green-400"
+                            : "bg-amber-400/20 text-amber-300"
+                        }`}
+                      >
+                        {acceptedDocs.terms ? "Accepted" : "Read & Accept"}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openDoc("privacy")}
+                      disabled={isRegistering}
+                      className="w-full flex items-center justify-between gap-3 px-4 py-3 rounded-lg bg-white/5 hover:bg-white/10 border border-white/15 transition-colors text-left disabled:opacity-50"
+                    >
+                      <span className="text-white text-sm">Privacy Policy</span>
+                      <span
+                        className={`text-xs px-2.5 py-1 rounded-full ${
+                          acceptedDocs.privacy
+                            ? "bg-green-500/20 text-green-400"
+                            : "bg-amber-400/20 text-amber-300"
+                        }`}
+                      >
+                        {acceptedDocs.privacy ? "Accepted" : "Read & Accept"}
+                      </span>
+                    </button>
+                  </div>
+
+                  <label
+                    className={`flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors ${
+                      bothAccepted
+                        ? "bg-green-500/10 border border-green-500/20 cursor-pointer"
+                        : "bg-white/5 border border-white/10 opacity-70"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={bothAccepted}
+                      readOnly
                       className="w-4 h-4 text-amber-400 bg-transparent border-white/30 rounded focus:ring-amber-400 focus:ring-2 mt-0.5"
                       disabled={isRegistering}
                     />
                     <span className="text-white/80 text-sm leading-relaxed">
-                      I agree to the{' '}
-                      <Link to="/terms" className="text-amber-400 hover:text-amber-300 underline">
+                      I have read and agree to the{' '}
+                      <button
+                        type="button"
+                        onClick={() => openDoc("terms")}
+                        className="text-amber-400 hover:text-amber-300 underline disabled:opacity-50"
+                        disabled={isRegistering}
+                      >
                         Terms of Service
-                      </Link>
-                      {' '}and{' '}
-                      <Link to="/privacy" className="text-amber-400 hover:text-amber-300 underline">
+                      </button>{' '}
+                      and{' '}
+                      <button
+                        type="button"
+                        onClick={() => openDoc("privacy")}
+                        className="text-amber-400 hover:text-amber-300 underline disabled:opacity-50"
+                        disabled={isRegistering}
+                      >
                         Privacy Policy
-                      </Link>
+                      </button>
                     </span>
                   </label>
+
+                  {!bothAccepted && (
+                    <p className="text-amber-300 text-sm">
+                      Please open each document and scroll to the bottom to accept before continuing.
+                    </p>
+                  )}
                   {errors.agreeToTerms && (
                     <p className="text-red-400 text-sm">{errors.agreeToTerms}</p>
                   )}
                 </div>
+
+                {/* Legal Agreement Modal */}
+                {activeDoc && (
+                  <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+                    <div className="w-full max-w-2xl h-[85vh] flex flex-col">
+                      <div className="flex items-center justify-between mb-2">
+                        <h2 className="text-white font-semibold">
+                          {activeDoc === "terms" ? "Terms of Service" : "Privacy Policy"}
+                        </h2>
+                        <button
+                          type="button"
+                          onClick={() => setActiveDoc(null)}
+                          className="text-white/70 hover:text-white text-2xl leading-none"
+                          aria-label="Close"
+                        >
+                          ×
+                        </button>
+                      </div>
+                      <div className="flex-1 min-h-0">
+                        <LegalDocument
+                          {...(activeDoc === "terms" ? termsOfService : privacyPolicy)}
+                          embedded
+                          agreeButtonLabel="I Agree"
+                          onAgree={() => handleDocAgree(activeDoc)}
+                          footerNode={
+                            <button
+                              type="button"
+                              onClick={() => setActiveDoc(null)}
+                              className="w-full text-center text-white/60 hover:text-white text-sm py-1 transition-colors"
+                            >
+                              Cancel
+                            </button>
+                          }
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Submit Error */}
                 {errors.submit && (

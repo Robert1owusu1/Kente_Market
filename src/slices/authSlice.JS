@@ -46,11 +46,6 @@ const authSlice = createSlice({
             
             state.userInfo = userInfo;
             localStorage.setItem('userInfo', JSON.stringify(userInfo));
-            
-            // Debug log - remove after testing
-            console.log('✅ Stored userInfo:', userInfo);
-            console.log('✅ isAdmin:', userInfo.isAdmin);
-            console.log('✅ role:', userInfo.role);
         },
 
         logout: (state) => {

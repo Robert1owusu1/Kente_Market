@@ -191,7 +191,11 @@ const EmailVerification = () => {
             {/* Verification Status */}
             {verificationStatus && (
               <div className="text-center text-sm text-white/60">
-                Attempts: {verificationStatus.verificationAttempts} / {verificationStatus.maxAttempts}
+                {verificationStatus.isEmailVerified ? (
+                  <span className="text-green-400">Email verified!</span>
+                ) : (
+                  <span>Attempts remaining: {verificationStatus.attemptsRemaining ?? '—'}</span>
+                )}
               </div>
             )}
           </div>

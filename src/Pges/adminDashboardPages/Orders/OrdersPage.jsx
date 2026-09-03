@@ -1,8 +1,10 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { FaShoppingCart, FaSearch, FaEye, FaTrash, FaCheck, FaTimes, FaDownload, FaSpinner } from 'react-icons/fa';
 import { toast } from 'react-toastify';
+import { formatCurrency } from '../../../utils/formatCurrency';
 import { 
   useGetAllOrdersQuery, 
+  useGetOrderByIdQuery,
   useUpdateOrderMutation, 
   useDeleteOrderMutation,
   useUpdateOrderToDeliveredMutation 
@@ -22,15 +24,6 @@ const safeParseJSON = (data, fallback = null) => {
   } catch {
     return fallback;
   }
-};
-
-const formatCurrency = (amount) => {
-  const num = Number(amount) || 0;
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2
-  }).format(num);
 };
 
 const formatDate = (dateString) => {
@@ -81,6 +74,23 @@ const PaymentBadge = ({ status }) => {
   );
 };
 
+// Escrow badge component
+const EscrowBadge = ({ status }) => {
+  const config = {
+    none: { cls: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300', label: 'None' },
+    held: { cls: 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200', label: 'Held' },
+    releasing: { cls: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200', label: 'Releasing' },
+    released: { cls: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200', label: 'Released' },
+    failed: { cls: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200', label: 'Failed' },
+  };
+  const cfg = config[status] || config.none;
+  return (
+    <span className={`px-3 py-1 rounded-full text-xs font-medium ${cfg.cls}`}>
+      {cfg.label}
+    </span>
+  );
+};
+
 // Loading spinner component
 const LoadingSpinner = ({ message = 'Loading...' }) => (
   <div className="p-8 text-center">
@@ -105,17 +115,24 @@ const ErrorDisplay = ({ message }) => (
 );
 
 // Order Details Modal Component
-const OrderDetailsModal = ({ order, onClose, onUpdate, onDelete }) => {
+const OrderDetailsModal = ({ order, onClose, onUpdate, onMarkDelivered, onDelete }) => {
   const [isUpdating, setIsUpdating] = useState(false);
 
   if (!order) return null;
 
   const items = safeParseJSON(order.items, []);
   const shippingAddress = safeParseJSON(order.shippingAddress, {});
+  const escrowAllocations = Array.isArray(order.escrowAllocations) ? order.escrowAllocations : [];
 
   const handleStatusChange = async (newStatus) => {
     setIsUpdating(true);
-    await onUpdate(order.id, newStatus);
+    // Escrow orders must use the dedicated "delivered" endpoint so the auto-release
+    // deadline is set (allowing the customer's escrow to later be released).
+    if (newStatus === 'delivered') {
+      await onMarkDelivered(order.id);
+    } else {
+      await onUpdate(order.id, newStatus);
+    }
     setIsUpdating(false);
     onClose();
   };
@@ -179,8 +196,44 @@ const OrderDetailsModal = ({ order, onClose, onUpdate, onDelete }) => {
                 <p className="text-sm text-gray-600 dark:text-gray-400">Payment Status</p>
                 <PaymentBadge status={order.paymentStatus} />
               </div>
+              <div>
+                <p className="text-sm text-gray-600 dark:text-gray-400">Escrow</p>
+                <EscrowBadge status={order.escrowStatus} />
+              </div>
             </div>
           </section>
+
+          {order.escrowStatus && order.escrowStatus !== 'none' && (
+            <section>
+              <h3 className="text-lg font-semibold mb-3 text-gray-800 dark:text-white">Vendor Escrow</h3>
+              <div className="space-y-2">
+                {escrowAllocations.length > 0 ? escrowAllocations.map((a) => (
+                  <div key={a.id} className="flex justify-between items-center bg-gray-50 dark:bg-gray-700 p-3 rounded text-gray-800 dark:text-white">
+                    <div>
+                      <p className="font-medium">{sanitizeString(a.businessName || `Vendor #${a.vendorId}`)}</p>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">
+                        Status: {a.status}
+                        {a.payoutReference ? ` · Ref: ${a.payoutReference}` : ''}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-semibold">{formatCurrency(a.payoutAmount || a.amount)}</p>
+                      {a.platformFee > 0 && (
+                        <p className="text-xs text-gray-600 dark:text-gray-400">Fee: -{formatCurrency(a.platformFee)}</p>
+                      )}
+                    </div>
+                  </div>
+                )) : (
+                  <p className="text-gray-500 text-center py-4">No allocations found</p>
+                )}
+                {order.escrowReleaseDeadline && (
+                  <p className="text-sm text-gray-600 dark:text-gray-400 pt-2">
+                    Auto-release deadline: {formatDate(order.escrowReleaseDeadline)}
+                  </p>
+                )}
+              </div>
+            </section>
+          )}
 
           {shippingAddress && Object.keys(shippingAddress).length > 0 && (
             <section>
@@ -270,6 +323,7 @@ const OrdersPage = () => {
 
   // RTK Query hooks
   const { data: orders = [], isLoading, error, refetch } = useGetAllOrdersQuery();
+  const { data: fullOrder } = useGetOrderByIdQuery(selectedOrder?.id, { skip: !selectedOrder });
   const [updateOrder] = useUpdateOrderMutation();
   const [deleteOrderMutation] = useDeleteOrderMutation();
   const [updateOrderToDelivered] = useUpdateOrderToDeliveredMutation();
@@ -312,14 +366,6 @@ const OrdersPage = () => {
 
     return filtered;
   }, [orders, searchQuery, filterStatus, sortBy]);
-
-  // Statistics
-  const stats = useMemo(() => ({
-    totalSales: orders.reduce((sum, order) => sum + (Number(order.totalAmount) || 0), 0),
-    totalOrders: orders.length,
-    pendingOrders: orders.filter(o => o.orderStatus === 'pending').length,
-    deliveredOrders: orders.filter(o => o.orderStatus === 'delivered').length,
-  }), [orders]);
 
   // Order operations
   const handleUpdateStatus = useCallback(async (orderId, newStatus) => {
@@ -378,7 +424,7 @@ const OrdersPage = () => {
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
       toast.success('Orders exported successfully');
-    } catch (err) {
+    } catch {
       toast.error('Failed to export orders');
     }
   }, [filteredOrders]);
@@ -454,6 +500,7 @@ const OrdersPage = () => {
                   <th>Date</th>
                   <th>Amount</th>
                   <th>Payment</th>
+                  <th>Escrow</th>
                   <th>Status</th>
                   <th>Actions</th>
                 </tr>
@@ -471,6 +518,7 @@ const OrdersPage = () => {
                     <td className="text-sm text-gray-800 dark:text-white">{formatDate(order.created_at)}</td>
                     <td className="font-semibold text-gray-800 dark:text-white">{formatCurrency(order.totalAmount)}</td>
                     <td><PaymentBadge status={order.paymentStatus} /></td>
+                    <td><EscrowBadge status={order.escrowStatus} /></td>
                     <td><StatusBadge status={order.orderStatus} /></td>
                     <td>
                       <div className="flex gap-2">
@@ -530,9 +578,10 @@ const OrdersPage = () => {
       {/* Order Details Modal */}
       {showModal && selectedOrder && (
         <OrderDetailsModal 
-          order={selectedOrder} 
+          order={fullOrder || selectedOrder} 
           onClose={() => { setShowModal(false); setSelectedOrder(null); }} 
           onUpdate={handleUpdateStatus} 
+          onMarkDelivered={handleMarkDelivered} 
           onDelete={handleDeleteOrder} 
         />
       )}

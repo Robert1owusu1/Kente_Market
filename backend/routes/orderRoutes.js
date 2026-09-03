@@ -14,6 +14,7 @@ import {
   getOrderById,
   updateOrderToPaid,
   updateOrderToDelivered,
+  confirmOrderReceived,
   getOrders,
   updateOrder,
   deleteOrder,
@@ -28,7 +29,7 @@ import {
 
 // NEW: Import middleware for caching and rate limiting
 import { cacheMiddleware } from "../midleware/cacheMiddleware.js";
-import { apiLimiter } from "../midleware/rateLimitMiddleware.js";
+import { apiLimiter, orderLimiter } from "../midleware/rateLimitMiddleware.js";
 
 // ============================================
 // APPLY RATE LIMITING TO ALL ORDER ROUTES
@@ -67,10 +68,10 @@ router.route("/top-products")
  * Otherwise Express matches them as /:id where id='myorders'
  */
 
-// 📌 POST /api/orders → Create new order
+// 📌 POST /api/orders → Create new order (rate-limited)
 // 📌 GET /api/orders → Get all orders (admin only)
 router.route("/")
-  .post(protect, addOrderItems)
+  .post(protect, orderLimiter, addOrderItems)
   .get(protect, admin, getOrders);
 
 // 📌 GET /api/orders/myorders → Get logged-in user's orders
@@ -87,12 +88,16 @@ router.route("/:id")
   .put(protect, updateOrder)
   .delete(protect, admin, deleteOrder);
 
-// 📌 PUT /api/orders/:id/pay → Mark order as paid
+// 📌 PUT /api/orders/:id/pay → Mark order as paid (admin only)
 router.route("/:id/pay")
-  .put(protect, updateOrderToPaid);
+  .put(protect, admin, updateOrderToPaid);
 
 // 📌 PUT /api/orders/:id/deliver → Mark order as delivered (admin only)
 router.route("/:id/deliver")
   .put(protect, admin, updateOrderToDelivered);
+
+// 📌 POST /api/orders/:id/confirm-received → Customer confirms receipt → release escrow
+router.route("/:id/confirm-received")
+  .post(protect, confirmOrderReceived);
 
 export default router;

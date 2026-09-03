@@ -100,6 +100,18 @@ export const ordersApiSlice = apiSlice.injectEndpoints({
       ],
     }),
 
+    // ✅ Customer confirms receipt → release escrow to vendors
+    confirmOrderReceived: builder.mutation({
+      query: (orderId) => ({
+        url: `${ORDERS_URL}/${orderId}/confirm-received`,
+        method: "POST",
+      }),
+      invalidatesTags: (result, error, orderId) => [
+        { type: "Order", id: orderId },
+        "Order",
+      ],
+    }),
+
     // ✅ Delete order (Admin only)
     deleteOrder: builder.mutation({
       query: (orderId) => ({
@@ -129,6 +141,7 @@ export const {
   useUpdateOrderMutation,
   useUpdateOrderToPaidMutation,
   useUpdateOrderToDeliveredMutation,
+  useConfirmOrderReceivedMutation,
   useDeleteOrderMutation,
   useGetOrderStatisticsQuery,
 } = ordersApiSlice;

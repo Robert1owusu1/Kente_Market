@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { FaTimes, FaImage, FaTrash, FaSpinner } from 'react-icons/fa';
 import { toast } from 'react-toastify';
 import { useUploadImageMutation } from '../../../slices/uploadApiSlice';
+import { useGetAllVendorsQuery } from '../../../slices/vendorsApiSlice';
 
 // Image Upload Component
 const ImageUpload = ({ currentImage, onImageChange, isLoading }) => {
@@ -148,6 +149,9 @@ const ImageUpload = ({ currentImage, onImageChange, isLoading }) => {
 
 // Main Product Form Modal Component
 const ProductFormModal = ({ product, onClose, onSubmit, isLoading }) => {
+  const { data: vendors = [] } = useGetAllVendorsQuery();
+  const approvedVendors = vendors.filter((v) => v.status === 'approved');
+
   const [formData, setFormData] = useState({
     title: product?.title || '',
     img: product?.img || '',
@@ -167,6 +171,7 @@ const ProductFormModal = ({ product, onClose, onSubmit, isLoading }) => {
     isCustomizable: product?.isCustomizable || false,
     featured: product?.featured || false,
     basePrice: product?.basePrice || '',
+    vendorId: product?.vendorId || '',
   });
 
   // Printing press product categories
@@ -228,6 +233,7 @@ const ProductFormModal = ({ product, onClose, onSubmit, isLoading }) => {
       productionTime: formData.productionTime ? parseInt(formData.productionTime) : null,
       sizes: formData.sizes ? formData.sizes.split(',').map(s => s.trim()).filter(Boolean) : [],
       colors: formData.colors ? formData.colors.split(',').map(c => c.trim()).filter(Boolean) : [],
+      vendorId: formData.vendorId ? parseInt(formData.vendorId, 10) : null,
     };
 
     onSubmit(submitData);
@@ -366,6 +372,28 @@ const ProductFormModal = ({ product, onClose, onSubmit, isLoading }) => {
                   className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-600"
                   placeholder="3-5 days"
                 />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
+                  Vendor
+                </label>
+                <select
+                  name="vendorId"
+                  value={formData.vendorId}
+                  onChange={handleChange}
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                >
+                  <option value="">Platform (no vendor)</option>
+                  {approvedVendors.map(v => (
+                    <option key={v.id} value={v.id}>
+                      {v.businessName} — {v.firstName} {v.lastName}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Products assigned to an approved vendor are paid out via escrow after delivery confirmation.
+                </p>
               </div>
             </div>
           </section>

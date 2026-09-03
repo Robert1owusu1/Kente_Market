@@ -69,7 +69,7 @@ const ResetPassword = () => {
   useEffect(() => {
     const validateToken = async () => {
       try {
-        const response = await fetch(`${API_BASE_URL}/users/reset-password/${token}`, {
+        const response = await fetch(`${API_BASE_URL}/api/users/reset-password/${token}`, {
           method: 'GET',
         });
 
@@ -205,7 +205,7 @@ const ResetPassword = () => {
             <div className="p-2 bg-amber-400/20 rounded-xl backdrop-blur-md">
               <TiShoppingBag className="text-amber-400 text-2xl" />
             </div>
-            <span className="text-white font-bold text-xl">Branding House</span>
+            <span className="text-white font-bold text-xl">Bonwire Kente</span>
           </div>
 
           {!isSuccess ? (

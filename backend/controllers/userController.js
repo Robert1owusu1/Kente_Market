@@ -30,7 +30,14 @@ const authUser = asyncHandler(async (req, res) => {
   }
 
   // Authenticate user
-  const user = await User.authenticate(email, password);
+  let user;
+  try {
+    user = await User.authenticate(email, password);
+  } catch (lockError) {
+    // Account is locked — return 423 Locked
+    res.status(423);
+    throw new Error(lockError.message);
+  }
 
   if (!user) {
     res.status(401);
@@ -48,8 +55,6 @@ const authUser = asyncHandler(async (req, res) => {
 
   // Generate token with remember me support
   generateToken(res, user.id, rememberMe === true);
-
-  console.log(`✅ User logged in: ${user.email} (Remember Me: ${rememberMe})`);
 
   res.json({
     id: user.id,
@@ -170,12 +175,6 @@ const forgotPassword = asyncHandler(async (req, res) => {
     return;
   }
 
-  // Check if user is active
-  if (!user.isActive) {
-    res.status(403);
-    throw new Error('Account is deactivated. Please contact support.');
-  }
-
   try {
     // Generate reset token
     const resetToken = await User.createPasswordResetToken(user.id);
@@ -183,7 +182,7 @@ const forgotPassword = asyncHandler(async (req, res) => {
     // Send password reset email
     await sendPasswordResetEmail(user.email, user.firstName, resetToken);
 
-    console.log(`✅ Password reset email sent to ${user.email}`);
+    console.log(`Password reset email sent`);
 
     res.status(200).json({
       message: 'Password reset link has been sent to your email address.'
@@ -243,7 +242,7 @@ const resetPassword = asyncHandler(async (req, res) => {
       console.error('Failed to send confirmation email:', emailError);
     }
 
-    console.log(`✅ Password reset successful for user ${user.email}`);
+    console.log(`Password reset successful`);
 
     res.status(200).json({
       message: 'Password has been reset successfully. You can now login with your new password.'
@@ -265,9 +264,13 @@ const validateResetToken = asyncHandler(async (req, res) => {
 
   const user = await User.findByResetToken(token);
 
+  // Always return the same response — never reveal whether a token is valid.
   if (!user) {
-    res.status(400);
-    throw new Error('Invalid or expired reset token');
+    res.status(200).json({
+      valid: false,
+      message: 'If the link is valid, you will be redirected.'
+    });
+    return;
   }
 
   res.status(200).json({
@@ -333,13 +336,6 @@ const resendOTP = asyncHandler(async (req, res) => {
     throw new Error('Email is already verified');
   }
 
-  const attempts = await User.getVerificationAttempts(userId);
-  
-  if (attempts.verification_attempts >= 5) {
-    res.status(429);
-    throw new Error('Too many attempts. Please try again later.');
-  }
-
   const otp = generateOTP();
   const otpExpiry = getOTPExpiry();
 
@@ -348,7 +344,7 @@ const resendOTP = asyncHandler(async (req, res) => {
   try {
     await sendOTPEmail(user.email, user.firstName, otp);
     res.json({ message: 'New OTP has been sent to your email' });
-  } catch (error) {
+  } catch {
     res.status(500);
     throw new Error('Failed to send OTP. Please try again.');
   }
@@ -400,7 +396,15 @@ const updateUserProfile = asyncHandler(async (req, res) => {
   const user = await User.findById(req.user.id);
 
   if (user) {
-    const updatedUser = await User.update(req.user.id, req.body);
+    // Whitelist self-editable fields; NEVER allow a user to change their own
+    // role or isActive (prevents self-promotion to admin).
+    const allowedFields = ['firstName', 'lastName', 'email', 'phone', 'address', 'city', 'state', 'zipCode', 'country', 'password', 'profilePicture'];
+    const updateData = {};
+    allowedFields.forEach(field => {
+      if (req.body[field] !== undefined) updateData[field] = req.body[field];
+    });
+
+    const updatedUser = await User.update(req.user.id, updateData);
     
     res.json({
       id: updatedUser.id,
@@ -492,7 +496,19 @@ const updateUser = asyncHandler(async (req, res) => {
   const user = await User.findById(req.params.id);
 
   if (user) {
-    const updatedUser = await User.update(req.params.id, req.body);
+    // Whitelist fields that admins can change — prevents injecting
+    // unexpected/malicious keys into the update pipeline.
+    const adminAllowed = [
+      'firstName', 'lastName', 'email', 'phone', 'address',
+      'city', 'state', 'zipCode', 'country', 'role', 'isActive',
+      'password', 'isEmailVerified'
+    ];
+    const safeData = {};
+    for (const key of adminAllowed) {
+      if (req.body[key] !== undefined) safeData[key] = req.body[key];
+    }
+
+    const updatedUser = await User.update(req.params.id, safeData);
     
     res.json({
       id: updatedUser.id,

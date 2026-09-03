@@ -1,109 +1,185 @@
 import React from "react";
-import Image1 from "../../assets/hero/women.png";
-import Image2 from "../../assets/hero/shopping.png";
-import Image3 from "../../assets/hero/sale.png";
+import Image1 from "../../assets/images/decoration.webp";
+import Image2 from "../../assets/images/decoration1.webp";
+import Image3 from "../../assets/images/illustrate.webp";
 import Slider from "react-slick";
+import "slick-carousel/slick/slick.css";
+import "slick-carousel/slick/slick-theme.css";
 import { Link } from "react-router-dom";
+import { useGetActiveBannersQuery } from "../../slices/promotionsApiSlice";
 
-const ImageList = [
+const defaultSlides = [
   {
-    id: 1,
+    id: "default-1",
     img: Image1,
-    title: "Upto 50% off on all Men's Wear",
+    title: "Authentic Handwoven Kente",
     description:
-      "lorem His Life will forever be Changed dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.",
+      "Discover the royal cloth of the Asante Kingdom - handwoven in the heritage village of Bonwire, Ghana by master weavers using centuries-old techniques.",
+    link: "/products",
+    linkText: "Shop Kente",
+    bgColor: null,
+    textColor: null,
   },
   {
-    id: 2,
+    id: "default-2",
     img: Image2,
-    title: "30% off on all Women's Wear",
+    title: "Wear Your Heritage",
     description:
-      "Who's there lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.",
+      "Each Kente pattern tells a story. Choose gold for royalty, black for spiritual energy, green for growth. Wear the wisdom of our ancestors.",
+    link: "/products",
+    linkText: "Explore Patterns",
+    bgColor: null,
+    textColor: null,
   },
   {
-    id: 3,
+    id: "default-3",
     img: Image3,
-    title: "70% off on all Products Sale",
+    title: "Try It On Before You Buy",
     description:
-      "consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.",
+      "Use our AI Virtual Try-On to see yourself wearing the Kente or preview how it decorates your home - before you order from Bonwire, Ghana.",
+    link: "/ai-tryon",
+    linkText: "Try It On",
+    bgColor: null,
+    textColor: null,
   },
 ];
 
 const Hero = ({ handleOrderPopup }) => {
+  const { data: adminBanners = [] } = useGetActiveBannersQuery();
+
+  const dynamicSlides = adminBanners.map((b) => ({
+    id: `promo-${b.id}`,
+    img: b.image || Image1,
+    title: b.title,
+    description: b.description || "",
+    link: b.link || "/products",
+    linkText: b.linkText || "Shop Now",
+    bgColor: b.bgColor,
+    textColor: b.textColor,
+  }));
+
+  const slides = dynamicSlides.length > 0
+    ? [...dynamicSlides, ...defaultSlides]
+    : defaultSlides;
+
   var settings = {
-    dots: false,
+    dots: true,
     arrows: false,
     infinite: true,
     speed: 800,
     slidesToScroll: 1,
     autoplay: true,
-    autoplaySpeed: 4000,
+    autoplaySpeed: 5000,
     cssEase: "ease-in-out",
-    pauseOnHover: false,
+    pauseOnHover: true,
     pauseOnFocus: true,
+    fade: true,
+    appendDots: (dots) => (
+      <div className="absolute bottom-6 left-0 right-0 flex justify-center gap-2 z-20">
+        {dots}
+      </div>
+    ),
+    customPaging: () => (
+      <div className="w-3 h-3 rounded-full bg-white/40 hover:bg-white/80 transition-all duration-300 cursor-pointer" />
+    ),
   };
 
   return (
-    <div className="relative overflow-hidden min-h-[500px] sm:min-h-[500px] bg-gray-100 flex justify-center items-center dark:bg-gray-950 dark:text-white duration-200 ">
-      {/* background pattern */}
-      <div className="h-[680px] w-[680px] bg-primary/40 absolute -top-1/2 right-0 rounded-3xl rotate-45 -z[10]"></div>
-      {/* hero section */}
-      <div className="container pb-8 sm:pb-0">
+    <div className="relative overflow-hidden min-h-[520px] sm:min-h-[560px] bg-gradient-to-br from-gray-50 via-amber-50/30 to-gray-100 dark:from-gray-950 dark:via-gray-900 dark:to-gray-950 duration-300">
+      {/* Decorative background */}
+      <div className="absolute -top-32 -right-32 w-[500px] h-[500px] bg-gradient-to-br from-amber-400/20 to-orange-500/10 rounded-full blur-3xl -z-10" />
+      <div className="absolute -bottom-32 -left-32 w-[400px] h-[400px] bg-gradient-to-tr from-primary/10 to-secondary/10 rounded-full blur-3xl -z-10" />
+
+      <div className="container mx-auto px-4 pb-20 sm:pb-0">
         <Slider {...settings}>
-          {ImageList.map((data) => (
-            <div>
-              <div className="grid grid-cols-1 sm:grid-cols-2">
-                {/* text content section */}
-                <div className="flex flex-col justify-center gap-4 pt-12 sm:pt-0 text-center sm:text-left order-2 sm:order-1 relative z-10">
-                  <h1
-                    data-aos="zoom-out"
-                    data-aos-duration="500"
-                    data-aos-once="true"
-                    className="text-5xl sm:text-6xl lg:text-7xl font-bold"
-                  >
-                    {data.title}
-                  </h1>
-                  <p
-                    data-aos="fade-up"
-                    data-aos-duration="500"
-                    data-aos-delay="100"
-                    className="text-sm"
-                  >
-                    {data.description}
-                  </p>
-                  <div
-                    data-aos="fade-up"
-                    data-aos-duration="500"
-                    data-aos-delay="300"
-                  >
-                    <Link to="/login">
-                      <button
-                        onClick={handleOrderPopup}
-                        className="bg-gradient-to-r from-primary to-secondary hover:scale-105 duration-200 text-white py-2 px-4 rounded-full"
+          {slides.map((data, index) => {
+            const hasCustomBg = data.bgColor && data.bgColor !== '#f59e0b';
+            return (
+              <div key={data.id}>
+                <div className="grid grid-cols-1 sm:grid-cols-2 min-h-[480px] sm:min-h-[520px]">
+                  {/* Text content */}
+                  <div className="flex flex-col justify-center gap-5 pt-8 sm:pt-0 text-center sm:text-left order-2 sm:order-1 relative z-10 px-2 sm:px-0">
+                    {hasCustomBg && (
+                      <span
+                        className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-bold tracking-wide uppercase w-fit mx-auto sm:mx-0"
+                        style={{ backgroundColor: data.bgColor, color: data.textColor || '#fff' }}
                       >
-                        Order Now
-                      </button>
-                    </Link>
-                   
+                        {data.title.includes('%') ? 'Limited Offer' : 'New'}
+                      </span>
+                    )}
+                    <h1
+                      data-aos="zoom-out"
+                      data-aos-duration="600"
+                      data-aos-once="true"
+                      className="text-3xl sm:text-5xl lg:text-6xl font-extrabold leading-tight tracking-tight"
+                    >
+                      {data.title}
+                    </h1>
+                    <p
+                      data-aos="fade-up"
+                      data-aos-duration="600"
+                      data-aos-delay="100"
+                      className="text-sm sm:text-base text-gray-600 dark:text-gray-300 leading-relaxed max-w-md mx-auto sm:mx-0"
+                    >
+                      {data.description}
+                    </p>
+                    <div
+                      data-aos="fade-up"
+                      data-aos-duration="600"
+                      data-aos-delay="300"
+                      className="flex flex-col xs:flex-row items-center justify-center sm:justify-start gap-3 sm:gap-4"
+                    >
+                      {data.link === "/ai-tryon" ? (
+                        <Link to={data.link} className="w-full xs:w-auto">
+                          <button className="w-full xs:w-auto bg-gradient-to-r from-primary to-secondary hover:scale-105 duration-200 text-white py-3 px-7 rounded-full whitespace-nowrap font-semibold shadow-lg shadow-primary/25">
+                            {data.linkText || "Try It On"} ✨
+                          </button>
+                        </Link>
+                      ) : (
+                        <Link to={data.link || "/products"} className="w-full xs:w-auto">
+                          <button
+                            onClick={handleOrderPopup}
+                            className="w-full xs:w-auto bg-gradient-to-r from-primary to-secondary hover:scale-105 duration-200 text-white py-3 px-7 rounded-full whitespace-nowrap font-semibold shadow-lg shadow-primary/25"
+                          >
+                            {data.linkText || "Shop Kente"}
+                          </button>
+                        </Link>
+                      )}
+                      <Link to="/products" className="w-full xs:w-auto">
+                        <button className="w-full xs:w-auto border-2 border-primary/30 bg-primary/5 hover:bg-primary/15 duration-200 text-primary dark:text-white py-3 px-7 rounded-full whitespace-nowrap font-semibold">
+                          Browse All
+                        </button>
+                      </Link>
+                    </div>
                   </div>
-                </div>
-                {/* image section */}
-                <div className="order-1 sm:order-2">
-                  <div
-                    data-aos="zoom-in"
-                    data-aos-once="true"
-                    className="relative z-10"
-                  >
-                    <img
-                      src={data.img}
-                      alt=""
-                      className="w-[300px] h-[300px] sm:h-[450px] sm:w-[450px] sm:scale-105 lg:scale-120 object-contain mx-auto"
-                    />
+
+                  {/* Image section */}
+                  <div className="order-1 sm:order-2 flex items-center justify-center">
+                    <div
+                      data-aos="zoom-in"
+                      data-aos-once="true"
+                      className="relative z-10"
+                    >
+                      {hasCustomBg && (
+                        <div
+                          className="absolute inset-0 rounded-3xl scale-110 blur-xl opacity-30 -z-10"
+                          style={{ backgroundColor: data.bgColor }}
+                        />
+                      )}
+                      <img
+                        src={data.img}
+                        alt={data.title}
+                        loading={index === 0 ? "eager" : "lazy"}
+                        fetchPriority={index === 0 ? "high" : "auto"}
+                        decoding="async"
+                        className="w-[260px] h-[260px] sm:h-[420px] sm:w-[420px] lg:h-[480px] lg:w-[480px] object-cover rounded-3xl shadow-2xl shadow-black/10 mx-auto"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </Slider>
       </div>
     </div>

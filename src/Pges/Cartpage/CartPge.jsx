@@ -36,44 +36,46 @@ const calculateOrderTotals = (subtotal) => {
 const CartItem = React.memo(({ item, onRemove, onUpdateQuantity, onUpdateSize, onUpdateColors, isRemoving }) => {
   return (
     <div
-      className={`group bg-white/80 backdrop-blur-xl rounded-3xl p-6 border border-white/20 shadow-xl hover:shadow-2xl transition-all duration-500 hover:-translate-y-1 ${
+      className={`group bg-white/80 backdrop-blur-xl rounded-3xl p-6 border border-white/20 shadow-xl hover:shadow-2xl transition-all duration-500 hover:-translate-y-1 dark:bg-gray-800/80 dark:border-gray-700 ${
         isRemoving ? 'animate-pulse opacity-50 scale-95' : ''
       }`}
     >
       <div className="flex flex-col md:flex-row gap-6">
         {/* Product Image & Info */}
         <div className="flex items-start gap-4 w-full md:w-2/3">
-          <div className="relative">
-            <div className="w-32 h-32 rounded-2xl overflow-hidden bg-gradient-to-br from-gray-100 to-gray-200 shadow-lg">
+          <div className="relative flex-shrink-0">
+            <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-2xl overflow-hidden bg-gradient-to-br from-gray-100 to-gray-200 shadow-lg dark:from-gray-700 dark:to-gray-800">
               <img
                 src={item.img}
                 alt={item.title}
                 className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
                 loading="lazy"
+                decoding="async"
+                onError={(e) => { e.target.onerror = null; e.target.src = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="150" height="150"><rect fill="#f4eee1" width="150" height="150"/><text x="75" y="80" font-family="sans-serif" font-size="14" fill="#8a6d3b" text-anchor="middle">Kente</text></svg>'); }}
               />
             </div>
             <button 
-              className="absolute -top-2 -right-2 w-8 h-8 bg-white rounded-full shadow-lg flex items-center justify-center hover:bg-red-50 hover:text-red-500 transition-all duration-300"
+              className="absolute -top-2 -right-2 w-8 h-8 bg-white rounded-full shadow-lg flex items-center justify-center hover:bg-red-50 hover:text-red-500 transition-all duration-300 dark:bg-gray-700 dark:hover:bg-gray-600"
               aria-label="Add to wishlist"
             >
               <FaHeart className="w-4 h-4" />
             </button>
           </div>
 
-          <div className="flex-1 space-y-4">
+          <div className="flex-1 space-y-4 min-w-0">
             <div>
-              <h4 className="text-xl font-bold text-gray-800 group-hover:text-blue-600 transition-colors duration-300">
+              <h4 className="text-lg sm:text-xl font-bold text-gray-800 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors duration-300 leading-snug">
                 {item.title}
               </h4>
               <div className="flex items-center gap-2 mt-1">
                 <div className="flex" role="img" aria-label="4.8 out of 5 stars">
                   {[...Array(5)].map((_, i) => (
-                    <FaStar key={`${item.id}-star-${i}`} className="w-4 h-4 text-yellow-400" />
+                    <FaStar key={`${item.id}-star-${i}`} className="w-3 h-3 sm:w-4 sm:h-4 text-yellow-400" />
                   ))}
                 </div>
                 <span className="text-sm text-gray-500">(4.8)</span>
               </div>
-              <p className="text-2xl font-bold text-blue-600 mt-2">
+              <p className="text-xl sm:text-2xl font-bold text-blue-600 dark:text-blue-400 mt-2">
                 GH₵ {item.price.toFixed(2)}
               </p>
             </div>
@@ -81,7 +83,7 @@ const CartItem = React.memo(({ item, onRemove, onUpdateQuantity, onUpdateSize, o
             {/* Size selection */}
             {item.sizes && item.sizes.length > 0 && (
               <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-600">Size</label>
+                <label className="text-sm font-medium text-gray-600 dark:text-gray-300">Size</label>
                 <div className="flex gap-2" role="group" aria-label="Size selection">
                   {item.sizes.map((size) => (
                     <button
@@ -90,7 +92,7 @@ const CartItem = React.memo(({ item, onRemove, onUpdateQuantity, onUpdateSize, o
                       className={`w-12 h-12 rounded-xl border-2 text-sm font-medium transition-all duration-300 ${
                         item.size === size
                           ? 'border-blue-500 bg-blue-500 text-white shadow-lg'
-                          : 'border-gray-200 hover:border-blue-300 hover:bg-blue-50'
+                          : 'border-gray-200 dark:border-gray-600 hover:border-blue-300 dark:hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-gray-700'
                       }`}
                       aria-label={`Size ${size}`}
                       aria-pressed={item.size === size}
@@ -110,7 +112,7 @@ const CartItem = React.memo(({ item, onRemove, onUpdateQuantity, onUpdateSize, o
             {/* Color selection */}
             {item.colorsAvailable && item.colorsAvailable.length > 0 && (
               <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-600">Color</label>
+                <label className="text-sm font-medium text-gray-600 dark:text-gray-300">Color</label>
                 <div className="flex gap-3" role="group" aria-label="Color selection">
                   {item.colorsAvailable.map((color) => {
                     const isSelected = item.colors?.[0] === color;
@@ -119,7 +121,7 @@ const CartItem = React.memo(({ item, onRemove, onUpdateQuantity, onUpdateSize, o
                         key={`${item.id}-color-${color}`}
                         onClick={() => onUpdateColors(item.id, [color])}
                         className={`relative w-12 h-12 rounded-full border-4 transition-all duration-300 hover:scale-110 ${
-                          isSelected ? 'border-blue-500 shadow-lg' : 'border-gray-200'
+                          isSelected ? 'border-blue-500 shadow-lg' : 'border-gray-200 dark:border-gray-600'
                         }`}
                         style={{ backgroundColor: COLOR_MAP[color] || color.toLowerCase() }}
                         title={color}
@@ -144,22 +146,22 @@ const CartItem = React.memo(({ item, onRemove, onUpdateQuantity, onUpdateSize, o
         </div>
 
         {/* Quantity & Remove */}
-        <div className="flex flex-col items-start md:items-end gap-4 w-full md:w-1/3">
-          <div className="flex items-center bg-gray-100 rounded-2xl p-1" role="group" aria-label="Quantity controls">
+        <div className="flex flex-row md:flex-col items-center md:items-end justify-between gap-4 w-full md:w-1/3">
+          <div className="flex items-center bg-gray-100 rounded-2xl p-1 dark:bg-gray-700" role="group" aria-label="Quantity controls">
             <button
               onClick={() => onUpdateQuantity(item.id, Math.max(1, item.quantity - 1))}
-              className="w-12 h-12 flex items-center justify-center rounded-xl hover:bg-white hover:shadow-md transition-all duration-300"
+              className="w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center rounded-xl hover:bg-white hover:shadow-md transition-all duration-300 dark:hover:bg-gray-600"
               aria-label="Decrease quantity"
               disabled={item.quantity <= 1}
             >
               <FaMinus className="w-4 h-4" />
             </button>
-            <span className="w-16 text-center font-bold text-lg" aria-label={`Quantity: ${item.quantity}`}>
+            <span className="w-12 sm:w-16 text-center font-bold text-lg" aria-label={`Quantity: ${item.quantity}`}>
               {item.quantity}
             </span>
             <button
               onClick={() => onUpdateQuantity(item.id, item.quantity + 1)}
-              className="w-12 h-12 flex items-center justify-center rounded-xl hover:bg-white hover:shadow-md transition-all duration-300"
+              className="w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center rounded-xl hover:bg-white hover:shadow-md transition-all duration-300 dark:hover:bg-gray-600"
               aria-label="Increase quantity"
             >
               <FaPlus className="w-4 h-4" />
@@ -167,15 +169,15 @@ const CartItem = React.memo(({ item, onRemove, onUpdateQuantity, onUpdateSize, o
           </div>
           
           <div className="text-right">
-            <p className="text-sm text-gray-600">Subtotal</p>
-            <p className="text-2xl font-bold text-gray-800">
+            <p className="text-sm text-gray-600 dark:text-gray-300">Subtotal</p>
+            <p className="text-xl sm:text-2xl font-bold text-gray-800 dark:text-white">
               GH₵ {(item.price * item.quantity).toFixed(2)}
             </p>
           </div>
 
           <button
             onClick={() => onRemove(item)}
-            className="flex items-center gap-2 text-red-500 hover:text-red-700 hover:bg-red-50 px-4 py-2 rounded-xl transition-all duration-300"
+            className="flex items-center gap-2 text-red-500 hover:text-red-700 hover:bg-red-50 px-4 py-2 rounded-xl transition-all duration-300 dark:hover:text-red-400 dark:hover:bg-red-900/20"
             aria-label={`Remove ${item.title} from cart`}
           >
             <FaTrash className="w-4 h-4" />
@@ -305,19 +307,19 @@ const CartPage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 pb-20 sm:pb-8 dark:from-gray-950 dark:via-gray-900 dark:to-gray-800">
       <div className="max-w-7xl mx-auto px-4 py-8">
         {/* Modern Header */}
-        <div className="mb-12">
-          <div className="flex items-center gap-4 mb-6">
-            <div className="w-14 h-14 bg-gradient-to-br from-blue-600 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg">
-              <FaShoppingCart className="w-7 h-7 text-white" />
+        <div className="mb-8 sm:mb-12">
+          <div className="flex items-center gap-3 sm:gap-4 mb-6">
+            <div className="w-11 h-11 sm:w-14 sm:h-14 bg-gradient-to-br from-blue-600 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg flex-shrink-0">
+              <FaShoppingCart className="w-6 h-6 sm:w-7 sm:h-7 text-white" />
             </div>
             <div>
-              <h1 className="text-4xl font-bold bg-gradient-to-r from-gray-800 to-gray-600 bg-clip-text text-transparent">
+              <h1 className="text-2xl sm:text-4xl font-bold bg-gradient-to-r from-gray-800 to-gray-600 dark:from-white dark:to-gray-300 bg-clip-text text-transparent leading-tight">
                 Your Shopping Cart
               </h1>
-              <p className="text-gray-600 mt-1">
+              <p className="text-gray-600 dark:text-gray-300 mt-1 text-sm sm:text-base">
                 {cartItems.length} {cartItems.length === 1 ? 'item' : 'items'} in your cart
               </p>
             </div>
@@ -329,8 +331,8 @@ const CartPage = () => {
             <div className="w-32 h-32 mx-auto mb-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center shadow-2xl">
               <FaShoppingCart className="w-16 h-16 text-white" />
             </div>
-            <h2 className="text-3xl font-bold text-gray-800 mb-4">Your cart is empty</h2>
-            <p className="text-gray-600 text-lg mb-8">Looks like you haven't added anything yet.</p>
+            <h2 className="text-3xl font-bold text-gray-800 dark:text-white mb-4">Your cart is empty</h2>
+            <p className="text-gray-600 dark:text-gray-300 text-lg mb-8">Looks like you haven't added anything yet.</p>
             <Link to="/allproducts">
               <button className="inline-flex items-center gap-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white px-8 py-4 rounded-2xl font-semibold hover:shadow-2xl transition-all duration-300 hover:scale-105">
                 Start Shopping
@@ -358,18 +360,18 @@ const CartPage = () => {
             {/* Order Summary */}
             <div className="lg:col-span-1">
               <div className="sticky top-8">
-                <div className="bg-white/80 backdrop-blur-xl rounded-3xl p-8 border border-white/20 shadow-xl">
-                  <h2 className="text-2xl font-bold text-gray-800 mb-6">Order Summary</h2>
+                <div className="bg-white/80 backdrop-blur-xl rounded-3xl p-8 border border-white/20 shadow-xl dark:bg-gray-800/80 dark:border-gray-700">
+                  <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-6">Order Summary</h2>
                   
                   <div className="space-y-4 mb-6">
                     {/* Subtotal */}
-                    <div className="flex justify-between text-gray-600">
+                    <div className="flex justify-between text-gray-600 dark:text-gray-300">
                       <span>Subtotal ({totalItems} items)</span>
                       <span className="font-semibold">GH₵ {subtotal.toFixed(2)}</span>
                     </div>
                     
                     {/* Shipping */}
-                    <div className="flex justify-between text-gray-600">
+                    <div className="flex justify-between text-gray-600 dark:text-gray-300">
                       <span>Shipping</span>
                       {shippingPrice === 0 ? (
                         <span className="text-green-600 font-semibold">Free</span>
@@ -379,7 +381,7 @@ const CartPage = () => {
                     </div>
                     
                     {/* Tax */}
-                    <div className="flex justify-between text-gray-600">
+                    <div className="flex justify-between text-gray-600 dark:text-gray-300">
                       <span>Tax (VAT {(TAX_RATE * 100).toFixed(1)}%)</span>
                       <span className="font-semibold">GH₵ {taxPrice.toFixed(2)}</span>
                     </div>
@@ -392,12 +394,12 @@ const CartPage = () => {
                       </div>
                     )}
                     
-                    <hr className="border-gray-200 my-4" />
+                    <hr className="border-gray-200 my-4 dark:border-gray-700" />
                     
                     {/* Total */}
-                    <div className="flex justify-between text-2xl font-bold text-gray-800">
+                    <div className="flex justify-between text-2xl font-bold text-gray-800 dark:text-white">
                       <span>Total</span>
-                      <span className="text-blue-600">GH₵ {totalPrice.toFixed(2)}</span>
+                      <span className="text-blue-600 dark:text-blue-400">GH₵ {totalPrice.toFixed(2)}</span>
                     </div>
                   </div>
 
@@ -425,7 +427,7 @@ const CartPage = () => {
                     </button>
 
                     <Link to="/products">
-                      <button className="w-full border-2 border-gray-200 text-gray-600 py-4 rounded-2xl font-semibold hover:border-blue-300 hover:text-blue-600 transition-all duration-300">
+                      <button className="w-full border-2 border-gray-200 text-gray-600 py-4 rounded-2xl font-semibold hover:border-blue-300 hover:text-blue-600 transition-all duration-300 dark:border-gray-700 dark:text-gray-300 dark:hover:border-blue-500 dark:hover:text-blue-400">
                         Continue Shopping
                       </button>
                     </Link>
@@ -477,43 +479,45 @@ const CartPage = () => {
             onClick={cancelRemove}
           >
             <div 
-              className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl transform"
+              className="bg-white dark:bg-gray-800 rounded-3xl p-8 max-w-md w-full shadow-2xl transform"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="text-center">
-                <div className="w-16 h-16 mx-auto mb-4 bg-red-100 rounded-full flex items-center justify-center">
+                <div className="w-16 h-16 mx-auto mb-4 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center">
                   <FaTrash className="w-8 h-8 text-red-500" />
                 </div>
 
-                <h3 id="modal-title" className="text-2xl font-bold text-gray-800 mb-2">
+                <h3 id="modal-title" className="text-2xl font-bold text-gray-800 dark:text-white mb-2">
                   Remove Item?
                 </h3>
 
-                <div className="flex items-center gap-4 bg-gray-50 rounded-2xl p-4 mb-6">
+                <div className="flex items-center gap-4 bg-gray-50 dark:bg-gray-700 rounded-2xl p-4 mb-6">
                   <img
                     src={itemToRemove.img}
                     alt={itemToRemove.title}
+                    loading="lazy"
+                    decoding="async"
                     className="w-16 h-16 object-cover rounded-xl"
                   />
                   <div className="text-left">
-                    <h4 className="font-semibold text-gray-800">{itemToRemove.title}</h4>
-                    <p className="text-sm text-gray-500">
+                    <h4 className="font-semibold text-gray-800 dark:text-white">{itemToRemove.title}</h4>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
                       Size: {itemToRemove.size || 'Not selected'} | Qty: {itemToRemove.quantity}
                     </p>
-                    <p className="text-lg font-bold text-blue-600">
+                    <p className="text-lg font-bold text-blue-600 dark:text-blue-400">
                       GH₵ {(itemToRemove.price * itemToRemove.quantity).toFixed(2)}
                     </p>
                   </div>
                 </div>
 
-                <p className="text-gray-600 mb-8">
+                <p className="text-gray-600 dark:text-gray-300 mb-8">
                   Are you sure you want to remove this item from your cart? This action cannot be undone.
                 </p>
 
                 <div className="flex gap-3">
                   <button
                     onClick={cancelRemove}
-                    className="flex-1 py-3 px-6 border-2 border-gray-200 text-gray-600 rounded-2xl font-semibold hover:border-gray-300 hover:bg-gray-50 transition-all duration-300"
+                    className="flex-1 py-3 px-6 border-2 border-gray-200 text-gray-600 rounded-2xl font-semibold hover:border-gray-300 hover:bg-gray-50 transition-all duration-300 dark:border-gray-700 dark:text-gray-300 dark:hover:border-gray-600 dark:hover:bg-gray-700"
                   >
                     Keep Item
                   </button>

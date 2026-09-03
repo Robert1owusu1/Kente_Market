@@ -1,14 +1,13 @@
 // FILE: backend/controllers/productController.js
 import asyncHandler from "../midleware/asyncHandller.js";
 import Product from "../models/productModel.js";
+import { clearCache } from "../midleware/cacheMiddleware.js";
 
 // @desc    Fetch all products with optional filters
 // @route   GET /api/products
 // @access  Public
 const getProducts = asyncHandler(async (req, res) => {
   try {
-    console.log('🔍 GET /api/products - Fetching products...');
-    
     const options = {
       limit: req.query.limit ? parseInt(req.query.limit) : 100,
       offset: req.query.offset ? parseInt(req.query.offset) : 0,
@@ -19,11 +18,7 @@ const getProducts = asyncHandler(async (req, res) => {
       maxPrice: req.query.maxPrice || null,
     };
 
-    console.log('📋 Query options:', options);
-
     const products = await Product.findAll(options);
-    
-    console.log(`✅ Successfully fetched ${products.length} products`);
 
     // Optionally include total count for pagination
     if (req.query.includeCount === 'true') {
@@ -54,15 +49,11 @@ const getProducts = asyncHandler(async (req, res) => {
 // @access  Public
 const getProductById = asyncHandler(async (req, res) => {
   try {
-    console.log(`🔍 GET /api/products/${req.params.id} - Fetching product...`);
-
     const product = await Product.findById(req.params.id);
 
     if (product) {
-      console.log(`✅ Product found: ${product.title}`);
       res.json(product);
     } else {
-      console.log(`❌ Product not found with ID: ${req.params.id}`);
       res.status(404);
       throw new Error("Product not found");
     }
@@ -83,16 +74,12 @@ const getProductById = asyncHandler(async (req, res) => {
 // @access  Public
 const getProductsByCategory = asyncHandler(async (req, res) => {
   try {
-    console.log(`🔍 GET /api/products/category/${req.params.category}`);
-
     const options = {
       limit: req.query.limit ? parseInt(req.query.limit) : 100,
       offset: req.query.offset ? parseInt(req.query.offset) : 0,
     };
 
     const products = await Product.findByCategory(req.params.category, options);
-    
-    console.log(`✅ Found ${products.length} products in category: ${req.params.category}`);
 
     res.json(products);
   } catch (error) {
@@ -108,16 +95,12 @@ const getProductsByCategory = asyncHandler(async (req, res) => {
 // @access  Public
 const getFeaturedProducts = asyncHandler(async (req, res) => {
   try {
-    console.log('🔍 GET /api/products/featured');
-
     const options = {
       limit: req.query.limit ? parseInt(req.query.limit) : 10,
       offset: req.query.offset ? parseInt(req.query.offset) : 0,
     };
 
     const products = await Product.findFeatured(options);
-    
-    console.log(`✅ Found ${products.length} featured products`);
 
     res.json(products);
   } catch (error) {
@@ -134,16 +117,12 @@ const getFeaturedProducts = asyncHandler(async (req, res) => {
 // @access  Public
 const getTrendingProducts = asyncHandler(async (req, res) => {
   try {
-    console.log('🔍 GET /api/products/trending');
-
     const options = {
       limit: req.query.limit ? parseInt(req.query.limit) : 5,
       offset: req.query.offset ? parseInt(req.query.offset) : 0,
     };
 
     const products = await Product.findTrending(options);
-    
-    console.log(`✅ Found ${products.length} trending products`);
 
     res.json(products);
   } catch (error) {
@@ -159,13 +138,9 @@ const getTrendingProducts = asyncHandler(async (req, res) => {
 // @access  Private/Admin
 const createProduct = asyncHandler(async (req, res) => {
   try {
-    console.log('➕ POST /api/products - Creating product...');
-    console.log('Product data:', req.body);
-
     const product = await Product.create(req.body);
-    
-    console.log(`✅ Product created successfully: ${product.title}`);
 
+    clearCache('products');
     res.status(201).json(product);
   } catch (error) {
     console.error('❌ Error in createProduct:', error.message);
@@ -185,21 +160,16 @@ const createProduct = asyncHandler(async (req, res) => {
 // @access  Private/Admin
 const updateProduct = asyncHandler(async (req, res) => {
   try {
-    console.log(`🔄 PUT /api/products/${req.params.id} - Updating product...`);
-    console.log('Update data:', req.body);
-
     const product = await Product.findById(req.params.id);
 
     if (!product) {
-      console.log(`❌ Product not found with ID: ${req.params.id}`);
       res.status(404);
       throw new Error("Product not found");
     }
 
     const updatedProduct = await Product.update(req.params.id, req.body);
-    
-    console.log(`✅ Product updated successfully: ${updatedProduct.title}`);
 
+    clearCache('products');
     res.json(updatedProduct);
   } catch (error) {
     console.error('❌ Error in updateProduct:', error.message);
@@ -218,20 +188,16 @@ const updateProduct = asyncHandler(async (req, res) => {
 // @access  Private/Admin
 const deleteProduct = asyncHandler(async (req, res) => {
   try {
-    console.log(`🗑️  DELETE /api/products/${req.params.id} - Deleting product...`);
-
     const product = await Product.findById(req.params.id);
 
     if (!product) {
-      console.log(`❌ Product not found with ID: ${req.params.id}`);
       res.status(404);
       throw new Error("Product not found");
     }
 
     await Product.delete(req.params.id);
-    
-    console.log(`✅ Product deleted successfully: ${product.title}`);
 
+    clearCache('products');
     res.json({ message: "Product removed successfully" });
   } catch (error) {
     console.error('❌ Error in deleteProduct:', error.message);
@@ -250,11 +216,7 @@ const deleteProduct = asyncHandler(async (req, res) => {
 // @access  Public
 const getCategories = asyncHandler(async (req, res) => {
   try {
-    console.log('🔍 GET /api/products/categories/list');
-
     const categories = await Product.getCategories();
-    
-    console.log(`✅ Found ${categories.length} categories`);
 
     res.json(categories);
   } catch (error) {

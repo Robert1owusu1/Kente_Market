@@ -3,6 +3,8 @@
 
 import express from "express";
 const router = express.Router();
+import { protect, admin } from "../midleware/authMiddleware.js";
+import { cacheMiddleware } from "../midleware/cacheMiddleware.js";
 import {
   getProducts,
   getProductById,
@@ -16,45 +18,37 @@ import {
 } from "../controllers/productController.js";
 
 // ========================================
-// DEBUG LOGGING (remove after testing)
-// ========================================
-router.use((req, res, next) => {
-  console.log('🔍 [ROUTE DEBUG] Method:', req.method, '| Path:', req.path, '| Full URL:', req.originalUrl);
-  next();
-});
-
-// ========================================
-// PUBLIC GET ROUTES
+// PUBLIC GET ROUTES (cached - read-heavy)
 // ========================================
 
 // ⭐ CRITICAL: Order matters! Specific routes MUST come BEFORE parameterized routes
 
-// 1. Root route - Get all products
-router.get('/', getProducts);
+// 1. Root route - Get all products (cached 60s)
+router.get('/', cacheMiddleware(60), getProducts);
 
 // 2. Specific named routes (BEFORE /:id)
-router.get('/categories/list', getCategories);
-router.get('/featured', getFeaturedProducts);
-router.get('/trending', getTrendingProducts);
+router.get('/categories/list', cacheMiddleware(300), getCategories);
+router.get('/featured', cacheMiddleware(60), getFeaturedProducts);
+router.get('/trending', cacheMiddleware(60), getTrendingProducts);
 
 // 3. Category route (has parameter but specific path)
-router.get('/category/:category', getProductsByCategory);
+router.get('/category/:category', cacheMiddleware(60), getProductsByCategory);
 
 // 4. ID route (MUST BE LAST among GET routes)
-router.get('/:id', getProductById);
+router.get('/:id', cacheMiddleware(60), getProductById);
 
 // ========================================
 // ADMIN ROUTES (POST, PUT, DELETE)
 // ========================================
 
-// Create product
-router.post('/', createProduct);
+// Create product (admin only)
+router.post('/', protect, admin, createProduct);
 
-// Update product
-router.put('/:id', updateProduct);
+// Update product (admin only)
+router.put('/:id', protect, admin, updateProduct);
 
-// Delete product
-router.delete('/:id', deleteProduct);
+// Delete product (admin only)
+router.delete('/:id', protect, admin, deleteProduct);
 
 // ========================================
 // EXPORT

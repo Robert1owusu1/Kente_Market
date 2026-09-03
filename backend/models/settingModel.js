@@ -27,7 +27,7 @@ class Setting {
           case 'json':
             try {
               value = JSON.parse(value);
-            } catch (e) {
+            } catch {
               value = null;
             }
             break;
@@ -68,7 +68,7 @@ class Setting {
         case 'json':
           try {
             value = JSON.parse(value);
-          } catch (e) {
+          } catch {
             value = null;
           }
           break;

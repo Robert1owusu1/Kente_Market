@@ -1,16 +1,20 @@
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 import { Base_URL } from '../constant';
 
-const baseQuery = fetchBaseQuery({ 
-    baseUrl: Base_URL,
-    credentials: 'include', // Send cookies with requests for authentication
-    // prepareHeaders removed - let browser handle content-type automatically
+// Custom fetchBaseQuery wrapper that:
+//  - fails fast (default ~15s) so a dead / flaky connection doesn't leave the
+//    UI spinning on a hung request (retries happen at the RTK layer on focus,
+//    and the local cache serves repeats instantly).
+const baseQuery = fetchBaseQuery({
+  baseUrl: Base_URL,
+  credentials: 'include', // Send cookies with requests for authentication
+  timeout: 15000,
 });
 
 export const apiSlice = createApi({
-    baseQuery,
-    tagTypes: ['Products', 'Orders', 'Users'],
-    endpoints: () => ({}),
+  baseQuery,
+  tagTypes: ['Product', 'User', 'Order', 'Vendor', 'Settings', 'Review'],
+  endpoints: () => ({}),
 });
 
 // How it works now:

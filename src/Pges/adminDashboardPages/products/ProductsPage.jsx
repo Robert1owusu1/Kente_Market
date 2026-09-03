@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { FaBox, FaSearch, FaEye, FaTrash, FaEdit, FaPlus, FaSync } from 'react-icons/fa';
 import { toast } from 'react-toastify';
+import { formatCurrency } from '../../../utils/formatCurrency';
 import {
   useGetProductsQuery,
   useCreateProductMutation,
@@ -13,15 +14,6 @@ import ProductFormModal from './ProductFormModal';
 const sanitizeString = (str) => {
   if (!str) return '';
   return String(str).trim();
-};
-
-const formatCurrency = (amount) => {
-  const num = Number(amount) || 0;
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2
-  }).format(num);
 };
 
 // Loading spinner component
@@ -242,7 +234,7 @@ const ProductsPage = () => {
                   <tr key={product.id} className="border-t dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50">
                     <td className="p-4">
                       {product.img ? (
-                        <img src={product.img} alt={product.title} className="w-16 h-16 object-cover rounded" />
+                        <img src={product.img} alt={product.title} loading="lazy" decoding="async" className="w-16 h-16 object-cover rounded" />
                       ) : (
                         <div className="w-16 h-16 bg-gray-200 dark:bg-gray-700 rounded flex items-center justify-center">
                           <FaBox className="text-gray-400" />

@@ -1,7 +1,10 @@
 // FILE: frontend/src/services/productService.js
 import axios from 'axios';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+// Use a relative /api base by default so the app works behind the Vite dev proxy
+// or when the frontend is served by the backend. Override with VITE_API_URL for
+// a fully-qualified API origin.
+const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 // Create axios instance with default config
 const axiosInstance = axios.create({

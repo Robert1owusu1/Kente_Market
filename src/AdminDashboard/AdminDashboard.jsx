@@ -2,31 +2,26 @@
 // DESCRIPTION: Enhanced Admin Dashboard with real data, analytics, and settings
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { FaHome, FaBox, FaShoppingCart, FaUsers, FaChartLine, FaCog } from 'react-icons/fa';
+import { FaHome, FaBox, FaShoppingCart, FaUsers, FaChartLine, FaCog, FaStore, FaTag } from 'react-icons/fa';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, AreaChart, Area } from 'recharts';
 import ProductsPage from '../Pges/adminDashboardPages/products/ProductsPage';
 import OrdersPage from '../Pges/adminDashboardPages/Orders/OrdersPage';
 import CustomersPage from '../Pges/adminDashboardPages/Customers/CustomersPage';
+import VendorsPage from '../Pges/adminDashboardPages/Vendors/VendorsPage';
+import PromotionsPage from '../Pges/adminDashboardPages/Promotions/PromotionsPage';
 import { useGetAllOrdersQuery } from '../slices/ordersApiSlice';
 import { useGetSettingsQuery, useUpdateSettingsMutation } from '../slices/settingsApiSlice';
-
-const formatCurrency = (amount) => {
-  const num = Number(amount) || 0;
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2
-  }).format(num);
-};
+import { formatCurrency } from '../utils/formatCurrency';
 
 const COLORS = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 
 const AdminDashboard = () => {
   const [activeSection, setActiveSection] = useState('dashboard');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [settings, setSettings] = useState({
-    siteName: 'Branding House',
+    siteName: 'Bonwire Kente',
     email: 'admin@brandinghouse.com',
-    currency: 'USD',
+    currency: 'GHS',
     taxRate: 10,
     shippingCost: 5.00,
     notifications: true,
@@ -47,9 +42,9 @@ const AdminDashboard = () => {
   useEffect(() => {
     if (apiSettings) {
       setSettings({
-        siteName: apiSettings.site_name || 'Branding House',
+        siteName: apiSettings.site_name || 'Bonwire Kente',
         email: apiSettings.admin_email || 'admin@brandinghouse.com',
-        currency: apiSettings.currency || 'USD',
+        currency: apiSettings.currency || 'GHS',
         taxRate: apiSettings.tax_rate || 10,
         shippingCost: apiSettings.shipping_cost || 5.00,
         notifications: apiSettings.notifications_enabled !== undefined ? apiSettings.notifications_enabled : true,
@@ -123,7 +118,9 @@ const AdminDashboard = () => {
     { id: 'dashboard', name: 'Dashboard', icon: FaHome },
     { id: 'products', name: 'Products', icon: FaBox },
     { id: 'orders', name: 'Orders', icon: FaShoppingCart },
+    { id: 'vendors', name: 'Vendors', icon: FaStore },
     { id: 'customers', name: 'Customers', icon: FaUsers },
+    { id: 'promotions', name: 'Promotions', icon: FaTag },
     { id: 'analytics', name: 'Analytics', icon: FaChartLine },
     { id: 'settings', name: 'Settings', icon: FaCog },
   ];
@@ -537,8 +534,12 @@ const AdminDashboard = () => {
         return <ProductsPage />;
       case 'orders':
         return <OrdersPage />;
+      case 'vendors':
+        return <VendorsPage />;
       case 'customers':
         return <CustomersPage />;
+      case 'promotions':
+        return <PromotionsPage />;
       case 'analytics':
         return renderAnalytics();
       case 'settings':
@@ -569,7 +570,41 @@ const AdminDashboard = () => {
       </header>
 
       <div className="container mx-auto px-4 py-8 flex flex-col lg:flex-row gap-8">
-        <aside className="lg:w-1/4">
+        {/* Mobile menu toggle */}
+        <div className="lg:hidden">
+          <button
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            className="w-full flex items-center justify-between bg-white dark:bg-gray-800 rounded-lg shadow-md px-4 py-3 text-gray-800 dark:text-white font-semibold"
+            aria-expanded={mobileMenuOpen}
+          >
+            <span className="capitalize">{activeSection} Section</span>
+            <span className="text-primary text-2xl leading-none">{mobileMenuOpen ? '−' : '+'}</span>
+          </button>
+          {mobileMenuOpen && (
+            <nav className="mt-2 bg-white dark:bg-gray-800 rounded-lg shadow-md p-2">
+              {menuItems.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => { setActiveSection(item.id); setMobileMenuOpen(false); }}
+                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors text-left ${
+                      activeSection === item.id
+                        ? 'bg-indigo-600 text-white'
+                        : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                    }`}
+                  >
+                    <Icon className="text-lg" />
+                    <span>{item.name}</span>
+                  </button>
+                );
+              })}
+            </nav>
+          )}
+        </div>
+
+        {/* Desktop sidebar */}
+        <aside className="hidden lg:block lg:w-1/4">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden sticky top-24">
             <div className="p-6 bg-indigo-600 text-white">
               <h2 className="text-xl font-bold">Admin Dashboard</h2>

@@ -20,12 +20,14 @@ export const productsApiSlice = apiSlice.injectEndpoints({
         
         const queryString = queryParams.toString();
         const url = queryString ? `${PRODUCTS_URL}?${queryString}` : PRODUCTS_URL;
-        
-        console.log('🔍 RTK Query URL:', url);
-        
+
         return url;
       },
-      keepUnusedDataFor: 5,
+      // Keep catalogue data in the cache for a while (seconds). Returning to a
+      // page then renders instantly instead of re-downloading the whole JSON on
+      // slow / flaky connections. Fresh data is still pulled when a cache tag
+      // is invalidated after an admin add/edit/delete.
+      keepUnusedDataFor: 300,
       providesTags: ['Product'],
     }),
 
@@ -33,8 +35,37 @@ export const productsApiSlice = apiSlice.injectEndpoints({
       query: (productId) => ({
         url: `${PRODUCTS_URL}/${productId}`,
       }),
-      keepUnusedDataFor: 5,
+      // Product detail pages benefit from a longer cache life.
+      keepUnusedDataFor: 600,
       providesTags: (result, error, id) => [{ type: 'Product', id }],
+    }),
+
+    getFeaturedProducts: builder.query({
+      query: (params = {}) => {
+        const queryParams = new URLSearchParams();
+        if (params.limit) queryParams.append('limit', params.limit);
+        const queryString = queryParams.toString();
+        return queryString
+          ? `${PRODUCTS_URL}/featured?${queryString}`
+          : `${PRODUCTS_URL}/featured`;
+      },
+      // Featured/trending lists change rarely; cache them longer so the home
+      // page is instant on repeat visits without burning bandwidth.
+      keepUnusedDataFor: 7200,
+      providesTags: ['Product'],
+    }),
+
+    getTrendingProducts: builder.query({
+      query: (params = {}) => {
+        const queryParams = new URLSearchParams();
+        if (params.limit) queryParams.append('limit', params.limit);
+        const queryString = queryParams.toString();
+        return queryString
+          ? `${PRODUCTS_URL}/trending?${queryString}`
+          : `${PRODUCTS_URL}/trending`;
+      },
+      keepUnusedDataFor: 7200,
+      providesTags: ['Product'],
     }),
 
     createProduct: builder.mutation({
@@ -71,7 +102,10 @@ export const productsApiSlice = apiSlice.injectEndpoints({
 // Export the hooks that RTK Query automatically generates
 export const {
   useGetProductsQuery,
+  useLazyGetProductsQuery,
   useGetProductsDetailsQuery,
+  useGetFeaturedProductsQuery,
+  useGetTrendingProductsQuery,
   useCreateProductMutation,
   useUpdateProductMutation,
   useDeleteProductMutation,

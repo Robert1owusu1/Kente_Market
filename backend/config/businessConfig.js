@@ -1,0 +1,37 @@
+// FILE LOCATION: backend/config/businessConfig.js
+// DESCRIPTION: Single source of truth for business-rule configuration
+//              (platform commission, escrow release window) with validation.
+import dotenv from 'dotenv';
+dotenv.config();
+
+// Parse + validate a numeric env value, falling back to a safe default.
+const asNumber = (raw, label, { min, max, def }) => {
+  const n = Number(raw);
+  if (Number.isFinite(n) && n >= min && n <= max) {
+    return n;
+  }
+  console.warn(`⚠️ Invalid ${label}=${raw}; using default ${def}`);
+  return def;
+};
+
+// Platform commission rate (0..1). 0.1 = 10%. Used for vendors without their
+// own per-vendor platformFeeRate.
+export const PLATFORM_FEE_RATE = asNumber(process.env.PLATFORM_FEE_RATE, 'PLATFORM_FEE_RATE', {
+  min: 0,
+  max: 1,
+  def: 0.1,
+});
+
+// Days after a delivered + hold order is auto-released to vendors.
+export const ESCROW_RELEASE_DAYS = asNumber(process.env.ESCROW_RELEASE_DAYS, 'ESCROW_RELEASE_DAYS', {
+  min: 1,
+  max: 90,
+  def: 7,
+});
+
+// Maximum AI try-on generations allowed per user per day (cost-control).
+export const AI_TRYON_DAILY_LIMIT = asNumber(process.env.AI_TRYON_DAILY_LIMIT, 'AI_TRYON_DAILY_LIMIT', {
+  min: 1,
+  max: 1000,
+  def: 10,
+});

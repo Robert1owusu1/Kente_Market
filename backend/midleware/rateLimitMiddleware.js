@@ -11,7 +11,6 @@ export const apiLimiter = rateLimit({
   standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
   legacyHeaders: false, // Disable the `X-RateLimit-*` headers
   handler: (req, res) => {
-    console.log(`⚠️ Rate limit exceeded for IP: ${req.ip}`);
     res.status(429).json({
       message: 'Too many requests, please try again later.',
       retryAfter: req.rateLimit.resetTime
@@ -26,7 +25,6 @@ export const authLimiter = rateLimit({
   message: 'Too many login attempts, please try again later.',
   skipSuccessfulRequests: true, // Don't count successful logins
   handler: (req, res) => {
-    console.log(`🚨 Auth rate limit exceeded for IP: ${req.ip}`);
     res.status(429).json({
       message: 'Too many login attempts. Please try again in 15 minutes.',
       retryAfter: req.rateLimit.resetTime
@@ -40,7 +38,6 @@ export const uploadLimiter = rateLimit({
   max: 20, // Limit each IP to 20 uploads per hour
   message: 'Too many file uploads, please try again later.',
   handler: (req, res) => {
-    console.log(`⚠️ Upload rate limit exceeded for IP: ${req.ip}`);
     res.status(429).json({
       message: 'Too many file uploads. Please try again in an hour.',
       retryAfter: req.rateLimit.resetTime
@@ -55,10 +52,49 @@ export const orderLimiter = rateLimit({
   message: 'Too many orders created, please slow down.',
   skipSuccessfulRequests: false,
   handler: (req, res) => {
-    console.log(`⚠️ Order rate limit exceeded for IP: ${req.ip}`);
     res.status(429).json({
       message: 'Too many orders. Please wait a moment and try again.',
       retryAfter: req.rateLimit.resetTime
     });
+  }
+});
+
+// Rate limiter for webhook endpoints (generous but prevents flooding)
+export const webhookLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 30,
+  message: 'Too many webhook requests.',
+  handler: (req, res) => {
+    res.status(429).json({ message: 'Too many webhook requests.' });
+  }
+});
+
+// Rate limiter for contact form (anti-spam)
+export const contactLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5,
+  message: 'Too many contact submissions.',
+  handler: (req, res) => {
+    res.status(429).json({ message: 'Too many messages. Please try again later.' });
+  }
+});
+
+// Rate limiter for newsletter subscribe (anti-abuse)
+export const subscribeLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 3,
+  message: 'Too many subscribe requests.',
+  handler: (req, res) => {
+    res.status(429).json({ message: 'Too many requests. Please try again later.' });
+  }
+});
+
+// Rate limiter for password reset (anti-enumeration)
+export const passwordResetLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 3,
+  message: 'Too many password reset attempts.',
+  handler: (req, res) => {
+    res.status(429).json({ message: 'Too many reset attempts. Please try again in an hour.' });
   }
 });

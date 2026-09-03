@@ -14,12 +14,6 @@ const createTransporter = () => {
       pass: process.env.EMAIL_PASSWORD,
     },
   };
-  
-  console.log('Email config:', {
-    service: config.service,
-    user: config.auth.user,
-    passLength: config.auth.pass?.length
-  });
 
   try {
     const transporter = nodemailer.createTransport(config);
@@ -55,9 +49,9 @@ export const sendOTPEmail = async (email, firstName, otp) => {
   const transporter = createTransporter();
 
   const mailOptions = {
-    from: process.env.EMAIL_FROM || 'Branding House <noreply@brandinghouse.com>',
+    from: process.env.EMAIL_FROM || 'Bonwire Kente <noreply@bonwirekente.com>',
     to: email,
-    subject: 'Email Verification - Branding House',
+    subject: 'Email Verification - Bonwire Kente',
     html: `
       <!DOCTYPE html>
       <html>
@@ -75,12 +69,12 @@ export const sendOTPEmail = async (email, firstName, otp) => {
       <body>
         <div class="container">
           <div class="header">
-            <h1>🛍️ Branding House</h1>
+            <h1>🛍️ Bonwire Kente</h1>
             <p>Email Verification</p>
           </div>
           <div class="content">
             <h2>Hello ${firstName}!</h2>
-            <p>Thank you for registering with Branding House. Please use the OTP below to verify your email address:</p>
+            <p>Thank you for registering with Bonwire Kente. Please use the OTP below to verify your email address:</p>
             
             <div class="otp-box">
               <p style="margin: 0; color: #666; font-size: 14px;">Your OTP Code:</p>
@@ -98,7 +92,7 @@ export const sendOTPEmail = async (email, firstName, otp) => {
             <p>If you didn't request this verification, please ignore this email.</p>
           </div>
           <div class="footer">
-            <p>© ${new Date().getFullYear()} Branding House. All rights reserved.</p>
+            <p>© ${new Date().getFullYear()} Bonwire Kente. All rights reserved.</p>
             <p>This is an automated email. Please do not reply.</p>
           </div>
         </div>
@@ -125,9 +119,9 @@ export const sendWelcomeEmail = async (email, firstName) => {
   const transporter = createTransporter();
 
   const mailOptions = {
-    from: process.env.EMAIL_FROM || 'Branding House <noreply@brandinghouse.com>',
+    from: process.env.EMAIL_FROM || 'Bonwire Kente <noreply@bonwirekente.com>',
     to: email,
-    subject: 'Welcome to Branding House! 🎉',
+    subject: 'Welcome to Bonwire Kente! 🎉',
     html: `
       <!DOCTYPE html>
       <html>
@@ -144,11 +138,11 @@ export const sendWelcomeEmail = async (email, firstName) => {
       <body>
         <div class="container">
           <div class="header">
-            <h1>🎉 Welcome to Branding House!</h1>
+            <h1>🎉 Welcome to Bonwire Kente!</h1>
           </div>
           <div class="content">
             <h2>Hi ${firstName}!</h2>
-            <p>Your email has been successfully verified. Welcome to the Branding House family!</p>
+            <p>Your email has been successfully verified. Welcome to the Bonwire Kente family!</p>
             <p>You can now enjoy:</p>
             <ul>
               <li>✅ Browse our exclusive collection</li>
@@ -162,7 +156,7 @@ export const sendWelcomeEmail = async (email, firstName) => {
             <p>If you have any questions, feel free to contact our support team.</p>
           </div>
           <div class="footer">
-            <p>© ${new Date().getFullYear()} Branding House. All rights reserved.</p>
+            <p>© ${new Date().getFullYear()} Bonwire Kente. All rights reserved.</p>
             <p>This is an automated email. Please do not reply.</p>
           </div>
         </div>
@@ -195,9 +189,9 @@ export const sendPasswordResetEmail = async (email, firstName, resetToken) => {
   const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/reset-password/${resetToken}`;
 
   const mailOptions = {
-    from: process.env.EMAIL_FROM || 'Branding House <noreply@brandinghouse.com>',
+    from: process.env.EMAIL_FROM || 'Bonwire Kente <noreply@bonwirekente.com>',
     to: email,
-    subject: 'Password Reset Request - Branding House',
+    subject: 'Password Reset Request - Bonwire Kente',
     html: `
       <!DOCTYPE html>
       <html>
@@ -220,7 +214,7 @@ export const sendPasswordResetEmail = async (email, firstName, resetToken) => {
           </div>
           <div class="content">
             <h2>Hello ${firstName},</h2>
-            <p>We received a request to reset your password for your Branding House account.</p>
+            <p>We received a request to reset your password for your Bonwire Kente account.</p>
             
             <p>Click the button below to reset your password:</p>
             
@@ -245,10 +239,10 @@ export const sendPasswordResetEmail = async (email, firstName, resetToken) => {
             
             <p style="margin-top: 30px;">If you have any concerns about your account security, please contact our support team immediately.</p>
             
-            <p style="color: #666; font-size: 14px;">Best regards,<br>The Branding House Team</p>
+            <p style="color: #666; font-size: 14px;">Best regards,<br>The Bonwire Kente Team</p>
           </div>
           <div class="footer">
-            <p>© ${new Date().getFullYear()} Branding House. All rights reserved.</p>
+            <p>© ${new Date().getFullYear()} Bonwire Kente. All rights reserved.</p>
             <p>This is an automated email. Please do not reply.</p>
           </div>
         </div>
@@ -281,9 +275,9 @@ export const sendPasswordResetConfirmation = async (email, firstName) => {
   const transporter = createTransporter();
 
   const mailOptions = {
-    from: process.env.EMAIL_FROM || 'Branding House <noreply@brandinghouse.com>',
+    from: process.env.EMAIL_FROM || 'Bonwire Kente <noreply@bonwirekente.com>',
     to: email,
-    subject: 'Password Changed Successfully - Branding House',
+    subject: 'Password Changed Successfully - Bonwire Kente',
     html: `
       <!DOCTYPE html>
       <html>
@@ -321,10 +315,10 @@ export const sendPasswordResetConfirmation = async (email, firstName) => {
               <a href="${process.env.FRONTEND_URL || 'http://localhost:5173'}/login" class="button">Login to Your Account</a>
             </div>
             
-            <p style="color: #666; font-size: 14px;">Best regards,<br>The Branding House Team</p>
+            <p style="color: #666; font-size: 14px;">Best regards,<br>The Bonwire Kente Team</p>
           </div>
           <div class="footer">
-            <p>© ${new Date().getFullYear()} Branding House. All rights reserved.</p>
+            <p>© ${new Date().getFullYear()} Bonwire Kente. All rights reserved.</p>
             <p>This is an automated email. Please do not reply.</p>
           </div>
         </div>
@@ -340,5 +334,75 @@ export const sendPasswordResetConfirmation = async (email, firstName) => {
   } catch (error) {
     console.error('❌ Error sending confirmation email:', error);
     // Don't throw - confirmation email is not critical
+  }
+};
+// ============================================
+// CONTACT US & NEWSLETTER NOTIFICATION EMAILS
+// ============================================
+
+/**
+ * Send a "thank you / we received your message" confirmation to a contact user.
+ */
+export const sendContactConfirmation = async (email, name) => {
+  const transporter = createTransporter();
+  const mailOptions = {
+    from: process.env.EMAIL_FROM || 'Bonwire Kente <noreply@bonwirekente.com>',
+    to: email,
+    subject: 'We received your message - Bonwire Kente',
+    html: `
+      <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+          <h1>Thank You, ${name}</h1>
+        </div>
+        <div style="background: #f9fafb; padding: 30px; border-radius: 0 0 10px 10px;">
+          <p>We have received your message and will get back to you within 1-2 business days.</p>
+          <p>If this is urgent, you can reach us directly at ${process.env.EMAIL_USER || 'kenterobert@gmail.com'} or +233 24 000 0000.</p>
+          <p style="color:#666; font-size:14px;">Best regards,<br>The Bonwire Kente Team</p>
+        </div>
+        <div style="text-align:center; margin-top:20px; color:#666; font-size:12px;">
+          <p>© ${new Date().getFullYear()} Bonwire Kente. All rights reserved.</p>
+        </div>
+      </div>
+    `,
+  };
+  try {
+    console.log(`📧 Sending contact confirmation to ${email}...`);
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`✅ Contact confirmation sent: ${info.messageId}`);
+  } catch (error) {
+    console.error('❌ Error sending contact confirmation email:', error);
+  }
+};
+
+/**
+ * Send a confirmation to a newly subscribed newsletter email.
+ */
+export const sendSubscribeConfirmation = async (email) => {
+  const transporter = createTransporter();
+  const mailOptions = {
+    from: process.env.EMAIL_FROM || 'Bonwire Kente <noreply@bonwirekente.com>',
+    to: email,
+    subject: 'You are subscribed to Bonwire Kente updates',
+    html: `
+      <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+          <h1>Welcome to Bonwire Kente 🎉</h1>
+        </div>
+        <div style="background: #f9fafb; padding: 30px; border-radius: 0 0 10px 10px;">
+          <p>You're now subscribed! You'll be the first to know about new Kente collections, exclusive offers, and cultural stories from Bonwire.</p>
+          <p style="color:#666; font-size:14px;">Best regards,<br>The Bonwire Kente Team</p>
+        </div>
+        <div style="text-align:center; margin-top:20px; color:#666; font-size:12px;">
+          <p>© ${new Date().getFullYear()} Bonwire Kente. All rights reserved.</p>
+        </div>
+      </div>
+    `,
+  };
+  try {
+    console.log(`📧 Sending subscribe confirmation to ${email}...`);
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`✅ Subscribe confirmation sent: ${info.messageId}`);
+  } catch (error) {
+    console.error('❌ Error sending subscribe confirmation email:', error);
   }
 };

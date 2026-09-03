@@ -3,6 +3,13 @@
 
 import Order from "../models/orderModel.js";
 import pool from "../config/db.js";
+import {
+  createEscrowAllocations,
+  holdEscrowForOrder,
+  releaseEscrowForOrder,
+  setEscrowReleaseDeadline,
+  getOrderAllocations,
+} from "../Services/escrowService.js";
 
 // ============================================
 // UTILITY FUNCTIONS
@@ -13,6 +20,9 @@ const isValidId = (id) => {
   return !isNaN(id) && parseInt(id) > 0;
 };
 
+// Round to 2 decimals (GHS) for money
+const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+
 // ============================================
 // CRUD OPERATIONS (Your existing functions)
 // ============================================
@@ -22,23 +32,89 @@ const isValidId = (id) => {
 // @access  Private
 export const addOrderItems = async (req, res) => {
   try {
+    const rawItems = Array.isArray(req.body.items) ? req.body.items : [];
+    if (rawItems.length === 0) {
+      return res.status(400).json({ message: "Order must contain at least one item" });
+    }
+
+    // Normalize client items into {productId, quantity, ...}. We deliberately do
+    // NOT trust any client-supplied price — prices are re-fetched from the DB.
+    const requested = rawItems.map((item) => {
+      const productId = parseInt(item.product || item.productId || item.id);
+      const quantity = parseInt(item.quantity ?? item.qty);
+      return {
+        productId,
+        quantity: quantity > 0 ? quantity : 1,
+        image: item.image || null,
+        selectedColor: item.selectedColor || item.color || null,
+        selectedSize: item.selectedSize || item.size || null,
+        name: typeof item.name === "string" ? item.name.slice(0, 200) : null,
+      };
+    });
+
+    if (requested.some((r) => isNaN(r.productId) || r.productId <= 0)) {
+      return res.status(400).json({ message: "Each item needs a valid productId" });
+    }
+
+    // ---- Server-side authoritative pricing ----
+    const productIds = [...new Set(requested.map((r) => r.productId))];
+    const placeholders = productIds.map(() => "?").join(", ");
+    const [products] = await pool.execute(
+      `SELECT id, title, price, img, vendorId FROM product WHERE id IN (${placeholders})`,
+      productIds
+    );
+    const productMap = new Map(products.map((p) => [p.id, p]));
+    if (productMap.size !== productIds.length) {
+      return res.status(400).json({ message: "One or more products are no longer available" });
+    }
+
+    const items = requested.map((r) => {
+      const p = productMap.get(r.productId);
+      return {
+        product: r.productId,
+        name: r.name || p.title,
+        qty: r.quantity,
+        price: round2(parseFloat(p.price) || 0),
+        image: r.image || p.img,
+        selectedColor: r.selectedColor,
+        selectedSize: r.selectedSize,
+        vendorId: p.vendorId || null,
+      };
+    });
+
+    // Authoritative totals (must match CartContext rules: tax 10%, shipping free over GH₵50).
+    const subtotal = round2(items.reduce((s, it) => s + it.price * it.qty, 0));
+    const shipping = subtotal > 50 ? 0 : 5;
+    const tax = round2(subtotal * 0.1);
+    const discount = 0; // no coupon system yet
+    const totalAmount = round2(subtotal + shipping + tax);
+
+    // IMPORTANT: paymentStatus is always forced to "pending". A client must NEVER
+    // be able to self-assert a payment as paid. Orders are marked paid only by the
+    // Paystack webhook or by an admin.
     const orderData = {
       userId: req.user.id,
       orderNumber: "ORD-" + Date.now(),
-      items: req.body.items || [],
-      totalAmount: req.body.totalAmount,
+      items,
+      totalAmount,
       shippingAddress: req.body.shippingAddress || {},
       billingAddress: req.body.billingAddress || {},
       paymentMethod: req.body.paymentMethod || "pending",
-      paymentStatus: req.body.paymentStatus || "unpaid",
+      paymentStatus: "pending",
       orderStatus: "pending",
-      shippingCost: req.body.shippingCost || 0,
-      tax: req.body.tax || 0,
-      discount: req.body.discount || 0,
+      shippingCost: shipping,
+      tax,
+      discount,
       notes: req.body.notes || null,
+      paymentReference: req.body.paymentReference || req.body.paymentResult?.id || null,
     };
 
     const newOrder = await Order.create(orderData);
+
+    // Multi-vendor escrow: split the order into per-vendor allocations at placement.
+    // Platform-owned items are excluded automatically (no vendorId on the product).
+    await createEscrowAllocations(newOrder.id, items);
+
     res.status(201).json({ message: "Order created successfully", order: newOrder });
   } catch (error) {
     console.error('Error creating order:', error);
@@ -54,7 +130,8 @@ export const getOrders = async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
     const status = req.query.status || null;
-    const paymentStatus = req.query.paymentStatus || null;
+    // Map legacy "unpaid" filter to the stored value ("pending")
+    const paymentStatus = req.query.paymentStatus === 'unpaid' ? 'pending' : (req.query.paymentStatus || null);
     const search = req.query.search || null;
     const sortBy = req.query.sortBy || 'created_at';
     const sortOrder = req.query.sortOrder || 'DESC';
@@ -96,6 +173,10 @@ export const getOrderById = async (req, res) => {
       return res.status(403).json({ message: "Not authorized to view this order" });
     }
 
+    // Attach per-vendor escrow allocations for display
+    const allocations = await getOrderAllocations(req.params.id);
+    order.escrowAllocations = allocations;
+
     res.json(order);
   } catch (error) {
     console.error('Error fetching order:', error);
@@ -136,7 +217,23 @@ export const updateOrder = async (req, res) => {
       return res.status(403).json({ message: "Not authorized to update this order" });
     }
 
-    const updatedOrder = await Order.update(req.params.id, req.body);
+    // Security: Order owners may only update non-payment, non-fulfillment fields.
+    // Payment status and order status are reserved for admins (and the webhook).
+    // Monetary fields (items, shippingCost, tax, discount, totalAmount) are also
+    // reserved so an owner can't tamper with what they pay; only admins may adjust.
+    const body = { ...req.body };
+    if (req.user.role !== 'admin') {
+      delete body.paymentStatus;
+      delete body.orderStatus;
+      delete body.paymentMethod;
+      delete body.items;
+      delete body.shippingCost;
+      delete body.tax;
+      delete body.discount;
+      delete body.totalAmount;
+    }
+
+    const updatedOrder = await Order.update(req.params.id, body);
     res.json({ message: "Order updated successfully", order: updatedOrder });
   } catch (error) {
     console.error('Error updating order:', error);
@@ -146,11 +243,16 @@ export const updateOrder = async (req, res) => {
 
 // @desc    Mark order as paid
 // @route   PUT /api/orders/:id/pay
-// @access  Private
+// @access  Private/Admin
 export const updateOrderToPaid = async (req, res) => {
   try {
     if (!isValidId(req.params.id)) {
       return res.status(400).json({ message: "Invalid order ID" });
+    }
+
+    // Only admins (or the Paystack webhook) may mark an order as paid
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ message: "Not authorized to mark order as paid" });
     }
 
     await Order.update(req.params.id, {
@@ -178,9 +280,70 @@ export const updateOrderToDelivered = async (req, res) => {
       orderStatus: "delivered",
     });
 
+    // Escrow orders get an auto-release deadline: if the customer does not
+    // confirm receipt within the window, funds are released automatically.
+    if (updatedOrder.escrowStatus === 'held') {
+      const days = await setEscrowReleaseDeadline(req.params.id);
+      updatedOrder.escrowReleaseDeadline = await Order.findById(req.params.id)
+        .then((o) => o.escrowReleaseDeadline);
+      updatedOrder.escrowReleaseDays = days;
+    }
+
     res.json({ message: "Order marked as delivered", order: updatedOrder });
   } catch (error) {
     console.error('Error marking order as delivered:', error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Customer confirms delivery received → release escrow to vendors
+// @route   POST /api/orders/:id/confirm-received
+// @access  Private (order owner or admin)
+export const confirmOrderReceived = async (req, res) => {
+  try {
+    if (!isValidId(req.params.id)) {
+      return res.status(400).json({ message: "Invalid order ID" });
+    }
+
+    const order = await Order.findById(req.params.id);
+    if (!order) {
+      return res.status(404).json({ message: "Order not found" });
+    }
+
+    if (req.user.role !== 'admin' && order.userId !== req.user.id) {
+      return res.status(403).json({ message: "Not authorized to confirm this order" });
+    }
+
+    if (order.escrowStatus !== 'held') {
+      return res.status(400).json({
+        message:
+          order.escrowStatus === 'released'
+            ? "Escrow for this order has already been released"
+            : order.escrowStatus === 'none'
+            ? "This order is not held in escrow"
+            : `Cannot confirm receipt while escrow status is '${order.escrowStatus}'`,
+      });
+    }
+
+    if (order.orderStatus !== 'delivered') {
+      return res.status(400).json({
+        message: "Order must be marked as delivered before receipt can be confirmed",
+      });
+    }
+
+    const result = await releaseEscrowForOrder(req.params.id);
+    const updatedOrder = await Order.findById(req.params.id);
+
+    const failed = result.failed > 0;
+    res.status(failed ? 400 : 200).json({
+      message: failed
+        ? "Receipt confirmed but one or more vendor payouts failed. Admin review needed."
+        : "Receipt confirmed. Funds released to vendors.",
+      escrowStatus: updatedOrder.escrowStatus,
+      result,
+    });
+  } catch (error) {
+    console.error('Error confirming order received:', error);
     res.status(500).json({ message: error.message });
   }
 };
@@ -312,9 +475,11 @@ export const getTopProducts = async (req, res) => {
     connection = await pool.getConnection();
     
     const [orders] = await connection.execute(`
-      SELECT items 
-      FROM orders 
+      SELECT id, items
+      FROM orders
       WHERE orderStatus != 'cancelled'
+      ORDER BY created_at DESC
+      LIMIT 1000
     `);
 
     // Aggregate product sales

@@ -1,10 +1,10 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import React, { useState, useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import loginilu from "../../assets/images/illustrate.png"
+import loginilu from "../../assets/images/illustrate.webp"
 import { TiShoppingBag } from "react-icons/ti";
 import { FcGoogle } from "react-icons/fc";
-import { FaFacebook, FaApple, FaEye, FaEyeSlash } from "react-icons/fa";
+import { FaEye, FaEyeSlash } from "react-icons/fa";
 import { MdOutlineMailOutline } from "react-icons/md";
 import { RiLockPasswordFill } from "react-icons/ri";
 import { BiLoaderAlt } from "react-icons/bi";
@@ -225,23 +225,14 @@ const Login = () => {
   // Handle OAuth login
   const handleOAuthLogin = (provider) => {
     setOauthLoading(prev => ({ ...prev, [provider]: true }));
-    
-    // Redirect to backend OAuth endpoint
-    switch (provider) {
-      case 'google':
-        window.location.href = `${API_BASE_URL}/auth/google`;
-        break;
-      case 'facebook':
-        window.location.href = `${API_BASE_URL}/auth/facebook`;
-        break;
-      case 'apple':
-        // Apple Sign In not implemented yet
-        toast.info('Apple Sign In coming soon!');
-        setOauthLoading(prev => ({ ...prev, [provider]: false }));
-        break;
-      default:
-        setOauthLoading(prev => ({ ...prev, [provider]: false }));
+
+    if (provider === 'google') {
+      window.location.href = `${API_BASE_URL}/api/auth/google`;
+      return;
     }
+
+    // Other providers are not configured
+    setOauthLoading(prev => ({ ...prev, [provider]: false }));
   };
 
   return (
@@ -257,7 +248,7 @@ const Login = () => {
               <div className="p-2 bg-amber-400/20 rounded-xl backdrop-blur-md">
                 <TiShoppingBag className="text-amber-400 text-2xl" />
               </div>
-              <span className="text-white font-bold text-xl">Branding House</span>
+              <span className="text-white font-bold text-xl">Bonwire Kente</span>
             </div>
 
             {/* Header */}
@@ -352,7 +343,7 @@ const Login = () => {
             </div>
 
             {/* OAuth Buttons */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+            <div className="grid grid-cols-1 w-full max-w-xs mx-auto gap-4 mb-8">
               <IconButton 
                 text="Google" 
                 onClick={() => handleOAuthLogin('google')}
@@ -360,22 +351,6 @@ const Login = () => {
                 disabled={isLoading}
               >
                 <FcGoogle />
-              </IconButton>
-              <IconButton 
-                text="Facebook" 
-                onClick={() => handleOAuthLogin('facebook')}
-                loading={oauthLoading.facebook}
-                disabled={isLoading}
-              >
-                <FaFacebook className="text-blue-500" />
-              </IconButton>
-              <IconButton 
-                text="Apple" 
-                onClick={() => handleOAuthLogin('apple')}
-                loading={oauthLoading.apple}
-                disabled={isLoading}
-              >
-                <FaApple className="text-white" />
               </IconButton>
             </div>
 
@@ -388,7 +363,7 @@ const Login = () => {
 
             {/* Sign Up Link */}
             <p className="text-center text-white/70">
-              New to Branding House?{' '}
+              New to Bonwire Kente?{' '}
               <Link 
                 to={redirect ? `/register?redirect=${redirect}` : '/register'} 
                 className="text-amber-400 hover:text-amber-300 font-semibold transition-colors"

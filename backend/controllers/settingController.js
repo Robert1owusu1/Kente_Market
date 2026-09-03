@@ -15,7 +15,7 @@ export const getSettings = async (req, res) => {
     const frontendSettings = {
       siteName: settings.site_name || '',
       email: settings.admin_email || '',
-      currency: settings.currency || 'USD',
+      currency: settings.currency || 'GHS',
       taxRate: settings.tax_rate || 0,
       shippingCost: settings.shipping_cost || 0,
       notifications: settings.notifications_enabled || false,
@@ -94,7 +94,7 @@ export const updateSettings = async (req, res) => {
     const frontendSettings = {
       siteName: updatedSettings.site_name || '',
       email: updatedSettings.admin_email || '',
-      currency: updatedSettings.currency || 'USD',
+      currency: updatedSettings.currency || 'GHS',
       taxRate: updatedSettings.tax_rate || 0,
       shippingCost: updatedSettings.shipping_cost || 0,
       notifications: updatedSettings.notifications_enabled || false,
