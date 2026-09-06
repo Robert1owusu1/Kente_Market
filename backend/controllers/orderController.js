@@ -6,6 +6,7 @@ import pool from "../config/db.js";
 import Coupon from "../models/couponModel.js";
 import isValidId from "../utils/isValidId.js";
 import { computeExpectedCompletion } from "../utils/computeExpectedCompletion.js";
+import { round2, calcSubtotal, calcTax, calcShipping, calcCouponDiscount, calcOrderTotals } from "../../shared/pricing.js";
 import {
   createEscrowAllocations,
   releaseEscrowForOrder,
@@ -15,13 +16,6 @@ import {
   cancelEscrowForOrder,
   retryFailedAllocations,
 } from "../Services/escrowService.js";
-
-// ============================================
-// UTILITY FUNCTIONS
-// ============================================
-
-// Round to 2 decimals (GHS) for money
-const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 
 // ============================================
 // CRUD OPERATIONS (Your existing functions)
@@ -86,11 +80,9 @@ export const addOrderItems = async (req, res) => {
       };
     });
 
-    // Authoritative totals (MUST match the shared frontend pricing rules in
-    // src/utils/pricing.js: 12.5% tax, GH₵15 shipping, free over GH₵200).
-    const subtotal = round2(items.reduce((s, it) => s + it.price * it.qty, 0));
-    const shipping = subtotal >= 200 ? 0 : 15;
-    const tax = round2(subtotal * 0.125);
+    // Authoritative totals — single source of truth is shared/pricing.js (the
+    // same functions drive the cart page, so price shown == price charged).
+    const { subtotal, tax, shipping } = calcOrderTotals(items);
 
     // Coupon: discount is computed server-side and never trusted from the client.
     // The code is validated against the DB, and the resulting discount is
@@ -104,13 +96,11 @@ export const addOrderItems = async (req, res) => {
         return res.status(400).json({ message: couponResult.message });
       }
       const c = couponResult.coupon;
-      discount = c.discountType === "percentage"
-        ? round2((subtotal * parseFloat(c.discountValue)) / 100)
-        : Math.min(parseFloat(c.discountValue), subtotal);
+      discount = calcCouponDiscount(subtotal, c.discountType, c.discountValue);
       appliedCouponId = c.id;
     }
 
-    const totalAmount = round2(subtotal + shipping + tax - discount);
+    const totalAmount = calcOrderTotals(items, { discount }).total;
 
     // IMPORTANT: paymentStatus is always forced to "pending". A client must NEVER
     // be able to self-assert a payment as paid. Orders are marked paid only by the
@@ -267,19 +257,15 @@ export const updateOrder = async (req, res) => {
     const couponCode = (req.body.couponCode || "").trim();
     if (req.user.role !== 'admin' && couponCode) {
       const rawItems = Array.isArray(existingOrder.items) ? existingOrder.items : [];
-      const subtotal = round2(
-        rawItems.reduce((s, it) => s + parseFloat(it.price || 0) * parseInt(it.qty || 1), 0)
-      );
+      const subtotal = calcSubtotal(rawItems);
       const couponResult = await Coupon.validate(couponCode, subtotal);
       if (!couponResult.valid) {
         return res.status(400).json({ message: couponResult.message });
       }
       const c = couponResult.coupon;
-      const shipping = existingOrder.shippingCost ?? (subtotal >= 200 ? 0 : 15);
-      const tax = existingOrder.tax ?? round2(subtotal * 0.125);
-      const discount = c.discountType === "percentage"
-        ? round2((subtotal * parseFloat(c.discountValue)) / 100)
-        : Math.min(parseFloat(c.discountValue), subtotal);
+      const discount = calcCouponDiscount(subtotal, c.discountType, c.discountValue);
+      const shipping = Number(existingOrder.shippingCost ?? calcShipping(subtotal));
+      const tax = Number(existingOrder.tax ?? calcTax(subtotal));
       body.discount = discount;
       body.totalAmount = round2(subtotal + shipping + tax - discount);
       body.couponId = c.id;

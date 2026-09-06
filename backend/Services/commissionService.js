@@ -6,8 +6,7 @@
 //              then the vendor's own platformFeeRate, then the env default.
 import pool from '../config/db.js';
 import { PLATFORM_FEE_RATE } from '../config/businessConfig.js';
-
-const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
+import { round2, calcEscrowFees } from '../../shared/pricing.js';
 
 /**
  * Resolve the effective commission rate (0..1 fraction) for a given product.
@@ -88,7 +87,6 @@ export const resolveCommissionRate = async ({ productId, vendorId, category }) =
 export const computeCommission = async ({ grossAmount, productId, vendorId, category }) => {
   const rate = await resolveCommissionRate({ productId, vendorId, category });
   const gross = round2(Math.max(0, parseFloat(grossAmount) || 0));
-  const platformFee = round2(gross * rate);
-  const payoutAmount = round2(gross - platformFee);
+  const { platformFee, payoutAmount } = calcEscrowFees(gross, rate, PLATFORM_FEE_RATE);
   return { rate, gross, platformFee, payoutAmount };
 };

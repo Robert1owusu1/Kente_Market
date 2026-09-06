@@ -2,6 +2,7 @@
 // DESCRIPTION: Single source of truth for business-rule configuration
 //              (platform commission, escrow release window) with validation.
 import dotenv from 'dotenv';
+import { DEFAULT_PLATFORM_FEE_RATE } from '../../shared/pricing.js';
 dotenv.config();
 
 // Parse + validate a numeric env value, falling back to a safe default.
@@ -19,7 +20,7 @@ const asNumber = (raw, label, { min, max, def }) => {
 export const PLATFORM_FEE_RATE = asNumber(process.env.PLATFORM_FEE_RATE, 'PLATFORM_FEE_RATE', {
   min: 0,
   max: 1,
-  def: 0.1,
+  def: DEFAULT_PLATFORM_FEE_RATE,
 });
 
 // Days after a delivered + hold order is auto-released to vendors.

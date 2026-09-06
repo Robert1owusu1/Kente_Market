@@ -3,8 +3,7 @@
 // credited to the vendor's available balance *instead of* being auto-transferred.
 // The vendor draws down the balance manually via a withdrawal.
 import pool from '../config/db.js';
-
-const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
+import { round2 } from '../../shared/pricing.js';
 
 /**
  * Ensure a vendor wallet row exists (lazy-create).

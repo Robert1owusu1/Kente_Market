@@ -8,9 +8,7 @@ import { creditVendorBalance } from './walletService.js';
 import { PLATFORM_FEE_RATE, ESCROW_RELEASE_DAYS } from '../config/businessConfig.js';
 import { resolveCommissionRate } from './commissionService.js';
 import Notification from '../models/notificationModel.js';
-
-// Round to 2 decimals (GHS)
-const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
+import { round2, calcEscrowFees } from '../../shared/pricing.js';
 
 /**
  * Load escrow allocations for an order (joined with vendor payout info).
@@ -110,8 +108,7 @@ export const createEscrowAllocations = async (orderId, items) => {
       vendorId,
       category: productForVendor?.category,
     });
-    const platformFee = round2(amount * feeRate);
-    const payoutAmount = round2(amount - platformFee);
+    const { platformFee, payoutAmount } = calcEscrowFees(amount, feeRate, PLATFORM_FEE_RATE);
     await pool.execute(
       `INSERT IGNORE INTO escrow_allocations (orderId, vendorId, amount, platformFeeRate, platformFee, payoutAmount, status)
        VALUES (?, ?, ?, ?, ?, ?, 'pending')`,
@@ -137,8 +134,11 @@ export const releaseAllocation = async (allocation) => {
     return updated;
   }
 
-  const platformFee = round2(allocation.amount * (parseFloat(allocation.platformFeeRate) || PLATFORM_FEE_RATE));
-  const payoutAmount = round2(parseFloat(allocation.amount) - platformFee);
+  const { platformFee, payoutAmount } = calcEscrowFees(
+    allocation.amount,
+    allocation.platformFeeRate,
+    PLATFORM_FEE_RATE
+  );
 
   await pool.execute(
     `UPDATE escrow_allocations
@@ -188,8 +188,11 @@ export const payoutAllocation = async (allocation) => {
     return updated;
   }
 
-  const platformFee = round2(allocation.amount * (parseFloat(allocation.platformFeeRate) || PLATFORM_FEE_RATE));
-  const payoutAmount = round2(parseFloat(allocation.amount) - platformFee);
+  const { platformFee, payoutAmount } = calcEscrowFees(
+    allocation.amount,
+    allocation.platformFeeRate,
+    PLATFORM_FEE_RATE
+  );
 
   try {
     const result = await paystackServices.initiateTransfer(
