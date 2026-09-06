@@ -2,14 +2,17 @@
 // DESCRIPTION: Review section for a single product - shows the average rating,
 //              lists existing reviews, and lets logged-in users submit a review.
 import React, { useState } from "react";
-import { FaStar, FaRegStar, FaUser, FaSpinner } from "react-icons/fa";
+import { FaStar, FaRegStar, FaUser, FaSpinner, FaEdit, FaTrash } from "react-icons/fa";
 import { useSelector } from "react-redux";
 import { Link } from "react-router-dom";
 import { toast } from "react-toastify";
+import axios from "axios";
 import {
   useGetProductReviewsQuery,
   useCreateReviewMutation,
 } from "../../slices/miscApiSlice";
+import EditReviewModal from "./EditReviewModal";
+import ReportReviewButton from "./ReportReviewButton";
 
 const StarRatingInput = ({ value, onChange, disabled }) => {
   return (
@@ -64,7 +67,7 @@ const getAvatar = (review) => {
   return null;
 };
 
-const ProductReviews = ({ productId, productTitle }) => {
+const ProductReviews = ({ productId }) => {
   const { userInfo } = useSelector((state) => state.auth);
   const { data: reviews = [], isLoading } = useGetProductReviewsQuery(productId, {
     skip: !productId,
@@ -73,6 +76,7 @@ const ProductReviews = ({ productId, productTitle }) => {
 
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState("");
+  const [editingReview, setEditingReview] = useState(null);
 
   const avgRating = reviews.length
     ? (reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length).toFixed(1)
@@ -95,6 +99,16 @@ const ProductReviews = ({ productId, productTitle }) => {
       setComment("");
     } catch (err) {
       toast.error(err?.data?.message || "Failed to submit review");
+    }
+  };
+
+  const handleDelete = async (reviewId) => {
+    if (!window.confirm("Are you sure you want to delete this review?")) return;
+    try {
+      await axios.delete(`/api/reviews/${reviewId}`);
+      toast.success("Review deleted");
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Failed to delete review");
     }
   };
 
@@ -197,11 +211,47 @@ const ProductReviews = ({ productId, productTitle }) => {
                 {review.comment && (
                   <p className="mt-2 text-sm text-gray-700 dark:text-gray-300">{review.comment}</p>
                 )}
+                {/* Edit / Delete / Report actions */}
+                {userInfo && (
+                  <div className="mt-2 flex items-center gap-3">
+                    {userInfo.id === review.userId && (
+                      <>
+                        <button
+                          onClick={() => setEditingReview(review)}
+                          className="text-xs text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
+                        >
+                          <FaEdit /> Edit
+                        </button>
+                        <button
+                          onClick={() => handleDelete(review.id)}
+                          className="text-xs text-red-500 hover:text-red-700 flex items-center gap-1"
+                        >
+                          <FaTrash /> Delete
+                        </button>
+                      </>
+                    )}
+                    {userInfo.id !== review.userId && (
+                      <ReportReviewButton reviewId={review.id} />
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           ))
         )}
       </div>
+
+      {/* Edit Review Modal */}
+      {editingReview && (
+        <EditReviewModal
+          review={editingReview}
+          onClose={() => setEditingReview(null)}
+          onSuccess={() => {
+            setEditingReview(null);
+            window.location.reload();
+          }}
+        />
+      )}
     </div>
   );
 };

@@ -9,7 +9,7 @@ import {
   useResendOTPMutation,
   useGetVerificationStatusQuery 
 } from '../../slices/usersApiSlice';
-import { setCredentials } from '../../slices/authSlice.JS';
+import { setCredentials } from '../../slices/authSlice.js';
 
 const EmailVerification = () => {
   const navigate = useNavigate();

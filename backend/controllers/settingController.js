@@ -2,7 +2,7 @@
 // DESCRIPTION: Controller functions for settings API endpoints
 
 import Setting from '../models/settingModel.js';
-import { clearCache } from '../midleware/cacheMiddleware.js';
+import { clearCache } from '../middleware/cacheMiddleware.js';
 
 // @desc    Get all settings
 // @route   GET /api/settings
@@ -28,7 +28,7 @@ export const getSettings = async (req, res) => {
     res.json(frontendSettings);
   } catch (error) {
     console.error('Error fetching settings:', error);
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ message: "Internal server error" });
   }
 };
 
@@ -47,7 +47,7 @@ export const getSetting = async (req, res) => {
     res.json({ [key]: value });
   } catch (error) {
     console.error('Error fetching setting:', error);
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ message: "Internal server error" });
   }
 };
 
@@ -110,7 +110,7 @@ export const updateSettings = async (req, res) => {
     });
   } catch (error) {
     console.error('Error updating settings:', error);
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ message: "Internal server error" });
   }
 };
 
@@ -132,6 +132,6 @@ export const deleteSetting = async (req, res) => {
     res.json({ message: 'Setting deleted successfully' });
   } catch (error) {
     console.error('Error deleting setting:', error);
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ message: "Internal server error" });
   }
 };

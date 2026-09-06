@@ -1,6 +1,6 @@
 // slices/ordersApiSlice.js
 import { ORDERS_URL } from "../constant";
-import { apiSlice } from "./apslice";
+import { apiSlice } from "./apiSlice";
 
 export const ordersApiSlice = apiSlice.injectEndpoints({
   endpoints: (builder) => ({
@@ -112,6 +112,30 @@ export const ordersApiSlice = apiSlice.injectEndpoints({
       ],
     }),
 
+    // ✅ Cancel order and void escrow (Admin only)
+    cancelOrder: builder.mutation({
+      query: (orderId) => ({
+        url: `${ORDERS_URL}/${orderId}/cancel`,
+        method: "PUT",
+      }),
+      invalidatesTags: (result, error, orderId) => [
+        { type: "Order", id: orderId },
+        "Order",
+      ],
+    }),
+
+    // ✅ Retry failed escrow payouts (Admin only)
+    retryEscrowPayouts: builder.mutation({
+      query: (orderId) => ({
+        url: `${ORDERS_URL}/${orderId}/retry-escrow`,
+        method: "POST",
+      }),
+      invalidatesTags: (result, error, orderId) => [
+        { type: "Order", id: orderId },
+        "Order",
+      ],
+    }),
+
     // ✅ Delete order (Admin only)
     deleteOrder: builder.mutation({
       query: (orderId) => ({
@@ -142,6 +166,8 @@ export const {
   useUpdateOrderToPaidMutation,
   useUpdateOrderToDeliveredMutation,
   useConfirmOrderReceivedMutation,
+  useCancelOrderMutation,
+  useRetryEscrowPayoutsMutation,
   useDeleteOrderMutation,
   useGetOrderStatisticsQuery,
 } = ordersApiSlice;

@@ -85,10 +85,17 @@ const Hero = ({ handleOrderPopup }) => {
   };
 
   return (
-    <div className="relative overflow-hidden min-h-[520px] sm:min-h-[560px] bg-gradient-to-br from-gray-50 via-amber-50/30 to-gray-100 dark:from-gray-950 dark:via-gray-900 dark:to-gray-950 duration-300">
-      {/* Decorative background */}
-      <div className="absolute -top-32 -right-32 w-[500px] h-[500px] bg-gradient-to-br from-amber-400/20 to-orange-500/10 rounded-full blur-3xl -z-10" />
-      <div className="absolute -bottom-32 -left-32 w-[400px] h-[400px] bg-gradient-to-tr from-primary/10 to-secondary/10 rounded-full blur-3xl -z-10" />
+    <div className="relative overflow-hidden min-h-[520px] sm:min-h-[560px] bg-sand-50 dark:bg-gray-950 duration-300">
+      {/* Ghanaian Adinkra symbol background — Gye Nyame (flat color, no gradient) */}
+      <div
+        aria-hidden="true"
+        className="absolute inset-0 -z-10 opacity-[0.07] dark:opacity-[0.09]"
+        style={{
+          backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120' width='120' height='120'%3E%3Cg fill='none' stroke='%23fea928' stroke-width='3' stroke-linecap='round'%3E%3Cpath d='M60 18a14 14 0 1 0 14 14' transform='rotate(0 60 60)'/%3E%3Cpath d='M60 18a14 14 0 1 0 14 14' transform='rotate(90 60 60)'/%3E%3Cpath d='M60 18a14 14 0 1 0 14 14' transform='rotate(180 60 60)'/%3E%3Cpath d='M60 18a14 14 0 1 0 14 14' transform='rotate(270 60 60)'/%3E%3Ccircle cx='60' cy='60' r='30'/%3E%3Ccircle cx='60' cy='60' r='48'/%3E%3Ccircle cx='60' cy='60' r='8'/%3E%3C/g%3E%3C/svg%3E")`,
+          backgroundRepeat: "repeat",
+          backgroundSize: "220px 220px",
+        }}
+      />
 
       <div className="container mx-auto px-4 pb-20 sm:pb-0">
         <Slider {...settings}>

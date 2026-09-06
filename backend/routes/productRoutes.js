@@ -3,14 +3,15 @@
 
 import express from "express";
 const router = express.Router();
-import { protect, admin } from "../midleware/authMiddleware.js";
-import { cacheMiddleware } from "../midleware/cacheMiddleware.js";
+import { protect, admin } from "../middleware/authMiddleware.js";
+import { cacheMiddleware } from "../middleware/cacheMiddleware.js";
 import {
   getProducts,
   getProductById,
   getProductsByCategory,
   getFeaturedProducts,
   getTrendingProducts,
+  getMuseumPieces,
   createProduct,
   updateProduct,
   deleteProduct,
@@ -30,6 +31,7 @@ router.get('/', cacheMiddleware(60), getProducts);
 router.get('/categories/list', cacheMiddleware(300), getCategories);
 router.get('/featured', cacheMiddleware(60), getFeaturedProducts);
 router.get('/trending', cacheMiddleware(60), getTrendingProducts);
+router.get('/museum', cacheMiddleware(60), getMuseumPieces);
 
 // 3. Category route (has parameter but specific path)
 router.get('/category/:category', cacheMiddleware(60), getProductsByCategory);

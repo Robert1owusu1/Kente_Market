@@ -1,5 +1,5 @@
 import { PROMOTIONS_URL } from '../constant';
-import { apiSlice } from './apslice';
+import { apiSlice } from './apiSlice';
 
 export const promotionsApiSlice = apiSlice.injectEndpoints({
   endpoints: (builder) => ({

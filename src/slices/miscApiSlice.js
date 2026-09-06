@@ -1,6 +1,6 @@
-// miscApiSlice.js - Contact, Newsletter, and Review endpoints
+// miscApiSlice.js - Contact, Newsletter, Review, and Subscriber endpoints
 import { CONTACT_URL, SUBSCRIBE_URL, REVIEWS_URL } from "../constant";
-import { apiSlice } from "./apslice";
+import { apiSlice } from "./apiSlice";
 
 export const miscApiSlice = apiSlice.injectEndpoints({
   endpoints: (builder) => ({
@@ -43,6 +43,20 @@ export const miscApiSlice = apiSlice.injectEndpoints({
       }),
       providesTags: ["Review"],
     }),
+
+    // 👥 Subscriber Admin
+    getSubscriberCount: builder.query({
+      query: () => ({
+        url: `${SUBSCRIBE_URL}/count`,
+      }),
+      providesTags: ["Subscriber"],
+    }),
+    listSubscribers: builder.query({
+      query: () => ({
+        url: SUBSCRIBE_URL,
+      }),
+      providesTags: ["Subscriber"],
+    }),
   }),
 });
 
@@ -54,4 +68,6 @@ export const {
   useGetAllReviewsQuery,
   useLazyGetProductReviewsQuery,
   useLazyGetAllReviewsQuery,
+  useGetSubscriberCountQuery,
+  useListSubscribersQuery,
 } = miscApiSlice;

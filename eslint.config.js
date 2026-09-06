@@ -26,13 +26,18 @@ export default defineConfig([
     },
   },
   {
-    files: ['./backend/**/*.{js,ts}'], // 👈 adjust to match your backend folder
+    files: ['./backend/**/*.{js,ts}', './backend/*.js'], // 👈 adjust to match your backend folder
     languageOptions: {
       ecmaVersion: 'latest',
       globals: {
         ...globals.node, // 👈 enable Node.js globals like process, __dirname, require
       },
       sourceType: 'module',
+    },
+    rules: {
+      // Express requires the 4-arg (err, req, res, next) signature for error
+      // middleware, where `next` may legitimately be unused.
+      'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]', argsIgnorePattern: '^next$' }],
     },
   },
 ])

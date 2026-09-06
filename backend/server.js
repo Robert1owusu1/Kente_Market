@@ -2,11 +2,8 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
-// Auto-detect the LAN IP after loading .env but BEFORE any module reads the
-// URL env vars (passport callback URL, CORS origins, email links, etc.).
-// Explicit FRONTEND_URL / OAUTH_CALLBACK_URL in .env are always respected.
-import { applyLanUrls } from './utils/lanIp.js';
-applyLanUrls();
+// Explicit FRONTEND_URL / OAUTH_CALLBACK_URL in .env are respected as-is. The
+// registered Google redirect URI must match what is used at runtime.
 
 import express from 'express';
 import path from 'path';
@@ -22,9 +19,10 @@ import { configurePassport } from './config/passPort.js';  // ⭐ NEW
 import pool from './config/db.js';
 
 // Middleware
-import { setupSecurity } from './midleware/securityMiddleware.js';
-import { apiLimiter } from './midleware/rateLimitMiddleware.js';
-import { errorHandeler, notFound } from './midleware/errorMidleware.js';
+import { setupSecurity } from './middleware/securityMiddleware.js';
+import { apiLimiter } from './middleware/rateLimitMiddleware.js';
+import { csrfProtection } from './middleware/csrfMiddleware.js';
+import { errorHandeler, notFound } from './middleware/errorMiddleware.js';
 
 // Routes
 import productRoutes from './routes/productRoutes.js';
@@ -41,6 +39,22 @@ import contactRoutes from './routes/contactRoutes.js';  // ⭐ NEW - Contact & m
 import subscriberRoutes from './routes/subscriberRoutes.js';  // ⭐ NEW - Newsletter
 import reviewRoutes from './routes/reviewRoutes.js';
 import promotionRoutes from './routes/promotionRoutes.js';  // ⭐ NEW - Product reviews
+import couponRoutes from './routes/couponRoutes.js';  // ⭐ NEW - Coupons/Discounts
+import wishlistRoutes from './routes/wishlistRoutes.js';  // ⭐ NEW - Wishlist/Favorites
+import returnRoutes from './routes/returnRoutes.js';  // ⭐ NEW - Return/Refund
+import notificationRoutes from './routes/notificationRoutes.js';  // ⭐ NEW - Notifications
+import reportRoutes from './routes/reportRoutes.js';  // ⭐ NEW - Review Reports
+import designRoutes from './routes/designRoutes.js';  // ⭐ NEW - Saved designs
+import addressRoutes from './routes/addressRoutes.js';  // ⭐ NEW - Address book
+import paymentMethodRoutes from './routes/paymentMethodRoutes.js';  // ⭐ NEW - Saved payment methods
+import supportRoutes from './routes/supportRoutes.js';  // ⭐ NEW - Help & support tickets
+import categoryRoutes from './routes/categoryRoutes.js';  // ⭐ NEW - Product categories
+import staffRoutes from './routes/staffRoutes.js';  // ⭐ NEW - Vendor staff
+import messageRoutes from './routes/messageRoutes.js';  // ⭐ NEW - Buyer-vendor messaging
+import campaignRoutes from './routes/campaignRoutes.js';  // ⭐ NEW - Marketing campaigns
+import certificateRoutes from './routes/certificateRoutes.js';  // ⭐ NEW - Authenticity certificates
+import commissionRoutes from './routes/commissionRoutes.js';  // ⭐ NEW - Commission engine
+import moderationRoutes from './routes/moderationRoutes.js';  // ⭐ NEW - Product moderation
 import { startCleanupSchedule } from './utils/cleanupJobs.js';
 
 // Setup __dirname for ES modules
@@ -157,6 +171,9 @@ app.use(
 // 9. Apply general rate limiting to all API routes
 app.use('/api/', apiLimiter);
 
+// 9b. CSRF protection for state-changing requests (cookie-based auth)
+app.use('/api/', csrfProtection);
+
 // ============================================
 // ROUTES
 // ============================================
@@ -185,6 +202,24 @@ app.use('/api/contact', contactRoutes);  // ⭐ NEW - Contact & messages
 app.use('/api/subscribe', subscriberRoutes);  // ⭐ NEW - Newsletter
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/promotions', promotionRoutes);  // ⭐ NEW - Product reviews
+app.use('/api/coupons', couponRoutes);  // ⭐ NEW - Coupons/Discounts
+app.use('/api/wishlist', wishlistRoutes);  // ⭐ NEW - Wishlist/Favorites
+app.use('/api/returns', returnRoutes);  // ⭐ NEW - Return/Refund
+app.use('/api/notifications', notificationRoutes);  // ⭐ NEW - Notifications
+app.use('/api/reports', reportRoutes);  // ⭐ NEW - Review Reports
+app.use('/api/designs', designRoutes);  // ⭐ NEW - Saved designs
+app.use('/api/addresses', addressRoutes);  // ⭐ NEW - Address book
+app.use('/api/payments/methods', paymentMethodRoutes);  // ⭐ NEW - Saved payment methods
+app.use('/api/support', supportRoutes);  // ⭐ NEW - Help & support tickets
+app.use('/api/categories', categoryRoutes);  // ⭐ NEW - Product categories
+
+// ⭐ NEW — Marketplace upgrade routes
+app.use('/api/vendors/staff', staffRoutes);
+app.use('/api/messages', messageRoutes);
+app.use('/api/campaigns', campaignRoutes);
+app.use('/api/certificates', certificateRoutes);
+app.use('/api/admin/commissions', commissionRoutes);
+app.use('/api/admin/moderation', moderationRoutes);
 
 // ============================================
 // ERROR HANDLING - Must be LAST

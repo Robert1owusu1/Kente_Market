@@ -5,13 +5,14 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import { IoMdSearch } from "react-icons/io";
-import { FaCaretDown, FaUser, FaShoppingBag, FaPalette, FaHeart, FaCog, FaSignOutAlt, FaTimes, FaStore } from 'react-icons/fa';
+import { FaCaretDown, FaUser, FaShoppingBag, FaPalette, FaHeart, FaCog, FaSignOutAlt, FaTimes, FaStore, FaEnvelope, FaCertificate } from 'react-icons/fa';
 import { FaCartShopping } from "react-icons/fa6";
 import { HiMenuAlt3 } from 'react-icons/hi';
 import { useCart } from "../../Context/CartContext";
 import CartDrawer from "../../components/CartDrawer/CartDrawer";
+import NotificationBell from "../Notifications/NotificationBell";
 import { useLogoutMutation } from '../../slices/usersApiSlice';
-import { logout } from '../../slices/authSlice.JS';
+import { logout } from '../../slices/authSlice.js';
 import { useLazyGetProductsQuery } from '../../slices/productsApiSlice';
 import { toast } from 'react-toastify';
 
@@ -22,6 +23,8 @@ const Menu = [
   { id: 3, name: "AI Try-On", link: "/ai-tryon" },
   { id: 4, name: "About Us", link: "/aboutus" },
   { id: 5, name: "Help", link: "/help" },
+  { id: 6, name: "Stores", link: "/vendors" },
+  { id: 7, name: "Kente Museum", link: "/museum" },
 ];
 
 const DropdownLinks = [
@@ -33,7 +36,9 @@ const ProfileMenuItems = [
   { id: 1, name: "My Profile", link: "/profile", icon: FaUser },
   { id: 2, name: "My Orders", link: "/orders", icon: FaShoppingBag },
   { id: 3, name: "My Designs", link: "/profile?section=designs", icon: FaPalette },
-  { id: 4, name: "Favorites", link: "/profile?section=favorites", icon: FaHeart },
+  { id: 4, name: "Favorites", link: "/wishlist", icon: FaHeart },
+  { id: 9, name: "My Messages", link: "/messages", icon: FaEnvelope },
+  { id: 10, name: "My Certificates", link: "/certificates", icon: FaCertificate },
   { id: 5, name: "Settings", link: "/profile?section=settings", icon: FaCog },
   { id: 6, name: "Seller Dashboard", link: "/vendor", icon: FaStore, role: 'vendor' },
   { id: 8, name: "Become a Seller", link: "/vendor/apply", icon: FaStore, role: 'customer' },
@@ -389,6 +394,11 @@ const Navbar = () => {
                 </div>
               </button>
 
+              {/* 🔔 Notification Bell */}
+              {userInfo && (
+                <NotificationBell />
+              )}
+
               {/* 👤 Desktop Profile Menu */}
               {userInfo && (
                 <div className="group relative cursor-pointer hidden sm:block">
@@ -653,7 +663,10 @@ const Navbar = () => {
                     </div>
                   </div>
                   <ul className="ml-6 mt-2 space-y-1">
-                    {ProfileMenuItems.filter((item) => !item.role || item.role === userInfo?.role).map((item) => {
+                    {ProfileMenuItems
+                      .filter((item) => item.name !== "Become a Seller")
+                      .filter((item) => !item.role || item.role === userInfo?.role)
+                      .map((item) => {
                       const Icon = item.icon;
                       if (item.name === "Sign Out") {
                         return (
@@ -685,6 +698,20 @@ const Navbar = () => {
                       );
                     })}
                   </ul>
+                </li>
+              )}
+
+              {/* 📦 Sell on Bonwire (mobile, always visible for customers) */}
+              {userInfo && userInfo.role !== 'vendor' && userInfo.role !== 'admin' && (
+                <li className="border-t dark:border-gray-700 pt-3 mt-2">
+                  <a
+                    href="/vendor/apply"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="flex items-center gap-3 px-4 py-3 rounded-lg bg-primary/10 text-primary dark:bg-primary/20 dark:text-white hover:bg-primary/20 transition-all font-medium"
+                  >
+                    <FaStore className="text-base" />
+                    Become a Seller
+                  </a>
                 </li>
               )}
 

@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect } from "react";
 import { FaChair, FaHome, FaSyncAlt, FaDownload } from "react-icons/fa";
-import { SAMPLE_PRODUCTS } from "../allprouctsdata/products";
+import { SAMPLE_PRODUCTS } from "../allProductsData/products";
 import "./AiTryOnStyles.css";
 
 const DECOR_TEMPLATES = [

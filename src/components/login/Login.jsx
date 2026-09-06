@@ -9,7 +9,7 @@ import { MdOutlineMailOutline } from "react-icons/md";
 import { RiLockPasswordFill } from "react-icons/ri";
 import { BiLoaderAlt } from "react-icons/bi";
 import { useLoginMutation } from "../../slices/usersApiSlice";
-import { setCredentials } from "../../slices/authSlice.JS";
+import { setCredentials } from "../../slices/authSlice.js";
 import { toast } from 'react-toastify';
 import Footer from "../../components/Footer/Footer";
 
@@ -140,22 +140,16 @@ const Login = () => {
   // ✅ FIXED: Single useEffect for redirect logic with replace to prevent history issues
   useEffect(() => {
     if (userInfo) {
-      console.log('🔍 Checking user status...');
-      console.log('userInfo:', userInfo);
-      
       // ⭐ Check if email is verified
       if (!userInfo.isEmailVerified) {
-        console.log('⚠️ Email not verified - Redirecting to verification page');
         navigate('/verify-email', { replace: true });
         return;
       }
       
       // Redirect based on user role
       if (userInfo.isAdmin === true || userInfo.role === 'admin') {
-        console.log('✅ Admin detected - Redirecting to /admin');
         navigate('/admin', { replace: true });
       } else {
-        console.log('✅ Regular user - Redirecting to:', redirect);
         navigate(redirect, { replace: true });
       }
     }
@@ -174,8 +168,8 @@ const Login = () => {
     
     if (!formData.password) {
       newErrors.password = 'Password is required';
-    } else if (formData.password.length < 6) {
-      newErrors.password = 'Password must be at least 6 characters';
+    } else if (formData.password.length < 8) {
+      newErrors.password = 'Password must be at least 8 characters';
     }
     
     setErrors(newErrors);
@@ -198,24 +192,14 @@ const Login = () => {
     if (!validateForm()) return;
     
     try {
-      console.log('🔄 Attempting login...');
-      
       const res = await login({
         email: formData.email, 
         password: formData.password
       }).unwrap();
       
-      // Debug logs
-      console.log('✅ Backend response:', res);
-      console.log('✅ isAdmin value:', res.isAdmin);
-      console.log('✅ role value:', res.role);
-      
       dispatch(setCredentials({ ...res }));
       toast.success('Login Successful');
-      
-      // Note: Navigation is handled by useEffect
     } catch (err) {
-      console.error('❌ Login error:', err);
       const errorMessage = err?.data?.message || err.error || 'Login failed';
       toast.error(errorMessage);
       setErrors({ submit: errorMessage });

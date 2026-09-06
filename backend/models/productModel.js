@@ -38,6 +38,32 @@ class Product {
     this.basePrice = data.basePrice;
     this.vendorId = data.vendorId || null;
     this.description = data.description || null;
+    this.vendorBusinessName = data.vendorBusinessName || null;
+    this.vendorStatus = data.vendorStatus || null;
+    // Kente-specific fields
+    this.patternName = data.patternName || null;
+    this.patternMeaning = data.patternMeaning || null;
+    this.culturalSignificance = data.culturalSignificance || null;
+    this.origin = data.origin || null;
+    this.weavingTechnique = data.weavingTechnique || null;
+    this.yards = data.yards ? parseFloat(data.yards) : null;
+    this.occasions = data.occasions || null;
+    this.designStory = data.designStory || null;
+    this.careInstructions = data.careInstructions || null;
+    this.weight = data.weight ? parseFloat(data.weight) : null;
+    this.wholesalePrice = data.wholesalePrice ? parseFloat(data.wholesalePrice) : null;
+    this.retailPrice = data.retailPrice ? parseFloat(data.retailPrice) : null;
+    this.madeToOrder = !!data.madeToOrder;
+    this.video = data.video || null;
+    this.gallery = data.gallery || null;
+    this.descriptionHTML = data.descriptionHTML || null;
+    // Approval + inventory
+    this.approvalStatus = data.approvalStatus || 'approved';
+    this.approvalNote = data.approvalNote || null;
+    this.approvedAt = data.approvedAt || null;
+    this.stock = parseInt(data.stock) || 0;
+    this.sku = data.sku || null;
+    this.lowStockThreshold = parseInt(data.lowStockThreshold) || 0;
   }
 
   // ✅ Get all products with proper LIMIT/OFFSET handling
@@ -54,47 +80,64 @@ class Product {
         search = null,
         minPrice = null,
         maxPrice = null,
+        approvalStatus = null,
+        vendorId = null,
       } = options;
 
       // Validate and sanitize limit and offset
       const safeLimit = Math.max(1, Math.min(parseInt(limit) || 100, 1000));
       const safeOffset = Math.max(0, parseInt(offset) || 0);
 
-      let query = "SELECT * FROM product WHERE 1=1";
+      let query = `SELECT p.*, v.businessName AS vendorBusinessName, v.status AS vendorStatus
+                   FROM product p
+                   LEFT JOIN vendors v ON v.userId = p.vendorId
+                   WHERE 1=1`;
       const params = [];
+
+      // Filter by approval status (public listing = 'approved' only)
+      if (approvalStatus) {
+        query += " AND p.approvalStatus = ?";
+        params.push(approvalStatus);
+      }
+
+      // Filter by owner vendor
+      if (vendorId) {
+        query += " AND p.vendorId = ?";
+        params.push(parseInt(vendorId));
+      }
 
       // Filter by category
       if (category) {
-        query += " AND category = ?";
+        query += " AND p.category = ?";
         params.push(category);
       }
 
       // Filter by featured
       if (featured !== null) {
-        query += " AND featured = ?";
+        query += " AND p.featured = ?";
         params.push(featured ? 1 : 0);
       }
 
       // Search in title, category, or tag
       if (search) {
-        query += " AND (title LIKE ? OR category LIKE ? OR tag LIKE ?)";
+        query += " AND (p.title LIKE ? OR p.category LIKE ? OR p.tag LIKE ?)";
         const searchTerm = `%${search}%`;
         params.push(searchTerm, searchTerm, searchTerm);
       }
 
       // Price range filters
       if (minPrice !== null) {
-        query += " AND price >= ?";
+        query += " AND p.price >= ?";
         params.push(parseFloat(minPrice));
       }
 
       if (maxPrice !== null) {
-        query += " AND price <= ?";
+        query += " AND p.price <= ?";
         params.push(parseFloat(maxPrice));
       }
 
       // Add LIMIT and OFFSET
-      query += ` ORDER BY id DESC LIMIT ${safeLimit} OFFSET ${safeOffset}`;
+      query += ` ORDER BY p.id DESC LIMIT ${safeLimit} OFFSET ${safeOffset}`;
 
       const [rows] = params.length > 0 
         ? await connection.execute(query, params)
@@ -130,7 +173,10 @@ class Product {
       connection = await pool.getConnection();
 
       const [rows] = await connection.execute(
-        "SELECT * FROM product WHERE id = ?",
+        `SELECT p.*, v.businessName AS vendorBusinessName, v.status AS vendorStatus
+         FROM product p
+         LEFT JOIN vendors v ON v.userId = p.vendorId
+         WHERE p.id = ?`,
         [parseInt(id)]
       );
 
@@ -179,11 +225,13 @@ class Product {
       // Query to get trending products
       // Trending = high rating + high reviews + recent
       const query = `
-        SELECT * FROM product 
+        SELECT p.*, v.businessName AS vendorBusinessName, v.status AS vendorStatus
+        FROM product p
+        LEFT JOIN vendors v ON v.userId = p.vendorId
         WHERE 1=1
         ORDER BY 
-          (COALESCE(rating, 0) * 0.6 + (COALESCE(reviews, 0) / 100) * 0.4) DESC,
-          id DESC
+          (COALESCE(p.rating, 0) * 0.6 + (COALESCE(p.reviews, 0) / 100) * 0.4) DESC,
+          p.id DESC
         LIMIT ${safeLimit} OFFSET ${safeOffset}
       `;
 
@@ -227,8 +275,12 @@ class Product {
         `INSERT INTO product (
           title, img, rating, price, originalPrice, color, category, 
           sizes, printType, material, reviews, isCustomizable, colors, 
-          tag, fabricType, productionTime, featured, basePrice, vendorId, description
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          tag, fabricType, productionTime, featured, basePrice, vendorId, description,
+          patternName, patternMeaning, culturalSignificance, origin, weavingTechnique,
+          yards, occasions, designStory, careInstructions, weight, wholesalePrice,
+          retailPrice, madeToOrder, video, gallery, descriptionHTML,
+          approvalStatus, approvalNote, approvedAt, stock, sku, lowStockThreshold
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           productData.title.trim(),
           productData.img || null,
@@ -250,6 +302,28 @@ class Product {
           productData.basePrice ? parseFloat(productData.basePrice) : 0,
           productData.vendorId || null,
           productData.description || null,
+          productData.patternName || null,
+          productData.patternMeaning || null,
+          productData.culturalSignificance || null,
+          productData.origin || null,
+          productData.weavingTechnique || null,
+          productData.yards ?? null,
+          productData.occasions ? JSON.stringify(productData.occasions) : null,
+          productData.designStory || null,
+          productData.careInstructions || null,
+          productData.weight ?? null,
+          productData.wholesalePrice ?? null,
+          productData.retailPrice ?? null,
+          productData.madeToOrder ? 1 : 0,
+          productData.video || null,
+          productData.gallery ? JSON.stringify(productData.gallery) : null,
+          productData.descriptionHTML || null,
+          productData.approvalStatus || 'approved',
+          productData.approvalNote || null,
+          productData.approvedAt || null,
+          parseInt(productData.stock) || 0,
+          productData.sku || null,
+          parseInt(productData.lowStockThreshold) || 0,
         ]
       );
 
@@ -285,7 +359,12 @@ class Product {
         'title', 'img', 'rating', 'price', 'originalPrice', 'color', 'category',
         'sizes', 'printType', 'material', 'reviews', 'isCustomizable', 'colors',
         'tag', 'fabricType', 'productionTime', 'featured', 'basePrice', 'vendorId',
-        'description'
+        'description',
+        'patternName', 'patternMeaning', 'culturalSignificance', 'origin',
+        'weavingTechnique', 'yards', 'occasions', 'designStory', 'careInstructions',
+        'weight', 'wholesalePrice', 'retailPrice', 'madeToOrder', 'video', 'gallery',
+        'descriptionHTML', 'approvalStatus', 'approvalNote', 'approvedAt',
+        'stock', 'sku', 'lowStockThreshold'
       ]);
 
       const setClause = [];
@@ -293,18 +372,27 @@ class Product {
 
       Object.keys(updateData).forEach((key) => {
         if (updateData[key] !== undefined && allowedColumns.has(key)) {
-          if (key === "sizes" || key === "colors") {
+          const jsonColumns = new Set([
+            'sizes', 'colors', 'occasions', 'gallery'
+          ]);
+          const floatColumns = new Set([
+            'price', 'originalPrice', 'basePrice', 'yards', 'weight',
+            'wholesalePrice', 'retailPrice'
+          ]);
+          const intColumns = new Set(['reviews', 'stock', 'lowStockThreshold']);
+          const boolColumns = new Set(['isCustomizable', 'featured', 'madeToOrder']);
+          if (jsonColumns.has(key)) {
             setClause.push(`${key} = ?`);
-            values.push(JSON.stringify(updateData[key]));
-          } else if (key === "isCustomizable" || key === "featured") {
+            values.push(updateData[key] ? JSON.stringify(updateData[key]) : null);
+          } else if (floatColumns.has(key)) {
+            setClause.push(`${key} = ?`);
+            values.push(updateData[key] !== null && updateData[key] !== '' ? parseFloat(updateData[key]) : null);
+          } else if (intColumns.has(key)) {
+            setClause.push(`${key} = ?`);
+            values.push(parseInt(updateData[key]) || 0);
+          } else if (boolColumns.has(key)) {
             setClause.push(`${key} = ?`);
             values.push(updateData[key] ? 1 : 0);
-          } else if (key === "price" || key === "originalPrice" || key === "basePrice") {
-            setClause.push(`${key} = ?`);
-            values.push(parseFloat(updateData[key]));
-          } else if (key === "reviews") {
-            setClause.push(`${key} = ?`);
-            values.push(parseInt(updateData[key]));
           } else if (key === "vendorId") {
             setClause.push(`${key} = ?`);
             values.push(updateData[key] ? parseInt(updateData[key]) : null);
@@ -427,6 +515,37 @@ class Product {
     } catch (err) {
       console.error("DB Error (getCategories):", err.message);
       throw new Error(`Error fetching categories: ${err.message}`);
+    } finally {
+      if (connection) {
+        connection.release();
+      }
+    }
+  }
+
+  /**
+   * Set a product's moderation status (admin approval workflow).
+   * Also records the approval timestamp when approving.
+   */
+  static async setApproval(id, { status, note = null }) {
+    let connection;
+    try {
+      if (!id || isNaN(id)) throw new Error('Invalid product ID');
+      if (!['pending', 'approved', 'rejected', 'changes_requested'].includes(status)) {
+        throw new Error('Invalid approval status');
+      }
+
+      connection = await pool.getConnection();
+      const approvedAt = status === 'approved' ? new Date() : null;
+      await connection.execute(
+        `UPDATE product
+         SET approvalStatus = ?, approvalNote = ?, approvedAt = ?
+         WHERE id = ?`,
+        [status, note, approvedAt, parseInt(id)]
+      );
+      return await Product.findById(id);
+    } catch (err) {
+      console.error("DB Error (setApproval):", err.message);
+      throw new Error(`Error updating product approval: ${err.message}`);
     } finally {
       if (connection) {
         connection.release();

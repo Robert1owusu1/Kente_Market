@@ -2,13 +2,13 @@ import React from "react";
 import { useCart } from "../../Context/CartContext";
 import { Link } from "react-router-dom";
 import { FaTimes } from "react-icons/fa";
+import { calcOrderTotals } from "../../utils/pricing";
 
 const CartDrawer = ({ isOpen, onClose }) => {
   const {
     cartItems,
     removeItem,
     updateItemQuantity,
-    getTotalPrice,
   } = useCart();
 
   if (!isOpen) return null;
@@ -105,9 +105,27 @@ const CartDrawer = ({ isOpen, onClose }) => {
         {/* Total section */}
         {cartItems.length > 0 && (
           <div className="p-4 border-t dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
-            <div className="flex justify-between text-lg font-semibold dark:text-primary">
+            <div className="space-y-1 text-sm text-gray-600 dark:text-gray-300">
+              <div className="flex justify-between">
+                <span>Subtotal</span>
+                <span>GH₵ {calcOrderTotals(cartItems).subtotal.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Shipping</span>
+                <span>
+                  {calcOrderTotals(cartItems).shipping === 0
+                    ? 'Free'
+                    : `GH₵ ${calcOrderTotals(cartItems).shipping.toFixed(2)}`}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span>Tax</span>
+                <span>GH₵ {calcOrderTotals(cartItems).tax.toFixed(2)}</span>
+              </div>
+            </div>
+            <div className="flex justify-between text-lg font-semibold dark:text-primary mt-2">
               <span>Total:</span>
-              <span>GH₵ {getTotalPrice().toFixed(2)}</span>
+              <span>GH₵ {calcOrderTotals(cartItems).total.toFixed(2)}</span>
             </div>
             <Link to="/cartpage" onClick={onClose}>
               <button className="mt-4 w-full bg-primary text-white py-3 rounded-xl hover:bg-primary/90 transition font-semibold">

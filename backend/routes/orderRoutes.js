@@ -5,7 +5,7 @@ import express from "express";
 const router = express.Router();
 
 // Your existing imports (keeping the typo path for now)
-import { protect, admin } from "../midleware/authMiddleware.js";
+import { protect, admin } from "../middleware/authMiddleware.js";
 
 // Your existing controller functions
 import {
@@ -18,6 +18,8 @@ import {
   getOrders,
   updateOrder,
   deleteOrder,
+  cancelOrder,
+  retryEscrowPayouts,
 } from "../controllers/orderController.js";
 
 // NEW: Import analytics functions (you'll need to add these to orderController.js)
@@ -28,8 +30,8 @@ import {
 } from "../controllers/orderController.js";
 
 // NEW: Import middleware for caching and rate limiting
-import { cacheMiddleware } from "../midleware/cacheMiddleware.js";
-import { apiLimiter, orderLimiter } from "../midleware/rateLimitMiddleware.js";
+import { cacheMiddleware } from "../middleware/cacheMiddleware.js";
+import { apiLimiter, orderLimiter } from "../middleware/rateLimitMiddleware.js";
 
 // ============================================
 // APPLY RATE LIMITING TO ALL ORDER ROUTES
@@ -99,5 +101,13 @@ router.route("/:id/deliver")
 // 📌 POST /api/orders/:id/confirm-received → Customer confirms receipt → release escrow
 router.route("/:id/confirm-received")
   .post(protect, confirmOrderReceived);
+
+// 📌 PUT /api/orders/:id/cancel → Cancel order and void escrow (admin only)
+router.route("/:id/cancel")
+  .put(protect, admin, cancelOrder);
+
+// 📌 POST /api/orders/:id/retry-escrow → Retry failed escrow payouts (admin only)
+router.route("/:id/retry-escrow")
+  .post(protect, admin, retryEscrowPayouts);
 
 export default router;

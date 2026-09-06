@@ -39,7 +39,7 @@ export const submitContact = async (req, res) => {
     });
   } catch (error) {
     console.error("❌ submitContact error:", error.message);
-    res.status(500).json({ message: error.message || "Failed to send message" });
+    res.status(500).json({ message: "Failed to send message" });
   }
 };
 
@@ -50,6 +50,6 @@ export const listContacts = async (req, res) => {
     res.json(contacts);
   } catch (error) {
     console.error("❌ listContacts error:", error.message);
-    res.status(500).json({ message: error.message || "Failed to fetch messages" });
+    res.status(500).json({ message: "Failed to fetch messages" });
   }
 };

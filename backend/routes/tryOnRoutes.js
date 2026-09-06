@@ -3,8 +3,8 @@
 
 import express from "express";
 import { generateTryOn, getTryOnStatus } from "../controllers/tryOnController.js";
-import { protect } from "../midleware/authMiddleware.js";
-import { apiLimiter } from "../midleware/rateLimitMiddleware.js";
+import { protect } from "../middleware/authMiddleware.js";
+import { apiLimiter } from "../middleware/rateLimitMiddleware.js";
 
 const router = express.Router();
 

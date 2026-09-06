@@ -1,4 +1,5 @@
 import { createContext, useContext, useReducer, useEffect } from "react";
+import { TAX_RATE, FREE_SHIPPING_THRESHOLD, STANDARD_SHIPPING_COST, calcTax, calcShipping } from "../utils/pricing";
 
 // Load cart from localStorage
 const getInitialCart = () => {
@@ -146,13 +147,15 @@ export const CartProvider = ({ children }) => {
     dispatch({ type: "CLEAR_CART" });
   };
 
-  // Helpers
+  // Helpers (pricing rules live in src/utils/pricing.js so cart, cart drawer
+  // and checkout all agree)
   const getTotalPrice = () =>
     state.cartItems.reduce((total, item) => total + item.price * item.quantity, 0);
 
-  const getTax = (taxRate = 0.1) => getTotalPrice() * taxRate;
+  const getTax = (taxRate = TAX_RATE) => calcTax(getTotalPrice(), taxRate);
 
-  const getShipping = () => (getTotalPrice() > 50 ? 0 : 5);
+  const getShipping = (threshold = FREE_SHIPPING_THRESHOLD, cost = STANDARD_SHIPPING_COST) =>
+    calcShipping(getTotalPrice(), threshold, cost);
 
   const getFinalTotal = (taxRate = 0.1) =>
     getTotalPrice() + getTax(taxRate) + getShipping();

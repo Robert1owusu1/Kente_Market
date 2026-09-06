@@ -7,7 +7,8 @@ import StyleSelector from "./StyleSelector";
 import TryOnPreview from "./TryOnPreview";
 import DecorateMode from "./DecorateMode";
 import tryOnService from "./api/tryOnService";
-import { SAMPLE_PRODUCTS, getProductById } from "../allprouctsdata/products";
+import { SAMPLE_PRODUCTS, getProductById } from "../allProductsData/products";
+import { useGetProductsDetailsQuery } from "../slices/productsApiSlice";
 import "./AiTryOnStyles.css";
 
 const AiTryOn = () => {
@@ -24,16 +25,31 @@ const AiTryOn = () => {
   const [error, setError] = useState(null);
   const [captureMethod, setCaptureMethod] = useState("upload"); // "upload" | "camera"
 
+  // Fetch the real product from the backend when navigating here from a
+  // product detail page. The product detail page uses DB products (any id),
+  // not the static SAMPLE_PRODUCTS, so we must fetch it to preselect the
+  // exact cloth the user was viewing.
+  const productIdForQuery = productIdParam ? parseInt(productIdParam) : null;
+  const { data: dbProduct } = useGetProductsDetailsQuery(productIdForQuery, {
+    skip: !productIdParam,
+  });
+
   // If product ID passed in URL, preselect it
   useEffect(() => {
     if (productIdParam) {
-      const product = getProductById(parseInt(productIdParam));
+      const parsedId = parseInt(productIdParam);
+      // Prefer the real DB product so the try-on matches the item the user
+      // was viewing. Fall back to the static catalog for demo product ids.
+      const product =
+        dbProduct && dbProduct.id !== undefined && dbProduct.id !== null
+          ? dbProduct
+          : getProductById(parsedId);
       if (product) {
         setSelectedProduct(product);
         setStep(2);
       }
     }
-  }, [productIdParam]);
+  }, [productIdParam, dbProduct]);
 
   const handleModeChange = (newMode) => {
     setMode(newMode);

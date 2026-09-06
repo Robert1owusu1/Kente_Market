@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { FaTimes } from 'react-icons/fa';
-import { useGetActivePopupsQuery } from '../slices/promotionsApiSlice';
+import { useGetActivePopupsQuery } from '../../slices/promotionsApiSlice';
 
 const STORAGE_KEY = 'dismissed_promos';
 

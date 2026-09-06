@@ -3,22 +3,22 @@
 
 import Order from "../models/orderModel.js";
 import pool from "../config/db.js";
+import Coupon from "../models/couponModel.js";
+import isValidId from "../utils/isValidId.js";
+import { computeExpectedCompletion } from "../utils/computeExpectedCompletion.js";
 import {
   createEscrowAllocations,
-  holdEscrowForOrder,
   releaseEscrowForOrder,
   setEscrowReleaseDeadline,
   getOrderAllocations,
+  holdEscrowForOrder,
+  cancelEscrowForOrder,
+  retryFailedAllocations,
 } from "../Services/escrowService.js";
 
 // ============================================
 // UTILITY FUNCTIONS
 // ============================================
-
-// ✅ Validate ID
-const isValidId = (id) => {
-  return !isNaN(id) && parseInt(id) > 0;
-};
 
 // Round to 2 decimals (GHS) for money
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
@@ -60,7 +60,7 @@ export const addOrderItems = async (req, res) => {
     const productIds = [...new Set(requested.map((r) => r.productId))];
     const placeholders = productIds.map(() => "?").join(", ");
     const [products] = await pool.execute(
-      `SELECT id, title, price, img, vendorId FROM product WHERE id IN (${placeholders})`,
+      `SELECT id, title, price, img, vendorId, isCustomizable, productionTime FROM product WHERE id IN (${placeholders})`,
       productIds
     );
     const productMap = new Map(products.map((p) => [p.id, p]));
@@ -79,15 +79,38 @@ export const addOrderItems = async (req, res) => {
         selectedColor: r.selectedColor,
         selectedSize: r.selectedSize,
         vendorId: p.vendorId || null,
+        // Customisation metadata: used to compute weaving progress ("days left")
+        // for custom orders. The vendor sets productionTime (in days) on the product.
+        isCustomizable: !!p.isCustomizable,
+        productionTime: parseInt(p.productionTime) || 1,
       };
     });
 
-    // Authoritative totals (must match CartContext rules: tax 10%, shipping free over GH₵50).
+    // Authoritative totals (MUST match the shared frontend pricing rules in
+    // src/utils/pricing.js: 12.5% tax, GH₵15 shipping, free over GH₵200).
     const subtotal = round2(items.reduce((s, it) => s + it.price * it.qty, 0));
-    const shipping = subtotal > 50 ? 0 : 5;
-    const tax = round2(subtotal * 0.1);
-    const discount = 0; // no coupon system yet
-    const totalAmount = round2(subtotal + shipping + tax);
+    const shipping = subtotal >= 200 ? 0 : 15;
+    const tax = round2(subtotal * 0.125);
+
+    // Coupon: discount is computed server-side and never trusted from the client.
+    // The code is validated against the DB, and the resulting discount is
+    // authoritative so a user cannot invent their own totals.
+    let discount = 0;
+    let appliedCouponId = null;
+    const couponCode = (req.body.couponCode || "").trim();
+    if (couponCode) {
+      const couponResult = await Coupon.validate(couponCode, subtotal);
+      if (!couponResult.valid) {
+        return res.status(400).json({ message: couponResult.message });
+      }
+      const c = couponResult.coupon;
+      discount = c.discountType === "percentage"
+        ? round2((subtotal * parseFloat(c.discountValue)) / 100)
+        : Math.min(parseFloat(c.discountValue), subtotal);
+      appliedCouponId = c.id;
+    }
+
+    const totalAmount = round2(subtotal + shipping + tax - discount);
 
     // IMPORTANT: paymentStatus is always forced to "pending". A client must NEVER
     // be able to self-assert a payment as paid. Orders are marked paid only by the
@@ -107,9 +130,14 @@ export const addOrderItems = async (req, res) => {
       discount,
       notes: req.body.notes || null,
       paymentReference: req.body.paymentReference || req.body.paymentResult?.id || null,
+      couponId: appliedCouponId,
     };
 
     const newOrder = await Order.create(orderData);
+
+    // Coupon usage is NOT consumed here. It is deferred until payment is
+    // confirmed (Paystack charge.success webhook or admin mark-as-paid), so a
+    // coupon is never wasted on an abandoned checkout.
 
     // Multi-vendor escrow: split the order into per-vendor allocations at placement.
     // Platform-owned items are excluded automatically (no vendorId on the product).
@@ -118,7 +146,7 @@ export const addOrderItems = async (req, res) => {
     res.status(201).json({ message: "Order created successfully", order: newOrder });
   } catch (error) {
     console.error('Error creating order:', error);
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ message: "Internal server error" });
   }
 };
 
@@ -149,7 +177,7 @@ export const getOrders = async (req, res) => {
     res.json(result);
   } catch (error) {
     console.error('Error fetching orders:', error);
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ message: "Internal server error" });
   }
 };
 
@@ -180,7 +208,7 @@ export const getOrderById = async (req, res) => {
     res.json(order);
   } catch (error) {
     console.error('Error fetching order:', error);
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ message: "Internal server error" });
   }
 };
 
@@ -193,7 +221,7 @@ export const getMyOrders = async (req, res) => {
     res.json(orders);
   } catch (error) {
     console.error('Error fetching user orders:', error);
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ message: "Internal server error" });
   }
 };
 
@@ -233,11 +261,36 @@ export const updateOrder = async (req, res) => {
       delete body.totalAmount;
     }
 
+    // Secure coupon application on the pre-created order path: recompute the
+    // totals from the stored items + a server-validated coupon, never from the
+    // client's numbers. Only reachable by the order owner (guarded above).
+    const couponCode = (req.body.couponCode || "").trim();
+    if (req.user.role !== 'admin' && couponCode) {
+      const rawItems = Array.isArray(existingOrder.items) ? existingOrder.items : [];
+      const subtotal = round2(
+        rawItems.reduce((s, it) => s + parseFloat(it.price || 0) * parseInt(it.qty || 1), 0)
+      );
+      const couponResult = await Coupon.validate(couponCode, subtotal);
+      if (!couponResult.valid) {
+        return res.status(400).json({ message: couponResult.message });
+      }
+      const c = couponResult.coupon;
+      const shipping = existingOrder.shippingCost ?? (subtotal >= 200 ? 0 : 15);
+      const tax = existingOrder.tax ?? round2(subtotal * 0.125);
+      const discount = c.discountType === "percentage"
+        ? round2((subtotal * parseFloat(c.discountValue)) / 100)
+        : Math.min(parseFloat(c.discountValue), subtotal);
+      body.discount = discount;
+      body.totalAmount = round2(subtotal + shipping + tax - discount);
+      body.couponId = c.id;
+      // Coupon usage is deferred until payment is confirmed.
+    }
+
     const updatedOrder = await Order.update(req.params.id, body);
     res.json({ message: "Order updated successfully", order: updatedOrder });
   } catch (error) {
     console.error('Error updating order:', error);
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ message: "Internal server error" });
   }
 };
 
@@ -260,10 +313,41 @@ export const updateOrderToPaid = async (req, res) => {
       orderStatus: "processing",
     });
 
-    res.json({ message: "Order marked as paid" });
+    // For customised orders, seed the expected completion date (order start +
+    // longest productionTime among customisable items) so the buyer sees how
+    // many days are left to finish weaving. Only set if not already provided.
+    const paidOrder = await Order.findById(req.params.id);
+    if (!paidOrder.expectedCompletionDate) {
+      const completion = computeExpectedCompletion(paidOrder);
+      if (completion) {
+        await Order.update(req.params.id, {
+          expectedCompletionDate: completion,
+        });
+      }
+    }
+
+    // Hold escrow allocations for the order so vendors can be paid out
+    const heldCount = await holdEscrowForOrder(req.params.id);
+
+    // Consume deferred coupon usage on admin-confirmed payment
+    const freshOrder = await Order.findById(req.params.id);
+    if (freshOrder.couponId) {
+      try {
+        await Coupon.incrementUses(freshOrder.couponId);
+      } catch (e) {
+        console.warn(`⚠️ Could not increment coupon usage: ${e.message}`);
+      }
+    }
+
+    const order = await Order.findById(req.params.id);
+    res.json({
+      message: "Order marked as paid",
+      order,
+      escrowHeld: heldCount,
+    });
   } catch (error) {
     console.error('Error marking order as paid:', error);
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ message: "Internal server error" });
   }
 };
 
@@ -276,23 +360,47 @@ export const updateOrderToDelivered = async (req, res) => {
       return res.status(400).json({ message: "Invalid order ID" });
     }
 
+    // Guard: only orders in 'processing' or 'shipped' state may be delivered
+    const existingOrder = await Order.findById(req.params.id);
+    if (!existingOrder) {
+      return res.status(404).json({ message: "Order not found" });
+    }
+    const deliverableStates = ['processing', 'shipped'];
+    if (!deliverableStates.includes(existingOrder.orderStatus)) {
+      return res.status(400).json({
+        message: `Cannot mark order as delivered from '${existingOrder.orderStatus}' status. Order must be ${deliverableStates.join(' or ')}.`,
+      });
+    }
+
     const updatedOrder = await Order.update(req.params.id, {
       orderStatus: "delivered",
     });
 
     // Escrow orders get an auto-release deadline: if the customer does not
     // confirm receipt within the window, funds are released automatically.
+    // Handle the race where escrow is not yet held (webhook delayed):
+    // attempt to hold escrow first, then set the deadline.
     if (updatedOrder.escrowStatus === 'held') {
       const days = await setEscrowReleaseDeadline(req.params.id);
       updatedOrder.escrowReleaseDeadline = await Order.findById(req.params.id)
         .then((o) => o.escrowReleaseDeadline);
       updatedOrder.escrowReleaseDays = days;
+    } else if (updatedOrder.escrowStatus === 'none') {
+      // Webhook may not have fired yet — try to hold escrow now
+      const heldCount = await holdEscrowForOrder(req.params.id);
+      if (heldCount > 0) {
+        const days = await setEscrowReleaseDeadline(req.params.id);
+        updatedOrder.escrowReleaseDeadline = await Order.findById(req.params.id)
+          .then((o) => o.escrowReleaseDeadline);
+        updatedOrder.escrowReleaseDays = days;
+        updatedOrder.escrowStatus = 'held';
+      }
     }
 
     res.json({ message: "Order marked as delivered", order: updatedOrder });
   } catch (error) {
     console.error('Error marking order as delivered:', error);
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ message: "Internal server error" });
   }
 };
 
@@ -335,16 +443,89 @@ export const confirmOrderReceived = async (req, res) => {
     const updatedOrder = await Order.findById(req.params.id);
 
     const failed = result.failed > 0;
-    res.status(failed ? 400 : 200).json({
+    res.status(200).json({
       message: failed
-        ? "Receipt confirmed but one or more vendor payouts failed. Admin review needed."
+        ? "Receipt confirmed. Some vendor payouts failed — admin retry may be needed."
         : "Receipt confirmed. Funds released to vendors.",
       escrowStatus: updatedOrder.escrowStatus,
       result,
     });
   } catch (error) {
     console.error('Error confirming order received:', error);
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+// @desc    Cancel order and void escrow
+// @route   PUT /api/orders/:id/cancel
+// @access  Private/Admin
+export const cancelOrder = async (req, res) => {
+  try {
+    if (!isValidId(req.params.id)) {
+      return res.status(400).json({ message: "Invalid order ID" });
+    }
+
+    const order = await Order.findById(req.params.id);
+    if (!order) {
+      return res.status(404).json({ message: "Order not found" });
+    }
+
+    const cancellableStatuses = ['pending', 'processing'];
+    if (!cancellableStatuses.includes(order.orderStatus)) {
+      return res.status(400).json({
+        message: `Cannot cancel order in '${order.orderStatus}' status. Order must be pending or processing.`,
+      });
+    }
+
+    await Order.update(req.params.id, {
+      orderStatus: "cancelled",
+      paymentStatus: order.paymentStatus === 'paid' ? 'refunded' : order.paymentStatus,
+    });
+
+    // Void any held escrow allocations so funds return to the platform
+    if (order.escrowStatus === 'held' || order.escrowStatus === 'none') {
+      await cancelEscrowForOrder(req.params.id);
+    }
+
+    const updatedOrder = await Order.findById(req.params.id);
+    res.json({ message: "Order cancelled", order: updatedOrder });
+  } catch (error) {
+    console.error('Error cancelling order:', error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+// @desc    Retry failed escrow payouts for an order
+// @route   POST /api/orders/:id/retry-escrow
+// @access  Private/Admin
+export const retryEscrowPayouts = async (req, res) => {
+  try {
+    if (!isValidId(req.params.id)) {
+      return res.status(400).json({ message: "Invalid order ID" });
+    }
+
+    const order = await Order.findById(req.params.id);
+    if (!order) {
+      return res.status(404).json({ message: "Order not found" });
+    }
+
+    if (!['failed', 'releasing'].includes(order.escrowStatus)) {
+      return res.status(400).json({
+        message: `Order escrow status is '${order.escrowStatus}'. Only orders with failed or in-flight payouts can be retried.`,
+      });
+    }
+
+    const result = await retryFailedAllocations(req.params.id);
+    const updatedOrder = await Order.findById(req.params.id);
+
+    res.status(200).json({
+      message: `Retry complete: ${result.retried} payouts initiated, ${result.failed} failed.`,
+      result,
+      escrowStatus: updatedOrder.escrowStatus,
+    });
+  } catch (error) {
+    console.error('Error retrying escrow payouts:', error);
+    res.status(500).json({ message: "Internal server error" });
   }
 };
 
@@ -361,7 +542,7 @@ export const deleteOrder = async (req, res) => {
     res.json({ message: "Order deleted successfully" });
   } catch (error) {
     console.error('Error deleting order:', error);
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ message: "Internal server error" });
   }
 };
 
@@ -401,7 +582,7 @@ export const getOrderStatistics = async (req, res) => {
     res.json(response);
   } catch (error) {
     console.error('Error fetching statistics:', error);
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ message: "Internal server error" });
   }
 };
 
@@ -458,7 +639,7 @@ export const getSalesAnalytics = async (req, res) => {
     res.json(results);
   } catch (error) {
     console.error('Error fetching sales analytics:', error);
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ message: "Internal server error" });
   } finally {
     if (connection) connection.release();
   }
@@ -514,7 +695,7 @@ export const getTopProducts = async (req, res) => {
     res.json(topProducts);
   } catch (error) {
     console.error('Error fetching top products:', error);
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ message: "Internal server error" });
   } finally {
     if (connection) connection.release();
   }

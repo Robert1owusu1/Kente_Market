@@ -1,6 +1,6 @@
 // FILE: frontend/src/components/TrendingProducts/TrendingProducts.jsx
 import React from 'react';
-import { FaStar, FaHeart, FaEye, FaShoppingCart, FaFire, FaTags } from "react-icons/fa";
+import { FaStar, FaHeart, FaEye, FaShoppingCart, FaFire, FaTags, FaStore, FaCheckCircle } from "react-icons/fa";
 import { Link } from 'react-router-dom';
 import { useCart } from "../../Context/CartContext";
 import { useGetTrendingProductsQuery } from "../../slices/productsApiSlice";
@@ -208,6 +208,17 @@ const TrendingProducts = ({ handleOrderPopup }) => {
                       <FaTags className="text-[10px]" />
                       {data.category}
                     </p>
+                    {data.vendorBusinessName && (
+                      <p className='text-[10px] text-gray-500 dark:text-gray-400 flex items-center gap-1 mt-1'>
+                        <FaStore className="text-[10px] text-primary" />
+                        Sold by {data.vendorBusinessName}
+                        {data.vendorStatus === 'approved' && (
+                          <span className="inline-flex items-center gap-0.5 text-green-600 dark:text-green-400 font-medium whitespace-nowrap">
+                            <FaCheckCircle className="text-[10px]" /> Verified
+                          </span>
+                        )}
+                      </p>
+                    )}
                   </div>
 
                   {/* Color display */}

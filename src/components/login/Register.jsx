@@ -9,7 +9,7 @@ import { TiShoppingBag } from "react-icons/ti";
 import Footer from "../../components/Footer/Footer";
 import { useRegisterMutation } from "../../slices/usersApiSlice";
 import { toast } from "react-toastify";
-import { setCredentials } from "../../slices/authSlice.JS";
+import { setCredentials } from "../../slices/authSlice.js";
 import { useDispatch } from "react-redux";
 import LegalDocument from "../legal/LegalDocument.jsx";
 import { termsOfService, privacyPolicy } from "../legal/legalContent.js";
@@ -318,17 +318,8 @@ const Register = () => {
 
 const handleSubmit = async (e) => {
   e.preventDefault();
-  
-  console.log("🔍 Form submission started");
-  console.log("📝 Form data:", { 
-    fullName: formData.fullName, 
-    email: formData.email,
-    passwordLength: formData.password.length,
-    agreeToTerms: formData.agreeToTerms 
-  });
 
   if (!validateForm()) {
-    console.log("❌ Form validation failed:", errors);
     toast.error("Please fix the form errors before submitting");
     return;
   }
@@ -338,7 +329,6 @@ const handleSubmit = async (e) => {
   const firstName = nameParts[0];
   const lastName = nameParts.length > 1 ? nameParts.slice(1).join(" ") : "";
 
-  // ✅ CLEAN APPROACH - Only send required fields during registration
   const userData = {
     firstName,
     lastName,
@@ -347,33 +337,22 @@ const handleSubmit = async (e) => {
     role: "customer",
     isActive: true,
   };
-  // ❌ REMOVED: phone, address, city, state, zipCode, country nulls
-
-  console.log("📤 Sending clean registration data:", { 
-    ...userData, 
-    password: "[HIDDEN " + userData.password.length + " chars]" 
-  });
 
   try {
     const res = await register(userData).unwrap();
     
-    console.log("✅ Registration successful:", res);
-    
-    // Store credentials
     dispatch(setCredentials(res));
     
     // ⭐ Show appropriate success message based on verification status
     if (res.isEmailVerified) {
       toast.success("Account created successfully! Welcome to Bonwire Kente!");
-      navigate("/");  // Already verified (shouldn't happen for new users)
+      navigate("/");
     } else {
       toast.success(res.message || "Account created! Please check your email for verification code.");
-      navigate("/verify-email");  // ✅ Redirect to verification page
+      navigate("/verify-email");
     }
     
   } catch (err) {
-    console.error("❌ Registration failed:", err);
-    
     // Enhanced error handling
     let errorMessage = "Registration failed. Please try again.";
     let specificErrors = {};
@@ -381,11 +360,9 @@ const handleSubmit = async (e) => {
     if (err?.data?.message) {
       errorMessage = err.data.message;
       
-      // Handle specific error types from improved User model
       if (errorMessage.toLowerCase().includes('email already exists')) {
         specificErrors.email = "This email is already registered. Please use a different email or try logging in.";
       } else if (errorMessage.toLowerCase().includes('validation failed')) {
-        // Extract field-specific validation errors
         if (errorMessage.includes('First name')) {
           specificErrors.fullName = "Please enter a valid first name";
         }
@@ -420,7 +397,6 @@ const handleSubmit = async (e) => {
       errorMessage = "Network error. Please check your connection and try again.";
     }
     
-    // Set specific field errors or general error
     if (Object.keys(specificErrors).length > 0) {
       setErrors(prev => ({ ...prev, ...specificErrors }));
     } else {

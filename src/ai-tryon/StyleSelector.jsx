@@ -1,5 +1,5 @@
 import React from "react";
-import { SAMPLE_PRODUCTS } from "../allprouctsdata/products";
+import { SAMPLE_PRODUCTS } from "../allProductsData/products";
 import "./AiTryOnStyles.css";
 
 const StyleSelector = ({ selected, onSelect, compact = false }) => {

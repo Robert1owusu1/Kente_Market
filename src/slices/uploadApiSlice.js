@@ -1,13 +1,18 @@
-import { apiSlice } from './apslice.js';
+import { apiSlice } from './apiSlice.js';
 
 export const uploadApiSlice = apiSlice.injectEndpoints({
   endpoints: (builder) => ({
     // Upload product image
+    // Note: overrides the baseQuery's 15s timeout because image uploads can
+    // legitimately take longer on slow connections / larger files. Otherwise
+    // RTK Query aborts with a TIMEOUT_ERROR (no .data), which the UI can't
+    // distinguish from a real backend failure.
     uploadImage: builder.mutation({
       query: (formData) => ({
         url: '/api/upload',
         method: 'POST',
         body: formData,
+        timeout: 120000,
       }),
     }),
     

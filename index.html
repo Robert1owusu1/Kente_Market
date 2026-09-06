@@ -32,9 +32,8 @@
       form-action 'self';
     ">
 
-    <!-- Preconnect to reduce connection setup latency for API + Paystack -->
+    <!-- Preconnect to reduce connection setup latency for Paystack -->
     <link rel="preconnect" href="https://js.paystack.co" crossorigin />
-    <link rel="preconnect" href="http://localhost:5000" crossorigin />
 
     <!-- ✅ Paystack SDK script - deferred so it never blocks first paint -->
     <script src="https://js.paystack.co/v2/inline.js" defer></script>

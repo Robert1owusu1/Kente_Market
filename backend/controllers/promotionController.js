@@ -6,7 +6,8 @@ export const listPromotions = async (req, res) => {
     const promotions = await Promotion.findAll({ includeExpired: true, ...req.query });
     res.json(promotions);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error('Promotions error:', error);
+    res.status(500).json({ message: "Internal server error" });
   }
 };
 
@@ -16,7 +17,8 @@ export const getActiveBanners = async (req, res) => {
     const promotions = await Promotion.findActiveForDisplay({ type: 'banner', limit: 10 });
     res.json(promotions);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error('Promotions error:', error);
+    res.status(500).json({ message: "Internal server error" });
   }
 };
 
@@ -26,7 +28,8 @@ export const getActivePopups = async (req, res) => {
     const promotions = await Promotion.findActiveForDisplay({ type: 'popup', limit: 3 });
     res.json(promotions);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error('Promotions error:', error);
+    res.status(500).json({ message: "Internal server error" });
   }
 };
 
@@ -36,7 +39,8 @@ export const getActivePromotions = async (req, res) => {
     const promotions = await Promotion.findActiveForDisplay({ limit: 20 });
     res.json(promotions);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error('Promotions error:', error);
+    res.status(500).json({ message: "Internal server error" });
   }
 };
 
@@ -47,7 +51,8 @@ export const getPromotion = async (req, res) => {
     if (!promotion) return res.status(404).json({ message: 'Promotion not found' });
     res.json(promotion);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error('Promotions error:', error);
+    res.status(500).json({ message: "Internal server error" });
   }
 };
 
@@ -58,7 +63,8 @@ export const createPromotion = async (req, res) => {
     const promotion = await Promotion.create(req.body);
     res.status(201).json(promotion);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error('Promotions error:', error);
+    res.status(500).json({ message: "Internal server error" });
   }
 };
 
@@ -68,7 +74,8 @@ export const updatePromotion = async (req, res) => {
     const promotion = await Promotion.update(req.params.id, req.body);
     res.json(promotion);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error('Promotions error:', error);
+    res.status(500).json({ message: "Internal server error" });
   }
 };
 
@@ -79,6 +86,7 @@ export const deletePromotion = async (req, res) => {
     if (!deleted) return res.status(404).json({ message: 'Promotion not found' });
     res.json({ message: 'Promotion deleted' });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error('Promotions error:', error);
+    res.status(500).json({ message: "Internal server error" });
   }
 };

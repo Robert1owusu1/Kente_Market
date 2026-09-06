@@ -1,5 +1,5 @@
 // slices/vendorsApiSlice.js
-import { apiSlice } from "./apslice";
+import { apiSlice } from "./apiSlice";
 
 const VENDORS_URL = "/api/vendors";
 
@@ -25,18 +25,148 @@ export const vendorsApiSlice = apiSlice.injectEndpoints({
       keepUnusedDataFor: 5,
     }),
 
-    // ✅ Vendor's own products
+    // ✅ Vendor's own products (detailed)
     getMyVendorProducts: builder.query({
       query: () => ({
         url: `${VENDORS_URL}/myproducts`,
         method: "GET",
       }),
+      providesTags: ["VendorProduct"],
+      keepUnusedDataFor: 5,
     }),
 
     // ✅ Create a product as vendor
     createVendorProduct: builder.mutation({
       query: (data) => ({
         url: `${VENDORS_URL}/products`,
+        method: "POST",
+        body: data,
+      }),
+      invalidatesTags: ["VendorProduct", "VendorAnalytics"],
+    }),
+
+    // ✅ Update vendor's own product
+    updateVendorProduct: builder.mutation({
+      query: ({ id, ...data }) => ({
+        url: `${VENDORS_URL}/products/${id}`,
+        method: "PUT",
+        body: data,
+      }),
+      invalidatesTags: ["VendorProduct", "VendorAnalytics"],
+    }),
+
+    // ✅ Delete vendor's own product
+    deleteVendorProduct: builder.mutation({
+      query: (id) => ({
+        url: `${VENDORS_URL}/products/${id}`,
+        method: "DELETE",
+      }),
+      invalidatesTags: ["VendorProduct", "VendorAnalytics"],
+    }),
+
+    // ✅ Vendor analytics
+    getVendorAnalytics: builder.query({
+      query: () => ({
+        url: `${VENDORS_URL}/analytics`,
+        method: "GET",
+      }),
+      providesTags: ["VendorAnalytics"],
+      keepUnusedDataFor: 5,
+    }),
+
+    // ✅ Reviews on vendor's products
+    getVendorReviews: builder.query({
+      query: () => ({
+        url: `${VENDORS_URL}/reviews`,
+        method: "GET",
+      }),
+      providesTags: ["VendorReview"],
+      keepUnusedDataFor: 5,
+    }),
+
+    // ✅ Returns for vendor's products
+    getVendorReturns: builder.query({
+      query: () => ({
+        url: `${VENDORS_URL}/returns`,
+        method: "GET",
+      }),
+      providesTags: ["VendorReturn"],
+      keepUnusedDataFor: 5,
+    }),
+
+    // ✅ Vendor's coupons
+    getVendorCoupons: builder.query({
+      query: () => ({
+        url: `${VENDORS_URL}/coupons`,
+        method: "GET",
+      }),
+      providesTags: ["VendorCoupon"],
+      keepUnusedDataFor: 5,
+    }),
+
+    // ✅ Create vendor coupon
+    createVendorCoupon: builder.mutation({
+      query: (data) => ({
+        url: `${VENDORS_URL}/coupons`,
+        method: "POST",
+        body: data,
+      }),
+      invalidatesTags: ["VendorCoupon"],
+    }),
+
+    // ✅ Update vendor coupon
+    updateVendorCoupon: builder.mutation({
+      query: ({ id, ...data }) => ({
+        url: `${VENDORS_URL}/coupons/${id}`,
+        method: "PUT",
+        body: data,
+      }),
+      invalidatesTags: ["VendorCoupon"],
+    }),
+
+    // ✅ Delete vendor coupon
+    deleteVendorCoupon: builder.mutation({
+      query: (id) => ({
+        url: `${VENDORS_URL}/coupons/${id}`,
+        method: "DELETE",
+      }),
+      invalidatesTags: ["VendorCoupon"],
+    }),
+
+    // ✅ Update vendor business profile
+    updateVendorProfile: builder.mutation({
+      query: (data) => ({
+        url: `${VENDORS_URL}/profile`,
+        method: "PUT",
+        body: data,
+      }),
+      invalidatesTags: ["Vendor"],
+    }),
+
+    // ✅ Orders that contain this vendor's products (fulfilment list)
+    getVendorOrders: builder.query({
+      query: () => ({
+        url: `${VENDORS_URL}/orders`,
+        method: "GET",
+      }),
+      providesTags: ["VendorOrder"],
+      keepUnusedDataFor: 5,
+    }),
+
+    // ✅ Vendor advances fulfilment status of their order (+ customised note/date)
+    updateVendorOrderStatus: builder.mutation({
+      query: ({ orderId, orderStatus, productionNote, expectedCompletionDate }) => ({
+        url: `${VENDORS_URL}/orders/${orderId}/status`,
+        method: "POST",
+        body: { orderStatus, productionNote, expectedCompletionDate },
+      }),
+      invalidatesTags: ["VendorOrder", "VendorAnalytics"],
+    }),
+
+    // ✅ Vendor withdraws from available wallet balance
+    withdrawVendor: builder.mutation({
+      query: (data) => ({
+        url: `${VENDORS_URL}/withdraw`,
         method: "POST",
         body: data,
       }),
@@ -72,6 +202,19 @@ export const {
   useGetMyVendorProfileQuery,
   useGetMyVendorProductsQuery,
   useCreateVendorProductMutation,
+  useUpdateVendorProductMutation,
+  useDeleteVendorProductMutation,
+  useGetVendorAnalyticsQuery,
+  useGetVendorReviewsQuery,
+  useGetVendorReturnsQuery,
+  useGetVendorCouponsQuery,
+  useCreateVendorCouponMutation,
+  useUpdateVendorCouponMutation,
+  useDeleteVendorCouponMutation,
+  useUpdateVendorProfileMutation,
+  useWithdrawVendorMutation,
   useGetAllVendorsQuery,
   useUpdateVendorStatusMutation,
+  useGetVendorOrdersQuery,
+  useUpdateVendorOrderStatusMutation,
 } = vendorsApiSlice;

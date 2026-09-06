@@ -18,8 +18,8 @@ import {
     resendOTP,
     getVerificationStatus
 } from '../controllers/userController.js';
-import { protect, admin } from "../midleware/authMiddleware.js";
-import { authLimiter, passwordResetLimiter } from "../midleware/rateLimitMiddleware.js";
+import { protect, admin } from "../middleware/authMiddleware.js";
+import { authLimiter, passwordResetLimiter } from "../middleware/rateLimitMiddleware.js";
 
 // ============================================
 // PUBLIC ROUTES (No Authentication Required)

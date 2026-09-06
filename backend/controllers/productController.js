@@ -1,7 +1,28 @@
 // FILE: backend/controllers/productController.js
-import asyncHandler from "../midleware/asyncHandller.js";
+import asyncHandler from "../middleware/asyncHandler.js";
 import Product from "../models/productModel.js";
-import { clearCache } from "../midleware/cacheMiddleware.js";
+import pool from "../config/db.js";
+import { clearCache } from "../middleware/cacheMiddleware.js";
+
+// @desc    Fetch curated Kente Museum pieces (approved products with pattern
+//          provenance metadata), for the cultural showcase page.
+// @route   GET /api/products/museum
+// @access  Public
+const getMuseumPieces = asyncHandler(async (req, res) => {
+  const limit = Math.max(1, Math.min(parseInt(req.query.limit) || 24, 60));
+  const [rows] = await pool.execute(
+    `SELECT p.id, p.title, p.img, p.category, p.patternName, p.patternMeaning,
+            p.culturalSignificance, p.origin, p.weavingTechnique, p.video,
+            v.businessName AS vendorBusinessName
+     FROM product p
+     LEFT JOIN vendors v ON v.userId = p.vendorId
+     WHERE p.approvalStatus = 'approved'
+       AND (p.patternName IS NOT NULL AND p.patternName <> '')
+     ORDER BY p.updated_at DESC
+     LIMIT ${limit}`
+  );
+  res.json(rows);
+});
 
 // @desc    Fetch all products with optional filters
 // @route   GET /api/products
@@ -234,6 +255,7 @@ export {
   getProductsByCategory,
   getFeaturedProducts,
   getTrendingProducts, // ⭐ NEW
+  getMuseumPieces,
   createProduct,
   updateProduct,
   deleteProduct,

@@ -177,6 +177,50 @@ class PaystackService {
   }
 
   /**
+   * Get list of mobile money telcos for a country/currency.
+   * @param {string} currency - Currency (default: 'GHS')
+   * @returns {Promise<object>} List of mobile money providers
+   */
+  async getMobileMoneyTelcos(currency = 'GHS') {
+    try {
+      const response = await axios.get(
+        `${this.baseUrl}/bank?currency=${currency}&type=mobile_money`,
+        { headers: this.headers }
+      );
+      return response.data;
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to fetch mobile money providers');
+    }
+  }
+
+  /**
+   * Create a transfer recipient for mobile money (momo).
+   * Uses the telco code as bank_code and the phone number as account_number.
+   * @param {string} name - Recipient name
+   * @param {string} phone - Mobile money phone number
+   * @param {string} telco - Telco code (e.g. 'MTN', 'VOD', 'ATL', 'TGO')
+   * @returns {Promise<object>} Transfer recipient response
+   */
+  async createMomoRecipient(name, phone, telco) {
+    try {
+      const response = await axios.post(
+        `${this.baseUrl}/transferrecipient`,
+        {
+          type: 'mobile_money',
+          name,
+          account_number: phone,
+          bank_code: telco,
+          currency: 'GHS',
+        },
+        { headers: this.headers }
+      );
+      return response.data;
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to create mobile money recipient');
+    }
+  }
+
+  /**
    * Resolve account number
    * @param {string} accountNumber - Account number
    * @param {string} bankCode - Bank code

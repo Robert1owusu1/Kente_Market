@@ -2,8 +2,8 @@
 // DESCRIPTION: API routes for settings management
 
 import express from 'express';
-import { protect, admin } from '../midleware/authMiddleware.js'; // Using your typo path
-import { cacheMiddleware } from '../midleware/cacheMiddleware.js';
+import { protect, admin } from '../middleware/authMiddleware.js'; // Using your typo path
+import { cacheMiddleware } from '../middleware/cacheMiddleware.js';
 import {
   getSettings,
   getSetting,

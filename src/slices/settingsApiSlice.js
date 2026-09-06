@@ -1,7 +1,7 @@
 // FILE LOCATION: src/slices/settingsApiSlice.js
 // DESCRIPTION: Redux RTK Query API slice for settings management
 
-import { apiSlice } from "./apslice";
+import { apiSlice } from "./apiSlice";
 
 export const settingsApiSlice = apiSlice.injectEndpoints({
   endpoints: (builder) => ({

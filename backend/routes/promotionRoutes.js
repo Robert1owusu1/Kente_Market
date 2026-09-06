@@ -1,5 +1,5 @@
 import express from 'express';
-import { protect, admin } from '../midleware/authMiddleware.js';
+import { protect, admin } from '../middleware/authMiddleware.js';
 import {
   listPromotions,
   getActiveBanners,

@@ -1,7 +1,7 @@
 import express from 'express';
-import upload from '../midleware/uploadMidleware.js';
-import { protect, admin } from '../midleware/authMiddleware.js';
-import { uploadLimiter } from '../midleware/rateLimitMiddleware.js';
+import upload from '../middleware/uploadMiddleware.js';
+import { protect } from '../middleware/authMiddleware.js';
+import { uploadLimiter } from '../middleware/rateLimitMiddleware.js';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
@@ -11,10 +11,22 @@ const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Allow admins AND approved vendors to upload product images. Vendors create
+// and sell their own products, so they must be able to upload images too —
+// but plain customers cannot.
+const adminOrVendor = (req, res, next) => {
+  if (req.user && (req.user.role === 'admin' || req.user.role === 'vendor')) {
+    return next();
+  }
+  res.status(403);
+  const e = new Error('Not authorized as an admin or vendor');
+  return next(e);
+};
+
 // @desc    Upload product image
 // @route   POST /api/upload
-// @access  Private/Admin
-router.post('/', protect, admin, uploadLimiter, (req, res) => {
+// @access  Private/Admin/Vendor
+router.post('/', protect, adminOrVendor, uploadLimiter, (req, res) => {
   // Use multer middleware with error handling
   upload.single('image')(req, res, (err) => {
     // Handle multer-specific errors
@@ -76,7 +88,7 @@ router.post('/', protect, admin, uploadLimiter, (req, res) => {
       }
       
       res.status(500).json({ 
-        message: error.message || 'Image upload failed' 
+        message: 'Image upload failed' 
       });
     }
   });
@@ -84,8 +96,8 @@ router.post('/', protect, admin, uploadLimiter, (req, res) => {
 
 // @desc    Delete product image
 // @route   DELETE /api/upload/:filename
-// @access  Private/Admin
-router.delete('/:filename', protect, admin, (req, res) => {
+// @access  Private/Admin/Vendor
+router.delete('/:filename', protect, adminOrVendor, (req, res) => {
   try {
     const { filename } = req.params;
     

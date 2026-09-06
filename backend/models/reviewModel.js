@@ -119,6 +119,80 @@ class Review {
       [Number(agg[0].avgRating).toFixed(1), parseInt(agg[0].count), productId]
     );
   }
+
+  // ✅ Find review by id
+  static async findById(id) {
+    let connection;
+    try {
+      connection = await pool.getConnection();
+      const [rows] = await connection.execute("SELECT * FROM reviews WHERE id = ?", [id]);
+      return rows[0] || null;
+    } catch (err) {
+      throw new Error(`Error fetching review: ${err.message}`);
+    } finally {
+      if (connection) connection.release();
+    }
+  }
+
+  // ✅ Update a review
+  static async update(id, fields) {
+    let connection;
+    try {
+      connection = await pool.getConnection();
+      const allowed = ['rating', 'comment'];
+      const sets = [];
+      const vals = [];
+      for (const key of allowed) {
+        if (fields[key] !== undefined) {
+          sets.push(`${key} = ?`);
+          vals.push(fields[key]);
+        }
+      }
+      if (sets.length === 0) return null;
+      sets.push('updated_at = CURRENT_TIMESTAMP');
+      vals.push(id);
+      await connection.execute(`UPDATE reviews SET ${sets.join(', ')} WHERE id = ?`, vals);
+
+      // Recalculate product stats
+      const [[row]] = await connection.execute("SELECT productId FROM reviews WHERE id = ?", [id]);
+      if (row) await Review.recalculateProductStats(connection, row.productId);
+
+      const [[updated]] = await connection.execute("SELECT * FROM reviews WHERE id = ?", [id]);
+      return updated || null;
+    } catch (err) {
+      throw new Error(`Error updating review: ${err.message}`);
+    } finally {
+      if (connection) connection.release();
+    }
+  }
+
+  // ✅ Delete a review
+  static async delete(id) {
+    let connection;
+    try {
+      connection = await pool.getConnection();
+      const [[row]] = await connection.execute("SELECT productId FROM reviews WHERE id = ?", [id]);
+      await connection.execute("DELETE FROM reviews WHERE id = ?", [id]);
+      if (row) await Review.recalculateProductStats(connection, row.productId);
+    } catch (err) {
+      throw new Error(`Error deleting review: ${err.message}`);
+    } finally {
+      if (connection) connection.release();
+    }
+  }
+
+  // ✅ Update review status (admin moderation)
+  static async updateStatus(id, status) {
+    let connection;
+    try {
+      connection = await pool.getConnection();
+      await connection.execute("UPDATE reviews SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", [status, id]);
+    } catch (err) {
+      throw new Error(`Error updating review status: ${err.message}`);
+    } finally {
+      if (connection) connection.release();
+    }
+  }
 }
 
 export default Review;

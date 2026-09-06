@@ -2,13 +2,22 @@
 // DESCRIPTION: Enhanced Admin Dashboard with real data, analytics, and settings
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { FaHome, FaBox, FaShoppingCart, FaUsers, FaChartLine, FaCog, FaStore, FaTag } from 'react-icons/fa';
+import { FaHome, FaBox, FaShoppingCart, FaUsers, FaChartLine, FaCog, FaStore, FaTag, FaPercent, FaUndo, FaStar, FaEnvelope, FaListUl, FaClipboardCheck, FaCoins, FaCertificate, FaBullhorn } from 'react-icons/fa';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, AreaChart, Area } from 'recharts';
-import ProductsPage from '../Pges/adminDashboardPages/products/ProductsPage';
-import OrdersPage from '../Pges/adminDashboardPages/Orders/OrdersPage';
-import CustomersPage from '../Pges/adminDashboardPages/Customers/CustomersPage';
-import VendorsPage from '../Pges/adminDashboardPages/Vendors/VendorsPage';
-import PromotionsPage from '../Pges/adminDashboardPages/Promotions/PromotionsPage';
+import ProductsPage from '../Pages/adminDashboardPages/products/ProductsPage';
+import OrdersPage from '../Pages/adminDashboardPages/Orders/OrdersPage';
+import CustomersPage from '../Pages/adminDashboardPages/Customers/CustomersPage';
+import VendorsPage from '../Pages/adminDashboardPages/Vendors/VendorsPage';
+import PromotionsPage from '../Pages/adminDashboardPages/Promotions/PromotionsPage';
+import CouponsPage from '../Pages/adminDashboardPages/Coupons/CouponsPage';
+import ReturnsPage from '../Pages/adminDashboardPages/Returns/ReturnsPage';
+import ReviewsAdminPage from '../Pages/adminDashboardPages/Reviews/ReviewsAdminPage';
+import SubscribersPage from '../Pages/adminDashboardPages/Subscribers/SubscribersPage';
+import CategoriesPage from '../Pages/adminDashboardPages/Categories/CategoriesPage';
+import ModerationPage from '../Pages/adminDashboardPages/Moderation/ModerationPage';
+import CampaignsPage from '../Pages/adminDashboardPages/Campaigns/CampaignsPage';
+import CommissionsPage from '../Pages/adminDashboardPages/Commissions/CommissionsPage';
+import CertificatesAdminPage from '../Pages/adminDashboardPages/Certificates/CertificatesAdminPage';
 import { useGetAllOrdersQuery } from '../slices/ordersApiSlice';
 import { useGetSettingsQuery, useUpdateSettingsMutation } from '../slices/settingsApiSlice';
 import { formatCurrency } from '../utils/formatCurrency';
@@ -36,27 +45,30 @@ const AdminDashboard = () => {
   const { data: apiSettings } = useGetSettingsQuery();
   const [updateSettingsMutation] = useUpdateSettingsMutation();
 
-  const orders = Array.isArray(ordersResponse) ? ordersResponse : (ordersResponse.orders || []);
+  const orders = useMemo(
+    () => (Array.isArray(ordersResponse) ? ordersResponse : (ordersResponse.orders || [])),
+    [ordersResponse]
+  );
 
   // Update settings when API data loads
   useEffect(() => {
     if (apiSettings) {
       setSettings({
-        siteName: apiSettings.site_name || 'Bonwire Kente',
-        email: apiSettings.admin_email || 'admin@brandinghouse.com',
+        siteName: apiSettings.siteName || 'Bonwire Kente',
+        email: apiSettings.email || 'admin@brandinghouse.com',
         currency: apiSettings.currency || 'GHS',
-        taxRate: apiSettings.tax_rate || 10,
-        shippingCost: apiSettings.shipping_cost || 5.00,
-        notifications: apiSettings.notifications_enabled !== undefined ? apiSettings.notifications_enabled : true,
-        emailNotifications: apiSettings.email_notifications !== undefined ? apiSettings.email_notifications : true,
-        orderAlerts: apiSettings.order_alerts !== undefined ? apiSettings.order_alerts : true,
-        lowStockAlert: apiSettings.low_stock_threshold || 10,
+        taxRate: apiSettings.taxRate || 10,
+        shippingCost: apiSettings.shippingCost || 5.00,
+        notifications: apiSettings.notifications !== undefined ? apiSettings.notifications : true,
+        emailNotifications: apiSettings.emailNotifications !== undefined ? apiSettings.emailNotifications : true,
+        orderAlerts: apiSettings.orderAlerts !== undefined ? apiSettings.orderAlerts : true,
+        lowStockAlert: apiSettings.lowStockThreshold || 10,
         theme: apiSettings.theme || 'light'
       });
     }
   }, [apiSettings]);
 
-  // Calculate sales chart data from real orders
+  // Calculate sales chart data from real orders (paid only for revenue)
   const salesChartData = useMemo(() => {
     const now = new Date();
     const monthsData = {};
@@ -72,7 +84,9 @@ const AdminDashboard = () => {
       const monthKey = orderDate.toLocaleString('default', { month: 'short' });
       
       if (monthsData[monthKey]) {
-        monthsData[monthKey].sales += Number(order.totalAmount) || 0;
+        if (order.paymentStatus === 'paid') {
+          monthsData[monthKey].sales += Number(order.totalAmount) || 0;
+        }
         monthsData[monthKey].orders += 1;
       }
     });
@@ -82,13 +96,14 @@ const AdminDashboard = () => {
 
   // Calculate real statistics
   const stats = useMemo(() => {
-    const totalSales = orders.reduce((sum, order) => sum + (Number(order.totalAmount) || 0), 0);
+    const paidOrdersList = orders.filter(o => o.paymentStatus === 'paid');
+    const totalSales = paidOrdersList.reduce((sum, order) => sum + (Number(order.totalAmount) || 0), 0);
     const totalOrders = orders.length;
     const pendingOrders = orders.filter(o => o.orderStatus === 'pending').length;
     const deliveredOrders = orders.filter(o => o.orderStatus === 'delivered').length;
     const cancelledOrders = orders.filter(o => o.orderStatus === 'cancelled').length;
     const processingOrders = orders.filter(o => o.orderStatus === 'processing').length;
-    const avgOrderValue = totalOrders > 0 ? totalSales / totalOrders : 0;
+    const avgOrderValue = paidOrdersList.length > 0 ? totalSales / paidOrdersList.length : 0;
 
     const ordersByStatus = [
       { name: 'Pending', value: pendingOrders },
@@ -117,10 +132,19 @@ const AdminDashboard = () => {
   const menuItems = [
     { id: 'dashboard', name: 'Dashboard', icon: FaHome },
     { id: 'products', name: 'Products', icon: FaBox },
+    { id: 'categories', name: 'Categories', icon: FaListUl },
     { id: 'orders', name: 'Orders', icon: FaShoppingCart },
     { id: 'vendors', name: 'Vendors', icon: FaStore },
+    { id: 'moderation', name: 'Moderation', icon: FaClipboardCheck },
+    { id: 'campaigns', name: 'Campaigns', icon: FaBullhorn },
+    { id: 'commissions', name: 'Commissions', icon: FaCoins },
+    { id: 'certificates', name: 'Certificates', icon: FaCertificate },
     { id: 'customers', name: 'Customers', icon: FaUsers },
     { id: 'promotions', name: 'Promotions', icon: FaTag },
+    { id: 'coupons', name: 'Coupons', icon: FaPercent },
+    { id: 'reviews', name: 'Reviews', icon: FaStar },
+    { id: 'returns', name: 'Returns', icon: FaUndo },
+    { id: 'subscribers', name: 'Subscribers', icon: FaEnvelope },
     { id: 'analytics', name: 'Analytics', icon: FaChartLine },
     { id: 'settings', name: 'Settings', icon: FaCog },
   ];
@@ -146,7 +170,7 @@ const AdminDashboard = () => {
         <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-md">
           <h3 className="text-sm text-gray-600 dark:text-gray-400 mb-2">Total Revenue</h3>
           <p className="text-3xl font-bold text-indigo-600">{formatCurrency(stats.totalSales)}</p>
-          <p className="text-sm text-gray-500 mt-2">From {stats.totalOrders} orders</p>
+          <p className="text-sm text-gray-500 mt-2">From {stats.paidOrders} paid orders</p>
         </div>
         <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-md">
           <h3 className="text-sm text-gray-600 dark:text-gray-400 mb-2">Average Order Value</h3>
@@ -532,14 +556,32 @@ const AdminDashboard = () => {
         return renderDashboard();
       case 'products':
         return <ProductsPage />;
+      case 'categories':
+        return <CategoriesPage />;
       case 'orders':
         return <OrdersPage />;
       case 'vendors':
         return <VendorsPage />;
+      case 'moderation':
+        return <ModerationPage />;
+      case 'campaigns':
+        return <CampaignsPage />;
+      case 'commissions':
+        return <CommissionsPage />;
+      case 'certificates':
+        return <CertificatesAdminPage />;
       case 'customers':
         return <CustomersPage />;
       case 'promotions':
         return <PromotionsPage />;
+      case 'coupons':
+        return <CouponsPage />;
+      case 'reviews':
+        return <ReviewsAdminPage />;
+      case 'returns':
+        return <ReturnsPage />;
+      case 'subscribers':
+        return <SubscribersPage />;
       case 'analytics':
         return renderAnalytics();
       case 'settings':

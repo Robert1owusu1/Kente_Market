@@ -17,6 +17,9 @@ class Order {
     this.discount = orderData.discount;
     this.notes = orderData.notes;
     this.paymentReference = orderData.paymentReference || orderData.payment_reference || null;
+    this.couponId = orderData.couponId || null;
+    this.expectedCompletionDate = orderData.expectedCompletionDate;
+    this.productionNote = orderData.productionNote;
     this.escrowStatus = orderData.escrowStatus || 'none';
     this.escrowReleaseDeadline = orderData.escrowReleaseDeadline;
     this.escrowAllocations = orderData.escrowAllocations || [];
@@ -67,28 +70,31 @@ class Order {
 
     const connection = await pool.getConnection();
     try {
-      const [result] = await connection.execute(
-        `INSERT INTO orders 
-        (userId, orderNumber, items, totalAmount, shippingAddress, billingAddress,
-         paymentMethod, paymentStatus, orderStatus, shippingCost, tax, discount, notes, paymentReference)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          orderData.userId,
-          orderData.orderNumber,
-          JSON.stringify(orderData.items || []),
-          orderData.totalAmount,
-          JSON.stringify(orderData.shippingAddress || {}),
-          JSON.stringify(orderData.billingAddress || {}),
-          orderData.paymentMethod || 'pending',
-          orderData.paymentStatus || 'pending',
-          orderData.orderStatus || 'pending',
-          orderData.shippingCost || 0,
-          orderData.tax || 0,
-          orderData.discount || 0,
-          orderData.notes || null,
-          orderData.paymentReference || null,
-        ]
-      );
+    const [result] = await connection.execute(
+      `INSERT INTO orders 
+      (userId, orderNumber, items, totalAmount, shippingAddress, billingAddress,
+       paymentMethod, paymentStatus, orderStatus, shippingCost, tax, discount, notes, paymentReference, couponId, expectedCompletionDate, productionNote)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        orderData.userId,
+        orderData.orderNumber,
+        JSON.stringify(orderData.items || []),
+        orderData.totalAmount,
+        JSON.stringify(orderData.shippingAddress || {}),
+        JSON.stringify(orderData.billingAddress || {}),
+        orderData.paymentMethod || 'pending',
+        orderData.paymentStatus || 'pending',
+        orderData.orderStatus || 'pending',
+        orderData.shippingCost || 0,
+        orderData.tax || 0,
+        orderData.discount || 0,
+        orderData.notes || null,
+        orderData.paymentReference || null,
+        orderData.couponId || null,
+        orderData.expectedCompletionDate || null,
+        orderData.productionNote || null,
+      ]
+    );
       return { id: result.insertId, ...orderData };
     } catch (error) {
       throw new Error("Error creating order: " + error.message);
@@ -241,7 +247,8 @@ static async findAll(options = {}) {
       const allowedFields = [
         'orderStatus', 'paymentStatus', 'paymentMethod', 'shippingCost',
         'tax', 'discount', 'notes', 'items', 'shippingAddress', 'billingAddress',
-        'paymentReference'
+        'paymentReference', 'totalAmount', 'couponId', 'escrowStatus', 'escrowReleaseDeadline',
+        'expectedCompletionDate', 'productionNote'
       ];
 
       const fields = [];

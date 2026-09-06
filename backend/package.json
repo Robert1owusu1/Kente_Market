@@ -7,7 +7,9 @@
   "scripts": {
     "setup-admin": "node setupFirstAdmin.js",
     "db:setup": "node setupDB.js",
-    "db:migrate": "node migrateNewTables.js",
+    "db:migrate": "node migrateNewTables.js && node migrateMarketplace.js",
+    "email:test": "node test-email.js",
+    "password:reset:test": "node test-password-reset.js",
     "start": "node server.js",
     "dev": "nodemon server.js",
     "test": "node --test \"tests/**/*.test.js\""
@@ -37,7 +39,7 @@
     "multer": "^2.0.2",
     "mysql2": "^3.15.0",
     "node-cache": "^5.1.2",
-    "nodemailer": "^7.0.10",
+    "nodemailer": "^9.1.1",
     "passport": "^0.7.0",
     "passport-facebook": "^3.0.0",
     "passport-google-oauth20": "^2.0.0",

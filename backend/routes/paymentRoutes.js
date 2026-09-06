@@ -2,12 +2,16 @@ import express from 'express';
 import axios from 'axios';
 import crypto from 'crypto';
 import pool from '../config/db.js';
-import { protect } from '../midleware/authMiddleware.js';
-import { apiLimiter, webhookLimiter } from '../midleware/rateLimitMiddleware.js';
+import { protect } from '../middleware/authMiddleware.js';
+import { apiLimiter, webhookLimiter } from '../middleware/rateLimitMiddleware.js';
 import {
   holdEscrowForOrder,
   recomputeOrderEscrowStatus,
+  trackPlatformRevenue,
+  notifyVendorPayoutFailure,
 } from '../Services/escrowService.js';
+import Coupon from '../models/couponModel.js';
+import { computeExpectedCompletion } from '../utils/computeExpectedCompletion.js';
 
 const router = express.Router();
 
@@ -53,16 +57,59 @@ router.post('/verify-paystack', protect, async (req, res) => {
     const { data } = response.data;
 
     if (data.status === 'success') {
+      // Fallback: if the webhook missed this order, mark it paid here.
+      // The webhook_events idempotency guard prevents double-processing.
+      const [existing] = await pool.execute(
+        `SELECT id, paymentStatus, couponId FROM orders WHERE paymentReference = ?`,
+        [reference]
+      );
+      let orderMarkedPaid = false;
+      if (existing.length > 0 && existing[0].paymentStatus !== 'paid') {
+        await pool.execute(
+          `UPDATE orders SET paymentStatus = 'paid', orderStatus = 'processing', updated_at = CURRENT_TIMESTAMP
+           WHERE paymentReference = ? AND paymentStatus != 'paid'`,
+          [reference]
+        );
+        const orderId = existing[0].id;
+        const heldCount = await holdEscrowForOrder(orderId);
+        console.log(`✅ verify-paystack fallback: order ${orderId} marked paid (${heldCount} allocations held)`);
+        // Consume deferred coupon usage
+        if (existing[0].couponId) {
+          try {
+            await Coupon.incrementUses(existing[0].couponId);
+          } catch (couponErr) {
+            console.error(`Failed to increment coupon uses: ${couponErr.message}`);
+          }
+        }
+        // Seed expected completion date for customised orders (see webhook logic).
+        try {
+          const [[ordRow]] = await pool.execute(
+            `SELECT expectedCompletionDate, created_at, items FROM orders WHERE id = ?`,
+            [orderId]
+          );
+          if (ordRow && !ordRow.expectedCompletionDate) {
+            const completion = computeExpectedCompletion(ordRow);
+            if (completion) {
+              await pool.execute(`UPDATE orders SET expectedCompletionDate = ? WHERE id = ?`, [completion, orderId]);
+            }
+          }
+        } catch (compErr) {
+          console.warn(`⚠️ Could not seed expected completion date: ${compErr.message}`);
+        }
+        orderMarkedPaid = true;
+      }
+
       res.json({
         status: 'success',
         message: 'Payment verified successfully',
         data: {
           reference: data.reference,
-          amount: data.amount / 100, // Convert from pesewas to cedis
+          amount: data.amount / 100,
           currency: data.currency,
           channel: data.channel,
           paid_at: data.paid_at,
           customer: data.customer,
+          orderMarkedPaid,
         },
       });
     } else {
@@ -121,35 +168,95 @@ router.post('/paystack-webhook', webhookLimiter, async (req, res) => {
             return res.status(200).send('Duplicate ignored');
           }
 
-          const connection = await pool.getConnection();
-          try {
-            const [result] = await connection.execute(
-              `UPDATE orders 
-               SET paymentStatus = 'paid', orderStatus = 'processing', updated_at = CURRENT_TIMESTAMP
-               WHERE paymentReference = ?`,
-              [reference]
-            );
-            if (result.affectedRows > 0) {
-              console.log(`✅ Webhook: order marked paid for reference ${reference}`);
-              // Put any per-vendor allocations into escrow ("held")
-              if (event.data?.metadata?.orderId) {
-                await holdEscrowForOrder(event.data.metadata.orderId);
-              } else if (event.data?.orderId) {
-                await holdEscrowForOrder(event.data.orderId);
-              } else {
+          // Retry loop: the POST /api/orders may not have completed yet when
+          // this webhook fires. We retry up to 5 times with increasing delays
+          // to wait for the order row (and its escrow allocations) to exist.
+          const MAX_RETRIES = 5;
+          const BASE_DELAY_MS = 1000;
+          let orderId = null;
+          let orderFound = false;
+
+          for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+            const connection = await pool.getConnection();
+            try {
+              const [result] = await connection.execute(
+                `UPDATE orders 
+                 SET paymentStatus = 'paid', orderStatus = 'processing', updated_at = CURRENT_TIMESTAMP
+                 WHERE paymentReference = ?`,
+                [reference]
+              );
+              if (result.affectedRows > 0) {
+                orderFound = true;
+                // Resolve the orderId from the reference
                 const [orderRows] = await connection.execute(
-                  `SELECT id FROM orders WHERE paymentReference = ?`,
+                  `SELECT id, items, couponId FROM orders WHERE paymentReference = ?`,
                   [reference]
                 );
                 if (orderRows.length > 0) {
-                  await holdEscrowForOrder(orderRows[0].id);
+                  orderId = orderRows[0].id;
+
+                  // Hold escrow allocations (pending → held)
+                  const heldCount = await holdEscrowForOrder(orderId);
+                  console.log(`✅ Webhook: order ${orderId} marked paid for reference ${reference} (${heldCount} allocations held)`);
+
+                  // Track platform-owned product revenue
+                  let items = orderRows[0].items;
+                  if (typeof items === 'string') {
+                    try { items = JSON.parse(items); } catch { items = []; }
+                  }
+                  if (Array.isArray(items) && items.length > 0) {
+                    await trackPlatformRevenue(orderId, items);
+                  }
+
+                  // For customised (custom-woven) orders, seed the expected
+                  // completion date = order start + longest productionTime among
+                  // customisable items, so the buyer sees how many days are left
+                  // to finish weaving. Only seed if not already set.
+                  try {
+                    const [[ordRow]] = await connection.execute(
+                      `SELECT expectedCompletionDate, created_at, items FROM orders WHERE id = ?`,
+                      [orderId]
+                    );
+                    if (ordRow && !ordRow.expectedCompletionDate) {
+                      const completion = computeExpectedCompletion(ordRow);
+                      if (completion) {
+                        await connection.execute(
+                          `UPDATE orders SET expectedCompletionDate = ? WHERE id = ?`,
+                          [completion, orderId]
+                        );
+                      }
+                    }
+                  } catch (compErr) {
+                    console.warn(`⚠️ Could not seed expected completion date: ${compErr.message}`);
+                  }
+
+                  // Consume the deferred coupon usage now that payment is confirmed.
+                  if (orderRows[0].couponId) {
+                    try {
+                      const { default: Coupon } = await import('../models/couponModel.js');
+                      await Coupon.incrementUses(orderRows[0].couponId);
+                      console.log(`🎟️ Coupon ${orderRows[0].couponId} consumed on confirmed payment for order ${orderId}`);
+                    } catch (couponErr) {
+                      console.warn(`⚠️ Could not increment coupon on payment: ${couponErr.message}`);
+                    }
+                  }
                 }
+                break; // success, no more retries needed
+              } else {
+                // Order not yet created — wait and retry
+                console.log(`⏳ Webhook: order not yet found for ${reference} (attempt ${attempt + 1}/${MAX_RETRIES})`);
               }
-            } else {
-              console.warn(`⚠️ Webhook: no order found for reference ${reference}`);
+            } finally {
+              connection.release();
             }
-          } finally {
-            connection.release();
+            // Wait before next retry with exponential backoff
+            if (attempt < MAX_RETRIES - 1) {
+              await new Promise((resolve) => setTimeout(resolve, BASE_DELAY_MS * (attempt + 1)));
+            }
+          }
+
+          if (!orderFound) {
+            console.warn(`⚠️ Webhook: no order found for reference ${reference} after ${MAX_RETRIES} retries`);
           }
         }
         console.log('Payment successful:', reference);
@@ -216,7 +323,7 @@ router.post('/paystack-webhook', webhookLimiter, async (req, res) => {
           );
           if (result.affectedRows > 0) {
             const [alloc] = await pool.execute(
-              `SELECT orderId FROM escrow_allocations WHERE payoutReference = ?`,
+              `SELECT orderId, id FROM escrow_allocations WHERE payoutReference = ?`,
               [transferRef]
             );
             console.log(`❌ Transfer failed: ${transferRef}`);
@@ -226,7 +333,51 @@ router.post('/paystack-webhook', webhookLimiter, async (req, res) => {
                 `UPDATE orders SET escrowStatus = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
                 [escrowStatus, alloc[0].orderId]
               );
+              // Notify the vendor about the failed payout
+              await notifyVendorPayoutFailure(alloc[0].orderId, [alloc[0].id]);
             }
+          }
+        }
+        break;
+      }
+
+      case 'transfer.reversed': {
+        const reversedRef = event.data?.reference;
+        if (reversedRef) {
+          const [ins] = await pool.execute(
+            `INSERT IGNORE INTO webhook_events (event, reference, payload) VALUES (?, ?, ?)`,
+            [event.event, reversedRef, JSON.stringify(event.data || null)]
+          );
+          if (ins.insertId === 0) {
+            console.log(`⏸️ Duplicate webhook ignored: ${event.event} ${reversedRef}`);
+            return res.status(200).send('Duplicate ignored');
+          }
+          // Reversed transfers go back to 'held' so the admin can retry
+          const [result] = await pool.execute(
+            `UPDATE escrow_allocations
+             SET status = 'held', payoutReference = NULL, updated_at = CURRENT_TIMESTAMP
+             WHERE payoutReference = ? AND status IN ('releasing', 'released')`,
+            [reversedRef]
+          );
+          if (result.affectedRows > 0) {
+            // Find affected order IDs from the raw payload or from allocations
+            // that were just reverted (they no longer have the reference).
+            const [orderRows] = await pool.execute(
+              `SELECT DISTINCT orderId FROM escrow_allocations
+               WHERE status = 'held' AND payoutReference IS NULL
+                 AND updated_at >= DATE_SUB(NOW(), INTERVAL 5 SECOND)`,
+              []
+            );
+            for (const row of orderRows) {
+              const escrowStatus = await recomputeOrderEscrowStatus(row.orderId);
+              await pool.execute(
+                `UPDATE orders SET escrowStatus = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+                [escrowStatus, row.orderId]
+              );
+            }
+            console.log(`🔄 Transfer reversed: ${reversedRef} (${result.affectedRows} allocations reverted to held)`);
+          } else {
+            console.log(`Transfer reversed (no matching allocation): ${reversedRef}`);
           }
         }
         break;
