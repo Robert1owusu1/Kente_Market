@@ -14,6 +14,11 @@ import { toast } from 'react-toastify';
 import Footer from "../../components/Footer/Footer";
 import type { FormErrors } from "../../types/domain";
 
+// Only allow in-app navigation targets. Blocks open-redirect attempts like
+// /login?redirect=https://evil.com or //evil.com (scheme-relative).
+const internalPath = (value: string | null): string =>
+  typeof value === "string" && value.startsWith("/") && !value.startsWith("//") ? value : "/";
+
 
 
 
@@ -138,10 +143,10 @@ const Login = () => {
   const [login, { isLoading }] = useLoginMutation();
   const { userInfo } = useAppSelector((state) => state.auth);
   
-  // Get redirect parameter
+  // Get redirect parameter (sanitized to an in-app path to prevent open redirect)
   const { search } = useLocation();
   const sp = new URLSearchParams(search);
-  const redirect = sp.get("redirect") || "/";
+  const redirect = internalPath(sp.get("redirect"));
   
   // Form state
   const [formData, setFormData] = useState({

@@ -60,23 +60,41 @@ router.post('/verify-paystack', protect, async (req, res) => {
       // Fallback: if the webhook missed this order, mark it paid here.
       // The webhook_events idempotency guard prevents double-processing.
       const [existing] = await pool.execute(
-        `SELECT id, paymentStatus, couponId FROM orders WHERE paymentReference = ?`,
+        `SELECT id, userId, totalAmount, paymentStatus, couponId FROM orders WHERE paymentReference = ?`,
         [reference]
       );
       let orderMarkedPaid = false;
       if (existing.length > 0 && existing[0].paymentStatus !== 'paid') {
+        const order = existing[0];
+
+        // Only the order owner may flip it to paid, and only when Paystack
+        // actually collected the full order amount. Without these checks an
+        // attacker could mark a large order paid by reusing a reference from a
+        // smaller/low-value successful transaction (see audit).
+        if (order.userId !== req.user.id) {
+          return res.status(403).json({ success: false, message: 'Order does not belong to this user' });
+        }
+        const expectedKobo = Math.round(parseFloat(order.totalAmount) * 100);
+        const paidKobo = parseInt(data.amount, 10);
+        if (data.currency !== 'NGN' || paidKobo !== expectedKobo) {
+          return res.status(400).json({
+            success: false,
+            message: 'Payment amount does not match the order total',
+          });
+        }
+
         await pool.execute(
           `UPDATE orders SET paymentStatus = 'paid', orderStatus = 'processing', updated_at = CURRENT_TIMESTAMP
            WHERE paymentReference = ? AND paymentStatus != 'paid'`,
           [reference]
         );
-        const orderId = existing[0].id;
+        const orderId = order.id;
         const heldCount = await holdEscrowForOrder(orderId);
         console.log(`✅ verify-paystack fallback: order ${orderId} marked paid (${heldCount} allocations held)`);
         // Consume deferred coupon usage
-        if (existing[0].couponId) {
+        if (order.couponId) {
           try {
-            await Coupon.incrementUses(existing[0].couponId);
+            await Coupon.incrementUses(order.couponId);
           } catch (couponErr) {
             console.error(`Failed to increment coupon uses: ${couponErr.message}`);
           }

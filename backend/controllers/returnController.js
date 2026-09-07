@@ -27,6 +27,23 @@ export const createReturnRequest = async (req, res) => {
       return res.status(403).json({ message: "You can only return your own orders" });
     }
 
+    // Returns only make sense for orders that were actually paid for.
+    if (order.paymentStatus !== "paid") {
+      return res.status(400).json({ message: "You can only request a return on a paid order" });
+    }
+
+    // Prevent duplicate open return requests against the same order (avoids an
+    // unlimited pile-up of pending approvals / escrow voids for one order).
+    const existingReturns = await ReturnRequest.findByOrder(parseInt(orderId));
+    const hasOpenReturn = existingReturns.some((r) =>
+      ["pending", "approved", "completed"].includes(r.status)
+    );
+    if (hasOpenReturn) {
+      return res.status(400).json({
+        message: "A return request is already in progress for this order",
+      });
+    }
+
     const returnRequest = await ReturnRequest.create({
       orderId: parseInt(orderId),
       userId: req.user.id,

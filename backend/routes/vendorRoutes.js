@@ -39,19 +39,19 @@ router.route('/store/:slugOrId').get(getPublicStorefront);
 router.route('/directory').get(getVendorDirectory);
 
 // GET /api/vendors/messages → messages received by the vendor
-router.route('/messages').get(protect, vendorOrStaff, getVendorMessages);
+router.route('/messages').get(protect, vendorOrStaff, requireVendorPermission('view_customers'), getVendorMessages);
 
 // POST /api/vendors/apply → become/update vendor application (any logged-in user)
 router.route('/apply').post(protect, applyVendor);
 
-// GET /api/vendors/me → own vendor profile + escrow summary (vendor or admin)
-router.route('/me').get(protect, vendorOrStaff, getMyVendorProfile);
+// GET /api/vendors/me → own vendor profile + escrow summary (vendor, staff w/ view_earnings, or admin)
+router.route('/me').get(protect, vendorOrStaff, requireVendorPermission('view_earnings'), getMyVendorProfile);
 
 // PUT /api/vendors/profile → update business/storefront profile
 router.route('/profile').put(protect, vendorOrStaff, updateVendorProfile);
 
-// GET /api/vendors/analytics → vendor analytics
-router.route('/analytics').get(protect, vendorOrStaff, getVendorAnalytics);
+// GET /api/vendors/analytics → vendor analytics (financial)
+router.route('/analytics').get(protect, vendorOrStaff, requireVendorPermission('view_earnings'), getVendorAnalytics);
 
 // GET /api/vendors/inventory → vendor inventory (stock, SKU, alerts)
 router.route('/inventory').get(protect, vendorOrStaff, requireVendorPermission('manage_inventory'), getVendorInventory);
@@ -59,8 +59,8 @@ router.route('/inventory').get(protect, vendorOrStaff, requireVendorPermission('
 // GET /api/vendors/reviews → reviews on vendor's products
 router.route('/reviews').get(protect, vendorOrStaff, getVendorReviews);
 
-// GET /api/vendors/returns → returns for vendor's products
-router.route('/returns').get(protect, vendorOrStaff, getVendorReturns);
+// GET /api/vendors/returns → returns for vendor's products (customer PII)
+router.route('/returns').get(protect, vendorOrStaff, requireVendorPermission('view_customers'), getVendorReturns);
 
 // GET /api/vendors/coupons → vendor's coupons
 // POST /api/vendors/coupons → create vendor coupon
@@ -82,9 +82,9 @@ router.route('/products/:id').delete(protect, vendorOrStaff, requireVendorPermis
 // POST /api/vendors/withdraw → vendor withdraws from available wallet balance
 router.route('/withdraw').post(protect, vendorOrStaff, requireVendorPermission('view_earnings'), withdrawVendorBalance);
 
-// GET /api/vendors/orders → orders containing this vendor's products
+// GET /api/vendors/orders → orders containing this vendor's products (customer PII)
 // POST /api/vendors/orders/:id/status → advance fulfilment / post progress
-router.route('/orders').get(protect, vendorOrStaff, getVendorOrders);
+router.route('/orders').get(protect, vendorOrStaff, requireVendorPermission('view_customers'), getVendorOrders);
 router.route('/orders/:id/status').post(protect, vendorOrStaff, requireVendorPermission('manage_orders'), updateVendorOrderStatus);
 
 // GET /api/vendors → list all vendors (admin only)

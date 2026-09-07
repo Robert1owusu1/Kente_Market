@@ -32,15 +32,43 @@ const findOrCreateOAuthUser = async (provider, profile) => {
         'SELECT * FROM users WHERE email = ?',
         [email]
       );
-      
+
       if (existingByEmail.length > 0) {
-        // Link OAuth provider to existing account
+        const existing = existingByEmail[0];
+
+        // SECURITY: only link an OAuth identity to an email-verified account.
+        // Anyone can pre-register an UNVERIFIED account with a victim's email and
+        // a known password; linking the victim's OAuth login to that account would
+        // let the attacker keep authenticating as them. So:
+        //  - verified account  -> link normally (clean OAuth sign-in).
+        //  - unverified account -> adopt + secure it: bind the OAuth id, mark the
+        //    email verified (the provider already proved ownership), and rotate the
+        //    password to an unknown random value so any previously-known password
+        //    immediately stops working.
+        if (existing.is_email_verified) {
+          await connection.execute(
+            `UPDATE users SET ${providerId} = ?, is_email_verified = 1 WHERE id = ?`,
+            [profile.id, existing.id]
+          );
+          console.log(`Linked ${provider} to existing account`);
+          return { ...existing, [providerId]: profile.id, is_email_verified: 1 };
+        }
+
+        const randomPassword = crypto.randomBytes(32).toString('hex');
+        const adoptedHashedPassword = await bcrypt.hash(randomPassword, 12);
         await connection.execute(
-          `UPDATE users SET ${providerId} = ?, is_email_verified = 1 WHERE id = ?`,
-          [profile.id, existingByEmail[0].id]
+          `UPDATE users SET ${providerId} = ?, is_email_verified = 1,
+             password = ?, failed_login_attempts = 0, locked_until = NULL
+           WHERE id = ?`,
+          [profile.id, adoptedHashedPassword, existing.id]
         );
-        console.log(`Linked ${provider} to existing account`);
-        return { ...existingByEmail[0], [providerId]: profile.id, is_email_verified: 1 };
+        console.log(`Adopted unverified account ${existing.id} via verified ${provider} email`);
+        return {
+          ...existing,
+          [providerId]: profile.id,
+          is_email_verified: 1,
+          password: adoptedHashedPassword,
+        };
       }
     }
     

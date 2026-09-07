@@ -11,6 +11,21 @@ const predictions = new Map();
 
 const REPLICATE_API_URL = "https://api.replicate.com/v1";
 
+// Bound the in-memory store so a flood of generate calls can never grow memory
+// unbounded. Old entries are dropped after 2h and a hard FIFO cap is enforced.
+const MAX_PREDICTIONS = 1000;
+const PREDICTION_TTL_MS = 2 * 60 * 60 * 1000;
+const prunePredictions = () => {
+  const now = Date.now();
+  for (const [id, p] of predictions) {
+    if (now - p.createdAt > PREDICTION_TTL_MS) predictions.delete(id);
+  }
+  while (predictions.size > MAX_PREDICTIONS) {
+    const oldest = predictions.keys().next().value;
+    predictions.delete(oldest);
+  }
+};
+
 // Atomically reserve one try-on credit for the user today. Returns true if the
 // user is still under the daily limit, false if they are exhausted (i.e. it
 // consumes the credit and reports spend. Never refunds on failed predictions -
@@ -88,10 +103,13 @@ export const generateTryOn = expressAsyncHandler(async (req, res) => {
     const predictionId = replicateResp.data?.id;
     if (predictionId) {
       predictions.set(predictionId, {
+        userId: req.user.id,
         status: "processing",
         url: `https://api.replicate.com/v1/predictions/${predictionId}`,
         output: null,
+        createdAt: Date.now(),
       });
+      prunePredictions();
       return res.status(202).json({
         status: "processing",
         predictionId,
@@ -121,10 +139,11 @@ export const getTryOnStatus = expressAsyncHandler(async (req, res) => {
   const { id } = req.params;
   const prediction = predictions.get(id);
 
-  if (!prediction) {
+  if (!prediction || prediction.userId !== req.user.id) {
     res.status(404);
     throw new Error("Prediction not found");
   }
+  prunePredictions();
 
   try {
     // For Replicate predictions, fetch live status

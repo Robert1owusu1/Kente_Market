@@ -660,7 +660,10 @@ export const updateVendorCoupon = async (req, res) => {
     const couponId = parseInt(req.params.id);
     const [[existing]] = await pool.execute(`SELECT id, vendorId FROM coupons WHERE id = ?`, [couponId]);
     if (!existing) return res.status(404).json({ message: 'Coupon not found' });
-    if (existing.vendorId && existing.vendorId !== req.user.id && req.user.role !== 'admin') {
+    // Platform (vendorId NULL) coupons are admin-owned — a vendor may only touch
+    // their own coupons. The old `existing.vendorId &&` check was falsy for NULL,
+    // which let any vendor modify/delete global coupons (broken access control).
+    if (existing.vendorId !== req.user.id && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Not authorized' });
     }
 
@@ -703,7 +706,8 @@ export const deleteVendorCoupon = async (req, res) => {
     const couponId = parseInt(req.params.id);
     const [[existing]] = await pool.execute(`SELECT id, vendorId FROM coupons WHERE id = ?`, [couponId]);
     if (!existing) return res.status(404).json({ message: 'Coupon not found' });
-    if (existing.vendorId && existing.vendorId !== req.user.id && req.user.role !== 'admin') {
+    // Same admin-owned guard as updateVendorCoupon (platform coupons are NULL).
+    if (existing.vendorId !== req.user.id && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Not authorized' });
     }
     await pool.execute(`DELETE FROM coupons WHERE id = ?`, [couponId]);
