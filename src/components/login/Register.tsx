@@ -418,7 +418,7 @@ const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     toast.error(errorMessage);
   }
 };
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:5000' : '');
 
 
   // OAuth handler - unchanged

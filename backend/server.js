@@ -87,11 +87,21 @@ const app = express();
 // express-rate-limit and express-session) is correct. In development this is
 // the Vite dev proxy (which sets X-Forwarded-For); in production it is your
 // reverse proxy (Nginx / Caddy / cloud LB).
+//   - 0  = no proxy, direct exposure (never trust X-Forwarded-For)
 //   - 1  = trust one proxy hop (Vite dev proxy / single Nginx)  [RECOMMENDED]
 //   - 2+ = trust N hops if you have multiple proxies
-// Set TRUST_PROXY in .env to override. MUST NOT be boolean true (that lets
-// clients spoof their IP and bypass rate limiting).
-app.set('trust proxy', Math.min(parseInt(process.env.TRUST_PROXY, 10) || 1, 3));
+// SECURITY: if NODE_ENV=production and TRUST_PROXY is unset we default to 0 so
+// a directly-exposed server cannot have its rate-limit IPs spoofed via a fake
+// X-Forwarded-For header. Set TRUST_PROXY=1 only when a proxy really stands in
+// front of Express. MUST NOT be boolean true (that trusts any client header).
+const trustProxySetting = process.env.TRUST_PROXY !== undefined
+  ? Math.max(0, Math.min(parseInt(process.env.TRUST_PROXY, 10) || 0, 3))
+  : (process.env.NODE_ENV === 'production' ? 0 : 1);
+if (trustProxySetting === 0 && process.env.NODE_ENV === 'production') {
+  console.log('ℹ️  TRUST_PROXY not set — assuming the server is directly exposed (req.ip = socket IP).');
+  console.log('   If a reverse proxy (Nginx/Caddy) fronts this app, set TRUST_PROXY=1 in backend/.env.');
+}
+app.set('trust proxy', trustProxySetting);
 
 // ============================================
 // MIDDLEWARE (ORDER IS CRITICAL!)
@@ -129,6 +139,22 @@ app.use(session({
     maxAge: 24 * 60 * 60 * 1000 // 24 hours
   }
 }));
+
+// Hard-fail on missing secrets that would silently break auth in production,
+// and warn about optional integrations so "I filled in the .env" is enough.
+if (process.env.NODE_ENV === 'production') {
+  if (!process.env.JWT_SECRET) {
+    console.error('❌ JWT_SECRET must be set in production');
+    process.exit(1);
+  }
+  const warn = (name, msg) => {
+    if (!process.env[name]) console.log(`⚠️  ${name} not set — ${msg}`);
+  };
+  warn('PAYSTACK_SECRET_KEY', 'payment verification / webhooks will fail');
+  warn('EMAIL_USER', 'email delivery (OTP / password reset) will fail');
+  warn('REPLICATE_API_TOKEN', 'AI try-on is disabled (503)');
+  warn('GOOGLE_CLIENT_ID', 'Google sign-in is disabled');
+}
 
 // ⭐ 5. Initialize Passport for OAuth
 app.use(passport.initialize());

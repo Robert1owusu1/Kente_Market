@@ -8,7 +8,7 @@ import { BiLoaderAlt } from 'react-icons/bi';
 import { TiShoppingBag } from 'react-icons/ti';
 import { FaCheckCircle, FaTimesCircle } from 'react-icons/fa';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:5000' : '');
 
 const OAuthCallback = () => {
   const [searchParams] = useSearchParams();
