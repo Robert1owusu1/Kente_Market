@@ -1,3 +1,4 @@
+// @ts-check
 // FILE LOCATION: backend/Services/commissionService.js
 // DESCRIPTION: Configurable marketplace commission engine. Resolves the
 //              effective commission rate for an order line by applying the most
@@ -11,7 +12,7 @@ import { round2, calcEscrowFees } from '../../shared/pricing.js';
 /**
  * Resolve the effective commission rate (0..1 fraction) for a given product.
  * @param {Object} opts
- * @param {number} opts.productId - product id
+ * @param {number} [opts.productId] - product id
  * @param {number} [opts.vendorId] - owning vendor user id
  * @param {string} [opts.category] - product category (used for category rules)
  * @returns {Promise<number>} commission fraction, e.g. 0.08 = 8%
@@ -83,10 +84,16 @@ export const resolveCommissionRate = async ({ productId, vendorId, category }) =
 
 /**
  * Compute commission + net payout for a gross amount.
+ * @param {Object} opts
+ * @param {number | string} opts.grossAmount - gross amount (GHS) before any fees
+ * @param {number} opts.productId - product id
+ * @param {number} [opts.vendorId] - owning vendor user id
+ * @param {string} [opts.category] - product category
+ * @returns {Promise<{ rate: number, gross: number, platformFee: number, payoutAmount: number }>}
  */
 export const computeCommission = async ({ grossAmount, productId, vendorId, category }) => {
   const rate = await resolveCommissionRate({ productId, vendorId, category });
-  const gross = round2(Math.max(0, parseFloat(grossAmount) || 0));
+  const gross = round2(Math.max(0, parseFloat(String(grossAmount)) || 0));
   const { platformFee, payoutAmount } = calcEscrowFees(gross, rate, PLATFORM_FEE_RATE);
   return { rate, gross, platformFee, payoutAmount };
 };

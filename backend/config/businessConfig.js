@@ -1,3 +1,4 @@
+// @ts-check
 // FILE LOCATION: backend/config/businessConfig.js
 // DESCRIPTION: Single source of truth for business-rule configuration
 //              (platform commission, escrow release window) with validation.
@@ -6,6 +7,12 @@ import { DEFAULT_PLATFORM_FEE_RATE } from '../../shared/pricing.js';
 dotenv.config();
 
 // Parse + validate a numeric env value, falling back to a safe default.
+/**
+ * @param {string | undefined} raw raw env value
+ * @param {string} label env key name (for the warning message)
+ * @param {{ min: number, max: number, def: number }} opts boundaries + fallback
+ * @returns {number} validated config value
+ */
 const asNumber = (raw, label, { min, max, def }) => {
   const n = Number(raw);
   if (Number.isFinite(n) && n >= min && n <= max) {

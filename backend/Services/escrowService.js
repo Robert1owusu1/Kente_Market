@@ -1,3 +1,4 @@
+// @ts-check
 // SERVICES/escrowService.js
 // Multi-vendor escrow: funds are captured to the platform's Paystack balance and
 // held until the customer confirms receipt (or the release deadline passes), then
@@ -11,7 +12,35 @@ import Notification from '../models/notificationModel.js';
 import { round2, calcEscrowFees } from '../../shared/pricing.js';
 
 /**
+ * @typedef {Object} Allocation
+ * @property {number | string} id escrow allocation id
+ * @property {number | string} orderId order id
+ * @property {number | string} vendorId vendor user id
+ * @property {number | string} amount gross vendor amount (GHS)
+ * @property {number | string} platformFeeRate effective commission fraction (0..1)
+ * @property {number | string} [platformFee] computed platform fee
+ * @property {number | string} [payoutAmount] net amount owed to vendor
+ * @property {string} status pending | held | available | releasing | released | failed
+ * @property {string | null} [payoutReference] Paystack transfer reference
+ * @property {string | null} [recipientCode] vendor Paystack recipient code
+ * @property {string} [reason] last-change reason
+ */
+
+/**
+ * @typedef {Object} OrderLine
+ * @property {number} [product] legacy product field (product id)
+ * @property {number} [productId] product id
+ * @property {number} [id] product id fallback
+ * @property {number | string} [vendorId] owning vendor user id (absent = platform-owned)
+ * @property {number | string} [quantity] purchased quantity
+ * @property {number | string} [price] unit price (GHS)
+ * @property {number | string} [qty] quantity fallback name
+ */
+
+/**
  * Load escrow allocations for an order (joined with vendor payout info).
+ * @param {number | string} orderId
+ * @returns {Promise<Allocation[]>}
  */
 export const getOrderAllocations = async (orderId) => {
   const [rows] = await pool.execute(
@@ -28,6 +57,8 @@ export const getOrderAllocations = async (orderId) => {
 /**
  * Load a vendor's allocations that are in the 'available' state (released to
  * their balance, awaiting withdrawal), joined with their payout recipient.
+ * @param {number | string} vendorId
+ * @returns {Promise<Allocation[]>}
  */
 export const getAvailableAllocationsForVendor = async (vendorId) => {
   const [rows] = await pool.execute(
@@ -50,6 +81,8 @@ export const getAvailableAllocationsForVendor = async (vendorId) => {
  *   4. any releasing   -> releasing (transfers in flight)
  *   5. any held        -> held (still awaiting release)
  *   6. else any failed -> failed (nothing held/in-flight/pending)
+ * @param {number | string} orderId
+ * @returns {Promise<string>}
  */
 export const recomputeOrderEscrowStatus = async (orderId) => {
   const rows = await getOrderAllocations(orderId);
@@ -69,6 +102,9 @@ export const recomputeOrderEscrowStatus = async (orderId) => {
 /**
  * Create per-vendor escrow allocations from order items at order placement.
  * Items with a vendor-owned product produce an allocation keyed by vendorId.
+ * @param {number | string} orderId
+ * @param {OrderLine[]} items
+ * @returns {Promise<number>} number of allocations created
  */
 export const createEscrowAllocations = async (orderId, items) => {
   if (!Array.isArray(items) || items.length === 0) return 0;
@@ -84,17 +120,19 @@ export const createEscrowAllocations = async (orderId, items) => {
     `SELECT id, vendorId, price FROM product WHERE id IN (${placeholders})`,
     productIds
   );
-  const productMap = new Map(products.map((p) => [p.id, p]));
+  /** @type {Array<{ id: number, vendorId: number | string, price: number | string, category?: string }>} */
+  const productRows = products;
+  const productMap = new Map(productRows.map((p) => [p.id, p]));
 
   // vendorId -> total amount owed to that vendor
   const vendorTotals = new Map();
   for (const it of items) {
-    const pid = it?.product || it?.productId || it?.id;
+    const pid = /** @type {any} */ (it?.product || it?.productId || it?.id);
     const product = productMap.get(pid);
     const vendorId = product?.vendorId || it?.vendorId || null;
     if (!vendorId) continue; // platform-owned items skip escrow
-    const qty = parseFloat(it?.quantity) || 1;
-    const price = parseFloat(it?.price ?? product?.price) || 0;
+    const qty = parseFloat(String(it?.quantity)) || 1;
+    const price = parseFloat(String(it?.price ?? product?.price)) || 0;
     vendorTotals.set(vendorId, (vendorTotals.get(vendorId) || 0) + qty * price);
   }
 
@@ -102,13 +140,14 @@ export const createEscrowAllocations = async (orderId, items) => {
   for (const [vendorId, amount] of vendorTotals) {
     // Resolve the effective commission via the commission engine:
     // product > vendor > category > global, then vendor override, then default.
-    const productForVendor = [...products].find((p) => p.vendorId === vendorId);
+    const productForVendor = [...productRows].find((p) => p.vendorId === vendorId);
     const feeRate = await resolveCommissionRate({
       productId: productForVendor?.id,
       vendorId,
       category: productForVendor?.category,
     });
-    const { platformFee, payoutAmount } = calcEscrowFees(amount, feeRate, PLATFORM_FEE_RATE);
+    const totalAmount = vendorTotals.get(vendorId) || 0;
+    const { platformFee, payoutAmount } = calcEscrowFees(totalAmount, feeRate, PLATFORM_FEE_RATE);
     await pool.execute(
       `INSERT IGNORE INTO escrow_allocations (orderId, vendorId, amount, platformFeeRate, platformFee, payoutAmount, status)
        VALUES (?, ?, ?, ?, ?, ?, 'pending')`,
@@ -125,6 +164,8 @@ export const createEscrowAllocations = async (orderId, items) => {
  * MoMo/bank automatically. Instead they are credited to the vendor's available
  * balance, and the vendor withdraws them manually via the Withdraw button.
  * Idempotent: only held -> available transitions.
+ * @param {Allocation} allocation
+ * @returns {Promise<Allocation>}
  */
 export const releaseAllocation = async (allocation) => {
   const updated = { ...allocation };
@@ -167,6 +208,8 @@ export const releaseAllocation = async (allocation) => {
  * Actually pay out an allocation to the vendor's Paystack recipient (MoMo/bank).
  * Called by the vendor's Withdraw action. Moves available -> releasing -> released
  * or failed depending on the transfer result.
+ * @param {Allocation} allocation
+ * @returns {Promise<Allocation>}
  */
 export const payoutAllocation = async (allocation) => {
   const updated = { ...allocation };
@@ -234,10 +277,12 @@ export const payoutAllocation = async (allocation) => {
 /**
  * Release ALL escrow for an order that has been delivered and confirmed
  * (or auto-released after the deadline). Idempotent per allocation.
+ * @param {number | string} orderId
+ * @returns {Promise<{ released: number, available: number, failed: number }>}
  */
 export const releaseEscrowForOrder = async (orderId) => {
   const allocations = await getOrderAllocations(orderId);
-  if (allocations.length === 0) return { released: 0, failed: 0 };
+  if (allocations.length === 0) return { released: 0, available: 0, failed: 0 };
 
   let available = 0;
   let failed = 0;
@@ -262,6 +307,8 @@ export const releaseEscrowForOrder = async (orderId) => {
 /**
  * Place an order's allocations into escrow ("held") once payment succeeds.
  * Idempotent: safe to call multiple times (double-webhook race).
+ * @param {number | string} orderId
+ * @returns {Promise<number>} number of affected allocation rows
  */
 export const holdEscrowForOrder = async (orderId) => {
   const [result] = await pool.execute(
@@ -282,6 +329,8 @@ export const holdEscrowForOrder = async (orderId) => {
 
 /**
  * Set the auto-release deadline (delivered + escrow held).
+ * @param {number | string} orderId
+ * @returns {Promise<number>} the configured release window in days
  */
 export const setEscrowReleaseDeadline = async (orderId) => {
   await pool.execute(
@@ -321,6 +370,8 @@ export const autoReleaseExpiredEscrows = async () => {
 /**
  * Void (cancel) all escrow allocations for an order when the order is cancelled.
  * Only pending/held allocations are voided; releasing/released ones are left as-is.
+ * @param {number | string} orderId
+ * @returns {Promise<void>}
  */
 export const cancelEscrowForOrder = async (orderId) => {
   await pool.execute(
@@ -340,6 +391,8 @@ export const cancelEscrowForOrder = async (orderId) => {
 /**
  * Void escrow for an order when a return is approved (full refund scenario).
  * Voids held allocations so funds are returned to the platform balance.
+ * @param {number | string} orderId
+ * @returns {Promise<void>}
  */
 export const voidEscrowForOrder = async (orderId) => {
   await pool.execute(
@@ -358,6 +411,8 @@ export const voidEscrowForOrder = async (orderId) => {
 /**
  * Retry payouts for all failed escrow allocations of an order.
  * Admin endpoint: allows retrying vendor payouts that failed.
+ * @param {number | string} orderId
+ * @returns {Promise<{ retried: number, failed: number }>}
  */
 export const retryFailedAllocations = async (orderId) => {
   const [rows] = await pool.execute(
@@ -398,6 +453,9 @@ export const retryFailedAllocations = async (orderId) => {
  * Track platform revenue from platform-owned products (no vendorId).
  * Called after order creation. Inserts into a platform_revenue table if it
  * exists, otherwise logs to console.
+ * @param {number | string} orderId
+ * @param {OrderLine[]} items
+ * @returns {Promise<void>}
  */
 export const trackPlatformRevenue = async (orderId, items) => {
   if (!Array.isArray(items) || items.length === 0) return;
@@ -406,7 +464,7 @@ export const trackPlatformRevenue = async (orderId, items) => {
   if (platformItems.length === 0) return;
 
   const total = platformItems.reduce(
-    (sum, it) => sum + (parseFloat(it.price) || 0) * (parseInt(it.qty) || 1),
+    (sum, it) => sum + (parseFloat(String(it.price)) || 0) * (parseInt(String(it.qty)) || 1),
     0
   );
   if (total <= 0) return;
@@ -425,6 +483,9 @@ export const trackPlatformRevenue = async (orderId, items) => {
 
 /**
  * Notify vendors about failed payouts for their escrow allocations.
+ * @param {number | string} orderId
+ * @param {(number | string)[]} allocationIds
+ * @returns {Promise<void>}
  */
 export const notifyVendorPayoutFailure = async (orderId, allocationIds) => {
   for (const allocId of allocationIds) {

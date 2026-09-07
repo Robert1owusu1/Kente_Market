@@ -1,3 +1,4 @@
+// @ts-check
 // SERVICES/walletService.js
 // Vendor wallet: funds released from escrow (customer confirmed delivery) are
 // credited to the vendor's available balance *instead of* being auto-transferred.
@@ -7,6 +8,8 @@ import { round2 } from '../../shared/pricing.js';
 
 /**
  * Ensure a vendor wallet row exists (lazy-create).
+ * @param {number | string} vendorId - vendor user id
+ * @returns {Promise<{ vendorId?: number; available_balance?: number; total_earned?: number; total_withdrawn?: number } | undefined>}
  */
 export const ensureWallet = async (vendorId) => {
   await pool.execute(
@@ -23,6 +26,8 @@ export const ensureWallet = async (vendorId) => {
 
 /**
  * Get a vendor's wallet balance (lazy-creating the row).
+ * @param {number | string} vendorId - vendor user id
+ * @returns {Promise<{ vendorId?: number; available_balance?: number; total_earned?: number; total_withdrawn?: number } | undefined>}
  */
 export const getWallet = async (vendorId) => {
   return ensureWallet(vendorId);
@@ -31,6 +36,11 @@ export const getWallet = async (vendorId) => {
 /**
  * Credit a vendor's available balance when an escrow allocation becomes
  * available (customer confirmed delivery). Idempotent per allocation.
+ * @param {number | string} vendorId - vendor user id
+ * @param {number | string} allocationId - escrow allocation id
+ * @param {number | string} payoutAmount - amount to credit (GHS)
+ * @param {string | undefined} orderNumber - human-friendly order ref for the note
+ * @returns {Promise<boolean>} true if credited, false if already credited
  */
 export const creditVendorBalance = async (vendorId, allocationId, payoutAmount, orderNumber) => {
   await ensureWallet(vendorId);
@@ -41,7 +51,7 @@ export const creditVendorBalance = async (vendorId, allocationId, payoutAmount, 
   );
   if (existing.length > 0) return false; // already credited
 
-  const amount = round2(parseFloat(payoutAmount) || 0);
+  const amount = round2(parseFloat(String(payoutAmount)) || 0);
   await pool.execute(
     `UPDATE vendor_wallets
      SET available_balance = available_balance + ?,
@@ -60,9 +70,14 @@ export const creditVendorBalance = async (vendorId, allocationId, payoutAmount, 
 
 /**
  * Debit a vendor's available balance after a successful withdrawal.
+ * @param {number | string} vendorId - vendor user id
+ * @param {number | string} amount - amount to debit (GHS), must be > 0
+ * @param {string} reference - payment/transaction reference
+ * @param {string} [note] - transaction note
+ * @returns {Promise<void>}
  */
 export const debitVendorBalance = async (vendorId, amount, reference, note) => {
-  const amt = round2(parseFloat(amount) || 0);
+  const amt = round2(parseFloat(String(amount)) || 0);
   if (amt <= 0) throw new Error('Withdrawal amount must be positive');
   await pool.execute(
     `UPDATE vendor_wallets

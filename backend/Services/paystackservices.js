@@ -1,4 +1,16 @@
+// @ts-check
 import axios from 'axios';
+
+/**
+ * Standard Paystack API envelope. `data` carries endpoint-specific fields
+ * (reference, status, authorization_url, transfer_code, ...) which are opaque
+ * here — the important money invariant (amounts are converted to pesewas with
+ * `Math.round(amount * 100)`) is kept at the call sites.
+ * @typedef {Object} PaystackEnvelope
+ * @property {boolean} status
+ * @property {string} message
+ * @property {Object<string, any>} [data]
+ */
 
 class PaystackService {
   constructor() {
@@ -15,7 +27,7 @@ class PaystackService {
    * @param {string} email - Customer email
    * @param {number} amount - Amount in GHS (will be converted to pesewas)
    * @param {object} metadata - Additional transaction data
-   * @returns {Promise<object>} Transaction initialization response
+   * @returns {Promise<PaystackEnvelope>} Transaction initialization response
    */
   async initializeTransaction(email, amount, metadata = {}) {
     try {
@@ -43,7 +55,7 @@ class PaystackService {
   /**
    * Verify a transaction
    * @param {string} reference - Transaction reference
-   * @returns {Promise<object>} Transaction verification response
+   * @returns {Promise<PaystackEnvelope>} Transaction verification response
    */
   async verifyTransaction(reference) {
     try {
@@ -64,7 +76,7 @@ class PaystackService {
    * @param {string} authorizationCode - Authorization code from previous transaction
    * @param {string} email - Customer email
    * @param {number} amount - Amount in GHS
-   * @returns {Promise<object>} Charge response
+   * @returns {Promise<PaystackEnvelope>} Charge response
    */
   async chargeAuthorization(authorizationCode, email, amount) {
     try {
@@ -88,7 +100,7 @@ class PaystackService {
    * List transactions
    * @param {number} perPage - Number of transactions per page
    * @param {number} page - Page number
-   * @returns {Promise<object>} List of transactions
+   * @returns {Promise<PaystackEnvelope>} List of transactions
    */
   async listTransactions(perPage = 50, page = 1) {
     try {
@@ -110,7 +122,7 @@ class PaystackService {
    * @param {string} name - Recipient name
    * @param {string} accountNumber - Account number
    * @param {string} bankCode - Bank code
-   * @returns {Promise<object>} Transfer recipient response
+   * @returns {Promise<PaystackEnvelope>} Transfer recipient response
    */
   async createTransferRecipient(type, name, accountNumber, bankCode) {
     try {
@@ -138,7 +150,7 @@ class PaystackService {
    * @param {number} amount - Amount in GHS
    * @param {string} recipient - Recipient code
    * @param {string} reason - Transfer reason
-   * @returns {Promise<object>} Transfer response
+   * @returns {Promise<PaystackEnvelope>} Transfer response
    */
   async initiateTransfer(amount, recipient, reason = '') {
     try {
@@ -162,7 +174,7 @@ class PaystackService {
   /**
    * Get list of banks
    * @param {string} country - Country code (default: 'ghana')
-   * @returns {Promise<object>} List of banks
+   * @returns {Promise<PaystackEnvelope>} List of banks
    */
   async getBankList(country = 'ghana') {
     try {
@@ -179,7 +191,7 @@ class PaystackService {
   /**
    * Get list of mobile money telcos for a country/currency.
    * @param {string} currency - Currency (default: 'GHS')
-   * @returns {Promise<object>} List of mobile money providers
+   * @returns {Promise<PaystackEnvelope>} List of mobile money providers
    */
   async getMobileMoneyTelcos(currency = 'GHS') {
     try {
@@ -199,7 +211,7 @@ class PaystackService {
    * @param {string} name - Recipient name
    * @param {string} phone - Mobile money phone number
    * @param {string} telco - Telco code (e.g. 'MTN', 'VOD', 'ATL', 'TGO')
-   * @returns {Promise<object>} Transfer recipient response
+   * @returns {Promise<PaystackEnvelope>} Transfer recipient response
    */
   async createMomoRecipient(name, phone, telco) {
     try {
@@ -224,7 +236,7 @@ class PaystackService {
    * Resolve account number
    * @param {string} accountNumber - Account number
    * @param {string} bankCode - Bank code
-   * @returns {Promise<object>} Account details
+   * @returns {Promise<PaystackEnvelope>} Account details
    */
   async resolveAccountNumber(accountNumber, bankCode) {
     try {
@@ -243,7 +255,7 @@ class PaystackService {
   /**
    * Fetch transaction
    * @param {number} id - Transaction ID
-   * @returns {Promise<object>} Transaction details
+   * @returns {Promise<PaystackEnvelope>} Transaction details
    */
   async fetchTransaction(id) {
     try {

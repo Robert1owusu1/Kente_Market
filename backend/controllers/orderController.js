@@ -1,3 +1,4 @@
+// @ts-check
 // FILE LOCATION: controllers/orderController.js
 // DESCRIPTION: Complete order controller with all CRUD operations and analytics
 
@@ -17,6 +18,16 @@ import {
   retryFailedAllocations,
 } from "../Services/escrowService.js";
 
+/**
+ * Express Request augmented with the authenticated user (attached by the
+ * `authMiddleware`) and scalar route params/query (validated where needed).
+ * @typedef {import("express").Request & {
+ *   params: Record<string, any>,
+ *   query: Record<string, any>,
+ *   user: { id: number | string, name?: string, email?: string, role: string }
+ * }} AppRequest
+ */
+
 // ============================================
 // CRUD OPERATIONS (Your existing functions)
 // ============================================
@@ -24,9 +35,10 @@ import {
 // @desc    Create new order
 // @route   POST /api/orders
 // @access  Private
+/** @param {AppRequest} req @param {import("express").Response} res */
 export const addOrderItems = async (req, res) => {
   try {
-    const rawItems = Array.isArray(req.body.items) ? req.body.items : [];
+    const rawItems = /** @type {Array<any>} */ (Array.isArray(req.body.items) ? req.body.items : []);
     if (rawItems.length === 0) {
       return res.status(400).json({ message: "Order must contain at least one item" });
     }
@@ -57,7 +69,7 @@ export const addOrderItems = async (req, res) => {
       `SELECT id, title, price, img, vendorId, isCustomizable, productionTime FROM product WHERE id IN (${placeholders})`,
       productIds
     );
-    const productMap = new Map(products.map((p) => [p.id, p]));
+    const productMap = new Map((/** @type {Array<any>} */ (products)).map((p) => [p.id, p]));
     if (productMap.size !== productIds.length) {
       return res.status(400).json({ message: "One or more products are no longer available" });
     }
@@ -143,6 +155,7 @@ export const addOrderItems = async (req, res) => {
 // @desc    Get all orders with pagination
 // @route   GET /api/orders
 // @access  Private/Admin
+/** @param {AppRequest} req @param {import("express").Response} res */
 export const getOrders = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
@@ -174,6 +187,7 @@ export const getOrders = async (req, res) => {
 // @desc    Get single order by ID
 // @route   GET /api/orders/:id
 // @access  Private
+/** @param {AppRequest} req @param {import("express").Response} res */
 export const getOrderById = async (req, res) => {
   try {
     if (!isValidId(req.params.id)) {
@@ -205,6 +219,7 @@ export const getOrderById = async (req, res) => {
 // @desc    Get logged-in user's orders
 // @route   GET /api/orders/myorders
 // @access  Private
+/** @param {AppRequest} req @param {import("express").Response} res */
 export const getMyOrders = async (req, res) => {
   try {
     const orders = await Order.findByUserId(req.user.id);
@@ -218,6 +233,7 @@ export const getMyOrders = async (req, res) => {
 // @desc    Update order
 // @route   PUT /api/orders/:id
 // @access  Private
+/** @param {AppRequest} req @param {import("express").Response} res */
 export const updateOrder = async (req, res) => {
   try {
     if (!isValidId(req.params.id)) {
@@ -283,6 +299,7 @@ export const updateOrder = async (req, res) => {
 // @desc    Mark order as paid
 // @route   PUT /api/orders/:id/pay
 // @access  Private/Admin
+/** @param {AppRequest} req @param {import("express").Response} res */
 export const updateOrderToPaid = async (req, res) => {
   try {
     if (!isValidId(req.params.id)) {
@@ -303,7 +320,7 @@ export const updateOrderToPaid = async (req, res) => {
     // longest productionTime among customisable items) so the buyer sees how
     // many days are left to finish weaving. Only set if not already provided.
     const paidOrder = await Order.findById(req.params.id);
-    if (!paidOrder.expectedCompletionDate) {
+    if (!paidOrder || !paidOrder.expectedCompletionDate) {
       const completion = computeExpectedCompletion(paidOrder);
       if (completion) {
         await Order.update(req.params.id, {
@@ -317,7 +334,7 @@ export const updateOrderToPaid = async (req, res) => {
 
     // Consume deferred coupon usage on admin-confirmed payment
     const freshOrder = await Order.findById(req.params.id);
-    if (freshOrder.couponId) {
+    if (freshOrder?.couponId) {
       try {
         await Coupon.incrementUses(freshOrder.couponId);
       } catch (e) {
@@ -340,6 +357,7 @@ export const updateOrderToPaid = async (req, res) => {
 // @desc    Mark order as delivered
 // @route   PUT /api/orders/:id/deliver
 // @access  Private/Admin
+/** @param {AppRequest} req @param {import("express").Response} res */
 export const updateOrderToDelivered = async (req, res) => {
   try {
     if (!isValidId(req.params.id)) {
@@ -358,9 +376,12 @@ export const updateOrderToDelivered = async (req, res) => {
       });
     }
 
-    const updatedOrder = await Order.update(req.params.id, {
-      orderStatus: "delivered",
-    });
+    const updatedOrder = /** @type {import('../models/orderModel.js').default & { escrowReleaseDays?: number }} */ (
+      // Row was just updated; non-null.
+      await Order.update(req.params.id, {
+        orderStatus: "delivered",
+      })
+    );
 
     // Escrow orders get an auto-release deadline: if the customer does not
     // confirm receipt within the window, funds are released automatically.
@@ -369,7 +390,7 @@ export const updateOrderToDelivered = async (req, res) => {
     if (updatedOrder.escrowStatus === 'held') {
       const days = await setEscrowReleaseDeadline(req.params.id);
       updatedOrder.escrowReleaseDeadline = await Order.findById(req.params.id)
-        .then((o) => o.escrowReleaseDeadline);
+        .then((o) => o?.escrowReleaseDeadline);
       updatedOrder.escrowReleaseDays = days;
     } else if (updatedOrder.escrowStatus === 'none') {
       // Webhook may not have fired yet — try to hold escrow now
@@ -377,7 +398,7 @@ export const updateOrderToDelivered = async (req, res) => {
       if (heldCount > 0) {
         const days = await setEscrowReleaseDeadline(req.params.id);
         updatedOrder.escrowReleaseDeadline = await Order.findById(req.params.id)
-          .then((o) => o.escrowReleaseDeadline);
+          .then((o) => o?.escrowReleaseDeadline);
         updatedOrder.escrowReleaseDays = days;
         updatedOrder.escrowStatus = 'held';
       }
@@ -393,6 +414,7 @@ export const updateOrderToDelivered = async (req, res) => {
 // @desc    Customer confirms delivery received → release escrow to vendors
 // @route   POST /api/orders/:id/confirm-received
 // @access  Private (order owner or admin)
+/** @param {AppRequest} req @param {import("express").Response} res */
 export const confirmOrderReceived = async (req, res) => {
   try {
     if (!isValidId(req.params.id)) {
@@ -433,7 +455,7 @@ export const confirmOrderReceived = async (req, res) => {
       message: failed
         ? "Receipt confirmed. Some vendor payouts failed — admin retry may be needed."
         : "Receipt confirmed. Funds released to vendors.",
-      escrowStatus: updatedOrder.escrowStatus,
+      escrowStatus: updatedOrder?.escrowStatus,
       result,
     });
   } catch (error) {
@@ -445,6 +467,7 @@ export const confirmOrderReceived = async (req, res) => {
 // @desc    Cancel order and void escrow
 // @route   PUT /api/orders/:id/cancel
 // @access  Private/Admin
+/** @param {AppRequest} req @param {import("express").Response} res */
 export const cancelOrder = async (req, res) => {
   try {
     if (!isValidId(req.params.id)) {
@@ -484,6 +507,7 @@ export const cancelOrder = async (req, res) => {
 // @desc    Retry failed escrow payouts for an order
 // @route   POST /api/orders/:id/retry-escrow
 // @access  Private/Admin
+/** @param {AppRequest} req @param {import("express").Response} res */
 export const retryEscrowPayouts = async (req, res) => {
   try {
     if (!isValidId(req.params.id)) {
@@ -507,7 +531,7 @@ export const retryEscrowPayouts = async (req, res) => {
     res.status(200).json({
       message: `Retry complete: ${result.retried} payouts initiated, ${result.failed} failed.`,
       result,
-      escrowStatus: updatedOrder.escrowStatus,
+      escrowStatus: updatedOrder?.escrowStatus,
     });
   } catch (error) {
     console.error('Error retrying escrow payouts:', error);
@@ -518,6 +542,7 @@ export const retryEscrowPayouts = async (req, res) => {
 // @desc    Delete order
 // @route   DELETE /api/orders/:id
 // @access  Private/Admin
+/** @param {AppRequest} req @param {import("express").Response} res */
 export const deleteOrder = async (req, res) => {
   try {
     if (!isValidId(req.params.id)) {
@@ -539,6 +564,7 @@ export const deleteOrder = async (req, res) => {
 // @desc    Get order statistics
 // @route   GET /api/orders/statistics
 // @access  Private/Admin
+/** @param {AppRequest} req @param {import("express").Response} res */
 export const getOrderStatistics = async (req, res) => {
   try {
     const stats = await Order.getStatistics();
@@ -575,6 +601,7 @@ export const getOrderStatistics = async (req, res) => {
 // @desc    Get sales analytics by date range
 // @route   GET /api/orders/analytics
 // @access  Private/Admin
+/** @param {AppRequest} req @param {import("express").Response} res */
 export const getSalesAnalytics = async (req, res) => {
   let connection;
   try {
@@ -634,6 +661,7 @@ export const getSalesAnalytics = async (req, res) => {
 // @desc    Get top selling products from orders
 // @route   GET /api/orders/top-products
 // @access  Private/Admin
+/** @param {AppRequest} req @param {import("express").Response} res */
 export const getTopProducts = async (req, res) => {
   let connection;
   try {
@@ -650,11 +678,11 @@ export const getTopProducts = async (req, res) => {
     `);
 
     // Aggregate product sales
-    const productSales = {};
-    
-    orders.forEach(order => {
+    const productSales = /** @type {Record<string, { productId: any, name: any, quantity: number, revenue: number }>} */ ({});
+
+    (/** @type {Array<any>} */ (orders)).forEach(order => {
       try {
-        const items = JSON.parse(order.items);
+        const items = /** @type {Array<any>} */ (JSON.parse(order.items));
         items.forEach(item => {
           const key = item.productId || item.id || item.title;
           if (!productSales[key]) {

@@ -1,0 +1,272 @@
+// FILE LOCATION: src/components/reviews/ProductReviews.jsx
+// DESCRIPTION: Review section for a single product - shows the average rating,
+//              lists existing reviews, and lets logged-in users submit a review.
+import React, { useState } from "react";
+import { FaStar, FaRegStar, FaUser, FaSpinner, FaEdit, FaTrash } from "react-icons/fa";
+import { Link } from "react-router-dom";
+import { toast } from "react-toastify";
+import axios from "axios";
+import {
+  useGetProductReviewsQuery,
+  useCreateReviewMutation,
+} from "../../slices/miscApiSlice";
+import { useAppSelector } from "../../store";
+import type { Review } from "../../types/domain";
+import EditReviewModal from "./EditReviewModal";
+import ReportReviewButton from "./ReportReviewButton";
+
+type ReviewWithUser = Review & {
+  name?: string;
+  firstName?: string;
+  lastName?: string;
+  profile_picture?: string;
+  profilePicture?: string;
+};
+
+const StarRatingInput = ({ value, onChange, disabled }: {
+  value: number;
+  onChange: (value: number) => void;
+  disabled?: boolean;
+}) => {
+  return (
+    <div className="flex items-center gap-1">
+      {[1, 2, 3, 4, 5].map((star) => (
+        <button
+          key={star}
+          type="button"
+          onClick={() => !disabled && onChange(star)}
+          disabled={disabled}
+          aria-label={`${star} star`}
+          className={`text-2xl transition-colors ${disabled ? "cursor-not-allowed" : "cursor-pointer hover:scale-110"}`}
+        >
+          {star <= value ? (
+            <FaStar className="text-amber-400" />
+          ) : (
+            <FaRegStar className="text-gray-400" />
+          )}
+        </button>
+      ))}
+    </div>
+  );
+};
+
+const StarDisplay = ({ value }: { value: number | string }) => {
+  return (
+    <div className="flex items-center gap-0.5">
+      {[1, 2, 3, 4, 5].map((star) => (
+        <span key={star}>
+          {star <= Math.round(Number(value || 0)) ? (
+            <FaStar className="text-amber-400 text-sm" />
+          ) : (
+            <FaRegStar className="text-gray-400 text-sm" />
+          )}
+        </span>
+      ))}
+    </div>
+  );
+};
+
+const formatDate = (d: string | number | undefined) => {
+  try {
+    return new Date(d as string | number).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+  } catch {
+    return "";
+  }
+};
+
+const getAvatar = (review: Review & { profile_picture?: string; profilePicture?: string }) => {
+  const pic = review.profile_picture || review.profilePicture || null;
+  if (pic) return pic;
+  return null;
+};
+
+const ProductReviews = ({ productId }: { productId?: number | string }) => {
+  const { userInfo } = useAppSelector((state) => state.auth);
+  const { data: reviews = [], isLoading } = useGetProductReviewsQuery(productId!, {
+    skip: !productId,
+  });
+  const [createReview, { isLoading: submitting }] = useCreateReviewMutation();
+
+  const [rating, setRating] = useState(0);
+  const [comment, setComment] = useState("");
+  const [editingReview, setEditingReview] = useState<ReviewWithUser | null>(null);
+
+  const avgRating = reviews.length
+    ? (reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length).toFixed(1)
+    : 0;
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (rating < 1) {
+      toast.error("Please select a star rating");
+      return;
+    }
+    if (!comment.trim()) {
+      toast.error("Please write a review");
+      return;
+    }
+    try {
+      await createReview({ productId, rating, comment }).unwrap();
+      toast.success("Thank you for your review!");
+      setRating(0);
+      setComment("");
+    } catch (err) {
+      toast.error((err as { data?: { message?: string } }).data?.message || "Failed to submit review");
+    }
+  };
+
+  const handleDelete = async (reviewId?: number | string) => {
+    if (!window.confirm("Are you sure you want to delete this review?")) return;
+    try {
+      await axios.delete(`/api/reviews/${reviewId}`);
+      toast.success("Review deleted");
+    } catch (err) {
+      toast.error((err as { response?: { data?: { message?: string } } }).response?.data?.message || "Failed to delete review");
+    }
+  };
+
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-5 sm:p-8">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b dark:border-gray-700 pb-5">
+        <div>
+          <h2 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">Customer Reviews</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            {reviews.length} {reviews.length === 1 ? "review" : "reviews"}
+          </p>
+        </div>
+        {reviews.length > 0 && (
+          <div className="flex items-center gap-3">
+            <span className="text-3xl font-bold text-gray-900 dark:text-white">{avgRating}</span>
+            <div>
+              <StarDisplay value={avgRating} />
+              <p className="text-xs text-gray-500 dark:text-gray-400">Average rating</p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Review form */}
+      {userInfo ? (
+        <form onSubmit={handleSubmit} className="border-b dark:border-gray-700 py-6 space-y-4">
+          <h3 className="font-semibold text-gray-900 dark:text-white">Write a Review</h3>
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-gray-600 dark:text-gray-300">Your rating:</span>
+            <StarRatingInput value={rating} onChange={setRating} disabled={submitting} />
+          </div>
+          <textarea
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            rows={3}
+            placeholder="Share your experience with this product..."
+            className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-yellow-400"
+          />
+          <button
+            type="submit"
+            disabled={submitting}
+            className="px-6 py-2.5 bg-yellow-400 text-black font-semibold rounded-lg hover:bg-yellow-500 transition disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2"
+          >
+            {submitting ? (
+              <>
+                <FaSpinner className="animate-spin" /> Submitting...
+              </>
+            ) : (
+              "Submit Review"
+            )}
+          </button>
+        </form>
+      ) : (
+        <div className="border-b dark:border-gray-700 py-6">
+          <p className="text-sm text-gray-600 dark:text-gray-300">
+            <Link to="/login" className="text-yellow-500 hover:underline font-medium">
+              Sign in
+            </Link>{" "}
+            to write a review.
+          </p>
+        </div>
+      )}
+
+      {/* Reviews list */}
+      <div className="pt-6 space-y-6">
+        {isLoading ? (
+          <p className="text-gray-500 dark:text-gray-400 text-center py-4">Loading reviews...</p>
+        ) : reviews.length === 0 ? (
+          <p className="text-gray-500 dark:text-gray-400 text-center py-4">
+            No reviews yet. Be the first to share your experience!
+          </p>
+        ) : (
+          reviews.map((review: ReviewWithUser) => (
+            <div key={review.id} className="flex gap-4">
+              <div className="flex-shrink-0">
+                {getAvatar(review) ? (
+                  <img
+                    src={getAvatar(review) ?? undefined}
+                    alt={review.name}
+                    className="w-10 h-10 rounded-full object-cover"
+                    onError={(e) => { const target = e.target as HTMLImageElement; target.onerror = null; target.style.display = "none"; }}
+                  />
+                ) : (
+                  <div className="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center">
+                    <FaUser className="text-gray-500 dark:text-gray-400" />
+                  </div>
+                )}
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center justify-between">
+                  <p className="font-semibold text-gray-900 dark:text-white">
+                    {review.name || `${review.firstName || ""} ${review.lastName || ""}`.trim() || "Anonymous"}
+                  </p>
+                  <span className="text-xs text-gray-400">{formatDate(review.created_at)}</span>
+                </div>
+                <div className="mt-1">
+                  <StarDisplay value={review.rating} />
+                </div>
+                {review.comment && (
+                  <p className="mt-2 text-sm text-gray-700 dark:text-gray-300">{review.comment}</p>
+                )}
+                {/* Edit / Delete / Report actions */}
+                {userInfo && (
+                  <div className="mt-2 flex items-center gap-3">
+                    {userInfo.id === review.userId && (
+                      <>
+                        <button
+                          onClick={() => setEditingReview(review)}
+                          className="text-xs text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
+                        >
+                          <FaEdit /> Edit
+                        </button>
+                        <button
+                          onClick={() => handleDelete(review.id)}
+                          className="text-xs text-red-500 hover:text-red-700 flex items-center gap-1"
+                        >
+                          <FaTrash /> Delete
+                        </button>
+                      </>
+                    )}
+                    {userInfo.id !== review.userId && (
+                      <ReportReviewButton reviewId={review.id} />
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Edit Review Modal */}
+      {editingReview && (
+        <EditReviewModal
+          review={editingReview}
+          onClose={() => setEditingReview(null)}
+          onSuccess={() => {
+            setEditingReview(null);
+            window.location.reload();
+          }}
+        />
+      )}
+    </div>
+  );
+};
+
+export default ProductReviews;
