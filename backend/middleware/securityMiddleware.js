@@ -28,6 +28,10 @@ export const setupSecurity = (app) => {
       },
     },
     crossOriginEmbedderPolicy: false,
+    // Uploaded product images live on the API origin but are displayed from the
+    // frontend origin (Vercel). Helmet's default CORP 'same-origin' makes
+    // Firefox block those <img> loads, so allow cross-origin resource loading.
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
     // XSS filter is enabled by default in helmet
   }));
 
