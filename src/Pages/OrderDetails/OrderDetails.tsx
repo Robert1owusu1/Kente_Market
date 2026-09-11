@@ -396,7 +396,9 @@ const OrderDetails = () => {
 
           {order.shippingAddress && Object.keys(order.shippingAddress).length > 0 && (
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 sm:p-6">
-              <h3 className="font-semibold text-lg mb-3">Shipping Address</h3>
+              <h3 className="font-semibold text-lg mb-3">
+                {shippingAddress.deliveryMethod === 'pickup' ? 'Pickup Details' : 'Shipping Address'}
+              </h3>
               <p className="text-sm text-gray-700 dark:text-gray-300">
                 {shippingAddress.firstName || shippingAddress.fullName} {shippingAddress.lastName}
                 <br />
@@ -407,6 +409,22 @@ const OrderDetails = () => {
               </p>
               {shippingAddress.phone && (
                 <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">{shippingAddress.phone}</p>
+              )}
+              {shippingAddress.deliveryMethod === 'pickup' && shippingAddress.pickupStation && (
+                <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                  <span className="inline-block px-2 py-0.5 bg-blue-600 text-white text-xs rounded-full mb-2">Pickup</span>
+                  <p className="text-sm font-medium text-gray-900 dark:text-white">
+                    {shippingAddress.pickupStation}
+                  </p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Collect your order from this station once it's delivered.
+                  </p>
+                </div>
+              )}
+              {shippingAddress.deliveryMethod === 'home' && (
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                  Door-to-door delivery to your address.
+                </p>
               )}
             </div>
           )}

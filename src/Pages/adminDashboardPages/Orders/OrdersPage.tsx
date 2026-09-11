@@ -252,10 +252,25 @@ const OrderDetailsModal = ({ order, onClose, onUpdate, onMarkDelivered, onDelete
 
           {shippingAddress && Object.keys(shippingAddress).length > 0 && (
             <section>
-              <h3 className="text-lg font-semibold mb-3 text-gray-800 dark:text-white">Shipping Address</h3>
+              <h3 className="text-lg font-semibold mb-3 text-gray-800 dark:text-white">
+                {shippingAddress.deliveryMethod === 'pickup' ? 'Pickup Details' : 'Shipping Address'}
+              </h3>
               <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded text-gray-800 dark:text-white">
-                <p>{sanitizeString(shippingAddress.street)}</p>
-                <p>{sanitizeString(shippingAddress.city)}, {sanitizeString(shippingAddress.state)} {sanitizeString(shippingAddress.zip)}</p>
+                {shippingAddress.deliveryMethod === 'pickup' ? (
+                  <>
+                    <p className="font-medium text-blue-600 dark:text-blue-400">
+                      {shippingAddress.firstName || shippingAddress.fullName} {shippingAddress.lastName}
+                    </p>
+                    <p className="mt-1">{sanitizeString(shippingAddress.pickupStation)}</p>
+                  </>
+                ) : (
+                  <>
+                    <p>{shippingAddress.firstName || shippingAddress.fullName} {shippingAddress.lastName}</p>
+                    <p>{sanitizeString(shippingAddress.street || shippingAddress.address)}</p>
+                    <p>{sanitizeString(shippingAddress.city)}, {sanitizeString(shippingAddress.state || shippingAddress.region)} {sanitizeString(shippingAddress.zip || shippingAddress.postalCode)}</p>
+                  </>
+                )}
+                {shippingAddress.phone && <p className="mt-1 text-gray-500 dark:text-gray-400">{sanitizeString(shippingAddress.phone)}</p>}
               </div>
             </section>
           )}

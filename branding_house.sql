@@ -589,3 +589,4 @@ CREATE TABLE IF NOT EXISTS authenticity_certificates (
   CONSTRAINT fk_cert_product FOREIGN KEY (productId) REFERENCES product(id) ON DELETE CASCADE,
   CONSTRAINT fk_cert_order FOREIGN KEY (orderId) REFERENCES orders(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
+

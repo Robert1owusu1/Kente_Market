@@ -61,6 +61,22 @@ interface PaystackPopInstance {
   newTransaction(config: PaystackConfig): void;
 }
 
+// Pickup stations offered when the customer chooses "pickup" instead of
+// door-to-door delivery. Drawn from the platform's physical collection points.
+const PICKUP_STATIONS = [
+  { name: 'Accra Mall', town: 'Accra', region: 'Greater Accra' },
+  { name: 'Osu (Oxford Street)', town: 'Accra', region: 'Greater Accra' },
+  { name: 'Madina Market', town: 'Madina', region: 'Greater Accra' },
+  { name: 'Tema Community 7', town: 'Tema', region: 'Greater Accra' },
+  { name: 'Adum (Kumasi Central)', town: 'Kumasi', region: 'Ashanti' },
+  { name: 'Kejetia Market', town: 'Kumasi', region: 'Ashanti' },
+  { name: 'Takoradi Market Circle', town: 'Takoradi', region: 'Western' },
+  { name: 'Cape Coast (Old Market)', town: 'Cape Coast', region: 'Central' },
+  { name: 'Koforidua (Jackson Park)', town: 'Koforidua', region: 'Eastern' },
+  { name: 'Ho (Municipal Market)', town: 'Ho', region: 'Volta' },
+  { name: 'Tamale (Main Market)', town: 'Tamale', region: 'Northern' },
+  { name: 'Sunyani (Central Market)', town: 'Sunyani', region: 'Bono' },
+];
 
 export default function CheckoutPage() {
   const navigate = useNavigate();
@@ -72,6 +88,8 @@ export default function CheckoutPage() {
   const [selectedMomoProvider, setSelectedMomoProvider] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [sameAsShipping, setSameAsShipping] = useState(true);
+  const [deliveryMethod, setDeliveryMethod] = useState<'home' | 'pickup'>('home');
+  const [pickupStation, setPickupStation] = useState('');
   const [fieldErrors, setFieldErrors] = useState<FormErrors>({});
   const [isPaystackLoaded, setIsPaystackLoaded] = useState(false);
   const [couponCode, setCouponCode] = useState('');
@@ -306,6 +324,28 @@ export default function CheckoutPage() {
   };
 
   const validateShippingForm = () => {
+    if (deliveryMethod === 'pickup') {
+      if (!pickupStation.trim()) {
+        toast.error('Please select a pickup station');
+        return false;
+      }
+      const required: (keyof typeof shippingAddress)[] = ['firstName', 'lastName', 'email', 'phone'];
+      for (const field of required) {
+        if (!shippingAddress[field]) {
+          toast.error(`Please fill in ${field.replace(/([A-Z])/g, ' $1').toLowerCase()}`);
+          return false;
+        }
+        if (!validateField(field, shippingAddress[field])) {
+          return false;
+        }
+      }
+      if (Object.keys(fieldErrors).length > 0) {
+        toast.error('Please fix all form errors before continuing');
+        return false;
+      }
+      return true;
+    }
+
     const required: (keyof typeof shippingAddress)[] = ['firstName', 'lastName', 'email', 'phone', 'address', 'city', 'region'];
     let isValid = true;
     
@@ -467,7 +507,11 @@ export default function CheckoutPage() {
           selectedSize: item.selectedSize
         })),
         totalAmount: parseFloat(total.toFixed(2)),
-        shippingAddress: shippingAddress,
+        shippingAddress: {
+          ...shippingAddress,
+          deliveryMethod,
+          pickupStation: deliveryMethod === 'pickup' ? pickupStation : '',
+        },
         billingAddress: sameAsShipping ? shippingAddress : billingAddress,
         paymentMethod: paymentMethod === 'momo' 
           ? `Mobile Money (${selectedMomoProvider?.toUpperCase()})` 
@@ -561,9 +605,75 @@ export default function CheckoutPage() {
   const renderShippingStep = () => (
     <div className="space-y-6">
       <div className="bg-white dark:bg-gray-800 dark:border dark:border-gray-700 rounded-xl p-6 shadow-sm border">
-        <h3 className="text-xl font-semibold mb-6 flex items-center">
-          <FaTruck className="mr-3 text-blue-600" /> Shipping Address
+        <h3 className="text-xl font-semibold mb-4 flex items-center">
+          <FaTruck className="mr-3 text-blue-600" /> Delivery Method
         </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <button
+            type="button"
+            onClick={() => setDeliveryMethod('home')}
+            className={`flex items-start gap-3 p-4 border-2 rounded-xl text-left transition ${
+              deliveryMethod === 'home'
+                ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/20'
+                : 'border-gray-200 dark:border-gray-700 hover:border-blue-300'
+            }`}
+          >
+            <FaTruck className="text-2xl text-blue-600 mt-1" />
+            <span>
+              <span className="block font-semibold text-gray-900 dark:text-white">Door-to-door delivery</span>
+              <span className="text-sm text-gray-500 dark:text-gray-400">We deliver straight to your address</span>
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setDeliveryMethod('pickup')}
+            className={`flex items-start gap-3 p-4 border-2 rounded-xl text-left transition ${
+              deliveryMethod === 'pickup'
+                ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/20'
+                : 'border-gray-200 dark:border-gray-700 hover:border-blue-300'
+            }`}
+          >
+            <FaMapMarkerAlt className="text-2xl text-blue-600 mt-1" />
+            <span>
+              <span className="block font-semibold text-gray-900 dark:text-white">Pickup at station</span>
+              <span className="text-sm text-gray-500 dark:text-gray-400">Collect from a pickup station near you</span>
+            </span>
+          </button>
+        </div>
+
+        {deliveryMethod === 'pickup' && (
+          <div className="mt-5">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Select Pickup Station *</label>
+            <select
+              value={pickupStation}
+              onChange={(e) => setPickupStation(e.target.value)}
+              className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
+              required
+            >
+              <option value="">Choose a station near you</option>
+              {PICKUP_STATIONS.map((station) => (
+                <option key={station.name} value={`${station.name} — ${station.town}, ${station.region}`}>
+                  {station.name} — {station.town}, {station.region}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+              You'll be notified when your order is ready for collection at the station.
+            </p>
+          </div>
+        )}
+      </div>
+
+      <div className="bg-white dark:bg-gray-800 dark:border dark:border-gray-700 rounded-xl p-6 shadow-sm border">
+        {deliveryMethod === 'pickup' ? (
+          <h3 className="text-xl font-semibold mb-6 flex items-center">
+            <FaUser className="mr-3 text-blue-600" /> Your Contact Details
+          </h3>
+        ) : (
+          <h3 className="text-xl font-semibold mb-6 flex items-center">
+            <FaTruck className="mr-3 text-blue-600" /> Shipping Address
+          </h3>
+        )}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">First Name *</label>
@@ -639,62 +749,70 @@ export default function CheckoutPage() {
               <p className="text-red-500 text-xs mt-1" role="alert">{fieldErrors.phone}</p>
             )}
           </div>
-          <div className="md:col-span-2">
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Address *</label>
-            <input
-              type="text"
-              value={shippingAddress.address}
-              onChange={(e) => updateShippingAddress('address', e.target.value)}
-              onBlur={() => validateField('address', shippingAddress.address)}
-              placeholder="Street address, P.O. box, company name"
-              className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-white dark:bg-gray-700 text-gray-800 dark:text-white ${
-                fieldErrors.address ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'
-              }`}
-              required
-            />
-            {fieldErrors.address && (
-              <p className="text-red-500 text-xs mt-1" role="alert">{fieldErrors.address}</p>
-            )}
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">City *</label>
-            <input
-              type="text"
-              value={shippingAddress.city}
-              onChange={(e) => updateShippingAddress('city', e.target.value)}
-              onBlur={() => validateField('city', shippingAddress.city)}
-              className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-white dark:bg-gray-700 text-gray-800 dark:text-white ${
-                fieldErrors.city ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'
-              }`}
-              required
-            />
-            {fieldErrors.city && (
-              <p className="text-red-500 text-xs mt-1" role="alert">{fieldErrors.city}</p>
-            )}
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Region *</label>
-            <select
-              value={shippingAddress.region}
-              onChange={(e) => updateShippingAddress('region', e.target.value)}
-              className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
-              required
-            >
-              <option value="">Select Region</option>
-              {ghanaRegions.map((region) => (
-                <option key={region} value={region}>{region}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Postal Code</label>
-            <input
-              type="text"
-              value={shippingAddress.postalCode}
-              onChange={(e) => updateShippingAddress('postalCode', e.target.value)}
-              className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
-            />
-          </div>
+          {deliveryMethod === 'home' && (
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Address *</label>
+              <input
+                type="text"
+                value={shippingAddress.address}
+                onChange={(e) => updateShippingAddress('address', e.target.value)}
+                onBlur={() => validateField('address', shippingAddress.address)}
+                placeholder="Street address, P.O. box, company name"
+                className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-white dark:bg-gray-700 text-gray-800 dark:text-white ${
+                  fieldErrors.address ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'
+                }`}
+                required
+              />
+              {fieldErrors.address && (
+                <p className="text-red-500 text-xs mt-1" role="alert">{fieldErrors.address}</p>
+              )}
+            </div>
+          )}
+          {deliveryMethod === 'home' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">City *</label>
+              <input
+                type="text"
+                value={shippingAddress.city}
+                onChange={(e) => updateShippingAddress('city', e.target.value)}
+                onBlur={() => validateField('city', shippingAddress.city)}
+                className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-white dark:bg-gray-700 text-gray-800 dark:text-white ${
+                  fieldErrors.city ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'
+                }`}
+                required
+              />
+              {fieldErrors.city && (
+                <p className="text-red-500 text-xs mt-1" role="alert">{fieldErrors.city}</p>
+              )}
+            </div>
+          )}
+          {deliveryMethod === 'home' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Region *</label>
+              <select
+                value={shippingAddress.region}
+                onChange={(e) => updateShippingAddress('region', e.target.value)}
+                className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
+                required
+              >
+                <option value="">Select Region</option>
+                {ghanaRegions.map((region) => (
+                  <option key={region} value={region}>{region}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          {deliveryMethod === 'home' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Postal Code</label>
+              <input
+                type="text"
+                value={shippingAddress.postalCode}
+                onChange={(e) => updateShippingAddress('postalCode', e.target.value)}
+                className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
+              />
+            </div>
+          )}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Country</label>
             <input
@@ -901,12 +1019,23 @@ export default function CheckoutPage() {
           <div>
             <h4 className="font-medium text-gray-900 dark:text-white mb-2">Shipping Address</h4>
             <p className="text-sm text-gray-600 dark:text-gray-300">
-              {shippingAddress.firstName} {shippingAddress.lastName}<br />
-              {shippingAddress.email}<br />
-              {shippingAddress.phone}<br />
-              {shippingAddress.address}<br />
-              {shippingAddress.city}, {shippingAddress.region}<br />
-              {shippingAddress.country}
+              {deliveryMethod === 'pickup' ? (
+                <>
+                  {shippingAddress.firstName} {shippingAddress.lastName}<br />
+                  {shippingAddress.email}<br />
+                  {shippingAddress.phone}<br />
+                  <span className="font-medium text-blue-600 dark:text-blue-400">Pickup at: {pickupStation}</span>
+                </>
+              ) : (
+                <>
+                  {shippingAddress.firstName} {shippingAddress.lastName}<br />
+                  {shippingAddress.email}<br />
+                  {shippingAddress.phone}<br />
+                  {shippingAddress.address}<br />
+                  {shippingAddress.city}, {shippingAddress.region}<br />
+                  {shippingAddress.country}
+                </>
+              )}
             </p>
           </div>
           <div>
