@@ -1,7 +1,7 @@
 // Pages/Vendor/VendorOrdersSection.jsx
 // Integrated order management with filters, status tracking, export
 import { useState } from 'react';
-import { FaTruck, FaBoxOpen, FaCheckCircle, FaClock, FaStickyNote, FaCalendarAlt, FaSpinner, FaSearch, FaDownload } from 'react-icons/fa';
+import { FaTruck, FaMapMarkerAlt, FaBoxOpen, FaCheckCircle, FaClock, FaStickyNote, FaCalendarAlt, FaSpinner, FaSearch, FaDownload } from 'react-icons/fa';
 import { toast } from 'react-toastify';
 import {
   useGetVendorOrdersQuery,
@@ -211,6 +211,26 @@ const VendorOrdersSection = () => {
                     </span>
                   ))}
                 </div>
+
+                {/* Delivery preference */}
+                {(() => {
+                  const sa = typeof order.shippingAddress === 'string'
+                    ? (() => { try { return JSON.parse(order.shippingAddress as string); } catch { return {}; } })()
+                    : (order.shippingAddress || {});
+                  const del = sa as { deliveryMethod?: string; pickupStation?: string };
+                  if (del && del.deliveryMethod === 'pickup') {
+                    return (
+                      <div className="inline-flex items-center gap-1.5 rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-2 py-1 mb-3 text-xs font-medium">
+                        <FaMapMarkerAlt /> Pickup: {String(del.pickupStation || 'station TBC')}
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="inline-flex items-center gap-1.5 rounded-lg bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300 px-2 py-1 mb-3 text-xs font-medium">
+                      <FaTruck /> Door-to-door delivery
+                    </div>
+                  );
+                })()}
 
                 {/* Progress pipeline */}
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-4">
