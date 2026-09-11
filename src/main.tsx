@@ -7,6 +7,15 @@ import { CartProvider } from './Context/CartContext'
 // 🔹 import Provider and store
 import { Provider } from 'react-redux'
 import store from './store'
+// Point raw axios calls (e.g. "/api/orders/...") at the API origin when the
+// frontend and API are hosted separately (Vercel + Render). RTK-Query uses its
+// own fetch baseQuery and is not affected. withCredentials keeps the JWT cookie
+// flowing on cross-origin requests.
+import axios from 'axios'
+import { Base_URL } from './constant'
+
+axios.defaults.baseURL = Base_URL || undefined
+axios.defaults.withCredentials = true
 
 const rootElement = document.getElementById('root');
 if (!rootElement) throw new Error('Root element #root not found');
