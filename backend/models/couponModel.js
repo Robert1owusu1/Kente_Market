@@ -185,13 +185,33 @@ class Coupon {
         };
       }
 
-      return { valid: true, coupon, message: "Coupon is valid" };
+      return { valid: true, coupon: Coupon.toPublic(coupon), message: "Coupon is valid" };
     } catch (err) {
       console.error("DB Error (Coupon.validate):", err.message);
       throw new Error(`Error validating coupon: ${err.message}`);
     } finally {
       if (connection) connection.release();
     }
+  }
+
+  /**
+   * Strip internal fields before a coupon is exposed to the public validate
+   * endpoint. Leaking the full row (usesUsed, tracking columns, etc.) is
+   * unnecessary info disclosure (see audit — /api/coupons/validate returns the
+   * entire coupon row).
+   */
+  static toPublic(coupon) {
+    if (!coupon) return null;
+    return {
+      id: coupon.id,
+      code: coupon.code,
+      discountType: coupon.discountType,
+      discountValue: coupon.discountValue,
+      minPurchase: coupon.minPurchase,
+      maxUses: coupon.maxUses,
+      expiresAt: coupon.expiresAt,
+      isActive: coupon.isActive,
+    };
   }
 
   static async incrementUses(id) {

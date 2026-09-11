@@ -99,11 +99,12 @@ export const validateCoupon = async (req, res) => {
     }
 
     const result = await Coupon.validate(code.trim(), parseFloat(cartTotal));
+    const safeCoupon = Coupon.toPublic(result.coupon);
     if (!result.valid) {
-      return res.status(400).json({ message: result.message, coupon: result.coupon });
+      return res.status(400).json({ message: result.message, coupon: safeCoupon });
     }
 
-    res.json({ message: result.message, coupon: result.coupon });
+    res.json({ message: result.message, coupon: safeCoupon });
   } catch (error) {
     console.error("validateCoupon error:", error.message);
     res.status(500).json({ message: "Failed to validate coupon" });

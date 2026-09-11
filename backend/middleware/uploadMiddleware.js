@@ -19,10 +19,13 @@ const storage = multer.diskStorage({
     cb(null, uploadDir);
   },
   filename: function (req, file, cb) {
-    // Generate unique filename: product-timestamp-randomnumber.ext
+    // Generate unique filename: <ownerId>-product-timestamp-randomnumber.ext
+    // Prefixing with the uploader's user id lets the DELETE route enforce that
+    // only the uploader (or an admin) may remove the file.
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     const ext = path.extname(file.originalname);
-    cb(null, `product-${uniqueSuffix}${ext}`);
+    const ownerId = req.user?.id || 'anon';
+    cb(null, `${ownerId}-product-${uniqueSuffix}${ext}`);
   }
 });
 

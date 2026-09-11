@@ -32,6 +32,26 @@ export const authLimiter = rateLimit({
   }
 });
 
+// Per-account + IP rate limiter for staff login. Express-rate-limit's default
+// keying is IP-only, so an attacker rotating through the platform's staff
+// accounts could brute-force within one IP's allowance. Keying on email+IP
+// bounds attempts per account regardless of total logins from one IP.
+export const staffAuthLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  keyGenerator: (req) => {
+    const email = (req.body?.email || 'unknown').toString().trim().toLowerCase();
+    return `${req.ip}:${email}`;
+  },
+  skipSuccessfulRequests: true,
+  handler: (req, res) => {
+    res.status(429).json({
+      message: 'Too many login attempts for this account. Please try again in 15 minutes.',
+      retryAfter: req.rateLimit.resetTime
+    });
+  }
+});
+
 // Rate limiter for file uploads
 export const uploadLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour

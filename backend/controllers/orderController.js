@@ -6,6 +6,7 @@ import Order from "../models/orderModel.js";
 import pool from "../config/db.js";
 import Coupon from "../models/couponModel.js";
 import isValidId from "../utils/isValidId.js";
+import paystackServices from "../Services/paystackservices.js";
 import { computeExpectedCompletion } from "../utils/computeExpectedCompletion.js";
 import { round2, calcSubtotal, calcTax, calcShipping, calcCouponDiscount, calcOrderTotals } from "../../shared/pricing.js";
 import {
@@ -17,6 +18,53 @@ import {
   cancelEscrowForOrder,
   retryFailedAllocations,
 } from "../Services/escrowService.js";
+
+// Client-supplied order-item images are stored and rendered to other users (e.g.
+// in the vendor's order view), so they must not be able to carry javascript: or
+// data: URLs (XSS via <img src>). Only http(s) URLs or relative /uploads paths
+// are kept; anything else is rejected and the product's own image is used.
+const safeOrderImage = (/** @type {string|null|undefined} */ image) => {
+  if (!image || typeof image !== "string") return null;
+  const trimmed = image.trim();
+  if (trimmed.startsWith("/uploads/") || /^https?:\/\//i.test(trimmed)) {
+    return trimmed.slice(0, 1000);
+  }
+  return null;
+};
+
+// Decrement in-stock inventory when an order becomes paid. Made-to-order items
+// are woven on demand so their (zero) stock is not decremented. This helper is
+// fire-and-forget: it must never block the payment confirmation flow, and any
+// partial failure is logged for operator review (see audit — stock was never
+// decremented on sale, allowing overselling).
+/** @param {Array<{product?: any, productId?: any, qty?: any, quantity?: any}>} items */
+export const decrementStockForOrder = async (items) => {
+  if (!Array.isArray(items) || items.length === 0) return;
+  const decrements = new Map();
+  for (const item of items) {
+    const productId = parseInt(item.product ?? item.productId, 10);
+    const qty = parseInt(item.qty ?? item.quantity, 10);
+    if (!productId || isNaN(qty) || qty <= 0) continue;
+    decrements.set(productId, (decrements.get(productId) || 0) + qty);
+  }
+  if (decrements.size === 0) return;
+
+  const connection = await pool.getConnection();
+  try {
+    for (const [productId, qty] of decrements) {
+      await connection.execute(
+        `UPDATE product
+         SET stock = GREATEST(stock - ?, 0)
+         WHERE id = ? AND madeToOrder = FALSE AND stock IS NOT NULL`,
+        [qty, productId]
+      );
+    }
+  } catch (err) {
+    console.warn(`⚠️ Stock decrement failed: ${err.message}`);
+  } finally {
+    connection.release();
+  }
+};
 
 /**
  * Express Request augmented with the authenticated user (attached by the
@@ -62,16 +110,40 @@ export const addOrderItems = async (req, res) => {
       return res.status(400).json({ message: "Each item needs a valid productId" });
     }
 
+    // Cap per-item quantity to a sane ceiling. Without this, an unbounded
+    // quantity (e.g. 999,999,999) multiplied by price produces absurd totals /
+    // single-order revenue — see audit finding.
+    const MAX_QTY_PER_ITEM = 99;
+    for (const r of requested) {
+      if (r.quantity > MAX_QTY_PER_ITEM) {
+        return res.status(400).json({ message: `Quantity for an item cannot exceed ${MAX_QTY_PER_ITEM}` });
+      }
+    }
+
     // ---- Server-side authoritative pricing ----
     const productIds = [...new Set(requested.map((r) => r.productId))];
     const placeholders = productIds.map(() => "?").join(", ");
     const [products] = await pool.execute(
-      `SELECT id, title, price, img, vendorId, isCustomizable, productionTime FROM product WHERE id IN (${placeholders})`,
+      `SELECT id, title, price, img, vendorId, isCustomizable, productionTime, stock, madeToOrder, approvalStatus FROM product WHERE id IN (${placeholders})`,
       productIds
     );
     const productMap = new Map((/** @type {Array<any>} */ (products)).map((p) => [p.id, p]));
     if (productMap.size !== productIds.length) {
       return res.status(400).json({ message: "One or more products are no longer available" });
+    }
+
+    // Stock enforcement: reject quantities that exceed available inventory for
+    // in-stock (non made-to-order) items. Made-to-order items are woven on
+    // demand, so finite stock does not apply.
+    for (const r of requested) {
+      const p = productMap.get(r.productId);
+      const madeToOrder = !!p.madeToOrder;
+      const hasStock = p.stock !== null && p.stock !== undefined;
+      if (!madeToOrder && hasStock && r.quantity > parseInt(p.stock, 10)) {
+        return res.status(400).json({
+          message: `Only ${p.stock} unit(s) of "${p.title}" are available. Please reduce the quantity.`,
+        });
+      }
     }
 
     const items = requested.map((r) => {
@@ -81,7 +153,7 @@ export const addOrderItems = async (req, res) => {
         name: r.name || p.title,
         qty: r.quantity,
         price: round2(parseFloat(p.price) || 0),
-        image: r.image || p.img,
+        image: safeOrderImage(r.image) || p.img,
         selectedColor: r.selectedColor,
         selectedSize: r.selectedSize,
         vendorId: p.vendorId || null,
@@ -332,6 +404,16 @@ export const updateOrderToPaid = async (req, res) => {
     // Hold escrow allocations for the order so vendors can be paid out
     const heldCount = await holdEscrowForOrder(req.params.id);
 
+    // Decrement in-stock inventory now that the sale is confirmed.
+    const paidOrderForStock = await Order.findById(req.params.id);
+    let paidItems = paidOrderForStock?.items;
+    if (typeof paidItems === 'string') {
+      try { paidItems = JSON.parse(paidItems); } catch { paidItems = []; }
+    }
+    if (Array.isArray(paidItems) && paidItems.length > 0) {
+      await decrementStockForOrder(paidItems);
+    }
+
     // Consume deferred coupon usage on admin-confirmed payment
     const freshOrder = await Order.findById(req.params.id);
     if (freshOrder?.couponId) {
@@ -484,6 +566,30 @@ export const cancelOrder = async (req, res) => {
       return res.status(400).json({
         message: `Cannot cancel order in '${order.orderStatus}' status. Order must be pending or processing.`,
       });
+    }
+
+    // Money integrity: never mark a paid order 'refunded' without actually
+    // refunding the customer via Paystack. If payment succeeded, push a real
+    // refund through Paystack first and only flip paymentStatus after it is
+    // accepted. If the refund fails, the order is left untouched so the money
+    // cannot silently disappear from the platform's books.
+    if (order.paymentStatus === 'paid') {
+      try {
+        const refund = await paystackServices.refundTransaction(
+          order.paymentReference,
+          undefined,
+          `Order ${req.params.id} cancelled`
+        );
+        if (!refund?.status) {
+          return res.status(400).json({
+            message: `Refund failed (${refund?.message || 'unknown reason'}). Order was not cancelled. Please refund the customer manually.`,
+          });
+        }
+      } catch (refundError) {
+        return res.status(500).json({
+          message: `Refund could not be initiated (${refundError.message}). Order was not cancelled.`,
+        });
+      }
     }
 
     await Order.update(req.params.id, {
