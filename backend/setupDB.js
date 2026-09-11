@@ -5,6 +5,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mysql from 'mysql2/promise';
+import { mysqlTls } from './config/mysqlTls.js';
 
 dotenv.config();
 
@@ -29,6 +30,7 @@ const connection = await mysql.createConnection({
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
   port: process.env.DB_PORT || 3306,
+  ssl: mysqlTls(),
   multipleStatements: true,
 });
 

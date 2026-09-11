@@ -8,6 +8,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import pool from '../config/db.js';
 import Vendor from '../models/vendorModel.js';
+import { cookieSameSite } from '../config/cookieConfig.js';
 
 const VALID_PERMISSIONS = [
   'manage_orders',
@@ -47,7 +48,7 @@ const setStaffCookie = (res, staffId, vendorId) => {
   res.cookie('jwt', token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
+    sameSite: cookieSameSite(),
     maxAge: 8 * 60 * 60 * 1000,
   });
 };

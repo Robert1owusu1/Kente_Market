@@ -7,6 +7,7 @@
 // Run from backend/:  node migrateNewTables.js
 import dotenv from 'dotenv';
 import mysql from 'mysql2/promise';
+import { mysqlTls } from './config/mysqlTls.js';
 
 dotenv.config();
 
@@ -241,6 +242,7 @@ const connection = await mysql.createConnection({
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
   port: process.env.DB_PORT || 3306,
+  ssl: mysqlTls(),
   multipleStatements: true,
 });
 

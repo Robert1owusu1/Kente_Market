@@ -1,6 +1,9 @@
 //export const Base_URL =
  //process.env.NODE_ENV === 'development' ? 'http://localhost:5000' : '';
-export const Base_URL = '';
+// Api origin. Left empty = same origin (frontend and API served together).
+// Set VITE_API_URL to the backend origin when they are hosted separately
+// (e.g. React on Vercel, API on Render). Endpoint paths below are appended.
+export const Base_URL = import.meta.env.VITE_API_URL || '';
 export const PRODUCTS_URL = '/api/products';
 export const USERS_URL = '/api/users';
 export const ORDERS_URL = '/api/orders';

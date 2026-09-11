@@ -1,5 +1,6 @@
 // utils/generateToken.js - COMPLETE VERSION WITH REMEMBER ME
 import jwt from 'jsonwebtoken';
+import { cookieSameSite } from '../config/cookieConfig.js';
 
 /**
  * Generate JWT token and set it as HTTP-only cookie
@@ -28,7 +29,7 @@ const generateToken = (res, userId, rememberMe = false) => {
   res.cookie('jwt', token, {
     httpOnly: true,                                    // Prevents XSS attacks (client-side JavaScript cannot access)
     secure: process.env.NODE_ENV === 'production',    // HTTPS only in production
-    sameSite: 'strict',                                // Prevents CSRF attacks
+    sameSite: cookieSameSite(),                         // CSRF (lax default; none for cross-origin frontend)
     maxAge: maxAge,                                    // Cookie expiration time
     path: '/'                                          // Cookie available for entire domain
   });

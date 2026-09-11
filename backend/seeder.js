@@ -1,6 +1,7 @@
 // seeder.js
 import dotenv from "dotenv";
 import mysql from "mysql2/promise";
+import { mysqlTls } from "./config/mysqlTls.js";
 
 import users from "./data/user.js";
 import products from "./data/products.js";
@@ -18,6 +19,7 @@ const clearAllTables = async () => {
     password: process.env.DB_PASSWORD,
     database: process.env.DB_NAME,
     port: process.env.DB_PORT || 3306,
+    ssl: mysqlTls(),
   });
 
   try {

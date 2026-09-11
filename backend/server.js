@@ -14,6 +14,7 @@ import compression from 'compression';
 import session from 'express-session';          // ⭐ NEW
 import passport from 'passport';                 // ⭐ NEW
 import { configurePassport } from './config/passPort.js';  // ⭐ NEW
+import { cookieSameSite } from './config/cookieConfig.js';
 
 // Database
 import pool from './config/db.js';
@@ -135,7 +136,7 @@ app.use(session({
   cookie: {
     secure: process.env.NODE_ENV === 'production',
     httpOnly: true,
-    sameSite: 'lax',
+    sameSite: cookieSameSite(),
     maxAge: 24 * 60 * 60 * 1000 // 24 hours
   }
 }));

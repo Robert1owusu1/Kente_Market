@@ -2,6 +2,7 @@
 import express from 'express';
 import passport from 'passport';
 import { generateToken } from '../config/passPort.js';
+import { cookieSameSite } from '../config/cookieConfig.js';
 
 const router = express.Router();
 
@@ -15,7 +16,7 @@ const handleOAuthSuccess = (req, res) => {
     res.cookie('jwt', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      sameSite: cookieSameSite(),
       maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
     });
 

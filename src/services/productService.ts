@@ -3,9 +3,10 @@ import axios from 'axios';
 import type { Product, Category, Paginated } from '../types/domain';
 
 // Use a relative /api base by default so the app works behind the Vite dev proxy
-// or when the frontend is served by the backend. Override with VITE_API_URL for
-// a fully-qualified API origin.
-const API_URL = import.meta.env.VITE_API_URL || '/api';
+// or when the frontend is served by the backend. Set VITE_API_URL to the backend
+// ORIGIN (e.g. https://your-api.onrender.com) for a cross-origin setup.
+const VITE_URL = import.meta.env.VITE_API_URL || '';
+const API_URL = VITE_URL ? `${VITE_URL}/api` : '/api';
 
 // Create axios instance with default config
 const axiosInstance = axios.create({
