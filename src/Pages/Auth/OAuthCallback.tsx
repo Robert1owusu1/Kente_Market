@@ -47,8 +47,49 @@ const OAuthCallback = () => {
       return;
     }
 
+    const completeLogin = (profile: Record<string, unknown>) => {
+      dispatch(setCredentials(profile));
+
+      setStatus('success');
+      setMessage(`Welcome back, ${profile.firstName}!`);
+      toast.success(`Welcome, ${profile.firstName}!`);
+
+      setTimeout(() => {
+        if (profile.isAdmin || profile.role === 'admin') {
+          navigate('/admin', { replace: true });
+        } else {
+          navigate('/', { replace: true });
+        }
+      }, 1500);
+    };
+
     const loadProfile = async () => {
       try {
+        // Partitioned-cookie-safe path: the OAuth redirect appended a
+        // short-lived signed token as a URL fragment (# never reaches a server).
+        // We exchange it for a real session cookie via a normal POST whose
+        // top-level site is this frontend, so Firefox/Chrome partitioned storage
+        // keeps the cookie (the redirect-set cookie alone gets dropped).
+        const hashParams = new URLSearchParams(window.location.hash.slice(1));
+        const exchangeToken = hashParams.get('token');
+
+        if (exchangeToken) {
+          const exchangeRes = await fetch(`${API_BASE_URL}/api/auth/oauth/exchange`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token: exchangeToken })
+          });
+
+          if (exchangeRes.ok) {
+            const profile = await exchangeRes.json();
+            completeLogin(profile);
+            return;
+          }
+        }
+
+        // Fallback: the redirect cookie may already be present (browsers that do
+        // not partition cookies). Fetch the profile straight from the API.
         const res = await fetch(`${API_BASE_URL}/api/users/profile`, {
           credentials: 'include'
         });
@@ -58,21 +99,7 @@ const OAuthCallback = () => {
         }
 
         const profile = await res.json();
-
-        // Store credentials in Redux (backend profile, not client-supplied data)
-        dispatch(setCredentials(profile));
-
-        setStatus('success');
-        setMessage(`Welcome back, ${profile.firstName}!`);
-        toast.success(`Welcome, ${profile.firstName}!`);
-
-        setTimeout(() => {
-          if (profile.isAdmin || profile.role === 'admin') {
-            navigate('/admin', { replace: true });
-          } else {
-            navigate('/', { replace: true });
-          }
-        }, 1500);
+        completeLogin(profile);
       } catch (err) {
         console.error('OAuth profile fetch error:', err);
         setStatus('error');
