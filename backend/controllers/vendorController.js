@@ -52,7 +52,7 @@ export const applyVendor = async (req, res) => {
     try {
       if (type === 'momo') {
         const recipient = await paystackServices.createMomoRecipient(recipientName, momoNumber, momoProvider);
-        recipientCode = recipient?.data?.data?.recipient_code || null;
+        recipientCode = recipient?.data?.recipient_code || null;
         recipientType = 'mobile_money';
       } else {
         const recipient = await paystackServices.createTransferRecipient(
@@ -61,7 +61,7 @@ export const applyVendor = async (req, res) => {
           accountNumber,
           bankCode
         );
-        recipientCode = recipient?.data?.data?.recipient_code || null;
+        recipientCode = recipient?.data?.recipient_code || null;
         recipientType = 'nuban';
       }
     } catch (e) {
