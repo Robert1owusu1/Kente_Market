@@ -267,7 +267,7 @@ class Product {
         throw new Error('Product title is required');
       }
 
-      if (!productData.price || isNaN(productData.price)) {
+      if (!productData.price || isNaN(productData.price) || parseFloat(productData.price) <= 0) {
         throw new Error('Valid product price is required');
       }
 

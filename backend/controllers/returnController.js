@@ -3,6 +3,7 @@
 import ReturnRequest from "../models/returnModel.js";
 import Order from "../models/orderModel.js";
 import { voidEscrowForOrder } from "../Services/escrowService.js";
+import paystackServices from "../Services/paystackservices.js";
 import isValidId from "../utils/isValidId.js";
 
 const VALID_STATUSES = ["pending", "approved", "rejected", "completed"];
@@ -125,6 +126,27 @@ export const updateReturnStatus = async (req, res) => {
         await voidEscrowForOrder(existing.orderId);
       } catch (err) {
         console.warn(`⚠️ Could not void escrow for return ${req.params.id}: ${err.message}`);
+      }
+
+      // Money integrity: voiding escrow returns funds to the platform, but the
+      // customer has already been charged. Push a real Paystack refund so the
+      // money actually goes back to the customer, not just the platform.
+      try {
+        const order = await Order.findById(existing.orderId);
+        if (order && order.paymentStatus === 'paid' && order.paymentReference) {
+          const refund = await paystackServices.refundTransaction(
+            order.paymentReference,
+            undefined,
+            `Return ${req.params.id} approved`
+          );
+          if (!refund?.status) {
+            console.warn(`⚠️ Return ${req.params.id}: Paystack refund rejected (${refund?.message || 'unknown'}) — manual refund required`);
+          } else {
+            console.log(`✅ Return ${req.params.id}: customer refunded via Paystack`);
+          }
+        }
+      } catch (refundErr) {
+        console.warn(`⚠️ Return ${req.params.id}: refund error (${refundErr.message}) — manual refund required`);
       }
     }
 

@@ -270,6 +270,35 @@ class PaystackService {
       );
     }
   }
+
+  /**
+   * Refund a transaction (full refund by default).
+   * @param {string} reference - Transaction reference to refund
+   * @param {number} [amountGhs] - Optional amount in GHS to refund (partial). Omit for full refund.
+   * @param {string} [reason] - Optional refund reason
+   * @returns {Promise<PaystackEnvelope>} Refund response
+   */
+  async refundTransaction(reference, amountGhs, reason = '') {
+    try {
+      const payload = {
+        transaction: reference,
+        ...(reason ? { reason } : {}),
+        ...(amountGhs !== undefined && amountGhs !== null
+          ? { amount: Math.round(Number(amountGhs) * 100) } // to pesewas
+          : {}),
+      };
+      const response = await axios.post(
+        `${this.baseUrl}/refund`,
+        payload,
+        { headers: this.headers }
+      );
+      return response.data;
+    } catch (error) {
+      throw new Error(
+        error.response?.data?.message || 'Refund failed'
+      );
+    }
+  }
 }
 
 export default new PaystackService();

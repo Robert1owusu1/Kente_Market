@@ -3,7 +3,7 @@ import express from 'express';
 const router = express.Router();
 
 import { protect, vendor } from '../middleware/authMiddleware.js';
-import { authLimiter } from '../middleware/rateLimitMiddleware.js';
+import { staffAuthLimiter } from '../middleware/rateLimitMiddleware.js';
 import {
   staffLogin,
   listStaff,
@@ -15,7 +15,7 @@ import {
 // Mounted at /api/vendors/staff
 
 // POST /api/vendors/staff/login → staff sign-in (public, brute-force limited)
-router.route('/login').post(authLimiter, staffLogin);
+router.route('/login').post(staffAuthLimiter, staffLogin);
 
 // GET/POST /api/vendors/staff → list / create
 router.route('/').get(protect, vendor, listStaff);

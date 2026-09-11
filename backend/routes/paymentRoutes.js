@@ -12,6 +12,7 @@ import {
 } from '../Services/escrowService.js';
 import Coupon from '../models/couponModel.js';
 import { computeExpectedCompletion } from '../utils/computeExpectedCompletion.js';
+import { decrementStockForOrder } from '../controllers/orderController.js';
 
 const router = express.Router();
 
@@ -76,7 +77,7 @@ router.post('/verify-paystack', protect, async (req, res) => {
         }
         const expectedKobo = Math.round(parseFloat(order.totalAmount) * 100);
         const paidKobo = parseInt(data.amount, 10);
-        if (data.currency !== 'NGN' || paidKobo !== expectedKobo) {
+        if (data.currency !== 'GHS' || paidKobo !== expectedKobo) {
           return res.status(400).json({
             success: false,
             message: 'Payment amount does not match the order total',
@@ -91,6 +92,24 @@ router.post('/verify-paystack', protect, async (req, res) => {
         const orderId = order.id;
         const heldCount = await holdEscrowForOrder(orderId);
         console.log(`✅ verify-paystack fallback: order ${orderId} marked paid (${heldCount} allocations held)`);
+        // Decrement in-stock inventory for the confirmed order.
+        try {
+          const [[paidOrderRow]] = await pool.execute(
+            `SELECT items FROM orders WHERE id = ?`,
+            [orderId]
+          );
+          if (paidOrderRow?.items) {
+            let paidItems = paidOrderRow.items;
+            if (typeof paidItems === 'string') {
+              try { paidItems = JSON.parse(paidItems); } catch { paidItems = []; }
+            }
+            if (Array.isArray(paidItems) && paidItems.length > 0) {
+              await decrementStockForOrder(paidItems);
+            }
+          }
+        } catch (stockErr) {
+          console.warn(`⚠️ Could not decrement stock for order ${orderId}: ${stockErr.message}`);
+        }
         // Consume deferred coupon usage
         if (order.couponId) {
           try {
@@ -224,6 +243,12 @@ router.post('/paystack-webhook', webhookLimiter, async (req, res) => {
                   }
                   if (Array.isArray(items) && items.length > 0) {
                     await trackPlatformRevenue(orderId, items);
+                  }
+
+                  // Decrement in-stock inventory now that payment is confirmed.
+                  if (Array.isArray(items) && items.length > 0) {
+                    await decrementStockForOrder(items);
+                    console.log(`📦 Stock decremented for order ${orderId}`);
                   }
 
                   // For customised (custom-woven) orders, seed the expected

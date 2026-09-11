@@ -101,6 +101,17 @@ router.delete('/:filename', protect, adminOrVendor, (req, res) => {
   try {
     const { filename } = req.params;
     
+    // Ownership check: filename is prefixed "<ownerId>-product-...". Admins may
+    // delete any file; vendors may only delete files they uploaded themselves.
+    // Without this, any approved vendor could delete another vendor's (or the
+    // platform's) product images (see audit finding #2).
+    if (req.user.role !== 'admin') {
+      const ownerId = filename.split('-', 1)[0];
+      if (!ownerId || ownerId !== String(req.user.id)) {
+        return res.status(403).json({ message: 'You can only delete files you uploaded' });
+      }
+    }
+
     // Sanitize filename to prevent directory traversal attacks
     const sanitizedFilename = path.basename(filename);
     const filePath = path.join(__dirname, '../uploads/products', sanitizedFilename);
