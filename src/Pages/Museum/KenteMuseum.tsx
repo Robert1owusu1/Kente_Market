@@ -4,6 +4,7 @@
 import { Link } from 'react-router-dom';
 import { FaSpinner, FaLandmark, FaEye, FaHeart } from 'react-icons/fa';
 import { useGetMuseumPiecesQuery } from '../../slices/marketplaceApiSlice';
+import { resolveImageUrl } from '../../utils/imageUrl';
 
 const KenteMuseum = () => {
   const { data: pieces = [], isLoading, isError } = useGetMuseumPiecesQuery();
@@ -46,7 +47,7 @@ const KenteMuseum = () => {
               <div key={p.id} className="bg-white dark:bg-gray-800 rounded-xl shadow-md hover:shadow-lg transition-all overflow-hidden">
                 <div className="h-48 bg-gradient-to-br from-amber-400 via-amber-600 to-orange-600 flex items-center justify-center">
                   {p.img ? (
-                    <img src={p.img} alt={p.patternName || p.title} className="w-full h-full object-cover" />
+                    <img src={resolveImageUrl(p.img)} alt={p.patternName || p.title} className="w-full h-full object-cover" />
                   ) : (
                     <FaLandmark className="text-5xl text-white/70" />
                   )}

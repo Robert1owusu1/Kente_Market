@@ -4,6 +4,7 @@ import { useState, useRef } from 'react';
 import { FaTimes, FaImage, FaPlus, FaTrash, FaSpinner, FaCheckCircle, FaClock, FaEdit, FaSearch, FaFilter, FaBox } from 'react-icons/fa';
 import { toast } from 'react-toastify';
 import { useUploadImageMutation } from '../../slices/uploadApiSlice';
+import { resolveImageUrl } from '../../utils/imageUrl';
 import {
   useGetMyVendorProductsQuery,
   useCreateVendorProductMutation,
@@ -363,7 +364,7 @@ const VendorProductsSection = ({ vendorStatus }: { vendorStatus?: string }) => {
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
                         {p.img ? (
-                          <img src={p.img} alt={p.title} className="w-12 h-12 rounded-lg object-cover" />
+                          <img src={resolveImageUrl(p.img)} alt={p.title} className="w-12 h-12 rounded-lg object-cover" />
                         ) : (
                           <div className="w-12 h-12 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-gray-400">
                             <FaImage />

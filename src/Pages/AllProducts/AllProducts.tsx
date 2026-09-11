@@ -6,6 +6,7 @@ import { useGetProductsQuery } from '../../slices/productsApiSlice';
 import { useGetCategoriesQuery } from '../../slices/categoriesApiSlice';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ProductGridSkeleton } from '../../components/loader/Skeleton';
+import { resolveImageUrl } from '../../utils/imageUrl';
 import type { Product } from '../../types/domain';
 
 type ProductCardType = Product & {
@@ -263,7 +264,7 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
 
         <div className="relative overflow-hidden aspect-square">
           <img
-            src={product.img}
+            src={resolveImageUrl(product.img)}
             alt={product.title}
             loading="lazy"
             decoding="async"

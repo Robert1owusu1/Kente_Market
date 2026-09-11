@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom';
 import { useCart } from "../../Context/CartContext";
 import { useGetTrendingProductsQuery } from "../../slices/productsApiSlice";
 import { ProductGridSkeleton } from "../loader/Skeleton";
+import { resolveImageUrl } from "../../utils/imageUrl";
 import type { Product } from "../../types/domain";
 
 interface TrendProduct extends Product {
@@ -163,7 +164,7 @@ const TrendingProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void 
                 {/* Image section */}
                 <div className='relative overflow-hidden rounded-t-xl'>
                   <img 
-                    src={data.image || data.img} 
+                    src={resolveImageUrl(data.image || data.img)} 
                     alt={data.title}
                     loading="lazy"
                     decoding="async"

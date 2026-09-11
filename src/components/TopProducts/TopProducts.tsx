@@ -5,6 +5,7 @@ import { useCart } from "../../Context/CartContext";
 import { Link } from "react-router-dom";
 import { useGetFeaturedProductsQuery } from "../../slices/productsApiSlice";
 import { ProductGridSkeleton } from "../loader/Skeleton";
+import { resolveImageUrl } from "../../utils/imageUrl";
 import type { Product } from "../../types/domain";
 
 interface TopProduct extends Product {
@@ -185,7 +186,7 @@ const TopProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
                 {/* Image Section with Overlay */}
                 <div className="relative h-64 overflow-hidden rounded-t-2xl">
                   <img
-                    src={product.image || product.img}
+                    src={resolveImageUrl(product.image || product.img)}
                     alt={product.title}
                     loading="lazy"
                     decoding="async"

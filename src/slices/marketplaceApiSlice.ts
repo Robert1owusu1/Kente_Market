@@ -83,6 +83,11 @@ export const marketplaceApiSlice = apiSlice.injectEndpoints({
       providesTags: ["Messages"],
       keepUnusedDataFor: 10,
     }),
+    getAllMessages: builder.query<VendorMessage[], void>({
+      query: () => ({ url: "/api/messages/all", method: "GET" }),
+      providesTags: ["Messages"],
+      keepUnusedDataFor: 10,
+    }),
     replyToVendorMessage: builder.mutation<VendorMessage, { id: number | string; reply: string }>({
       query: ({ id, reply }) => ({ url: `/api/messages/${id}/reply`, method: "PUT", body: { reply } }),
       invalidatesTags: ["Messages"],
@@ -205,6 +210,7 @@ export const {
   useSendVendorMessageMutation,
   useGetVendorMessagesQuery,
   useGetMyMessagesQuery,
+  useGetAllMessagesQuery,
   useReplyToVendorMessageMutation,
   useCloseVendorMessageMutation,
   useGetModerationProductsQuery,

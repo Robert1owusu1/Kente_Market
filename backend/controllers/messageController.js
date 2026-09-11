@@ -145,6 +145,32 @@ export const getMyMessages = async (req, res) => {
   }
 };
 
+// @desc    All buyer <-> vendor messages (admin oversight)
+// @route   GET /api/messages/all
+// @access  Private (admin)
+export const getAllMessages = async (req, res) => {
+  try {
+    const [rows] = await pool.execute(
+      `SELECT m.id, m.subject, m.body, m.reply, m.status, m.created_at, m.replied_at,
+              m.vendorId, m.customerId, m.productId, m.orderId,
+              cu.firstName AS customerFirstName, cu.lastName AS customerLastName,
+              cu.email AS customerEmail,
+              v.businessName, v.slug,
+              p.title AS productTitle
+       FROM vendor_messages m
+       LEFT JOIN users cu ON cu.id = m.customerId
+       LEFT JOIN vendors v ON v.userId = m.vendorId
+       LEFT JOIN product p ON p.id = m.productId
+       ORDER BY m.status = 'open' DESC, m.created_at DESC
+       LIMIT 500`
+    );
+    res.json(rows);
+  } catch (error) {
+    console.error('Error fetching all messages:', error);
+    res.status(500).json({ message: 'Failed to fetch messages' });
+  }
+};
+
 // @desc    Mark a vendor message as closed
 // @route   PUT /api/messages/:id/close
 // @access  Private (vendor)

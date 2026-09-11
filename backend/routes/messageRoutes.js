@@ -3,16 +3,20 @@
 import express from 'express';
 const router = express.Router();
 
-import { protect, vendor } from '../middleware/authMiddleware.js';
+import { protect, admin, vendor } from '../middleware/authMiddleware.js';
 import {
   createMessage,
   replyToMessage,
   getMyMessages,
+  getAllMessages,
   closeMessage,
 } from '../controllers/messageController.js';
 
 // POST /api/messages → customer opens a message to a vendor
 router.route('/').post(protect, createMessage);
+
+// GET /api/messages/all → admin sees every buyer <-> vendor thread
+router.route('/all').get(protect, admin, getAllMessages);
 
 // GET /api/messages/me → messages the customer sent
 router.route('/me').get(protect, getMyMessages);

@@ -8,6 +8,7 @@ import {
   useGetModerationStatsQuery,
   useModerateProductMutation,
 } from '../../../slices/marketplaceApiSlice';
+import { resolveImageUrl } from '../../../utils/imageUrl';
 import type { Product } from '../../../types/domain';
 
 interface ProductRow extends Product {
@@ -119,7 +120,7 @@ const ModerationPage = () => {
           <div key={p.id} className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-5">
             <div className="flex flex-col md:flex-row gap-4">
               {p.img ? (
-                <img src={p.img} alt={p.title} className="w-24 h-24 rounded-lg object-cover" />
+                <img src={resolveImageUrl(p.img)} alt={p.title} className="w-24 h-24 rounded-lg object-cover" />
               ) : (
                 <div className="w-24 h-24 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-gray-400 text-xs">No image</div>
               )}

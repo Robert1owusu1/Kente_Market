@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { FaImage, FaTrash, FaSpinner } from 'react-icons/fa';
 import { toast } from 'react-toastify';
 import { useUploadImageMutation } from '../../slices/uploadApiSlice';
+import { resolveImageUrl } from '../../utils/imageUrl';
 
 const ImageUpload = ({ currentImage, onImageChange, isLoading }: {
   currentImage?: string;
@@ -129,7 +130,7 @@ const ImageUpload = ({ currentImage, onImageChange, isLoading }: {
       {preview ? (
         <div className="relative group">
           <img 
-            src={preview} 
+            src={resolveImageUrl(preview)} 
             alt="Product preview" 
             className="w-full h-64 object-cover rounded-lg border-2 border-gray-300 dark:border-gray-600 transition-all"
           />

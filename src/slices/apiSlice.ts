@@ -37,6 +37,7 @@ export const apiSlice = createApi({
     'Designs',
     'PaymentMethods',
     'SupportTickets',
+    'Contact',
     'OrderStats',
     'Promotion',
     'Products',
