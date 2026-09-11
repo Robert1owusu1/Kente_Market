@@ -84,56 +84,64 @@ router.post('/verify-paystack', protect, async (req, res) => {
           });
         }
 
-        await pool.execute(
+        const [flipResult] = await pool.execute(
           `UPDATE orders SET paymentStatus = 'paid', orderStatus = 'processing', updated_at = CURRENT_TIMESTAMP
            WHERE paymentReference = ? AND paymentStatus != 'paid'`,
           [reference]
         );
         const orderId = order.id;
-        const heldCount = await holdEscrowForOrder(orderId);
-        console.log(`✅ verify-paystack fallback: order ${orderId} marked paid (${heldCount} allocations held)`);
-        // Decrement in-stock inventory for the confirmed order.
-        try {
-          const [[paidOrderRow]] = await pool.execute(
-            `SELECT items FROM orders WHERE id = ?`,
-            [orderId]
-          );
-          if (paidOrderRow?.items) {
-            let paidItems = paidOrderRow.items;
-            if (typeof paidItems === 'string') {
-              try { paidItems = JSON.parse(paidItems); } catch { paidItems = []; }
-            }
-            if (Array.isArray(paidItems) && paidItems.length > 0) {
-              await decrementStockForOrder(paidItems);
-            }
-          }
-        } catch (stockErr) {
-          console.warn(`⚠️ Could not decrement stock for order ${orderId}: ${stockErr.message}`);
-        }
-        // Consume deferred coupon usage
-        if (order.couponId) {
+        // Idempotency: only run the post-payment side effects (escrow hold,
+        // stock decrement, coupon) if THIS call actually flipped the order.
+        // If the webhook already marked it paid (dozens of rows updated? no —
+        // one order per reference), affectedRows is 0 and we skip so stock and
+        // coupon are not decremented twice.
+        const flipped = flipResult.affectedRows > 0;
+        if (flipped) {
+          const heldCount = await holdEscrowForOrder(orderId);
+          console.log(`✅ verify-paystack fallback: order ${orderId} marked paid (${heldCount} allocations held)`);
+          // Decrement in-stock inventory for the confirmed order.
           try {
-            await Coupon.incrementUses(order.couponId);
-          } catch (couponErr) {
-            console.error(`Failed to increment coupon uses: ${couponErr.message}`);
+            const [[paidOrderRow]] = await pool.execute(
+              `SELECT items FROM orders WHERE id = ?`,
+              [orderId]
+            );
+            if (paidOrderRow?.items) {
+              let paidItems = paidOrderRow.items;
+              if (typeof paidItems === 'string') {
+                try { paidItems = JSON.parse(paidItems); } catch { paidItems = []; }
+              }
+              if (Array.isArray(paidItems) && paidItems.length > 0) {
+                await decrementStockForOrder(paidItems);
+              }
+            }
+          } catch (stockErr) {
+            console.warn(`⚠️ Could not decrement stock for order ${orderId}: ${stockErr.message}`);
           }
-        }
-        // Seed expected completion date for customised orders (see webhook logic).
-        try {
-          const [[ordRow]] = await pool.execute(
-            `SELECT expectedCompletionDate, created_at, items FROM orders WHERE id = ?`,
-            [orderId]
-          );
-          if (ordRow && !ordRow.expectedCompletionDate) {
-            const completion = computeExpectedCompletion(ordRow);
-            if (completion) {
-              await pool.execute(`UPDATE orders SET expectedCompletionDate = ? WHERE id = ?`, [completion, orderId]);
+          // Consume deferred coupon usage
+          if (order.couponId) {
+            try {
+              await Coupon.incrementUses(order.couponId);
+            } catch (couponErr) {
+              console.error(`Failed to increment coupon uses: ${couponErr.message}`);
             }
           }
-        } catch (compErr) {
-          console.warn(`⚠️ Could not seed expected completion date: ${compErr.message}`);
+          // Seed expected completion date for customised orders (see webhook logic).
+          try {
+            const [[ordRow]] = await pool.execute(
+              `SELECT expectedCompletionDate, created_at, items FROM orders WHERE id = ?`,
+              [orderId]
+            );
+            if (ordRow && !ordRow.expectedCompletionDate) {
+              const completion = computeExpectedCompletion(ordRow);
+              if (completion) {
+                await pool.execute(`UPDATE orders SET expectedCompletionDate = ? WHERE id = ?`, [completion, orderId]);
+              }
+            }
+          } catch (compErr) {
+            console.warn(`⚠️ Could not seed expected completion date: ${compErr.message}`);
+          }
+          orderMarkedPaid = true;
         }
-        orderMarkedPaid = true;
       }
 
       res.json({
@@ -219,7 +227,7 @@ router.post('/paystack-webhook', webhookLimiter, async (req, res) => {
               const [result] = await connection.execute(
                 `UPDATE orders 
                  SET paymentStatus = 'paid', orderStatus = 'processing', updated_at = CURRENT_TIMESTAMP
-                 WHERE paymentReference = ?`,
+                 WHERE paymentReference = ? AND paymentStatus != 'paid'`,
                 [reference]
               );
               if (result.affectedRows > 0) {

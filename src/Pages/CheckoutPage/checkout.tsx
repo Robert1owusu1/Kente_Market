@@ -456,57 +456,65 @@ export default function CheckoutPage() {
         throw new Error('Payment reference not found');
       }
 
-      // Verify payment on backend
+      const orderData = {
+        items: cartItems.map(item => ({
+          product: item.id,
+          name: sanitizeInput(item.title || item.name),
+          qty: parseInt(String(item.quantity)),
+          price: parseFloat(String(item.price)),
+          image: item.img || (item as unknown as { image?: string }).image,
+          selectedColor: item.selectedColor,
+          selectedSize: item.selectedSize
+        })),
+        totalAmount: parseFloat(total.toFixed(2)),
+        shippingAddress: shippingAddress,
+        billingAddress: sameAsShipping ? shippingAddress : billingAddress,
+        paymentMethod: paymentMethod === 'momo' 
+          ? `Mobile Money (${selectedMomoProvider?.toUpperCase()})` 
+          : 'Card Payment',
+        paymentReference: reference,
+        paymentResult: {
+          id: reference,
+          status: response.status || 'success',
+          update_time: new Date().toISOString(),
+          email_address: shippingAddress.email
+        },
+        shippingCost: parseFloat(shipping.toFixed(2)),
+        tax: parseFloat(tax.toFixed(2)),
+        discount: parseFloat(discount.toFixed(2)),
+        couponCode: appliedCoupon ? appliedCoupon.code : undefined,
+        notes: paymentMethod === 'momo' ? `Mobile Number: ${momoNumber}` : null
+      };
+
+      // 1) Attach the Paystack payment reference to the order FIRST — before any
+      // verification call. This is what lets the Paystack webhook (and the
+      // verify-paystack fallback) match the order by its paymentReference and
+      // mark it 'paid'. If we verify first and the reference is never attached
+      // (e.g. a missing order id), the order stays 'pending' forever even
+      // though the customer was charged.
+      let orderId = orderIdParam && !Number.isNaN(Number(orderIdParam)) ? Number(orderIdParam) : null;
+
+      if (orderId) {
+        // Update the pre-created order (created by CartPage) with the payment
+        // reference so the Paystack webhook can match and confirm it.
+        const { data } = await axios.put(`/api/orders/${orderId}`, orderData);
+        orderId = data.order?.id || data.id || orderId;
+      } else {
+        // Fallback: no pre-created order, create one now.
+        // paymentStatus is NOT set by the client - the backend always stores it
+        // as "pending" and only the Paystack webhook (or an admin) marks it paid.
+        const { data } = await axios.post('/api/orders', orderData);
+        orderId = data.order?.id || data.order?._id || data.id || data._id;
+      }
+
+      // 2) Verify payment on backend. Now that the order carries the reference,
+      // the verify-paystack fallback can find it and confirm it as paid even if
+      // the webhook was delayed/missed.
       const verifyResponse = await axios.post('/api/payments/verify-paystack', {
         reference: reference
       });
 
       if (verifyResponse.data.status === 'success') {
-        const orderData = {
-          items: cartItems.map(item => ({
-            product: item.id,
-            name: sanitizeInput(item.title || item.name),
-            qty: parseInt(String(item.quantity)),
-            price: parseFloat(String(item.price)),
-            image: item.img || (item as unknown as { image?: string }).image,
-            selectedColor: item.selectedColor,
-            selectedSize: item.selectedSize
-          })),
-          totalAmount: parseFloat(total.toFixed(2)),
-          shippingAddress: shippingAddress,
-          billingAddress: sameAsShipping ? shippingAddress : billingAddress,
-          paymentMethod: paymentMethod === 'momo' 
-            ? `Mobile Money (${selectedMomoProvider?.toUpperCase()})` 
-            : 'Card Payment',
-          paymentReference: reference,
-          paymentResult: {
-            id: reference,
-            status: response.status || 'success',
-            update_time: new Date().toISOString(),
-            email_address: shippingAddress.email
-          },
-          shippingCost: parseFloat(shipping.toFixed(2)),
-          tax: parseFloat(tax.toFixed(2)),
-          discount: parseFloat(discount.toFixed(2)),
-          couponCode: appliedCoupon ? appliedCoupon.code : undefined,
-          notes: paymentMethod === 'momo' ? `Mobile Number: ${momoNumber}` : null
-        };
-
-        let orderId = orderIdParam;
-
-        if (orderId) {
-          // Update the pre-created order (created by CartPage) with the payment
-          // reference so the Paystack webhook can match and confirm it.
-          const { data } = await axios.put(`/api/orders/${orderId}`, orderData);
-          orderId = data.order?.id || data.id || orderId;
-        } else {
-          // Fallback: no pre-created order, create one now.
-          // paymentStatus is NOT set by the client - the backend always stores it
-          // as "pending" and only the Paystack webhook (or an admin) marks it paid.
-          const { data } = await axios.post('/api/orders', orderData);
-          orderId = data.order?.id || data.order?._id || data.id || data._id;
-        }
-
         toast.success('🎉 Payment successful! Order created.');
         clearCart();
         

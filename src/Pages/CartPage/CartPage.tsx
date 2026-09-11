@@ -285,13 +285,19 @@ const CartPage = () => {
     };
 
     try {
-      const order = await createOrder(orderData).unwrap();
+      const result = await createOrder(orderData).unwrap();
       
-      // Backend returns full order object with order.id
-      toast.success(`Order ${order.orderNumber} created successfully!`);
+      // Backend returns { message, order: newOrder }. Unwrap to the nested order
+      // so orderNumber/id are real values (previously reading them off the
+      // wrapper caused "Order undefined" toasts and a /checkout/undefined route).
+      const createdOrder = (result as { order?: unknown } & Record<string, unknown>)?.order ?? result?.['order'];
+      const orderId = (createdOrder as { id?: unknown } | undefined)?.id;
+      const orderNumber = (createdOrder as { orderNumber?: unknown } | undefined)?.orderNumber;
+
+      toast.success(`Order ${orderNumber ?? 'paid'} created successfully!`);
       
       // Navigate to checkout with order ID
-      navigate(`/checkout/${order.id}`);
+      navigate(`/checkout/${orderId ?? ''}`);
     } catch (err) {
       const apiErr = err as { status?: number | string; data?: { message?: string } } | undefined;
       console.error("Order creation failed:", err);
