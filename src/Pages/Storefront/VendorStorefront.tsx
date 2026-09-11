@@ -8,6 +8,7 @@ import {
   FaTimes, FaBoxOpen, FaLayerGroup, FaLeaf, FaLandmark, FaStore,
 } from 'react-icons/fa';
 import { toast } from 'react-toastify';
+import { resolveImageUrl } from '../../utils/imageUrl';
 import { useGetStorefrontQuery, useSendVendorMessageMutation } from '../../slices/marketplaceApiSlice';
 import { formatCedi } from '../../utils/formatCurrency';
 import { useSelector } from 'react-redux';
@@ -282,7 +283,7 @@ const VendorStorefront = () => {
                 >
                   <div className="aspect-square overflow-hidden bg-gray-100 dark:bg-gray-700">
                     {p.img ? (
-                      <img src={p.img} alt={p.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                      <img src={resolveImageUrl(p.img)} alt={p.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center text-gray-400">
                         <FaBoxOpen className="text-3xl" />

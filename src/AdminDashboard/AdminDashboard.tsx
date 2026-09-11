@@ -2,7 +2,7 @@
 // DESCRIPTION: Enhanced Admin Dashboard with real data, analytics, and settings
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { FaHome, FaBox, FaShoppingCart, FaUsers, FaChartLine, FaCog, FaStore, FaTag, FaPercent, FaUndo, FaStar, FaEnvelope, FaListUl, FaClipboardCheck, FaCoins, FaCertificate, FaBullhorn } from 'react-icons/fa';
+import { FaHome, FaBox, FaShoppingCart, FaUsers, FaChartLine, FaCog, FaStore, FaTag, FaPercent, FaUndo, FaStar, FaEnvelope, FaListUl, FaClipboardCheck, FaCoins, FaCertificate, FaBullhorn, FaInbox } from 'react-icons/fa';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, AreaChart, Area } from 'recharts';
 import ProductsPage from '../Pages/adminDashboardPages/products/ProductsPage';
 import OrdersPage from '../Pages/adminDashboardPages/Orders/OrdersPage';
@@ -18,6 +18,7 @@ import ModerationPage from '../Pages/adminDashboardPages/Moderation/ModerationPa
 import CampaignsPage from '../Pages/adminDashboardPages/Campaigns/CampaignsPage';
 import CommissionsPage from '../Pages/adminDashboardPages/Commissions/CommissionsPage';
 import CertificatesAdminPage from '../Pages/adminDashboardPages/Certificates/CertificatesAdminPage';
+import InboxPage from '../Pages/adminDashboardPages/Inbox/InboxPage';
 import { useGetAllOrdersQuery } from '../slices/ordersApiSlice';
 import { useGetSettingsQuery, useUpdateSettingsMutation } from '../slices/settingsApiSlice';
 import { formatCurrency } from '../utils/formatCurrency';
@@ -158,6 +159,7 @@ const AdminDashboard = () => {
     { id: 'promotions', name: 'Promotions', icon: FaTag },
     { id: 'coupons', name: 'Coupons', icon: FaPercent },
     { id: 'reviews', name: 'Reviews', icon: FaStar },
+    { id: 'inbox', name: 'Inbox', icon: FaInbox },
     { id: 'returns', name: 'Returns', icon: FaUndo },
     { id: 'subscribers', name: 'Subscribers', icon: FaEnvelope },
     { id: 'analytics', name: 'Analytics', icon: FaChartLine },
@@ -593,6 +595,8 @@ const AdminDashboard = () => {
         return <CouponsPage />;
       case 'reviews':
         return <ReviewsAdminPage />;
+      case 'inbox':
+        return <InboxPage />;
       case 'returns':
         return <ReturnsPage />;
       case 'subscribers':

@@ -52,6 +52,24 @@ class Contact {
       if (connection) connection.release();
     }
   }
+
+  // ✅ Delete a contact message (admin)
+  static async delete(id) {
+    let connection;
+    try {
+      connection = await pool.getConnection();
+      const [result] = await connection.execute(
+        "DELETE FROM contacts WHERE id = ?",
+        [parseInt(id)]
+      );
+      return result.affectedRows > 0;
+    } catch (err) {
+      console.error("DB Error (Contact.delete):", err.message);
+      throw new Error(`Error deleting contact message: ${err.message}`);
+    } finally {
+      if (connection) connection.release();
+    }
+  }
 }
 
 export default Contact;

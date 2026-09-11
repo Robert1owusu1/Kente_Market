@@ -53,3 +53,21 @@ export const listContacts = async (req, res) => {
     res.status(500).json({ message: "Failed to fetch messages" });
   }
 };
+
+// ✅ DELETE /api/contact/:id - remove a message (admin only)
+export const deleteContact = async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    if (!Number.isInteger(id) || id < 1) {
+      return res.status(400).json({ message: "Invalid message id" });
+    }
+    const deleted = await Contact.delete(id);
+    if (!deleted) {
+      return res.status(404).json({ message: "Message not found" });
+    }
+    res.json({ message: "Message deleted" });
+  } catch (error) {
+    console.error("❌ deleteContact error:", error.message);
+    res.status(500).json({ message: "Failed to delete message" });
+  }
+};

@@ -5,6 +5,7 @@ import { FaShoppingCart, FaMinus, FaPlus, FaTrash, FaHeart, FaArrowRight, FaStar
 import { useCreateOrderMutation } from "../../slices/ordersApiSlice";
 import { toast } from "react-toastify";
 import { TAX_RATE, FREE_SHIPPING_THRESHOLD, STANDARD_SHIPPING_COST, calcOrderTotals } from "../../utils/pricing";
+import { resolveImageUrl } from "../../utils/imageUrl";
 
 const COLOR_MAP: Record<string, string> = {
   Red: "#EF4444",
@@ -46,7 +47,7 @@ const CartItem = React.memo(({ item, onRemove, onUpdateQuantity, onUpdateSize, o
           <div className="relative flex-shrink-0">
             <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-2xl overflow-hidden bg-gradient-to-br from-gray-100 to-gray-200 shadow-lg dark:from-gray-700 dark:to-gray-800">
               <img
-                src={item.img}
+                src={resolveImageUrl(item.img)}
                 alt={item.title}
                 className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
                 loading="lazy"

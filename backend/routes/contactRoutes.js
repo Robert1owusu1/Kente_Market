@@ -3,7 +3,7 @@
 import express from 'express';
 import { protect, admin } from '../middleware/authMiddleware.js';
 import { contactLimiter } from '../middleware/rateLimitMiddleware.js';
-import { submitContact, listContacts } from '../controllers/contactController.js';
+import { submitContact, listContacts, deleteContact } from '../controllers/contactController.js';
 
 const router = express.Router();
 
@@ -12,5 +12,8 @@ router.post('/', contactLimiter, submitContact);
 
 // GET /api/contact - list all messages (admin only)
 router.get('/', protect, admin, listContacts);
+
+// DELETE /api/contact/:id - remove a message (admin only)
+router.delete('/:id', protect, admin, deleteContact);
 
 export default router;

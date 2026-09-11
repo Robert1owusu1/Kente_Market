@@ -5,6 +5,7 @@ import { toast } from 'react-toastify';
 import { useCart } from '../../Context/CartContext';
 import { useGetMyWishlistQuery, useRemoveFromWishlistMutation } from '../../slices/wishlistApiSlice';
 import { ProductGridSkeleton } from '../../components/loader/Skeleton';
+import { resolveImageUrl } from '../../utils/imageUrl';
 
 interface WishlistView {
   id?: number | string;
@@ -153,7 +154,7 @@ const WishlistPage = () => {
               <div className="relative overflow-hidden rounded-t-xl">
                 <Link to={`/product/${data.productId || data.id}`}>
                   <img
-                    src={data.img}
+                    src={resolveImageUrl(data.img)}
                     alt={data.title}
                     loading="lazy"
                     decoding="async"

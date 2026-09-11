@@ -5,6 +5,7 @@ import { useGetProductsDetailsQuery } from "../../slices/productsApiSlice";
 import { FaShoppingCart, FaChevronLeft, FaStore, FaCheckCircle } from "react-icons/fa";
 import ProductReviews from "../../components/reviews/ProductReviews";
 import SocialShare from "../../components/SocialShare/SocialShare";
+import { resolveImageUrl } from "../../utils/imageUrl";
 
 const ProductDetails = () => {
   const { id: productId } = useParams();
@@ -77,7 +78,7 @@ const ProductDetails = () => {
         {/* Image */}
         <div className="flex justify-center items-center bg-gray-50 dark:bg-gray-700/40 rounded-xl overflow-hidden">
           <img
-            src={product.img}
+            src={resolveImageUrl(product.img)}
             alt={product.title}
             decoding="async"
             className="w-full h-72 sm:h-96 object-cover"

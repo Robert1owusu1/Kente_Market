@@ -3,6 +3,7 @@ import { useCart } from "../../Context/CartContext";
 import { Link } from "react-router-dom";
 import { FaTimes } from "react-icons/fa";
 import { calcOrderTotals } from "../../utils/pricing";
+import { resolveImageUrl } from "../../utils/imageUrl";
 
 const CartDrawer = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) => {
   const {
@@ -54,7 +55,7 @@ const CartDrawer = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
               >
                 <div className="flex gap-3">
                   <img
-                    src={item.img || (item as { image?: string }).image}
+                    src={resolveImageUrl(item.img || (item as { image?: string }).image)}
                     alt={item.title}
                     loading="lazy"
                     decoding="async"

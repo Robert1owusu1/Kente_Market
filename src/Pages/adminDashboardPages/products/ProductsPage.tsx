@@ -10,6 +10,7 @@ import {
   useDeleteProductMutation
 } from '../../../slices/productsApiSlice';
 import type { Product } from '../../../types/domain';
+import { resolveImageUrl } from '../../../utils/imageUrl';
 import ProductFormModal from './ProductFormModal';
 
 // Loading spinner component
@@ -236,7 +237,7 @@ const ProductsPage = () => {
                   <tr key={product.id} className="border-t dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50">
                     <td className="p-4">
                       {product.img ? (
-                        <img src={product.img} alt={product.title} loading="lazy" decoding="async" className="w-16 h-16 object-cover rounded" />
+                        <img src={resolveImageUrl(product.img)} alt={product.title} loading="lazy" decoding="async" className="w-16 h-16 object-cover rounded" />
                       ) : (
                         <div className="w-16 h-16 bg-gray-200 dark:bg-gray-700 rounded flex items-center justify-center">
                           <FaBox className="text-gray-400" />

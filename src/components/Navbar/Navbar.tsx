@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { IoMdSearch } from "react-icons/io";
 import { FaCaretDown, FaUser, FaShoppingBag, FaPalette, FaHeart, FaCog, FaSignOutAlt, FaTimes, FaStore, FaEnvelope, FaCertificate } from 'react-icons/fa';
 import { FaCartShopping } from "react-icons/fa6";
+import { resolveImageUrl } from "../../utils/imageUrl";
 import { HiMenuAlt3 } from 'react-icons/hi';
 import { useCart } from "../../Context/CartContext";
 import CartDrawer from "../../components/CartDrawer/CartDrawer";
@@ -330,7 +331,7 @@ const Navbar = () => {
                               className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-left"
                             >
                               <img 
-                                src={product.img || '/placeholder.svg'} 
+                                src={resolveImageUrl(product.img) || '/placeholder.svg'} 
                                 alt={product.title} 
                                 className="w-12 h-12 rounded-lg object-cover"
                                 onError={(e) => {
@@ -542,12 +543,12 @@ const Navbar = () => {
                           onClick={() => handleResultClick(product)}
                           className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-left"
                         >
-                          <img 
-                            src={product.img || '/placeholder.svg'} 
-                            alt={product.title} 
-                            className="w-12 h-12 rounded-lg object-cover"
-                            onError={(e) => { const target = e.target as HTMLImageElement; target.onerror = null; target.src = '/placeholder.svg'; }}
-                          />
+<img 
+                                src={resolveImageUrl(product.img) || '/placeholder.svg'} 
+                                alt={product.title} 
+                                loading="lazy"
+                                className="w-10 h-10 object-cover rounded-lg"
+                              />
                           <div className="flex-1 min-w-0">
                             <h4 className="font-medium text-sm text-gray-900 dark:text-white truncate">{product.title}</h4>
                             <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{product.category || 'Uncategorized'}</p>

@@ -14,6 +14,19 @@ export const miscApiSlice = apiSlice.injectEndpoints({
       }),
     }),
 
+    // 🗒 Contact admin
+    listContacts: builder.query<Record<string, unknown>[], void>({
+      query: () => CONTACT_URL,
+      providesTags: ["Contact"],
+    }),
+    deleteContact: builder.mutation<{ message?: string }, number | string>({
+      query: (id) => ({
+        url: `${CONTACT_URL}/${id}`,
+        method: "DELETE",
+      }),
+      invalidatesTags: ["Contact"],
+    }),
+
     // 📬 Newsletter
     subscribeNewsletter: builder.mutation<{ message?: string }, Record<string, unknown>>({
       query: (data) => ({
@@ -71,4 +84,6 @@ export const {
   useLazyGetAllReviewsQuery,
   useGetSubscriberCountQuery,
   useListSubscribersQuery,
+  useListContactsQuery,
+  useDeleteContactMutation,
 } = miscApiSlice;
