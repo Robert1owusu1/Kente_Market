@@ -40,6 +40,7 @@ const homeJsonLd = [
 const CartPage = lazy(() => import("./Pages/CartPage/CartPage"));
 const Hero = lazy(() => import('./components/Hero/Hero'));
 const Products = lazy(() => import('./components/Products/Products'));
+const CampaignSection = lazy(() => import('./components/Campaigns/CampaignSection'));
 const TopProducts = lazy(() => import("./components/TopProducts/TopProducts"));
 const Banner = lazy(() => import('./components/Banner/Banner'));
 const Subscribe = lazy(() => import('./components/Subscribe/Subscribe'));
@@ -115,6 +116,7 @@ const App = () => {
                   <Hero />
                   <Products />
                   <Banner />
+                  <CampaignSection />
                   <Subscribe />
                   <TopProducts />
                   <Testimonials />
