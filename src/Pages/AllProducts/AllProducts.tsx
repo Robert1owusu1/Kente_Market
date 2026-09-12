@@ -361,6 +361,7 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
           </div>
 
           <button
+            type="button"
             onClick={() => addToCartHandler(product)}
             className="w-full bg-gradient-to-r from-primary to-secondary text-white py-2 sm:py-2 px-2 sm:px-4 rounded-lg hover:from-primary/90 hover:to-secondary/90 transition-all duration-300 text-xs sm:text-sm font-medium"
           >
