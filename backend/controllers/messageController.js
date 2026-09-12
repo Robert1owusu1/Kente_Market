@@ -1,8 +1,40 @@
 // FILE LOCATION: backend/controllers/messageController.js
-// DESCRIPTION: Buyer <-> vendor enquiries kept inside the platform so customers
-//              don't need to expose phone numbers. Customers open a thread on a
-//              product/vendor; the vendor replies. Both sides see their threads.
+// DESCRIPTION: Buyer <-> vendor messaging as a threaded conversation. The
+//              vendor_messages row is the thread header (subject, parties,
+//              status); every individual message — the customer's opening
+//              message, the vendor's replies and the customer's follow-ups —
+//              lives in message_posts so both sides can keep talking.
 import pool from '../config/db.js';
+
+const insertPost = async (messageId, sender, body) => {
+  await pool.execute(
+    `INSERT INTO message_posts (messageId, sender, body) VALUES (?, ?, ?)`,
+    [messageId, sender, String(body).trim()]
+  );
+};
+
+/** Attach each thread's ordered posts to the returned row objects. */
+const attachPosts = async (rows) => {
+  if (rows.length === 0) return rows;
+  const ids = rows.map((r) => r.id);
+  const placeholders = ids.map(() => '?').join(', ');
+  const [posts] = await pool.execute(
+    `SELECT id, messageId, sender, body, created_at
+     FROM message_posts
+     WHERE messageId IN (${placeholders})
+     ORDER BY created_at ASC, id ASC`,
+    ids
+  );
+  const byThread = new Map();
+  for (const p of posts) {
+    if (!byThread.has(p.messageId)) byThread.set(p.messageId, []);
+    byThread.get(p.messageId).push(p);
+  }
+  for (const r of rows) {
+    r.posts = byThread.get(r.id) || [];
+  }
+  return rows;
+};
 
 // @desc    Customer opens a message to a vendor
 // @route   POST /api/messages
@@ -48,6 +80,9 @@ export const createMessage = async (req, res) => {
         String(body).trim(),
       ]
     );
+    // First message of the thread lives in message_posts too so the UI can
+    // render the whole conversation from one source.
+    await insertPost(result.insertId, 'customer', body);
 
     res.status(201).json({ message: 'Message sent to vendor', messageId: result.insertId });
   } catch (error) {
@@ -58,7 +93,7 @@ export const createMessage = async (req, res) => {
 
 // @desc    Vendor replies to a customer message
 // @route   PUT /api/messages/:id/reply
-// @access  Private (vendor/staff with manage_orders-ish access — vendor only for now)
+// @access  Private (vendor/staff owning the thread, or admin)
 export const replyToMessage = async (req, res) => {
   try {
     const msgId = parseInt(req.params.id);
@@ -76,21 +111,61 @@ export const replyToMessage = async (req, res) => {
     );
     if (!msg) return res.status(404).json({ message: 'Message not found' });
 
-    // Only the owning vendor (or admin) may reply.
-    const actingVendorId = req.staff ? req.user.id : req.user.id;
-    if (msg.vendorId !== actingVendorId && req.user.role !== 'admin') {
+    if (msg.vendorId !== req.user.id && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Not authorized to reply to this message' });
     }
 
     await pool.execute(
-      `UPDATE vendor_messages SET reply = ?, status = 'replied', replied_at = NOW()
+      `UPDATE vendor_messages SET reply = ?, status = 'replied', replied_at = NOW(), updated_at = CURRENT_TIMESTAMP
        WHERE id = ?`,
       [String(reply).trim(), msgId]
     );
+    await insertPost(msgId, 'vendor', reply);
 
     res.json({ message: 'Reply sent' });
   } catch (error) {
     console.error('Error replying to message:', error);
+    res.status(500).json({ message: 'Failed to send reply' });
+  }
+};
+
+// @desc    Customer replies to the vendor to keep the conversation going
+// @route   PUT /api/messages/:id/customer-reply
+// @access  Private (the customer who opened the thread)
+export const customerReply = async (req, res) => {
+  try {
+    const msgId = parseInt(req.params.id);
+    const { body } = req.body;
+    if (!body || !String(body).trim()) {
+      return res.status(400).json({ message: 'Reply is required' });
+    }
+    if (String(body).trim().length > 5000) {
+      return res.status(400).json({ message: 'Reply must be 5000 characters or less' });
+    }
+
+    const [[msg]] = await pool.execute(
+      `SELECT id, customerId, status FROM vendor_messages WHERE id = ?`,
+      [msgId]
+    );
+    if (!msg) return res.status(404).json({ message: 'Message not found' });
+
+    // Only the customer who opened the thread may follow up.
+    if (String(msg.customerId) !== String(req.user.id)) {
+      return res.status(403).json({ message: 'Not authorized to reply to this message' });
+    }
+    if (msg.status === 'closed') {
+      return res.status(400).json({ message: 'This conversation is closed' });
+    }
+
+    await insertPost(msgId, 'customer', body);
+    await pool.execute(
+      `UPDATE vendor_messages SET status = 'open', updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      [msgId]
+    );
+
+    res.json({ message: 'Reply sent' });
+  } catch (error) {
+    console.error('Error with customer reply:', error);
     res.status(500).json({ message: 'Failed to send reply' });
   }
 };
@@ -113,7 +188,7 @@ export const getVendorMessages = async (req, res) => {
        LIMIT 200`,
       [req.user.id]
     );
-    res.json(rows);
+    res.json(await attachPosts(rows));
   } catch (error) {
     console.error('Error fetching vendor messages:', error);
     res.status(500).json({ message: 'Failed to fetch messages' });
@@ -138,7 +213,7 @@ export const getMyMessages = async (req, res) => {
        LIMIT 200`,
       [req.user.id]
     );
-    res.json(rows);
+    res.json(await attachPosts(rows));
   } catch (error) {
     console.error('Error fetching customer messages:', error);
     res.status(500).json({ message: 'Failed to fetch messages' });
@@ -164,7 +239,7 @@ export const getAllMessages = async (req, res) => {
        ORDER BY m.status = 'open' DESC, m.created_at DESC
        LIMIT 500`
     );
-    res.json(rows);
+    res.json(await attachPosts(rows));
   } catch (error) {
     console.error('Error fetching all messages:', error);
     res.status(500).json({ message: 'Failed to fetch messages' });
@@ -185,7 +260,7 @@ export const closeMessage = async (req, res) => {
     if (msg.vendorId !== req.user.id && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Not authorized' });
     }
-    await pool.execute(`UPDATE vendor_messages SET status = 'closed' WHERE id = ?`, [msgId]);
+    await pool.execute(`UPDATE vendor_messages SET status = 'closed', updated_at = CURRENT_TIMESTAMP WHERE id = ?`, [msgId]);
     res.json({ message: 'Message closed' });
   } catch (error) {
     console.error('Error closing message:', error);

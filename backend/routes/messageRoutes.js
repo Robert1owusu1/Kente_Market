@@ -7,6 +7,7 @@ import { protect, admin, vendor } from '../middleware/authMiddleware.js';
 import {
   createMessage,
   replyToMessage,
+  customerReply,
   getMyMessages,
   getAllMessages,
   closeMessage,
@@ -23,6 +24,9 @@ router.route('/me').get(protect, getMyMessages);
 
 // PUT /api/messages/:id/reply → vendor replies
 router.route('/:id/reply').put(protect, vendor, replyToMessage);
+
+// PUT /api/messages/:id/customer-reply → customer follows up on a thread
+router.route('/:id/customer-reply').put(protect, customerReply);
 
 // PUT /api/messages/:id/close → vendor closes thread
 router.route('/:id/close').put(protect, vendor, closeMessage);

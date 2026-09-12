@@ -1,8 +1,20 @@
 // Pages/Messages/MyMessages.jsx
-// Customer inbox: enquiries sent to vendors + vendor replies.
+// Customer inbox: full buyer <-> vendor conversation threads with follow-ups.
+import { useState } from 'react';
 import { FaSpinner, FaEnvelope, FaStore, FaReply, FaClock } from 'react-icons/fa';
 import { Link } from 'react-router-dom';
-import { useGetMyMessagesQuery } from '../../slices/marketplaceApiSlice';
+import { toast } from 'react-toastify';
+import {
+  useGetMyMessagesQuery,
+  useReplyToCustomerMessageMutation,
+} from '../../slices/marketplaceApiSlice';
+
+interface MessagePost {
+  id?: number | string;
+  sender?: string;
+  body?: string;
+  created_at?: string;
+}
 
 interface MessageView {
   id?: number | string;
@@ -15,7 +27,27 @@ interface MessageView {
   subject?: string;
   body?: string;
   reply?: string;
+  posts?: MessagePost[];
 }
+
+interface Bubble {
+  sender: string;
+  body: string;
+  created_at?: string;
+}
+
+// The thread header holds the opening customer message; message_posts holds
+// everything after it (and for threads created before threading existed, the
+// first post may be the vendor reply). Assemble the display list ensuring the
+// opening message isn't duplicated.
+const buildBubbles = (m: MessageView): Bubble[] => {
+  const bubbles: Bubble[] = [{ sender: 'customer', body: m.body || '', created_at: m.created_at }];
+  (m.posts || []).forEach((p, i) => {
+    if (i === 0 && p.sender === 'customer') return; // opening post == m.body
+    bubbles.push({ sender: p.sender || 'customer', body: p.body || '', created_at: p.created_at });
+  });
+  return bubbles;
+};
 
 const statusBadge = (status: string) => {
   const map = {
@@ -32,6 +64,94 @@ const formatDate = (d: string | number) => {
   } catch {
     return 'N/A';
   }
+};
+
+const MessageCard = ({ m }: { m: MessageView }) => {
+  const [followUp, setFollowUp] = useState('');
+  const [sending, setSending] = useState(false);
+  const [sendFollowUp] = useReplyToCustomerMessageMutation();
+  const bubbles = buildBubbles(m);
+  const closed = m.status === 'closed';
+
+  const handleSend = async () => {
+    if (!followUp.trim()) return toast.error('Reply is required');
+    setSending(true);
+    try {
+      await sendFollowUp({ id: m.id as number | string, body: followUp.trim() }).unwrap();
+      toast.success('Reply sent');
+      setFollowUp('');
+    } catch (error) {
+      const err = (error as { data?: { message?: string }; message?: string; error?: string } | undefined);
+      toast.error(err?.data?.message || 'Failed to send reply');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-5">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+        <div className="flex items-center gap-2">
+          <FaStore className="text-amber-600" />
+          <span className="font-semibold text-gray-900 dark:text-white">
+            {m.businessName || `Store #${m.vendorId}`}
+          </span>
+          {m.productTitle && (
+            <Link to={`/product/${m.productId}`} className="text-sm text-blue-600 dark:text-blue-400 hover:underline">
+              · {m.productTitle}
+            </Link>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${statusBadge(m.status || '')}`}>
+            {m.status}
+          </span>
+          <span className="flex items-center gap-1 text-xs text-gray-400">
+            <FaClock /> {formatDate(m.created_at || '')}
+          </span>
+        </div>
+      </div>
+
+      <h3 className="font-semibold text-gray-900 dark:text-white mb-3">{m.subject}</h3>
+
+      <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+        {bubbles.map((b, i) => (
+          <div key={i} className={`flex ${b.sender === 'customer' ? 'justify-end' : 'justify-start'}`}>
+            <div className={`max-w-[80%] rounded-lg px-3 py-2 text-sm whitespace-pre-line ${
+              b.sender === 'customer'
+                ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-900 dark:text-amber-100'
+                : 'bg-green-50 dark:bg-green-900/30 text-gray-700 dark:text-gray-200'
+            }`}>
+              <p className="text-[10px] font-semibold mb-1 opacity-70">
+                {b.sender === 'customer' ? 'You' : m.businessName || 'Store'}
+                {b.created_at ? ` · ${formatDate(b.created_at)}` : ''}
+              </p>
+              {b.body}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {!closed && (
+        <div className="border-t dark:border-gray-700 pt-4 mt-4 space-y-3">
+          <textarea
+            value={followUp}
+            onChange={(e) => setFollowUp(e.target.value)}
+            rows={2}
+            placeholder="Follow up with the store..."
+            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
+          />
+          <button
+            onClick={handleSend}
+            disabled={sending}
+            className="px-4 py-2 bg-amber-600 text-white rounded-lg font-semibold hover:bg-amber-700 disabled:opacity-60 inline-flex items-center gap-2 text-sm"
+          >
+            {sending ? <FaSpinner className="animate-spin" /> : <FaReply />} Send reply
+          </button>
+        </div>
+      )}
+    </div>
+  );
 };
 
 const MyMessages = () => {
@@ -74,41 +194,7 @@ const MyMessages = () => {
         ) : (
           <div className="space-y-4">
             {messages.map((m) => (
-              <div key={m.id} className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-5">
-                <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-                  <div className="flex items-center gap-2">
-                    <FaStore className="text-amber-600" />
-                    <span className="font-semibold text-gray-900 dark:text-white">
-                      {m.businessName || `Store #${m.vendorId}`}
-                    </span>
-                    {m.productTitle && (
-                      <Link to={`/product/${m.productId}`} className="text-sm text-blue-600 dark:text-blue-400 hover:underline">
-                        · {m.productTitle}
-                      </Link>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${statusBadge(m.status || '')}`}>
-                      {m.status}
-                    </span>
-                    <span className="flex items-center gap-1 text-xs text-gray-400">
-                      <FaClock /> {formatDate(m.created_at || '')}
-                    </span>
-                  </div>
-                </div>
-
-                <h3 className="font-semibold text-gray-900 dark:text-white mb-1">{m.subject}</h3>
-                <p className="text-gray-600 dark:text-gray-400 text-sm whitespace-pre-line">{m.body}</p>
-
-                {m.reply && (
-                  <div className="mt-4 bg-green-50 dark:bg-green-900/20 border-l-4 border-green-500 rounded-r-lg p-3">
-                    <p className="text-xs font-semibold text-green-700 dark:text-green-400 flex items-center gap-1 mb-1">
-                      <FaReply /> Store replied
-                    </p>
-                    <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-line">{m.reply}</p>
-                  </div>
-                )}
-              </div>
+              <MessageCard key={m.id} m={m} />
             ))}
           </div>
         )}

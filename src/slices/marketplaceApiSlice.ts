@@ -92,6 +92,14 @@ export const marketplaceApiSlice = apiSlice.injectEndpoints({
       query: ({ id, reply }) => ({ url: `/api/messages/${id}/reply`, method: "PUT", body: { reply } }),
       invalidatesTags: ["Messages"],
     }),
+    replyToCustomerMessage: builder.mutation<VendorMessage, { id: number | string; body: string }>({
+      query: ({ id, body }) => ({
+        url: `/api/messages/${id}/customer-reply`,
+        method: "PUT",
+        body: { body },
+      }),
+      invalidatesTags: ["Messages"],
+    }),
     closeVendorMessage: builder.mutation<VendorMessage, number | string>({
       query: (id) => ({ url: `/api/messages/${id}/close`, method: "PUT" }),
       invalidatesTags: ["Messages"],
@@ -212,6 +220,7 @@ export const {
   useGetMyMessagesQuery,
   useGetAllMessagesQuery,
   useReplyToVendorMessageMutation,
+  useReplyToCustomerMessageMutation,
   useCloseVendorMessageMutation,
   useGetModerationProductsQuery,
   useModerateProductMutation,
