@@ -210,13 +210,18 @@ export const releaseAllocation = async (allocation) => {
 };
 
 /**
- * Actually pay out an allocation to the vendor's Paystack recipient (MoMo/bank).
- * Called by the vendor's Withdraw action. Moves available -> releasing -> released
- * or failed depending on the transfer result.
+ * Pay out an allocation to the vendor's Paystack recipient (MoMo/bank).
+ * Called by the vendor's Withdraw action. Supports both whole-allocation
+ * withdrawals and partial withdrawals of any amount up to the remaining
+ * balance: a full payout moves available -> releasing; a partial one transfers
+ * just the requested amount and keeps the allocation available so the vendor
+ * can withdraw the rest later.
  * @param {Allocation} allocation
+ * @param {number | string} [requestedAmount] amount to withdraw from this
+ *   allocation (defaults to the full remaining payoutAmount)
  * @returns {Promise<Allocation>}
  */
-export const payoutAllocation = async (allocation) => {
+export const payoutAllocation = async (allocation, requestedAmount) => {
   const updated = { ...allocation };
 
   if (allocation.status !== 'available') {
@@ -236,15 +241,20 @@ export const payoutAllocation = async (allocation) => {
     return updated;
   }
 
-  const { platformFee, payoutAmount } = calcEscrowFees(
-    allocation.amount,
-    allocation.platformFeeRate,
-    PLATFORM_FEE_RATE
-  );
+  // The stored remainder is the source of truth: fees were fixed at release
+  // time, so never recompute them here or we'd drift from the wallet ledger.
+  const available = parseFloat(String(allocation.payoutAmount ?? 0)) || 0;
+  const requested = parseFloat(String(requestedAmount)) || available;
+  const amount = Math.min(available, Math.max(0, requested));
+  if (amount <= 0) {
+    updated.reason = 'invalid withdrawal amount';
+    return updated;
+  }
+  const fullPayout = round2(available) - round2(amount) < 0.01;
 
   try {
     const result = await paystackServices.initiateTransfer(
-      payoutAmount,
+      amount,
       allocation.recipientCode,
       `Escrow payout for order #${allocation.orderId}`
     );
@@ -253,18 +263,30 @@ export const payoutAllocation = async (allocation) => {
       throw new Error('Paystack transfer returned no reference');
     }
 
-    await pool.execute(
-      `UPDATE escrow_allocations
-       SET status = 'releasing', payoutReference = ?, platformFee = ?,
-           payoutAmount = ?, updated_at = CURRENT_TIMESTAMP
-       WHERE id = ?`,
-      [reference, platformFee, payoutAmount, allocation.id]
-    );
-    updated.status = 'releasing';
+    if (fullPayout) {
+      await pool.execute(
+        `UPDATE escrow_allocations
+         SET status = 'releasing', payoutReference = ?, updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?`,
+        [reference, allocation.id]
+      );
+      updated.status = 'releasing';
+    } else {
+      const remainingGross = Math.max(0, round2((parseFloat(String(allocation.amount ?? 0)) || 0) - amount));
+      const remainingNet = Math.max(0, round2(available - amount));
+      await pool.execute(
+        `UPDATE escrow_allocations
+         SET amount = ?, payoutAmount = ?, payoutReference = ?, updated_at = CURRENT_TIMESTAMP
+         WHERE id = ? AND status = 'available'`,
+        [remainingGross, remainingNet, reference, allocation.id]
+      );
+      updated.amount = remainingGross;
+      updated.payoutAmount = remainingNet;
+      updated.status = 'available';
+      updated.reason = `partial withdrawal of GHS ${round2(amount).toFixed(2)} (${round2(remainingNet).toFixed(2)} remaining)`;
+    }
+    updated.platformFee = allocation.platformFee;
     updated.payoutReference = reference;
-    updated.platformFee = platformFee;
-    updated.payoutAmount = payoutAmount;
-    updated.reason = 'transfer initiated';
   } catch (error) {
     console.error(`❌ Escrow payout failed for allocation ${allocation.id}:`, error.message);
     await pool.execute(

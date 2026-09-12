@@ -15,6 +15,7 @@ import { useGetMyDesignsQuery, useCreateDesignMutation, useUpdateDesignMutation,
 import { useGetMyAddressesQuery, useCreateAddressMutation, useUpdateAddressMutation, useDeleteAddressMutation } from '../../slices/addressesApiSlice';
 import { useGetMyPaymentMethodsQuery, useAddPaymentMethodMutation, useSetDefaultPaymentMethodMutation, useDeletePaymentMethodMutation } from '../../slices/paymentMethodsApiSlice';
 import { useGetMyTicketsQuery, useCreateTicketMutation } from '../../slices/supportApiSlice';
+import { useCart } from '../../Context/CartContext';
 
 type ProfileReturn = ReturnRequest & { orderNumber?: string | number; orderId?: number | string; description?: string };
 type ProfileAddress = Address & { label?: string; addressLine1?: string; addressLine2?: string; zipCode?: string; phone?: string };
@@ -37,6 +38,7 @@ const CustomerProfile = () => {
 
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
+  const { clearCart } = useCart();
   
   const { userInfo } = useAppSelector((state) => state.auth);
 
@@ -111,11 +113,13 @@ const CustomerProfile = () => {
     try {
       await logoutApiCall().unwrap();
       dispatch(logout());
+      clearCart();
       toast.success('Logged out successfully');
       navigate('/');
     } catch (error) {
       console.error('Logout failed:', error);
       dispatch(logout());
+      clearCart();
       navigate('/');
     }
   };
