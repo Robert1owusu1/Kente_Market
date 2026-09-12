@@ -19,6 +19,9 @@ dist-ssr
 !.env.example
 backend/.env
 
+# Google Search Console verification files (not for the repo)
+google*.html
+
 # User-uploaded media (never commit)
 backend/uploads/
 

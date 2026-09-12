@@ -68,7 +68,7 @@ const Contact = () => {
       <Seo
         title="Contact Us | Bonwire Kente"
         description="Questions about authentic Ghanaian Kente, custom orders, or partnerships? Contact the Bonwire Kente team."
-        image="https://kente-market.vercel.app/og-cover.svg"
+        image="https://kente-market.vercel.app/og-cover.png"
       />
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-800 flex items-center justify-center px-4 sm:px-6 py-12">
       <div className="max-w-6xl w-full grid md:grid-cols-2 gap-10 bg-white/10 backdrop-blur-lg rounded-2xl shadow-2xl p-6 sm:p-8 md:p-12">

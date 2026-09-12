@@ -16,7 +16,7 @@ const SITE_NAME = 'Bonwire Kente Marketplace';
 const DEFAULT_TITLE = 'Bonwire Kente - Authentic Ghanaian Kente Cloth';
 const DEFAULT_DESCRIPTION =
   'Buy authentic Ghanaian Kente cloth, fabrics and custom-printed products online.';
-const DEFAULT_IMAGE = 'https://kente-market.vercel.app/og-cover.svg';
+const DEFAULT_IMAGE = 'https://kente-market.vercel.app/og-cover.png';
 
 const upsertMeta = (attr: 'name' | 'property', key: string, content: string) => {
   const selector = attr === 'name' ? `meta[name="${key}"]` : `meta[property="${key}"]`;

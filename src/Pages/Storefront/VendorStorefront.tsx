@@ -174,7 +174,7 @@ const VendorStorefront = () => {
         title={`${vendor.businessName || 'Kente Store'} | Authentic Kente on Bonwire`}
         description={`Shop authentic Ghanaian Kente cloth, fabric and accessories from ${vendor.businessName || 'a verified vendor'} on Bonwire Kente Marketplace.`}
         url={`https://kente-market.vercel.app/store/${slug}`}
-        image={vendor.logo || vendor.coverImage || 'https://kente-market.vercel.app/og-cover.svg'}
+        image={vendor.logo || vendor.coverImage || 'https://kente-market.vercel.app/og-cover.png'}
         type="profile"
       />
     <div className="min-h-[60vh] bg-gray-50 dark:bg-gray-900">

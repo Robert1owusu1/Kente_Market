@@ -60,7 +60,7 @@ const VendorDirectory = () => {
       <Seo
         title="Browse Kente Vendors & Weavers in Ghana | Bonwire Kente"
         description="Find verified Kente weavers, cloth sellers and fashion artisans across Ghana. Browse their stores, reviews and collections."
-        image="https://kente-market.vercel.app/og-cover.svg"
+        image="https://kente-market.vercel.app/og-cover.png"
       />
     <div className="min-h-[60vh] bg-gray-50 dark:bg-gray-900 py-12">
       <div className="container mx-auto px-4">

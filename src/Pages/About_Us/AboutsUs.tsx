@@ -10,7 +10,7 @@ const AboutUs = () => {
       <Seo
         title="About Us - The Story of Bonwire Kente | Bonwire Kente"
         description="Learn about Bonwire — the birthplace of Kente weaving — and how our marketplace connects you directly with Ghana's master weavers."
-        image="https://kente-market.vercel.app/og-cover.svg"
+        image="https://kente-market.vercel.app/og-cover.png"
       />
     <div className="bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200">
       {/* Hero Section */}

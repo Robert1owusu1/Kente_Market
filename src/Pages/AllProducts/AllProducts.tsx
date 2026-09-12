@@ -412,7 +412,7 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
       <Seo
         title="Shop All Kente Cloth, Fabrics & Accessories | Bonwire Kente"
         description="Browse the full collection of authentic, handwoven Ghanaian Kente cloth, fabrics, custom prints and accessories. Buy online with delivery across Ghana."
-        image={`https://kente-market.vercel.app/og-cover.svg`}
+        image={`https://kente-market.vercel.app/og-cover.png`}
       />
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">

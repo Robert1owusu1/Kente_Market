@@ -160,7 +160,7 @@ const HelpPage = () => {
       <Seo
         title="Help Center & FAQs | Bonwire Kente"
         description="Find answers about ordering authentic Kente cloth, delivery, pickup stations, payments and returns on Bonwire Kente Marketplace."
-        image="https://kente-market.vercel.app/og-cover.svg"
+        image="https://kente-market.vercel.app/og-cover.png"
       />
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-800 py-12 px-4 sm:px-6">
       <div className="max-w-5xl mx-auto">
