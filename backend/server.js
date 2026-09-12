@@ -7,11 +7,14 @@ dotenv.config();
 
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import cookieParser from 'cookie-parser';
 import compression from 'compression';
 import session from 'express-session';          // ⭐ NEW
+import MySQLStoreFactory from 'express-mysql-session';  // ⭐ NEW
+const MySQLStore = MySQLStoreFactory(session);
 import passport from 'passport';                 // ⭐ NEW
 import { configurePassport } from './config/passPort.js';  // ⭐ NEW
 import { cookieSameSite } from './config/cookieConfig.js';
@@ -132,6 +135,7 @@ if (!sessionSecret) {
 }
 app.use(session({
   secret: sessionSecret,
+  store: new MySQLStore({}, pool),
   resave: false,
   saveUninitialized: false,
   cookie: {
@@ -178,9 +182,33 @@ app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 // Long-lived + immutable cache: uploaded product image filenames are generated
 // once and never change, so repeat visits load them from the browser cache
 // instead of re-downloading over slow links. (Max-age 30 days.)
+const uploadsRoot = path.join(__dirname, 'uploads');
+
+// Render's filesystem is wiped on every redeploy, so uploaded product/profile
+// images referenced by the database can 404 while the DB still points at them.
+// Return a branded placeholder (200) instead of a broken-image icon, which
+// also keeps "browser errors were logged to the console" out of Lighthouse.
+const PLACEHOLDER_SVG = Buffer.from(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="450"><rect fill="#f4eee1" width="600" height="450"/><text x="300" y="225" font-family="Georgia, serif" font-size="32" fill="#a07f3a" text-anchor="middle">Bonwire Kente</text><text x="300" y="265" font-family="sans-serif" font-size="18" fill="#8a6d3b" text-anchor="middle">Image coming soon</text></svg>'
+);
+app.use('/uploads', (req, res, next) => {
+  if (!/\.(png|jpe?g|webp|gif|svg)$/i.test(req.path)) return next();
+  let filePath;
+  try {
+    filePath = path.resolve(uploadsRoot, '.' + req.path);
+  } catch {
+    return next();
+  }
+  if (!filePath.startsWith(uploadsRoot + path.sep)) return next();
+  if (fs.existsSync(filePath)) return next();
+  res.set('Content-Type', 'image/svg+xml');
+  res.set('Cache-Control', 'public, max-age=86400');
+  res.send(PLACEHOLDER_SVG);
+});
+
 app.use(
   '/uploads',
-  express.static(path.join(__dirname, 'uploads'), {
+  express.static(uploadsRoot, {
     maxAge: '30d',
     immutable: true,
   })

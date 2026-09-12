@@ -1,7 +1,7 @@
 // FILE LOCATION: middleware/rateLimitMiddleware.js
 // DESCRIPTION: Rate limiting to prevent abuse and DDoS attacks
 
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 
 // General API rate limiter
 export const apiLimiter = rateLimit({
@@ -41,7 +41,7 @@ export const staffAuthLimiter = rateLimit({
   max: 5,
   keyGenerator: (req) => {
     const email = (req.body?.email || 'unknown').toString().trim().toLowerCase();
-    return `${req.ip}:${email}`;
+    return `${ipKeyGenerator(req.ip)}:${email}`;
   },
   skipSuccessfulRequests: true,
   handler: (req, res) => {
