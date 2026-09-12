@@ -7,6 +7,7 @@ import { useGetCategoriesQuery } from '../../slices/categoriesApiSlice';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ProductGridSkeleton } from '../../components/loader/Skeleton';
 import { resolveImageUrl } from '../../utils/imageUrl';
+import Seo from '../../components/Seo/Seo';
 import type { Product } from '../../types/domain';
 
 type ProductCardType = Product & {
@@ -407,7 +408,13 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-8">
+    <>
+      <Seo
+        title="Shop All Kente Cloth, Fabrics & Accessories | Bonwire Kente"
+        description="Browse the full collection of authentic, handwoven Ghanaian Kente cloth, fabrics, custom prints and accessories. Buy online with delivery across Ghana."
+        image={`https://kente-market.vercel.app/og-cover.svg`}
+      />
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-12">
           <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold text-gray-900 dark:text-white mb-4 leading-tight">
@@ -711,6 +718,7 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
         </div>
       </div>
     </div>
+    </>
   );
 };
 

@@ -9,6 +9,7 @@ import {
 } from 'react-icons/fa';
 import { toast } from 'react-toastify';
 import { resolveImageUrl } from '../../utils/imageUrl';
+import Seo from '../../components/Seo/Seo';
 import { useGetStorefrontQuery, useSendVendorMessageMutation } from '../../slices/marketplaceApiSlice';
 import { formatCedi } from '../../utils/formatCurrency';
 import { useSelector } from 'react-redux';
@@ -168,6 +169,14 @@ const VendorStorefront = () => {
   const canMessage = Boolean(userInfo) && userInfo?.id !== vendor.userId;
 
   return (
+    <>
+      <Seo
+        title={`${vendor.businessName || 'Kente Store'} | Authentic Kente on Bonwire`}
+        description={`Shop authentic Ghanaian Kente cloth, fabric and accessories from ${vendor.businessName || 'a verified vendor'} on Bonwire Kente Marketplace.`}
+        url={`https://kente-market.vercel.app/store/${slug}`}
+        image={vendor.logo || vendor.coverImage || 'https://kente-market.vercel.app/og-cover.svg'}
+        type="profile"
+      />
     <div className="min-h-[60vh] bg-gray-50 dark:bg-gray-900">
       {/* Cover */}
       <div className="h-48 md:h-64 bg-gradient-to-r from-amber-600 via-amber-500 to-orange-500 relative">
@@ -306,6 +315,7 @@ const VendorStorefront = () => {
 
       {showMessage && <MessageModal vendor={vendor} userId={vendor.userId} onClose={() => setShowMessage(false)} />}
     </div>
+    </>
   );
 };
 

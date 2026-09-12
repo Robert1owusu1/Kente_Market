@@ -5,11 +5,18 @@ import { Link } from 'react-router-dom';
 import { FaSpinner, FaLandmark, FaEye, FaHeart } from 'react-icons/fa';
 import { useGetMuseumPiecesQuery } from '../../slices/marketplaceApiSlice';
 import { resolveImageUrl } from '../../utils/imageUrl';
+import Seo from '../../components/Seo/Seo';
 
 const KenteMuseum = () => {
   const { data: pieces = [], isLoading, isError } = useGetMuseumPiecesQuery();
 
   return (
+    <>
+      <Seo
+        title="The Kente Museum - Kente Patterns, Meanings & Heritage | Bonwire Kente"
+        description="Explore the Kente Museum — the patterns, names and cultural meanings behind authentic Ghanaian Kente designs, woven by approved artisans."
+        image="https://kente-market.vercel.app/og-cover.svg"
+      />
     <div className="min-h-[60vh] bg-gray-50 dark:bg-gray-900 py-12">
       <div className="container mx-auto px-4">
         <div className="text-center max-w-3xl mx-auto mb-12">
@@ -102,6 +109,7 @@ const KenteMuseum = () => {
         </div>
       </div>
     </div>
+    </>
   );
 };
 

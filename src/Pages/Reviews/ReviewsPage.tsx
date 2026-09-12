@@ -4,6 +4,7 @@ import React from "react";
 import { FaStar, FaRegStar, FaUser, FaQuoteLeft, FaSpinner } from "react-icons/fa";
 import { Link } from "react-router-dom";
 import { useGetAllReviewsQuery } from "../../slices/miscApiSlice";
+import Seo from "../../components/Seo/Seo";
 
 interface ReviewView {
   id?: number | string;
@@ -49,6 +50,12 @@ const ReviewsPage = () => {
     : 0;
 
   return (
+    <>
+      <Seo
+        title="Customer Reviews | Bonwire Kente"
+        description="See what customers say about authentic Ghanaian Kente cloth, fabric quality and delivery from Bonwire Kente Marketplace."
+        image="https://kente-market.vercel.app/og-cover.svg"
+      />
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-800 py-12 px-4 sm:px-6">
       <div className="max-w-5xl mx-auto">
         {/* Header */}
@@ -130,6 +137,7 @@ const ReviewsPage = () => {
         )}
       </div>
     </div>
+    </>
   );
 };
 

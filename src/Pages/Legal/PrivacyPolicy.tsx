@@ -6,6 +6,7 @@ import React from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import LegalDocument from "../../components/legal/LegalDocument";
 import { privacyPolicy } from "../../components/legal/legalContent";
+import Seo from "../../components/Seo/Seo";
 
 // Sanitize the "from" query param — only in-app absolute paths are allowed, so
 // an attacker cannot turn /privacy?from=https://evil.com into an open redirect.
@@ -24,6 +25,12 @@ const PrivacyPolicy = () => {
   };
 
   return (
+    <>
+      <Seo
+        title="Privacy Policy | Bonwire Kente"
+        description="How Bonwire Kente Marketplace collects, uses and protects your personal data."
+        image="https://kente-market.vercel.app/og-cover.svg"
+      />
     <LegalDocument
       {...privacyPolicy}
       backTo={from}
@@ -31,6 +38,7 @@ const PrivacyPolicy = () => {
       onAgree={handleAgree}
       agreeButtonLabel="I Agree & Create My Account"
     />
+    </>
   );
 };
 

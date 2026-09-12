@@ -6,6 +6,7 @@ import { FaShoppingCart, FaChevronLeft, FaStore, FaCheckCircle } from "react-ico
 import ProductReviews from "../../components/reviews/ProductReviews";
 import SocialShare from "../../components/SocialShare/SocialShare";
 import { resolveImageUrl } from "../../utils/imageUrl";
+import Seo from "../../components/Seo/Seo";
 
 const ProductDetails = () => {
   const { id: productId } = useParams();
@@ -62,7 +63,38 @@ const ProductDetails = () => {
   const colors = product.colors || product.colorsAvailable || [];
   const sizes = product.sizes || [];
 
+  const productJsonLd = product
+    ? {
+        '@context': 'https://schema.org',
+        '@type': 'Product',
+        name: product.title,
+        description: (product.description || product.title || '').slice(0, 300),
+        image: resolveImageUrl(product.img),
+        sku: `BK-${product.id}`,
+        brand: {
+          '@type': 'Brand',
+          name: product.vendorBusinessName || 'Bonwire Kente',
+        },
+        offers: {
+          '@type': 'Offer',
+          priceCurrency: 'GHS',
+          price: String(product.price || 0),
+          availability: 'https://schema.org/InStock',
+          url: `https://kente-market.vercel.app/product/${product.id}`,
+        },
+      }
+    : undefined;
+
   return (
+    <>
+      <Seo
+        title={`${product.title} | Bonwire Kente`}
+        description={`${(product.description || product.title || '').slice(0, 160)} — Buy authentic Ghanaian Kente online.`}
+        url={`https://kente-market.vercel.app/product/${product.id}`}
+        image={resolveImageUrl(product.img)}
+        type="product"
+        jsonLd={productJsonLd}
+      />
     <div className="max-w-6xl mx-auto py-6 px-4 sm:py-10 sm:px-6">
       {/* Back button */}
       <button
@@ -206,6 +238,7 @@ const ProductDetails = () => {
         <ProductReviews productId={product.id} />
       </div>
     </div>
+    </>
   );
 };
 

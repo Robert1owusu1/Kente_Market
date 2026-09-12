@@ -14,6 +14,28 @@ import NotFound from './components/NotFound/NotFound';
 import PrivateRoute from './components/privateRoutes/PrivateRoute';
 import VerifiedRoute from './components/privateRoutes/VerifiedRoute';
 import AdminRoute from './components/privateRoutes/AdminRoutes';
+import Seo from './components/Seo/Seo';
+
+const SITE_URL = 'https://kente-market.vercel.app';
+
+const homeJsonLd = [
+  {
+    '@context': 'https://schema.org',
+    '@type': 'Organization',
+    name: 'Bonwire Kente Marketplace',
+    url: SITE_URL,
+    logo: `${SITE_URL}/og-cover.svg`,
+    description:
+      'Authentic Ghanaian Kente cloth, fabrics and custom-printed products from verified weavers and vendors.',
+    areaServed: ['GH', 'Worldwide'],
+  },
+  {
+    '@context': 'https://schema.org',
+    '@type': 'WebSite',
+    name: 'Bonwire Kente Marketplace',
+    url: SITE_URL,
+  },
+];
 
 // Lazy-loaded route chunks so each page only loads its own code
 const CartPage = lazy(() => import("./Pages/CartPage/CartPage"));
@@ -74,6 +96,12 @@ const App = () => {
             <Route element={<Layout />}>
               <Route path="/" element={
                 <>
+                  <Seo
+                    title="Bonwire Kente - Authentic Ghanaian Kente Cloth | Buy Online"
+                    description="Shop authentic Ghanaian Kente cloth and fabric online. Handwoven by verified weavers, delivered across Ghana and worldwide."
+                    image={`${SITE_URL}/og-cover.svg`}
+                    jsonLd={homeJsonLd}
+                  />
                   <Hero />
                   <Products />
                   <Banner />
@@ -87,8 +115,26 @@ const App = () => {
               {/* Public Routes with Navbar */}
               <Route path="/products" element={<AllProducts />} />
               <Route path="/product/:id" element={<ProductDetails />} />
-              <Route path="/topproducts" element={<TopProducts />} />
-              <Route path="/trendingproducts" element={<Products />} />
+              <Route path="/topproducts" element={
+                <>
+                  <Seo
+                    title="Top Kente Products & Best Sellers | Bonwire Kente"
+                    description="Explore top-rated and best-selling Kente cloth, weaving and fashion. Updated weekly with trending designs."
+                    image={`${SITE_URL}/og-cover.svg`}
+                  />
+                  <TopProducts />
+                </>
+              } />
+              <Route path="/trendingproducts" element={
+                <>
+                  <Seo
+                    title="Trending Kente Cloth & Fabrics | Bonwire Kente"
+                    description="Discover the most popular Kente patterns and trending Ghanaian fabric designs right now."
+                    image={`${SITE_URL}/og-cover.svg`}
+                  />
+                  <Products />
+                </>
+              } />
               <Route path="/ai-tryon" element={<AiTryOn />} />
               <Route path='/aboutus' element={<Aboutus />} />
               <Route path='/contactus' element={<ContactUs />} />

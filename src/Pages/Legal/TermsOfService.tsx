@@ -6,6 +6,7 @@ import React from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import LegalDocument from "../../components/legal/LegalDocument";
 import { termsOfService } from "../../components/legal/legalContent";
+import Seo from "../../components/Seo/Seo";
 
 // Sanitize the "from" query param — only in-app absolute paths are allowed, so
 // an attacker cannot turn /terms?from=https://evil.com into an open redirect.
@@ -26,6 +27,12 @@ const TermsOfService = () => {
   };
 
   return (
+    <>
+      <Seo
+        title="Terms of Service | Bonwire Kente"
+        description="Terms and conditions for using the Bonwire Kente Marketplace — ordering, payment, escrow and returns."
+        image="https://kente-market.vercel.app/og-cover.svg"
+      />
     <LegalDocument
       {...termsOfService}
       backTo={from}
@@ -33,6 +40,7 @@ const TermsOfService = () => {
       onAgree={handleAgree}
       agreeButtonLabel="I Agree & Create My Account"
     />
+    </>
   );
 };
 
