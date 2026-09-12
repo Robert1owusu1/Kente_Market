@@ -33,6 +33,7 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
   render() {
     if (this.state.hasError) {
       const { error, errorInfo } = this.state;
+      const isProd = import.meta.env.PROD;
       return (
         <div style={{
           display: 'flex',
@@ -48,14 +49,16 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
           <p style={{ fontSize: '1.1rem', marginBottom: '1rem', color: '#6b7280', maxWidth: '500px' }}>
             An unexpected error occurred while loading this page. Please try refreshing.
           </p>
-          <pre style={{
-            background: '#1f2937', color: '#f59e0b', padding: '1rem', borderRadius: '8px',
-            maxWidth: '100%', overflowX: 'auto', textAlign: 'left', fontSize: '0.8rem', marginBottom: '1rem',
-          }}>
-            {error && error.message}
-            {'\n\n'}
-            {errorInfo && errorInfo.componentStack}
-          </pre>
+          {!isProd && (
+            <pre style={{
+              background: '#1f2937', color: '#f59e0b', padding: '1rem', borderRadius: '8px',
+              maxWidth: '100%', overflowX: 'auto', textAlign: 'left', fontSize: '0.8rem', marginBottom: '1rem',
+            }}>
+              {error && error.message}
+              {'\n\n'}
+              {errorInfo && errorInfo.componentStack}
+            </pre>
+          )}
           <button
             onClick={this.handleReload}
             style={{

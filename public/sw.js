@@ -14,6 +14,12 @@
 
 const SHELL = ['/', '/index.html'];
 const API_PREFIX = '/api/';
+const PUBLIC_API_CACHE_PREFIXES = [
+  '/api/products',
+  '/api/categories',
+  '/api/promotions',
+  '/api/settings',
+];
 // Cache versions; bump APP_API_KEY when the API shape changes so stale lists
 // (e.g. pre-wipe product catalogs) are purged on the next SW update.
 const APP_API_KEY = 'app-api-v2';
@@ -47,8 +53,12 @@ self.addEventListener('activate', (event) => {
 
 // Fresh immutable build assets
 const isHashedAsset = (url) => /\/assets\/.+\.(js|css)$/.test(url.pathname);
-const isApiGet = (req) =>
-  req.method === 'GET' && req.url && req.url.includes(API_PREFIX) && !isHashedAsset(req.url);
+const isPublicApiGet = (url, req) => {
+  if (req.method !== 'GET') return false;
+  if (isHashedAsset(url)) return false;
+  if (!url.pathname.startsWith(API_PREFIX)) return false;
+  return PUBLIC_API_CACHE_PREFIXES.some((prefix) => url.pathname.startsWith(prefix));
+};
 
 self.addEventListener('fetch', (event) => {
   const req = event.request;
@@ -77,8 +87,9 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 2) API GET -> network-first, fall back to stale cache when offline/flaky.
-  if (isApiGet(req)) {
+  // 2) Public API GET -> network-first, fall back to stale cache when offline/flaky.
+  // Never cache private/authenticated API responses.
+  if (isPublicApiGet(url, req)) {
     event.respondWith(
       fetch(req)
         .then((res) => {

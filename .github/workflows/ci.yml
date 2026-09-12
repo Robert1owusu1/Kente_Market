@@ -1,0 +1,84 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: branding_house
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+
+      - name: Install frontend deps
+        run: npm ci
+
+      - name: Install backend deps
+        run: npm ci --prefix backend
+
+      - name: Create backend CI env
+        run: |
+          cat > backend/.env <<'EOF'
+          NODE_ENV=test
+          PORT=5000
+          TRUST_PROXY=1
+          DB_HOST=127.0.0.1
+          DB_PORT=3306
+          DB_USER=root
+          DB_PASSWORD=root
+          DB_NAME=branding_house
+          DB_SSL=0
+          JWT_SECRET=test-jwt-secret
+          SESSION_SECRET=test-session-secret
+          FRONTEND_URL=http://localhost:5173
+          OAUTH_CALLBACK_URL=http://localhost:5000
+          PLATFORM_FEE_RATE=0.1
+          ESCROW_RELEASE_DAYS=7
+          AI_TRYON_DAILY_LIMIT=10
+          MAX_OTP_ATTEMPTS=5
+          OTP_EXPIRY_MINUTES=10
+          EOF
+
+      - name: Setup database schema
+        run: npm run db:setup --prefix backend
+
+      - name: Run backend migrations
+        run: npm run db:migrate --prefix backend
+
+      - name: Lint frontend/backend
+        run: npm run lint
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Backend typecheck
+        run: npm run typecheck --prefix backend
+
+      - name: Backend tests
+        run: npm test --prefix backend
