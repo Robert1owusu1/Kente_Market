@@ -61,14 +61,17 @@ export const setupSecurity = (app) => {
     const origin = req.headers.origin;
 
     // Only reflect a concrete origin; never send "*" together with credentials.
-    // In development, restrict to localhost origins only — never allow arbitrary origins.
-    const isDev = process.env.NODE_ENV === 'development';
-    const isLocalhost = origin && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin);
+    // In production, allow the configured frontend URL(s) plus any Vercel
+    // deployment (production + preview branches share the *.vercel.app domain)
+    // and localhost, so local dev against the live API works too.
+    const isAllowedOrigin = (o) => {
+      if (!o) return false;
+      if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(o)) return true;
+      if (/^https:\/\/[a-z0-9-]+\.vercel\.app$/i.test(o)) return true;
+      return allowedOrigins.includes(o);
+    };
 
-    if (origin && allowedOrigins.includes(origin)) {
-      res.header('Access-Control-Allow-Origin', origin);
-      res.header('Vary', 'Origin');
-    } else if (isDev && isLocalhost) {
+    if (origin && isAllowedOrigin(origin)) {
       res.header('Access-Control-Allow-Origin', origin);
       res.header('Vary', 'Origin');
     }
