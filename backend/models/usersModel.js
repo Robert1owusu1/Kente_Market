@@ -84,6 +84,7 @@ class User {
     if (userData.country) sanitized.country = userData.country.trim();
     if (userData.isActive !== undefined) sanitized.isActive = Boolean(userData.isActive);
     if (userData.role) sanitized.role = userData.role.trim();
+    if (userData.legalConsentAccepted !== undefined) sanitized.legalConsentAccepted = Boolean(userData.legalConsentAccepted);
 
     return sanitized;
   }
@@ -258,6 +259,10 @@ class User {
       });
 
       const allFields = { ...requiredFields, ...optionalFields };
+
+      if (sanitizedData.legalConsentAccepted === true) {
+        allFields.legal_consent_at = new Date();
+      }
       
       const fieldNames = Object.keys(allFields);
       const placeholders = fieldNames.map(() => '?').join(', ');

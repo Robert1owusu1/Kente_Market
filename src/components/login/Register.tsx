@@ -11,8 +11,9 @@ import { useRegisterMutation } from "../../slices/usersApiSlice";
 import { toast } from "react-toastify";
 import { setCredentials } from "../../slices/authSlice";
 import { useAppDispatch } from "../../store";
-import LegalDocument from "../legal/LegalDocument";
-import { termsOfService, privacyPolicy } from "../legal/legalContent";
+import LegalConsentBox from "../legal/LegalConsentBox";
+import LegalConsentModal from "../legal/LegalConsentModal";
+import { useLegalConsent } from "../../hooks/useLegalConsent";
 import type { FormErrors } from "../../types/domain";
 
 
@@ -227,24 +228,10 @@ const Register = () => {
   const [showForm, setShowForm] = useState(false);
 
   // Legal acceptance: which document is open in the modal, and which docs
-  // the user has read-and-agreed to (required before they can create an account).
-  const [activeDoc, setActiveDoc] = useState<"terms" | "privacy" | null>(null); // null | 'terms' | 'privacy'
-  const [acceptedDocs, setAcceptedDocs] = useState(() => {
-    const t = sessionStorage.getItem("bk_agreed_terms") === "1";
-    const p = sessionStorage.getItem("bk_agreed_privacy") === "1";
-    return { terms: t, privacy: p };
-  });
-  const bothAccepted = acceptedDocs.terms && acceptedDocs.privacy;
-
-  const openDoc = (doc: "terms" | "privacy") => {
-    if (!acceptedDocs[doc]) setActiveDoc(doc);
-  };
-
-  const handleDocAgree = (doc: "terms" | "privacy") => {
-    sessionStorage.setItem(doc === "terms" ? "bk_agreed_terms" : "bk_agreed_privacy", "1");
-    setAcceptedDocs((prev) => ({ ...prev, [doc]: true }));
-    setActiveDoc(null);
-  };
+  // the user has read-and-agreed to (required before they can create an account
+  // OR sign up with Google).
+  const legal = useLegalConsent();
+  const { bothAccepted } = legal;
 
   // Enhanced validation
   const validateForm = () => {
@@ -344,6 +331,7 @@ const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     password: formData.password,
     role: "customer",
     isActive: true,
+    legalConsentAccepted: bothAccepted,
   };
 
   try {
@@ -421,13 +409,30 @@ const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
 const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:5000' : '');
 
 
-  // OAuth handler - unchanged
-  const handleOAuthLogin = (provider: keyof typeof oauthLoading) => {
+  // OAuth handler: Google sign-up requires accepting the legal policies first.
+  const handleOAuthLogin = async (provider: keyof typeof oauthLoading) => {
     setOauthLoading(prev => ({ ...prev, [provider]: true }));
 
     if (provider === 'google') {
-      window.location.href = `${API_BASE_URL}/api/auth/google`;
-      return;
+      if (!bothAccepted) {
+        setOauthLoading(prev => ({ ...prev, [provider]: false }));
+        setErrors(prev => ({
+          ...prev,
+          oauth: 'Please read and accept the Terms of Service and Privacy Policy before signing up with Google.'
+        }));
+        legal.openDoc('terms');
+        return;
+      }
+
+      try {
+        const consentToken = await legal.requestConsentToken();
+        window.location.href = `${API_BASE_URL}/api/auth/google?consent=${encodeURIComponent(consentToken)}`;
+        return;
+      } catch (err) {
+        setErrors(prev => ({ ...prev, oauth: (err as Error).message || 'Could not continue with Google. Please try again.' }));
+        setOauthLoading(prev => ({ ...prev, [provider]: false }));
+        return;
+      }
     }
 
     // Other providers are not configured
@@ -472,6 +477,14 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'htt
                 >
                   <FcGoogle />
                 </IconButton>
+
+                {/* Legal acceptance is required for Google sign-up too */}
+                <LegalConsentBox
+                  acceptedDocs={legal.acceptedDocs}
+                  bothAccepted={bothAccepted}
+                  openDoc={legal.openDoc}
+                  disabled={isRegistering}
+                />
               </div>
             )}
 
@@ -566,129 +579,15 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'htt
                 </IconInput>
 
                 {/* Terms Agreement - must read AND accept both docs */}
-                <div className="space-y-3">
-                  <div className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-2">
-                    <p className="text-white/80 text-sm font-medium">
-                      To create your account, please read and accept our legal documents:
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => openDoc("terms")}
-                      disabled={isRegistering}
-                      className="w-full flex items-center justify-between gap-3 px-4 py-3 rounded-lg bg-white/5 hover:bg-white/10 border border-white/15 transition-colors text-left disabled:opacity-50"
-                    >
-                      <span className="text-white text-sm">Terms of Service</span>
-                      <span
-                        className={`text-xs px-2.5 py-1 rounded-full ${
-                          acceptedDocs.terms
-                            ? "bg-green-500/20 text-green-400"
-                            : "bg-amber-400/20 text-amber-300"
-                        }`}
-                      >
-                        {acceptedDocs.terms ? "Accepted" : "Read & Accept"}
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => openDoc("privacy")}
-                      disabled={isRegistering}
-                      className="w-full flex items-center justify-between gap-3 px-4 py-3 rounded-lg bg-white/5 hover:bg-white/10 border border-white/15 transition-colors text-left disabled:opacity-50"
-                    >
-                      <span className="text-white text-sm">Privacy Policy</span>
-                      <span
-                        className={`text-xs px-2.5 py-1 rounded-full ${
-                          acceptedDocs.privacy
-                            ? "bg-green-500/20 text-green-400"
-                            : "bg-amber-400/20 text-amber-300"
-                        }`}
-                      >
-                        {acceptedDocs.privacy ? "Accepted" : "Read & Accept"}
-                      </span>
-                    </button>
-                  </div>
+                <LegalConsentBox
+                  acceptedDocs={legal.acceptedDocs}
+                  bothAccepted={bothAccepted}
+                  openDoc={legal.openDoc}
+                  disabled={isRegistering}
+                />
 
-                  <label
-                    className={`flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors ${
-                      bothAccepted
-                        ? "bg-green-500/10 border border-green-500/20 cursor-pointer"
-                        : "bg-white/5 border border-white/10 opacity-70"
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={bothAccepted}
-                      readOnly
-                      className="w-4 h-4 text-amber-400 bg-transparent border-white/30 rounded focus:ring-amber-400 focus:ring-2 mt-0.5"
-                      disabled={isRegistering}
-                    />
-                    <span className="text-white/80 text-sm leading-relaxed">
-                      I have read and agree to the{' '}
-                      <button
-                        type="button"
-                        onClick={() => openDoc("terms")}
-                        className="text-amber-400 hover:text-amber-300 underline disabled:opacity-50"
-                        disabled={isRegistering}
-                      >
-                        Terms of Service
-                      </button>{' '}
-                      and{' '}
-                      <button
-                        type="button"
-                        onClick={() => openDoc("privacy")}
-                        className="text-amber-400 hover:text-amber-300 underline disabled:opacity-50"
-                        disabled={isRegistering}
-                      >
-                        Privacy Policy
-                      </button>
-                    </span>
-                  </label>
-
-                  {!bothAccepted && (
-                    <p className="text-amber-300 text-sm">
-                      Please open each document and scroll to the bottom to accept before continuing.
-                    </p>
-                  )}
-                  {errors.agreeToTerms && (
-                    <p className="text-red-400 text-sm">{errors.agreeToTerms}</p>
-                  )}
-                </div>
-
-                {/* Legal Agreement Modal */}
-                {activeDoc && (
-                  <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-                    <div className="w-full max-w-2xl h-[85vh] flex flex-col">
-                      <div className="flex items-center justify-between mb-2">
-                        <h2 className="text-white font-semibold">
-                          {activeDoc === "terms" ? "Terms of Service" : "Privacy Policy"}
-                        </h2>
-                        <button
-                          type="button"
-                          onClick={() => setActiveDoc(null)}
-                          className="text-white/70 hover:text-white text-2xl leading-none"
-                          aria-label="Close"
-                        >
-                          ×
-                        </button>
-                      </div>
-                      <div className="flex-1 min-h-0">
-                        <LegalDocument
-                          {...(activeDoc === "terms" ? termsOfService : privacyPolicy)}
-                          embedded
-                          agreeButtonLabel="I Agree"
-                          onAgree={() => handleDocAgree(activeDoc)}
-                          footerNode={
-                            <button
-                              type="button"
-                              onClick={() => setActiveDoc(null)}
-                              className="w-full text-center text-white/60 hover:text-white text-sm py-1 transition-colors"
-                            >
-                              Cancel
-                            </button>
-                          }
-                        />
-                      </div>
-                    </div>
-                  </div>
+                {errors.agreeToTerms && (
+                  <p className="text-red-400 text-sm">{errors.agreeToTerms}</p>
                 )}
 
                 {/* Submit Error */}
@@ -739,6 +638,14 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'htt
           </div>
         </div>
       </div>
+
+      {/* Legal Agreement Modal (works for both Google and email sign-up) */}
+      <LegalConsentModal
+        activeDoc={legal.activeDoc}
+        onClose={() => legal.setActiveDoc(null)}
+        onAgree={legal.handleDocAgree}
+      />
+
       <Footer />
     </>
   );

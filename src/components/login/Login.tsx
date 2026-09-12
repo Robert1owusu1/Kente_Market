@@ -12,6 +12,9 @@ import { setCredentials } from "../../slices/authSlice";
 import { useAppDispatch, useAppSelector } from "../../store";
 import { toast } from 'react-toastify';
 import Footer from "../../components/Footer/Footer";
+import LegalConsentBox from "../legal/LegalConsentBox";
+import LegalConsentModal from "../legal/LegalConsentModal";
+import { useLegalConsent } from "../../hooks/useLegalConsent";
 import type { FormErrors } from "../../types/domain";
 
 // Only allow in-app navigation targets. Blocks open-redirect attempts like
@@ -162,6 +165,8 @@ const Login = () => {
     apple: false
   });
 
+  const legal = useLegalConsent();
+
   // ✅ FIXED: Single useEffect for redirect logic with replace to prevent history issues
   useEffect(() => {
     if (userInfo) {
@@ -232,12 +237,29 @@ const Login = () => {
   };
   const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:5000' : '');
   // Handle OAuth login
-  const handleOAuthLogin = (provider: keyof typeof oauthLoading) => {
+  const handleOAuthLogin = async (provider: keyof typeof oauthLoading) => {
     setOauthLoading(prev => ({ ...prev, [provider]: true }));
 
     if (provider === 'google') {
-      window.location.href = `${API_BASE_URL}/api/auth/google`;
-      return;
+      if (!legal.bothAccepted) {
+        setOauthLoading(prev => ({ ...prev, [provider]: false }));
+        setErrors(prev => ({
+          ...prev,
+          oauth: 'Please read and accept the Terms of Service and Privacy Policy before continuing.'
+        }));
+        legal.openDoc('terms');
+        return;
+      }
+
+      try {
+        const consentToken = await legal.requestConsentToken();
+        window.location.href = `${API_BASE_URL}/api/auth/google?consent=${encodeURIComponent(consentToken)}`;
+        return;
+      } catch (err) {
+        setErrors(prev => ({ ...prev, oauth: (err as Error).message || 'Could not continue with Google. Please try again.' }));
+        setOauthLoading(prev => ({ ...prev, [provider]: false }));
+        return;
+      }
     }
 
     // Other providers are not configured
@@ -352,7 +374,7 @@ const Login = () => {
             </div>
 
             {/* OAuth Buttons */}
-            <div className="grid grid-cols-1 w-full max-w-xs mx-auto gap-4 mb-8">
+            <div className="w-full max-w-xs mx-auto space-y-4 mb-8">
               <IconButton 
                 text="Google" 
                 onClick={() => handleOAuthLogin('google')}
@@ -361,6 +383,14 @@ const Login = () => {
               >
                 <FcGoogle />
               </IconButton>
+
+              {/* Legal acceptance is required to continue with Google */}
+              <LegalConsentBox
+                acceptedDocs={legal.acceptedDocs}
+                bothAccepted={legal.bothAccepted}
+                openDoc={legal.openDoc}
+                disabled={isLoading}
+              />
             </div>
 
             {/* OAuth Error */}
@@ -425,6 +455,14 @@ const Login = () => {
           </div>
         </div>
       </div>
+
+      {/* Legal Agreement Modal */}
+      <LegalConsentModal
+        activeDoc={legal.activeDoc}
+        onClose={() => legal.setActiveDoc(null)}
+        onAgree={legal.handleDocAgree}
+      />
+
       <Footer />
     </>
   );

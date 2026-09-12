@@ -74,7 +74,7 @@ const authUser = asyncHandler(async (req, res) => {
  * @access  Public
  */
 const registerUser = asyncHandler(async (req, res) => {
-  const { firstName, lastName, email, password, phone, address, city, state, zipCode, country } = req.body;
+  const { firstName, lastName, email, password, phone, address, city, state, zipCode, country, legalConsentAccepted } = req.body;
 
   // Check if user already exists
   const userExists = await User.findByEmail(email);
@@ -82,6 +82,11 @@ const registerUser = asyncHandler(async (req, res) => {
   if (userExists) {
     res.status(400);
     throw new Error('Please check your details and try again');
+  }
+
+  if (!legalConsentAccepted) {
+    res.status(400);
+    throw new Error('You must read and accept the Terms of Service and Privacy Policy before creating an account');
   }
 
   // Create user
@@ -96,7 +101,8 @@ const registerUser = asyncHandler(async (req, res) => {
     state,
     zipCode,
     country,
-    role: 'customer'
+    role: 'customer',
+    legalConsentAccepted
   });
 
   if (user) {

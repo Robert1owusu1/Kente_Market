@@ -30,12 +30,13 @@ const OAuthCallback = () => {
         google_failed: 'Google sign in failed. Please try again.',
         facebook_failed: 'Facebook sign in failed. Please try again.',
         apple_failed: 'Apple sign in failed. Please try again.',
-        oauth_failed: 'Authentication failed. Please try again.'
+        oauth_failed: 'Authentication failed. Please try again.',
+        consent_required: 'Please review and accept our Terms of Service and Privacy Policy before continuing.'
       };
       setMessage(errorMessages[error as keyof typeof errorMessages] || 'Sign in failed. Please try again.');
       toast.error(errorMessages[error as keyof typeof errorMessages] || 'Sign in failed');
 
-      setTimeout(() => navigate('/login'), 3000);
+      setTimeout(() => navigate(error === 'consent_required' ? '/register' : '/login'), 3000);
       return;
     }
 
