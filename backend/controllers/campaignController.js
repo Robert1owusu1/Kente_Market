@@ -65,19 +65,36 @@ export const createCampaign = async (req, res) => {
       );
       const campaignId = result.insertId;
 
-      if (Array.isArray(productIds) && productIds.length > 0) {
-        for (const pid of productIds) {
+      const parsedIds = (ids) => (Array.isArray(ids) ? ids.map((x) => parseInt(x)).filter((n) => Number.isFinite(n) && n > 0) : []);
+
+      // Only link targets that still exist. References to wiped/deleted
+      // products or vendors (e.g. from a stale cached list) must not fail the
+      // whole campaign creation with a foreign-key error.
+      const existingByIds = async (table, column, ids) => {
+        if (!ids.length) return new Set();
+        const marks = ids.map(() => '?').join(', ');
+        const [rows] = await connection.execute(
+          `SELECT ${column} FROM ${table} WHERE ${column} IN (${marks})`,
+          ids
+        );
+        return new Set(rows.map((r) => r[column]));
+      };
+
+      const validProductIds = await existingByIds('product', 'id', parsedIds(productIds));
+      if (validProductIds.size > 0) {
+        for (const pid of validProductIds) {
           await connection.execute(
             `INSERT IGNORE INTO campaign_products (campaignId, productId) VALUES (?, ?)`,
-            [campaignId, parseInt(pid)]
+            [campaignId, pid]
           );
         }
       }
-      if (Array.isArray(vendorIds) && vendorIds.length > 0) {
-        for (const vid of vendorIds) {
+      const validVendorIds = await existingByIds('users', 'id', parsedIds(vendorIds));
+      if (validVendorIds.size > 0) {
+        for (const vid of validVendorIds) {
           await connection.execute(
             `INSERT IGNORE INTO campaign_vendors (campaignId, vendorId) VALUES (?, ?)`,
-            [campaignId, parseInt(vid)]
+            [campaignId, vid]
           );
         }
       }
@@ -213,25 +230,38 @@ export const updateCampaign = async (req, res) => {
       await pool.execute(`UPDATE campaigns SET ${sets.join(', ')} WHERE id = ?`, vals);
     }
 
-    // Allow replacing the targeted products/vendors when supplied.
+    // Allow replacing the targeted products/vendors when supplied. Only link
+    // targets that still exist so stale references never cause FK errors.
     const connection = await pool.getConnection();
     try {
       await connection.beginTransaction();
+      const existingByIds = async (table, column, ids) => {
+        if (!ids.length) return new Set();
+        const marks = ids.map(() => '?').join(', ');
+        const [rows] = await connection.execute(
+          `SELECT ${column} FROM ${table} WHERE ${column} IN (${marks})`,
+          ids
+        );
+        return new Set(rows.map((r) => r[column]));
+      };
+      const parsedIds = (ids) => ids.map((x) => parseInt(x)).filter((n) => Number.isFinite(n) && n > 0);
       if (Array.isArray(req.body.productIds)) {
         await connection.execute(`DELETE FROM campaign_products WHERE campaignId = ?`, [campaignId]);
-        for (const pid of req.body.productIds) {
+        const validProductIds = await existingByIds('product', 'id', parsedIds(req.body.productIds));
+        for (const pid of validProductIds) {
           await connection.execute(
             `INSERT IGNORE INTO campaign_products (campaignId, productId) VALUES (?, ?)`,
-            [campaignId, parseInt(pid)]
+            [campaignId, pid]
           );
         }
       }
       if (Array.isArray(req.body.vendorIds)) {
         await connection.execute(`DELETE FROM campaign_vendors WHERE campaignId = ?`, [campaignId]);
-        for (const vid of req.body.vendorIds) {
+        const validVendorIds = await existingByIds('users', 'id', parsedIds(req.body.vendorIds));
+        for (const vid of validVendorIds) {
           await connection.execute(
             `INSERT IGNORE INTO campaign_vendors (campaignId, vendorId) VALUES (?, ?)`,
-            [campaignId, parseInt(vid)]
+            [campaignId, vid]
           );
         }
       }

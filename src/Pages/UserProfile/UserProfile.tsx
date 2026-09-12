@@ -16,6 +16,7 @@ import { useGetMyAddressesQuery, useCreateAddressMutation, useUpdateAddressMutat
 import { useGetMyPaymentMethodsQuery, useAddPaymentMethodMutation, useSetDefaultPaymentMethodMutation, useDeletePaymentMethodMutation } from '../../slices/paymentMethodsApiSlice';
 import { useGetMyTicketsQuery, useCreateTicketMutation } from '../../slices/supportApiSlice';
 import { useCart } from '../../Context/CartContext';
+import { resolveImageUrl } from '../../utils/imageUrl';
 
 type ProfileReturn = ReturnRequest & { orderNumber?: string | number; orderId?: number | string; description?: string };
 type ProfileAddress = Address & { label?: string; addressLine1?: string; addressLine2?: string; zipCode?: string; phone?: string };
@@ -252,10 +253,8 @@ const CustomerProfile = () => {
       }
     };
 
-    const profilePictureUrl = customerData.avatar 
-      ? (customerData.avatar.startsWith('http') 
-          ? customerData.avatar 
-          : `${window.location.origin}${customerData.avatar}`)
+    const profilePictureUrl = customerData.avatar
+      ? resolveImageUrl(customerData.avatar)
       : null;
 
     return (

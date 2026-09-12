@@ -15,8 +15,8 @@ interface CampaignRow extends Campaign {
   status: string;
   discountType: string;
   discountValue: number;
-  startsAt: string;
-  endsAt: string;
+  startDate: string;
+  endDate: string;
   productCount: number;
   vendorCount: number;
 }
@@ -55,21 +55,21 @@ const CampaignModal = ({ onClose }: { onClose: () => void }) => {
   const [title, setTitle] = useState('');
   const [discountType, setDiscountType] = useState('percentage');
   const [discountValue, setDiscountValue] = useState(10);
-  const [startsAt, setStartsAt] = useState(toLocalInput(new Date()));
-  const [endsAt, setEndsAt] = useState('');
+  const [startDate, setStartDate] = useState(toLocalInput(new Date()));
+  const [endDate, setEndDate] = useState('');
   const [createCampaign, { isLoading }] = useCreateCampaignMutation();
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return toast.error('Campaign title is required');
-    if (!startsAt || !endsAt) return toast.error('Start and end dates are required');
+    if (!startDate || !endDate) return toast.error('Start and end dates are required');
     try {
       await createCampaign({
         title: title.trim(),
         discountType,
         discountValue: parseFloat(String(discountValue)),
-        startsAt: new Date(startsAt).toISOString(),
-        endsAt: new Date(endsAt).toISOString(),
+        startDate: new Date(startDate).toISOString(),
+        endDate: new Date(endDate).toISOString(),
       }).unwrap();
       toast.success('Campaign created');
       onClose();
@@ -110,12 +110,12 @@ const CampaignModal = ({ onClose }: { onClose: () => void }) => {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Starts</label>
-              <input type="datetime-local" value={startsAt} onChange={(e) => setStartsAt(e.target.value)}
+              <input type="datetime-local" value={startDate} onChange={(e) => setStartDate(e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Ends</label>
-              <input type="datetime-local" value={endsAt} onChange={(e) => setEndsAt(e.target.value)}
+              <input type="datetime-local" value={endDate} onChange={(e) => setEndDate(e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" />
             </div>
           </div>
@@ -204,8 +204,8 @@ const CampaignsPage = () => {
                 </div>
               </div>
               <div className="mt-3 text-sm text-gray-600 dark:text-gray-400 space-y-1">
-                <p className="flex items-center gap-1"><FaCalendarAlt /> <span className="line-through">{formatDate(c.startsAt as string)}</span></p>
-                <p className="flex items-center gap-1"><FaCalendarAlt /> Ends {formatDate(c.endsAt as string)}</p>
+                <p className="flex items-center gap-1"><FaCalendarAlt /> <span className="line-through">{formatDate(c.startDate as string)}</span></p>
+                <p className="flex items-center gap-1"><FaCalendarAlt /> Ends {formatDate(c.endDate as string)}</p>
               </div>
               <div className="mt-3 text-xs text-gray-500 dark:text-gray-400">
                 {c.productCount || 0} products · {c.vendorCount || 0} vendors
