@@ -222,7 +222,7 @@ export const releaseAllocation = async (allocation) => {
  * @returns {Promise<Allocation>}
  */
 export const payoutAllocation = async (allocation, requestedAmount) => {
-  const updated = { ...allocation };
+  const updated = { ...allocation, paid: false };
 
   if (allocation.status !== 'available') {
     updated.reason = `not available (status='${allocation.status}')`;
@@ -230,13 +230,8 @@ export const payoutAllocation = async (allocation, requestedAmount) => {
   }
 
   if (!allocation.recipientCode) {
-    await pool.execute(
-      `UPDATE escrow_allocations
-       SET status = 'failed', updated_at = CURRENT_TIMESTAMP
-       WHERE id = ?`,
-      [allocation.id]
-    );
-    updated.status = 'failed';
+    // No recipient yet — leave the allocation 'available' so the vendor can
+    // add payout details and retry. Never burn the allocation here.
     updated.reason = 'vendor has no payout recipient';
     return updated;
   }
@@ -285,17 +280,15 @@ export const payoutAllocation = async (allocation, requestedAmount) => {
       updated.status = 'available';
       updated.reason = `partial withdrawal of GHS ${round2(amount).toFixed(2)} (${round2(remainingNet).toFixed(2)} remaining)`;
     }
+    updated.paid = true;
     updated.platformFee = allocation.platformFee;
     updated.payoutReference = reference;
   } catch (error) {
+    // Transient failure (bad recipient, Paystack declined, no balance in the
+    // payout account, etc). Keep the allocation 'available' so the vendor can
+    // fix their payout details and try again — money is NOT lost or orphaned.
     console.error(`❌ Escrow payout failed for allocation ${allocation.id}:`, error.message);
-    await pool.execute(
-      `UPDATE escrow_allocations
-       SET status = 'failed', updated_at = CURRENT_TIMESTAMP
-       WHERE id = ?`,
-      [allocation.id]
-    );
-    updated.status = 'failed';
+    updated.status = 'available';
     updated.reason = error.message;
   }
   return updated;
