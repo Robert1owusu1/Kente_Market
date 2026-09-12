@@ -916,10 +916,24 @@ export const withdrawVendorBalance = async (req, res) => {
     }
 
     const settled = Math.round((amountNum - remaining) * 100) / 100;
+
+    if (paid === 0) {
+      // Nothing moved — surface the real reason (e.g. Paystack blocked the
+      // transfer for a starter business) instead of a vague payout-details hint.
+      const firstFailure = results.find((r) => r && !r.paid && r.reason);
+      const reason = firstFailure?.reason || 'payout details could not be used';
+      return res.status(400).json({
+        message: `Withdrawal failed: ${reason}`,
+        requested: amountNum,
+        settled,
+        paid,
+        failed,
+        results,
+      });
+    }
+
     return res.json({
-      message: paid > 0
-        ? `Withdrawal of GH₵${settled.toFixed(2)} initiated`
-        : 'No funds were withdrawn. Please ensure your payout details are valid.',
+      message: `Withdrawal of GH₵${settled.toFixed(2)} initiated`,
       requested: amountNum,
       settled,
       paid,
