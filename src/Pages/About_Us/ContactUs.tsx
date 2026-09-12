@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { FaEnvelope, FaPhoneAlt, FaMapMarkerAlt, FaSpinner, FaCheckCircle } from "react-icons/fa";
 import { toast } from "react-toastify";
 import { useSubmitContactMutation } from "../../slices/miscApiSlice";
+import Seo from "../../components/Seo/Seo";
 import type { FormErrors } from "../../types/domain";
 
 interface ContactFormData extends Record<string, unknown> {
@@ -63,6 +64,12 @@ const Contact = () => {
     "w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-yellow-400";
 
   return (
+    <>
+      <Seo
+        title="Contact Us | Bonwire Kente"
+        description="Questions about authentic Ghanaian Kente, custom orders, or partnerships? Contact the Bonwire Kente team."
+        image="https://kente-market.vercel.app/og-cover.svg"
+      />
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-800 flex items-center justify-center px-4 sm:px-6 py-12">
       <div className="max-w-6xl w-full grid md:grid-cols-2 gap-10 bg-white/10 backdrop-blur-lg rounded-2xl shadow-2xl p-6 sm:p-8 md:p-12">
 
@@ -178,6 +185,7 @@ const Contact = () => {
         </form>
       </div>
     </div>
+    </>
   );
 };
 

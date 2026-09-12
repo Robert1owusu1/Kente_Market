@@ -14,6 +14,7 @@ import {
   FaCreditCard,
 } from "react-icons/fa";
 import { Link } from "react-router-dom";
+import Seo from "../../components/Seo/Seo";
 
 const faqs: FaqCategory[] = [
   {
@@ -155,6 +156,12 @@ const FaqItem = ({ item }: { item: Faq }) => {
 
 const HelpPage = () => {
   return (
+    <>
+      <Seo
+        title="Help Center & FAQs | Bonwire Kente"
+        description="Find answers about ordering authentic Kente cloth, delivery, pickup stations, payments and returns on Bonwire Kente Marketplace."
+        image="https://kente-market.vercel.app/og-cover.svg"
+      />
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-800 py-12 px-4 sm:px-6">
       <div className="max-w-5xl mx-auto">
         {/* Header */}
@@ -202,6 +209,7 @@ const HelpPage = () => {
         </div>
       </div>
     </div>
+    </>
   );
 };
 

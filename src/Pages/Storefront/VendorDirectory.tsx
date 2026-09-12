@@ -3,6 +3,7 @@
 import { Link } from 'react-router-dom';
 import { FaStore, FaStar, FaMapMarkerAlt, FaSpinner, FaBoxOpen, FaAward, FaMedal } from 'react-icons/fa';
 import { useGetVendorDirectoryQuery } from '../../slices/marketplaceApiSlice';
+import Seo from '../../components/Seo/Seo';
 
 interface VendorView {
   id?: number | string;
@@ -55,6 +56,12 @@ const VendorDirectory = () => {
   }
 
   return (
+    <>
+      <Seo
+        title="Browse Kente Vendors & Weavers in Ghana | Bonwire Kente"
+        description="Find verified Kente weavers, cloth sellers and fashion artisans across Ghana. Browse their stores, reviews and collections."
+        image="https://kente-market.vercel.app/og-cover.svg"
+      />
     <div className="min-h-[60vh] bg-gray-50 dark:bg-gray-900 py-12">
       <div className="container mx-auto px-4">
         <div className="text-center mb-12 max-w-2xl mx-auto">
@@ -136,6 +143,7 @@ const VendorDirectory = () => {
         )}
       </div>
     </div>
+    </>
   );
 };
 

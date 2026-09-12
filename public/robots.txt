@@ -1,0 +1,18 @@
+User-agent: *
+Allow: /
+
+# Private / account pages that must not appear in search results
+Disallow: /checkout
+Disallow: /admin
+Disallow: /profile
+Disallow: /orders
+Disallow: /cart
+Disallow: /cartpage
+Disallow: /wishlist
+Disallow: /messages
+Disallow: /certificates
+Disallow: /verify-email
+Disallow: /oauth/callback
+Disallow: /unsubscribe
+
+Sitemap: https://kente-market.vercel.app/sitemap.xml

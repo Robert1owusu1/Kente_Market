@@ -2,9 +2,16 @@ import React from "react";
 import Team1 from "../../assets/images/decoration.webp";
 import Team2 from "../../assets/images/decoration1.webp";
 import Team3 from "../../assets/images/image1.webp";
+import Seo from "../../components/Seo/Seo";
 
 const AboutUs = () => {
   return (
+    <>
+      <Seo
+        title="About Us - The Story of Bonwire Kente | Bonwire Kente"
+        description="Learn about Bonwire — the birthplace of Kente weaving — and how our marketplace connects you directly with Ghana's master weavers."
+        image="https://kente-market.vercel.app/og-cover.svg"
+      />
     <div className="bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200">
       {/* Hero Section */}
       <section className="relative bg-gradient-to-r from-gray-900 via-gray-800 to-black text-white py-20">
@@ -194,6 +201,7 @@ const AboutUs = () => {
         </div>
       </section>
     </div>
+    </>
   );
 };
 
