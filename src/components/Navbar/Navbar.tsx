@@ -17,6 +17,7 @@ import { useLazyGetProductsQuery } from '../../slices/productsApiSlice';
 import { toast } from 'react-toastify';
 import { useAppSelector, useAppDispatch } from "../../store";
 import type { Product } from "../../types/domain";
+import TestingModeNotice from "../TestingModeNotice/TestingModeNotice";
 
 // 📋 Menu Configuration
 const Menu = [
@@ -27,6 +28,7 @@ const Menu = [
   { id: 5, name: "Help", link: "/help" },
   { id: 6, name: "Stores", link: "/vendors" },
   { id: 7, name: "Kente Museum", link: "/museum" },
+  { id: 8, name: "Suggestions", link: "/suggestions" },
 ];
 
 const DropdownLinks = [
@@ -254,6 +256,9 @@ const Navbar = () => {
     <>
       <nav className={`shadow-md bg-white dark:bg-gray-900 dark:text-white duration-200 sticky top-0 z-50 backdrop-blur-md ${navVisible ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-0'} transition-all ease-in-out`}>
         
+        {/* 🧪 Testing Mode Notice */}
+        <TestingModeNotice />
+
         {/* 🎨 Top Bar */}
         <div className='bg-primary/40 py-2'>
           <div className='container flex justify-between items-center gap-2'>
