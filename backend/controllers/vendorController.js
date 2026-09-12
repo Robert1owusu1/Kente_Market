@@ -900,13 +900,17 @@ export const withdrawVendorBalance = async (req, res) => {
       const updated = await payoutAllocation(allocation, take);
       results.push(updated);
 
-      // 'releasing' = full chunk paid out; 'available' = partial paid with remainder left.
-      if (updated.status === 'releasing' || updated.status === 'available') {
+      // Only debit the ledger when a transfer reference actually came back.
+      // 'releasing' = full chunk paid out; 'available' = partial paid with
+      // remainder left for a future withdrawal. A failed transfer keeps the
+      // allocation 'available' (paid=false) so it can be retried later.
+      if (updated.paid) {
         await debitVendorBalance(req.user.id, take, updated.payoutReference, `Withdrawal for order ${allocation.orderId}`);
         remaining = Math.round((remaining - take) * 100) / 100;
         paid += 1;
       } else {
-        // Payout failed (e.g. missing recipient) — balance stays available.
+        // Payout failed (e.g. invalid recipient) — balance stays available,
+        // allocation stays retryable.
         failed += 1;
       }
     }
