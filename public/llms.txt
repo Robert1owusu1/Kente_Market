@@ -1,0 +1,19 @@
+# Bonwire Kente - Authentic Ghanaian Kente Cloth
+
+> Bonwire Kente is an online store for authentic, handwoven Ghanaian Kente cloth, fabrics, and custom-printed products. Products ship from Bonwire, the Ashanti heritage village where Kente weaving began in the 17th century.
+
+## Key Pages
+
+- [Home](https://bonwirekente.vercel.app/): Shop overview, trending products, and promotions
+- [All Products](https://bonwirekente.vercel.app/products): Browse the full Kente catalog with search, filters, and categories
+- [AI Try-On](https://bonwirekente.vercel.app/ai-tryon): Virtual garment try-on for custom Kente designs
+- [Kente Museum](https://bonwirekente.vercel.app/museum): History, patterns, and cultural significance of Kente weaving
+- [Stores](https://bonwirekente.vercel.app/vendors): Approved Kente weaving communities and sellers
+- [About Us](https://bonwirekente.vercel.app/aboutus): Company story and heritage commitment
+- [Help](https://bonwirekente.vercel.app/help): FAQ, shipping, returns, and customer support
+- [Suggestions](https://bonwirekente.vercel.app/suggestions): Submit feature ideas and improvements
+
+## Optional
+
+- Bonwire is a village in the Ashanti Region, Ghana. Kente cloth is woven on hand looms using colorful strips of silk and cotton, with each pattern carrying cultural meaning.
+- The store supports secure mobile money and card payments, and every piece is made to order (slow fashion).

@@ -47,9 +47,9 @@ const Subscribe = () => {
     >
       <div className="container backdrop-blur-sm py-10">
         <div className="space-y-6 max-w-xl mx-auto text-center">
-          <h1 className="text-2xl sm:text-4xl font-semibold">
+          <h2 className="text-2xl sm:text-4xl font-semibold">
             Get Notified About New Kente Collections
-          </h1>
+          </h2>
 
           {success ? (
             <div className="flex items-center justify-center gap-2 text-green-300 bg-green-500/20 border border-green-500/40 rounded-md p-4">

@@ -137,16 +137,14 @@ const Hero = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) => {
                     </h1>
                     <p
                       data-aos="fade-up"
-                      data-aos-duration="600"
-                      data-aos-delay="100"
+                      data-aos-delay="0"
                       className="text-sm sm:text-base text-gray-600 dark:text-gray-300 leading-relaxed max-w-md mx-auto sm:mx-0"
                     >
                       {data.description}
                     </p>
                     <div
                       data-aos="fade-up"
-                      data-aos-duration="600"
-                      data-aos-delay="300"
+                      data-aos-delay="0"
                       className="flex flex-col xs:flex-row items-center justify-center sm:justify-start gap-3 sm:gap-4"
                     >
                       {data.link === "/ai-tryon" ? (
@@ -189,6 +187,8 @@ const Hero = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) => {
                       <img
                         src={data.img}
                         alt={data.title}
+                        width={480}
+                        height={480}
                         loading={index === 0 ? "eager" : "lazy"}
                         fetchPriority={index === 0 ? "high" : "auto"}
                         decoding="async"

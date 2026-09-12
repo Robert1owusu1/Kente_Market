@@ -81,10 +81,14 @@ const MyCertificates = lazy(() => import('./Pages/Certificates/MyCertificates'))
 const App = () => {
   useEffect(() => {
     AOS.init({
-      offset: 100,
-      duration: 800,
-      easing: "ease-in-sine",
-      delay: 100,
+      once: true,
+      offset: 80,
+      duration: 500,
+      easing: "ease-out",
+      delay: 0,
+      disable: () =>
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches ||
+        window.innerWidth < 768,
     });
     AOS.refresh();
   }, []);

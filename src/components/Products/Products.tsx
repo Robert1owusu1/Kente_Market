@@ -78,10 +78,10 @@ const TrendingProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void 
               <FaFire className="text-orange-500" />
               Top Selling Kente Cloth For You
             </p>
-            <h1 data-aos="fade-up" className='text-3xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent'>
+            <h2 data-aos="fade-up" className='text-3xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent'>
               Trending Products
-            </h1>
-            <p data-aos="fade-up" className='text-xs text-gray-400'>
+            </h2>
+            <p data-aos="fade-up" className='text-xs text-gray-500 dark:text-gray-300'>
               Discover our most sought-after Kente patterns loved by heritage enthusiasts worldwide
             </p>
           </div>
@@ -142,10 +142,10 @@ const TrendingProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void 
               <FaFire className="text-orange-500" />
               Top Selling Kente Cloth For You
             </p>
-          <h1 data-aos="fade-up" className='text-3xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent'>
+          <h2 data-aos="fade-up" className='text-3xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent'>
             Trending Products
-          </h1>
-          <p data-aos="fade-up" className='text-xs text-gray-400'>
+          </h2>
+          <p data-aos="fade-up" className='text-xs text-gray-500 dark:text-gray-300'>
             Discover our most sought-after Kente patterns loved by heritage enthusiasts worldwide
           </p>
         </div>
@@ -157,7 +157,7 @@ const TrendingProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void 
             {trendingProductsData.map((data: TrendProduct, index) => (
               <div 
                 data-aos="fade-up"
-                data-aos-delay={index * 200}
+                data-aos-delay={index * 50}
                 key={data.id} 
                 className='group relative bg-white dark:bg-gray-800 rounded-xl shadow-lg hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-2 w-full max-w-[280px] overflow-hidden border border-gray-100 dark:border-gray-700'
               >
@@ -166,6 +166,8 @@ const TrendingProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void 
                   <img 
                     src={resolveImageUrl(data.image || data.img)} 
                     alt={data.title}
+                    width={400}
+                    height={220}
                     loading="lazy"
                     decoding="async"
                     className='h-[220px] w-full object-cover group-hover:scale-110 transition-transform duration-500'
@@ -199,16 +201,17 @@ const TrendingProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void 
 
                   {/* Quick actions overlay */}
                   <div className='absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center gap-3'>
-                    <button className='bg-white/90 hover:bg-white p-2 rounded-full transform scale-0 group-hover:scale-100 transition-transform duration-200 delay-100'>
+                    <button aria-label={`Quick view ${data.title}`} className='bg-white/90 hover:bg-white p-2 rounded-full transform scale-0 group-hover:scale-100 transition-transform duration-200 delay-100'>
                       <FaEye className='text-gray-700' />
                     </button>
                     <button 
                       onClick={() => handleAddToCart(data)}
+                      aria-label={`Add ${data.title} to cart`}
                       className='bg-primary hover:bg-primary/90 text-white p-2 rounded-full transform scale-0 group-hover:scale-100 transition-transform duration-200 delay-200'
                     >
                       <FaShoppingCart />
                     </button>
-                    <button className='bg-white/90 hover:bg-white p-2 rounded-full transform scale-0 group-hover:scale-100 transition-transform duration-200 delay-300'>
+                    <button aria-label={`Add ${data.title} to wishlist`} className='bg-white/90 hover:bg-white p-2 rounded-full transform scale-0 group-hover:scale-100 transition-transform duration-200 delay-300'>
                       <FaHeart className='text-red-500' />
                     </button>
                   </div>
@@ -221,12 +224,12 @@ const TrendingProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void 
                     <h3 className='font-bold text-lg text-gray-800 dark:text-white group-hover:text-primary transition-colors duration-300'>
                       {data.title}
                     </h3>
-                    <p className='text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1'>
+                    <p className='text-xs text-gray-600 dark:text-gray-300 flex items-center gap-1'>
                       <FaTags className="text-[10px]" />
                       {data.category}
                     </p>
                     {data.vendorBusinessName && (
-                      <p className='text-[10px] text-gray-500 dark:text-gray-400 flex items-center gap-1 mt-1'>
+                      <p className='text-[10px] text-gray-600 dark:text-gray-300 flex items-center gap-1 mt-1'>
                         <FaStore className="text-[10px] text-primary" />
                         Sold by {data.vendorBusinessName}
                         {data.vendorStatus === 'approved' && (
@@ -268,7 +271,7 @@ const TrendingProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void 
                           ₵{data.price}
                         </span>
                         {(data.original_price || data.originalPrice) && (
-                          <span className='text-sm text-gray-400 line-through'>
+                          <span className='text-sm text-gray-500 line-through'>
                             ₵{data.original_price || data.originalPrice}
                           </span>
                         )}
@@ -277,7 +280,7 @@ const TrendingProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void 
                   </div>
 
                   {/* Product features */}
-                  <div className='text-xs text-gray-500 dark:text-gray-400 space-y-1 pt-2 border-t border-gray-100 dark:border-gray-600'>
+                  <div className='text-xs text-gray-600 dark:text-gray-300 space-y-1 pt-2 border-t border-gray-100 dark:border-gray-600'>
                     <p>Material: {data.fabric_type || data.fabricType || data.material}</p>
                     {data.sizes && <p>Sizes: {Array.isArray(data.sizes) ? data.sizes.join(', ') : data.sizes}</p>}
                     {data.reviews && <p>Reviews: {data.reviews}+ customers</p>}
