@@ -1,5 +1,6 @@
 // Pages/Vendor/VendorMessages.jsx
-// Vendor inbox: customer enquiries with inline reply + close.
+// Vendor inbox: customer enquiry threads with reply + close, rendered as a
+// conversation so the vendor can follow the whole back-and-forth.
 import { useState } from 'react';
 import { FaSpinner, FaEnvelope, FaReply, FaCheckDouble } from 'react-icons/fa';
 import { Link } from 'react-router-dom';
@@ -11,6 +12,12 @@ import {
 } from '../../slices/marketplaceApiSlice';
 import type { VendorMessage } from '../../slices/apiTypes';
 
+interface MessagePost {
+  sender?: string;
+  body?: string;
+  created_at?: string;
+}
+
 interface MessageRow extends VendorMessage {
   profile_picture?: string;
   firstName?: string;
@@ -19,7 +26,25 @@ interface MessageRow extends VendorMessage {
   productId?: number | string;
   created_at?: string;
   replied_at?: string;
+  posts?: MessagePost[];
 }
+
+interface Bubble {
+  sender: string;
+  body: string;
+  created_at?: string;
+}
+
+// The thread header holds the opening customer message; message_posts holds the
+// rest. Skip the opening customer post so the opening message isn't duplicated.
+const buildBubbles = (m: MessageRow): Bubble[] => {
+  const bubbles: Bubble[] = [{ sender: 'customer', body: m.body || '', created_at: m.created_at }];
+  (m.posts || []).forEach((p, i) => {
+    if (i === 0 && p.sender === 'customer') return;
+    bubbles.push({ sender: p.sender || 'customer', body: p.body || '', created_at: p.created_at });
+  });
+  return bubbles;
+};
 
 const statusBadge = (status: string | undefined) => {
   const map: Record<string, string> = {
@@ -43,6 +68,8 @@ const MessageCard = ({ m }: { m: MessageRow }) => {
   const [replying, setReplying] = useState(false);
   const [sendReply] = useReplyToVendorMessageMutation();
   const [close] = useCloseVendorMessageMutation();
+  const bubbles = buildBubbles(m);
+  const customerName = [m.firstName, m.lastName].filter(Boolean).join(' ') || 'Customer';
 
   const handleReply = async () => {
     if (!reply.trim()) return toast.error('Reply is required');
@@ -50,6 +77,7 @@ const MessageCard = ({ m }: { m: MessageRow }) => {
     try {
       await sendReply({ id: m.id as number | string, reply: reply.trim() }).unwrap();
       toast.success('Reply sent');
+      setReply('');
     } catch (error) {
       const err = (error as { data?: { message?: string }; message?: string; error?: string } | undefined);
       toast.error(err?.data?.message || 'Failed to send reply');
@@ -73,16 +101,14 @@ const MessageCard = ({ m }: { m: MessageRow }) => {
       <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
         <div className="flex items-center gap-3">
           {m.profile_picture ? (
-            <img src={m.profile_picture} alt={m.firstName} className="w-9 h-9 rounded-full object-cover" />
+            <img src={m.profile_picture} alt={customerName} className="w-9 h-9 rounded-full object-cover" />
           ) : (
             <div className="w-9 h-9 rounded-full bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center text-indigo-600 dark:text-indigo-300 font-bold">
-              {(m.firstName || 'C')[0]}
+              {(customerName || 'C')[0]}
             </div>
           )}
           <div>
-            <p className="font-semibold text-gray-900 dark:text-white">
-              {m.firstName} {m.lastName}
-            </p>
+            <p className="font-semibold text-gray-900 dark:text-white">{customerName}</p>
             {m.productTitle && (
               <Link to={`/product/${m.productId}`} className="text-xs text-blue-600 dark:text-blue-400 hover:underline">
                 {m.productTitle}
@@ -98,8 +124,25 @@ const MessageCard = ({ m }: { m: MessageRow }) => {
         </div>
       </div>
 
-      <h3 className="font-semibold text-gray-900 dark:text-white mb-1">{m.subject}</h3>
-      <p className="text-gray-600 dark:text-gray-400 text-sm whitespace-pre-line mb-4">{m.body}</p>
+      <h3 className="font-semibold text-gray-900 dark:text-white mb-3">{m.subject}</h3>
+
+      <div className="space-y-2 max-h-80 overflow-y-auto pr-1 mb-4">
+        {bubbles.map((b, i) => (
+          <div key={i} className={`flex ${b.sender === 'vendor' ? 'justify-end' : 'justify-start'}`}>
+            <div className={`max-w-[80%] rounded-lg px-3 py-2 text-sm whitespace-pre-line ${
+              b.sender === 'vendor'
+                ? 'bg-green-100 dark:bg-green-900/40 text-green-900 dark:text-green-100'
+                : 'bg-indigo-50 dark:bg-indigo-900/30 text-gray-700 dark:text-gray-200'
+            }`}>
+              <p className="text-[10px] font-semibold mb-1 opacity-70">
+                {b.sender === 'vendor' ? 'You' : customerName}
+                {b.created_at ? ` · ${formatDate(b.created_at)}` : ''}
+              </p>
+              {b.body}
+            </div>
+          </div>
+        ))}
+      </div>
 
       {m.status !== 'closed' && (
         <div className="border-t dark:border-gray-700 pt-4 space-y-3">
@@ -127,15 +170,6 @@ const MessageCard = ({ m }: { m: MessageRow }) => {
               </button>
             )}
           </div>
-        </div>
-      )}
-
-      {m.reply && m.status !== 'open' && (
-        <div className="mt-4 bg-green-50 dark:bg-green-900/20 border-l-4 border-green-500 rounded-r-lg p-3">
-          <p className="text-xs font-semibold text-green-700 dark:text-green-400 mb-1">
-            <FaReply className="inline mr-1" /> Your reply{m.replied_at ? ` · ${formatDate(m.replied_at)}` : ''}
-          </p>
-          <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-line">{m.reply}</p>
         </div>
       )}
     </div>
