@@ -50,7 +50,7 @@ const ProfileMenuItems = [
 ];
 
 // 🎨 Dark Mode Component
-const DarkMode = () => {
+const DarkMode = React.memo(function DarkMode() {
   const [theme, setTheme] = useState(localStorage.getItem("theme") || "light");
   const element = document.documentElement;
 
@@ -84,7 +84,7 @@ const DarkMode = () => {
       </button>
     </div>
   );
-};
+});
 
 // 🧭 Main Navbar Component
 const Navbar = () => {
@@ -166,6 +166,16 @@ const Navbar = () => {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Close the mobile menu with the Escape key
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMobileMenuOpen(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [mobileMenuOpen]);
 
   // 🎯 Event Handlers
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -630,124 +640,155 @@ const Navbar = () => {
         
         {/* 📱 Mobile Menu */}
         {mobileMenuOpen && (
-          <div className="sm:hidden bg-white dark:bg-gray-900 px-4 py-4 shadow-md border-t border-gray-100 dark:border-gray-800 max-h-[calc(100vh-80px)] overflow-y-auto">
-            <ul className="flex flex-col gap-1">
+          <div
+            className="sm:hidden bg-white dark:bg-gray-900 border-t border-gray-100 dark:border-gray-800 max-h-[calc(100dvh-112px)] overflow-y-auto overscroll-contain shadow-md pb-[max(1rem,env(safe-area-inset-bottom))]"
+            role="dialog"
+            aria-label="Mobile navigation menu"
+          >
+            <div className="flex items-center justify-between px-5 pt-3">
+              <span className="text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-gray-400">
+                Menu
+              </span>
+              <button
+                onClick={() => setMobileMenuOpen(false)}
+                aria-label="Close menu"
+                className="p-2 -mr-2 rounded-full text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+              >
+                <FaTimes className="text-xl" />
+              </button>
+            </div>
+
+            <ul className="flex flex-col px-3 pb-2">
               {Menu.map((data) => (
                 <li key={data.id}>
                   <a 
                     href={data.link} 
-                    className="block px-4 py-3 rounded-lg hover:translate-x-1 hover:bg-primary/10 hover:text-primary text-black dark:text-white transition-all text-base" 
+                    className="block px-3 py-2.5 rounded-lg text-[15px] font-medium text-gray-800 dark:text-gray-100 hover:bg-primary/10 hover:text-primary dark:hover:text-white transition-colors" 
                     onClick={() => setMobileMenuOpen(false)}
                   >
                     {data.name}
                   </a>
                 </li>
               ))}
-              <li className="mt-2">
-                <span className="block px-4 py-2 font-semibold text-black dark:text-white text-sm uppercase tracking-wide text-gray-500 dark:text-gray-400">Trending</span>
-                <ul className="ml-2 mt-1 space-y-1">
+
+              {/* Trending shortcuts */}
+              <li className="mt-1.5">
+                <span className="block px-3 py-1 text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-gray-500">
+                  Trending
+                </span>
+                <div className="flex flex-wrap gap-2 px-3 pb-1.5">
                   {DropdownLinks.map((data) => (
-                    <li key={data.id}>
-                      <a 
-                        href={data.link} 
-                        className="block px-4 py-3 rounded-lg text-black dark:text-white hover:text-primary hover:bg-primary/10 hover:translate-x-1 transition-all" 
-                        onClick={() => setMobileMenuOpen(false)}
-                      >
-                        {data.name}
-                      </a>
-                    </li>
+                    <a
+                      key={data.id}
+                      href={data.link}
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="px-3.5 py-1.5 rounded-full border border-gray-200 dark:border-gray-700 text-sm text-gray-700 dark:text-gray-300 hover:border-primary hover:text-primary transition-colors"
+                    >
+                      {data.name}
+                    </a>
                   ))}
-                </ul>
+                </div>
               </li>
 
-              {/* Mobile Profile Menu */}
-              {userInfo && (
-                <li>
-                  <div className="flex items-center gap-3 px-4 py-2 border-t dark:border-gray-700 mt-2 pt-4">
-                    <img 
-                      src={profilePictureUrl || "/default-avatar.svg"}
-                      alt="Profile"
-                      className="w-10 h-10 rounded-full object-cover"
-                      onError={(e) => {
-                        const target = e.target as HTMLImageElement;
-                        target.onerror = null;
-                        target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="gray"%3E%3Cpath d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/%3E%3C/svg%3E';
-                      }}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-black dark:text-white truncate">
-                        {getUserFullName()}
-                      </p>
-                      <p className="text-sm text-gray-600 dark:text-gray-400 truncate">
-                        {userInfo.email}
-                      </p>
-                    </div>
-                  </div>
-                  <ul className="ml-6 mt-2 space-y-1">
-                    {ProfileMenuItems
-                      .filter((item) => item.name !== "Become a Seller")
-                      .filter((item) => !item.role || item.role === userInfo?.role)
-                      .map((item) => {
-                      const Icon = item.icon;
-                      if (item.name === "Sign Out") {
-                        return (
-                          <li key={item.id}>
-                            <button
-                              onClick={() => {
-                                handleLogout();
-                                setMobileMenuOpen(false);
-                              }}
-                              className="flex items-center gap-3 px-4 py-2 text-sm rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 w-full text-left"
-                            >
-                              <Icon className="text-base" />
-                              {item.name}
-                            </button>
-                          </li>
-                        );
-                      }
-                      return (
-                        <li key={item.id}>
-                          <a
-                            href={item.link}
-                            className="flex items-center gap-3 px-4 py-2 text-sm rounded-lg text-black dark:text-white hover:text-primary hover:translate-x-1 transition-all"
-                            onClick={() => setMobileMenuOpen(false)}
-                          >
-                            <Icon className="text-base" />
-                            {item.name}
-                          </a>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </li>
-              )}
-
-              {/* 📦 Sell on Bonwire (mobile, always visible for customers) */}
-              {userInfo && userInfo.role !== 'vendor' && userInfo.role !== 'admin' && (
-                <li className="border-t dark:border-gray-700 pt-3 mt-2">
+              {/* Sell / dashboard CTA — always reachable, no scrolling needed */}
+              <li className="mt-2 px-1">
+                {userInfo && (userInfo.role === 'vendor' || userInfo.role === 'admin') ? (
+                  <a
+                    href="/vendor"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="flex items-center justify-center gap-2 w-full px-4 py-3 rounded-xl bg-gradient-to-r from-primary to-secondary text-white font-semibold shadow-lg shadow-primary/20"
+                  >
+                    <FaStore className="text-base" />
+                    Seller Dashboard
+                  </a>
+                ) : (
                   <a
                     href="/vendor/apply"
                     onClick={() => setMobileMenuOpen(false)}
-                    className="flex items-center gap-3 px-4 py-3 rounded-lg bg-primary/10 text-primary dark:bg-primary/20 dark:text-white hover:bg-primary/20 transition-all font-medium"
+                    className="flex items-center justify-center gap-2 w-full px-4 py-3 rounded-xl bg-gradient-to-r from-primary to-secondary text-white font-semibold shadow-lg shadow-primary/20"
                   >
                     <FaStore className="text-base" />
-                    Become a Seller
+                    Sell on Bonwire
                   </a>
-                </li>
-              )}
+                )}
+              </li>
 
-              {!userInfo && (
-                <li className="border-t dark:border-gray-700 pt-4 mt-2">
-                  <a 
-                    href="/login" 
-                    className="flex items-center gap-3 px-4 py-2 text-black dark:text-white hover:text-primary" 
+              {/* Profile / auth */}
+              <li className="mt-3 border-t border-gray-100 dark:border-gray-800 pt-3">
+                {userInfo ? (
+                  <>
+                    <div className="flex items-center gap-3 px-3 pb-2">
+                      <img 
+                        src={profilePictureUrl || "/default-avatar.svg"}
+                        alt="Profile"
+                        width={40}
+                        height={40}
+                        loading="lazy"
+                        decoding="async"
+                        className="w-10 h-10 rounded-full object-cover"
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement;
+                          target.onerror = null;
+                          target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="gray"%3E%3Cpath d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/%3E%3C/svg%3E';
+                        }}
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-gray-900 dark:text-white truncate">
+                          {getUserFullName()}
+                        </p>
+                        <p className="text-sm text-gray-600 dark:text-gray-400 truncate">
+                          {userInfo.email}
+                        </p>
+                      </div>
+                    </div>
+                    <ul className="flex flex-col">
+                      {ProfileMenuItems
+                        .filter((item) => item.name !== "Become a Seller")
+                        .filter((item) => !item.role || item.role === userInfo?.role)
+                        .map((item) => {
+                        const Icon = item.icon;
+                        if (item.name === "Sign Out") {
+                          return (
+                            <li key={item.id}>
+                              <button
+                                onClick={() => {
+                                  handleLogout();
+                                  setMobileMenuOpen(false);
+                                }}
+                                className="flex items-center gap-3 px-3 py-2.5 text-sm rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 w-full text-left"
+                              >
+                                <Icon className="text-base" />
+                                {item.name}
+                              </button>
+                            </li>
+                          );
+                        }
+                        return (
+                          <li key={item.id}>
+                            <a
+                              href={item.link}
+                              className="flex items-center gap-3 px-3 py-2.5 text-sm rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-primary transition-colors"
+                              onClick={() => setMobileMenuOpen(false)}
+                            >
+                              <Icon className="text-base" />
+                              {item.name}
+                            </a>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </>
+                ) : (
+                  <a
+                    href="/login"
                     onClick={() => setMobileMenuOpen(false)}
+                    className="flex items-center justify-center gap-2 w-full px-4 py-3 rounded-xl border border-primary/40 text-primary dark:text-yellow-400 font-semibold"
                   >
                     <FaUser className="text-base" />
                     Sign In
                   </a>
-                </li>
-              )}
+                )}
+              </li>
             </ul>
           </div>
         )}
