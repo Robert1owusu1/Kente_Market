@@ -229,11 +229,7 @@ const Navbar = () => {
   // 🖼️ Helper Functions
   const getProfilePictureUrl = () => {
     if (!userInfo?.profilePicture) return null;
-    
-    if (userInfo.profilePicture.startsWith('http')) {
-      return userInfo.profilePicture;
-    }
-    return `${window.location.origin}${userInfo.profilePicture}`;
+    return resolveImageUrl(userInfo.profilePicture) || null;
   };
 
   const getUserDisplayName = () => {

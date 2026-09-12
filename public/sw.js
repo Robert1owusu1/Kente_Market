@@ -14,6 +14,9 @@
 
 const SHELL = ['/', '/index.html'];
 const API_PREFIX = '/api/';
+// Cache versions; bump APP_API_KEY when the API shape changes so stale lists
+// (e.g. pre-wipe product catalogs) are purged on the next SW update.
+const APP_API_KEY = 'app-api-v2';
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -30,14 +33,16 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('activate', (event) => {
+  // Drop every app cache from earlier versions. Old cached API JSON may
+  // reference data that no longer exists (e.g. after a data wipe).
   event.waitUntil(
     caches
       .keys()
       .then((keys) =>
-        Promise.all(keys.filter((k) => k.startsWith('app-shell-') && k !== 'app-shell-v1').map((k) => caches.delete(k)))
+        Promise.all(keys.filter((k) => k.startsWith('app-')).map((k) => caches.delete(k)))
       )
+      .then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
 // Fresh immutable build assets
@@ -54,6 +59,11 @@ self.addEventListener('fetch', (event) => {
   // cache opaque responses opportunistically below for same-origin only.
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
+
+  // Uploaded media (/uploads/*) lives on the API origin and must be fetched
+  // through the network (Vercel proxies it). Never cache or intercept it —
+  // cached copies can reference wiped files and crash the page.
+  if (url.pathname.startsWith('/uploads')) return;
 
   // 1) Hashed build assets -> cache-first (immutable).
   if (isHashedAsset(url)) {
@@ -74,7 +84,7 @@ self.addEventListener('fetch', (event) => {
         .then((res) => {
           if (res && (res.ok || res.status === 304)) {
             const copy = res.clone();
-            caches.open('app-api-v1').then((c) => c.put(req, copy));
+            caches.open(APP_API_KEY).then((c) => c.put(req, copy));
           }
           return res;
         })
@@ -86,9 +96,9 @@ self.addEventListener('fetch', (event) => {
               headers.set('X-Served-From', 'service-worker-cache');
               return new Response(cached.body, { status: 200, headers });
             }
-            return Response.json(
-              { message: 'You appear to be offline. Showing the latest saved copy is unavailable for this request.' },
-              { status: 503 }
+            return new Response(
+              JSON.stringify({ message: 'You appear to be offline. Showing the latest saved copy is unavailable for this request.' }),
+              { status: 503, headers: { 'Content-Type': 'application/json' } }
             );
           })
         )
@@ -98,6 +108,7 @@ self.addEventListener('fetch', (event) => {
 
   // 3) App shell (/, /index.html, and other same-origin GETs)
   // Network-first so we always get fresh HTML/assets, fall back to cached shell.
+  // Always resolves to a real Response so respondWith never throws.
   event.respondWith(
     fetch(req)
       .then((res) => {
@@ -106,7 +117,14 @@ self.addEventListener('fetch', (event) => {
         return res;
       })
       .catch(() =>
-        caches.match(req, { ignoreSearch: true }).then((cached) => cached || caches.match('/'))
+        caches.match(req, { ignoreSearch: true }).then((cached) =>
+          cached ||
+          caches.match('/').then(
+            (shell) =>
+              shell ||
+              new Response('Offline', { status: 503, headers: { 'Content-Type': 'text/plain' } })
+          )
+        )
       )
   );
 });
