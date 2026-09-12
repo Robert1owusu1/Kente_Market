@@ -88,7 +88,7 @@ const DarkMode = () => {
 const Navbar = () => {
   const searchRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
-  const { cartItems } = useCart();
+  const { cartItems, clearCart } = useCart();
   const { userInfo } = useAppSelector((state) => state.auth);
   const dispatch = useAppDispatch();
   const [logoutApiCall] = useLogoutMutation();
@@ -213,6 +213,7 @@ const Navbar = () => {
     try {
       await logoutApiCall().unwrap();
       dispatch(logout());
+      clearCart();
       toast.success("Logged out successfully!");
       navigate("/");
       setMobileMenuOpen(false);

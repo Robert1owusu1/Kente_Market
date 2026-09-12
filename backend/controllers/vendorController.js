@@ -887,21 +887,23 @@ export const withdrawVendorBalance = async (req, res) => {
     let failed = 0;
     const results = [];
 
+    // Vendors may withdraw any amount up to their available balance. Full
+    // allocations pay out in one transfer and turn 'releasing'; if the request
+    // only covers part of an allocation, that part is transferred and the
+    // allocation stays 'available' so the remainder can be withdrawn later.
     for (const allocation of allocations) {
       if (remaining <= 0) break;
-      const allocAmount = parseFloat(allocation.payoutAmount) || 0;
-      if (allocAmount <= 0) continue;
+      const availableInAllocation = parseFloat(allocation.payoutAmount) || 0;
+      if (availableInAllocation <= 0) continue;
 
-      // Only whole allocations are withdrawn (Paystack transfers are per
-      // allocation). If the requested amount can't cover the next full
-      // allocation, stop here.
-      if (allocAmount > remaining) break;
-
-      const updated = await payoutAllocation(allocation);
+      const take = Math.min(remaining, availableInAllocation);
+      const updated = await payoutAllocation(allocation, take);
       results.push(updated);
-      if (updated.status === 'releasing') {
-        await debitVendorBalance(req.user.id, allocAmount, updated.payoutReference, `Withdrawal for order ${allocation.orderId}`);
-        remaining = Math.round((remaining - allocAmount) * 100) / 100;
+
+      // 'releasing' = full chunk paid out; 'available' = partial paid with remainder left.
+      if (updated.status === 'releasing' || updated.status === 'available') {
+        await debitVendorBalance(req.user.id, take, updated.payoutReference, `Withdrawal for order ${allocation.orderId}`);
+        remaining = Math.round((remaining - take) * 100) / 100;
         paid += 1;
       } else {
         // Payout failed (e.g. missing recipient) — balance stays available.
