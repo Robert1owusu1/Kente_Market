@@ -4,11 +4,46 @@ import passport from 'passport';
 import jwt from 'jsonwebtoken';
 import { generateToken } from '../config/passPort.js';
 import { cookieSameSite } from '../config/cookieConfig.js';
+import { authLimiter } from '../middleware/rateLimitMiddleware.js';
 import User from '../models/usersModel.js';
 
 const router = express.Router();
 
 const COOKIE_MAX_AGE = 30 * 24 * 60 * 60 * 1000; // 30 days
+const CONSENT_COOKIE_MAX_AGE = 10 * 60 * 1000; // 10 minutes
+
+// Sign a short-lived token proving the user accepted the legal policies.
+const signConsentToken = () =>
+  jwt.sign({ purpose: 'legal_consent' }, process.env.JWT_SECRET, { expiresIn: '10m' });
+
+// Verify a consent token; returns true if it is a valid legal_consent token.
+const isConsentTokenValid = (token) => {
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    return decoded.purpose === 'legal_consent';
+  } catch {
+    return false;
+  }
+};
+
+// Record that this browser session accepted the legal policies. The short-lived
+// signed token is passed to /api/auth/google and mirrored into an httpOnly cookie
+// so the acceptance can be proven again at the OAuth callback.
+router.post('/consent', authLimiter, (req, res) => {
+  const { accepted } = req.body || {};
+  if (!accepted) {
+    return res.status(400).json({ message: 'You must accept the legal policies before continuing' });
+  }
+  const consentToken = signConsentToken();
+  res.cookie('oauth_consent', consentToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: cookieSameSite(),
+    maxAge: CONSENT_COOKIE_MAX_AGE,
+    path: '/'
+  });
+  res.json({ consentToken });
+});
 
 // Helper: issue the real session cookie. Called both on direct redirect (for
 // browsers that accept cross-site redirect cookies) and on the exchange
@@ -58,19 +93,42 @@ const handleOAuthSuccess = (req, res) => {
 // GOOGLE OAUTH ROUTES
 // ============================================
 
-// Initiate Google OAuth
-router.get('/google', 
-  passport.authenticate('google', { 
+// Initiate Google OAuth. Refuses to start unless the caller has accepted the
+// legal policies (signed consent token from POST /api/auth/consent).
+router.get('/google',
+  (req, res, next) => {
+    if (!isConsentTokenValid(req.query.consent)) {
+      return res.redirect(`${process.env.FRONTEND_URL}/login?error=consent_required`);
+    }
+    // Mirror the acceptance into an httpOnly cookie so we can re-verify it at the
+    // callback (the consent query param will not survive the Google round-trip).
+    res.cookie('oauth_consent', signConsentToken(), {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: cookieSameSite(),
+      maxAge: CONSENT_COOKIE_MAX_AGE,
+      path: '/'
+    });
+    next();
+  },
+  passport.authenticate('google', {
     scope: ['profile', 'email'],
-    session: false 
+    session: false
   })
 );
 
-// Google OAuth callback
+// Google OAuth callback. The consent cookie must still be present and valid.
 router.get('/google/callback',
-  passport.authenticate('google', { 
+  (req, res, next) => {
+    if (!isConsentTokenValid(req.cookies.oauth_consent)) {
+      return res.redirect(`${process.env.FRONTEND_URL}/login?error=consent_required`);
+    }
+    req.consentAt = new Date();
+    next();
+  },
+  passport.authenticate('google', {
     failureRedirect: `${process.env.FRONTEND_URL}/login?error=google_failed`,
-    session: false 
+    session: false
   }),
   handleOAuthSuccess
 );

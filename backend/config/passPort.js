@@ -8,7 +8,8 @@ import pool from './db.js';
 import jwt from 'jsonwebtoken';
 
 // Helper: Find or create user from OAuth profile
-const findOrCreateOAuthUser = async (provider, profile) => {
+const findOrCreateOAuthUser = async (provider, profile, opts = {}) => {
+  const consentAt = opts?.consentAt || null;
   let connection;
   try {
     connection = await pool.getConnection();
@@ -47,8 +48,10 @@ const findOrCreateOAuthUser = async (provider, profile) => {
         //    immediately stops working.
         if (existing.is_email_verified) {
           await connection.execute(
-            `UPDATE users SET ${providerId} = ?, is_email_verified = 1 WHERE id = ?`,
-            [profile.id, existing.id]
+            `UPDATE users SET ${providerId} = ?, is_email_verified = 1,
+               legal_consent_at = COALESCE(legal_consent_at, ?)
+             WHERE id = ?`,
+            [profile.id, consentAt, existing.id]
           );
           console.log(`Linked ${provider} to existing account`);
           return { ...existing, [providerId]: profile.id, is_email_verified: 1 };
@@ -58,9 +61,10 @@ const findOrCreateOAuthUser = async (provider, profile) => {
         const adoptedHashedPassword = await bcrypt.hash(randomPassword, 12);
         await connection.execute(
           `UPDATE users SET ${providerId} = ?, is_email_verified = 1,
-             password = ?, failed_login_attempts = 0, locked_until = NULL
+             password = ?, failed_login_attempts = 0, locked_until = NULL,
+             legal_consent_at = COALESCE(legal_consent_at, ?)
            WHERE id = ?`,
-          [profile.id, adoptedHashedPassword, existing.id]
+          [profile.id, adoptedHashedPassword, consentAt, existing.id]
         );
         console.log(`Adopted unverified account ${existing.id} via verified ${provider} email`);
         return {
@@ -83,9 +87,9 @@ const findOrCreateOAuthUser = async (provider, profile) => {
     const hashedPassword = await bcrypt.hash(randomPassword, 12);
 
     const [result] = await connection.execute(
-      `INSERT INTO users (firstName, lastName, email, ${providerId}, password, is_email_verified, profileImage, role, isActive)
-       VALUES (?, ?, ?, ?, ?, 1, ?, 'customer', 1)`,
-      [firstName, lastName, email || `${provider}_${profile.id}@oauth.local`, profile.id, hashedPassword, profilePicture]
+      `INSERT INTO users (firstName, lastName, email, ${providerId}, password, is_email_verified, profileImage, role, isActive, legal_consent_at)
+       VALUES (?, ?, ?, ?, ?, 1, ?, 'customer', 1, ?)`,
+      [firstName, lastName, email || `${provider}_${profile.id}@oauth.local`, profile.id, hashedPassword, profilePicture, consentAt]
     );
     
     console.log(`Created new user via ${provider} OAuth`);
@@ -122,10 +126,11 @@ export const configurePassport = () => {
       clientID: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
       callbackURL: `${process.env.OAUTH_CALLBACK_URL}/api/auth/google/callback`,
-      scope: ['profile', 'email']
-    }, async (accessToken, refreshToken, profile, done) => {
+      scope: ['profile', 'email'],
+      passReqToCallback: true
+    }, async (req, accessToken, refreshToken, profile, done) => {
       try {
-        const user = await findOrCreateOAuthUser('google', profile);
+        const user = await findOrCreateOAuthUser('google', profile, { consentAt: req.consentAt });
         return done(null, user);
       } catch (error) {
         return done(error, null);
