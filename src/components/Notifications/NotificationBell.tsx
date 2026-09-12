@@ -94,7 +94,7 @@ const NotificationBell = () => {
       >
         <FaBell className="text-xl text-gray-600 dark:text-gray-300" />
         {unreadCount > 0 && (
-          <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs w-5 h-5 flex items-center justify-center rounded-full font-semibold">
+          <span className="absolute -top-1 -right-1 bg-red-700 text-white text-xs w-5 h-5 flex items-center justify-center rounded-full font-semibold">
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
         )}
