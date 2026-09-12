@@ -19,9 +19,32 @@ import {
 import isValidId from "../utils/isValidId.js";
 
 // True if the given order contains at least one item owned by the vendor user.
-const orderHasVendorItem = (order, vendorUserId) => {
+// Line items are stored on the order WITHOUT a vendorId, so ownership is derived
+// from the product's vendorId (an explicitly stored item.vendorId wins as a
+// fast path for any orders that do carry it).
+const orderHasVendorItem = async (order, vendorUserId, productVendor = null) => {
   const items = Array.isArray(order.items) ? order.items : [];
-  return items.some((it) => parseInt(it.vendorId) === parseInt(vendorUserId));
+  const vendorId = parseInt(vendorUserId, 10);
+
+  const productIds = [...new Set(
+    items.map((it) => it.product ?? it.productId ?? it.id).filter((x) => x != null)
+  )];
+
+  let vendorByProduct = productVendor;
+  if (!vendorByProduct && productIds.length > 0) {
+    const placeholders = productIds.map(() => '?').join(', ');
+    const [prodRows] = await pool.execute(
+      `SELECT id, vendorId FROM product WHERE id IN (${placeholders})`,
+      productIds
+    );
+    vendorByProduct = new Map(prodRows.map((pr) => [String(pr.id), parseInt(pr.vendorId, 10)]));
+  }
+
+  return items.some((it) => {
+    if (it.vendorId != null && parseInt(it.vendorId, 10) === vendorId) return true;
+    const productId = String(it.product ?? it.productId ?? it.id);
+    return vendorByProduct != null && vendorByProduct.get(productId) === vendorId;
+  });
 };
 
 const getCustomerEmail = async (userId) => {
@@ -43,9 +66,34 @@ export const getVendorOrders = async (req, res) => {
        LEFT JOIN users u ON o.userId = u.id
        ORDER BY o.created_at DESC`
     );
-    const vendorOrders = rows
-      .map((row) => new Order(row))
-      .filter((o) => orderHasVendorItem(o, req.user.id));
+    const orders = rows.map((row) => new Order(row));
+
+    // Resolve product -> vendor ownership for every order in one query so the
+    // vendor list works even though line items don't persist a vendorId.
+    const productIds = [...new Set(
+      orders.flatMap((o) => (Array.isArray(o.items) ? o.items : []))
+        .map((it) => it.product ?? it.productId ?? it.id)
+        .filter((x) => x != null)
+    )];
+    const productVendor = new Map();
+    if (productIds.length > 0) {
+      const placeholders = productIds.map(() => '?').join(', ');
+      const [prodRows] = await pool.execute(
+        `SELECT id, vendorId FROM product WHERE id IN (${placeholders})`,
+        productIds
+      );
+      for (const pr of prodRows) productVendor.set(String(pr.id), parseInt(pr.vendorId, 10));
+    }
+
+    const vendorUserId = parseInt(req.user.id, 10);
+    const vendorOrders = orders.filter((o) => {
+      const items = Array.isArray(o.items) ? o.items : [];
+      return items.some((it) => {
+        if (it.vendorId != null && parseInt(it.vendorId, 10) === vendorUserId) return true;
+        const productId = String(it.product ?? it.productId ?? it.id);
+        return productVendor.get(productId) === vendorUserId;
+      });
+    });
     res.json(vendorOrders);
   } catch (error) {
     console.error("Error fetching vendor orders:", error);
@@ -71,7 +119,7 @@ export const updateVendorOrderStatus = async (req, res) => {
     }
 
     // Only the vendor who owns an item in the order (or an admin) may act.
-    if (req.user.role !== 'admin' && !orderHasVendorItem(order, req.user.id)) {
+    if (req.user.role !== 'admin' && !(await orderHasVendorItem(order, req.user.id))) {
       return res.status(403).json({ message: "Not authorized to update this order" });
     }
 
