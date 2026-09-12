@@ -21,3 +21,4 @@ export const ADDRESSES_URL = '/api/addresses';
 export const PAYMENT_METHODS_URL = '/api/payments/methods';
 export const SUPPORT_URL = '/api/support';
 export const CATEGORIES_URL = '/api/categories';
+export const SUGGESTIONS_URL = '/api/suggestions';

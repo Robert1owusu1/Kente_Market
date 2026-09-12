@@ -8,6 +8,7 @@ import Layout from './components/Layout/Layout';
 import ErrorBoundary from './components/ErrorBoundary/ErrorBoundary';
 import Loader from './components/loader/Loader';
 import PromotionPopup from './components/PromotionPopup/PromotionPopup';
+import TestingModePopup from './components/TestingModePopup/TestingModePopup';
 
 import SyncUserRole from './components/SyncUserRole/SyncUserRole';
 import NotFound from './components/NotFound/NotFound';
@@ -73,6 +74,7 @@ const HelpPage = lazy(() => import('./Pages/Help/HelpPage'));
 const VendorDirectory = lazy(() => import('./Pages/Storefront/VendorDirectory'));
 const VendorStorefront = lazy(() => import('./Pages/Storefront/VendorStorefront'));
 const KenteMuseum = lazy(() => import('./Pages/Museum/KenteMuseum'));
+const SuggestionsPage = lazy(() => import('./Pages/Suggestions/SuggestionsPage'));
 const MyMessages = lazy(() => import('./Pages/Messages/MyMessages'));
 const MyCertificates = lazy(() => import('./Pages/Certificates/MyCertificates'));
 
@@ -143,6 +145,7 @@ const App = () => {
               <Route path='/vendors' element={<VendorDirectory />} />
               <Route path='/store/:slug' element={<VendorStorefront />} />
               <Route path='/museum' element={<KenteMuseum />} />
+              <Route path='/suggestions' element={<SuggestionsPage />} />
               <Route path='/unsubscribe' element={<UnsubscribePage />} />
               <Route path='/cartpage' element={<CartPage />} />
               <Route path='/cart' element={<CartPage />} />
@@ -191,6 +194,7 @@ const App = () => {
         </Suspense>
 
         <PromotionPopup />
+        <TestingModePopup />
         <SyncUserRole />
 
         {/* Global ToastContainer - Available on all pages */}
