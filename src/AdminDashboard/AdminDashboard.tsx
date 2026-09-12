@@ -35,7 +35,7 @@ interface SettingsBag {
   notifications?: boolean;
   emailNotifications?: boolean;
   orderAlerts?: boolean;
-  lowStockThreshold?: number;
+  lowStockAlert?: number;
   theme?: string;
   [key: string]: unknown;
 }
@@ -74,12 +74,12 @@ const AdminDashboard = () => {
         siteName: s.siteName || 'Bonwire Kente',
         email: s.email || 'admin@brandinghouse.com',
         currency: s.currency || 'GHS',
-        taxRate: s.taxRate || 10,
-        shippingCost: s.shippingCost || 5.00,
+        taxRate: s.taxRate !== undefined ? s.taxRate : 10,
+        shippingCost: s.shippingCost !== undefined ? s.shippingCost : 5.00,
         notifications: s.notifications !== undefined ? s.notifications : true,
         emailNotifications: s.emailNotifications !== undefined ? s.emailNotifications : true,
         orderAlerts: s.orderAlerts !== undefined ? s.orderAlerts : true,
-        lowStockAlert: s.lowStockThreshold || 10,
+        lowStockAlert: s.lowStockAlert !== undefined ? s.lowStockAlert : 10,
         theme: s.theme || 'light'
       });
     }
@@ -130,7 +130,7 @@ const AdminDashboard = () => {
     ].filter(item => item.value > 0);
 
     const paidOrders = orders.filter(o => o.paymentStatus === 'paid').length;
-    const unpaidOrders = orders.filter(o => o.paymentStatus === 'pending').length;
+    const unpaidOrders = orders.filter(o => o.paymentStatus === 'pending' || o.paymentStatus === 'failed').length;
 
     return {
       totalSales,
@@ -290,7 +290,7 @@ const AdminDashboard = () => {
       </div>
 
       <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-md">
-        <h3 className="text-xl font-semibold mb-4 text-gray-800 dark:text-white">Payment Status</h3>
+        <h3 className="text-xl font-semibold mb-4 text-gray-800 dark:text-white">Order & Payment Status</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="text-center p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
             <p className="text-2xl font-bold text-green-600">{stats.paidOrders}</p>

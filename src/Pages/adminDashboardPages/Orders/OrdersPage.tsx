@@ -352,7 +352,7 @@ const OrdersPage = () => {
   const [showModal, setShowModal] = useState(false);
 
   // RTK Query hooks
-  const { data: orders = [], isLoading, error, refetch } = useGetAllOrdersQuery({});
+  const { data: orders = [], isLoading, error, refetch } = useGetAllOrdersQuery({ limit: 1000 });
   const { data: fullOrder } = useGetOrderByIdQuery(selectedOrder?.id as number, { skip: !selectedOrder });
   const [updateOrder] = useUpdateOrderMutation();
   const [deleteOrderMutation] = useDeleteOrderMutation();
