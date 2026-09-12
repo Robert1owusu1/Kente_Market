@@ -76,7 +76,10 @@ export const getAvailableAllocationsForVendor = async (vendorId) => {
  * Recompute the order-level escrowStatus from its allocations.
  * Priority:
  *   1. no allocations -> none
- *   2. all released    -> released
+ *   2. all released/available -> released (funds have left escrow either to a
+ *      vendor bank/momo or into their available balance; the orders table enum
+ *      only holds 'released' since allocation-level 'available' is not a valid
+ *      order-level status)
  *   3. any pending     -> releasing (not yet held/finalized)
  *   4. any releasing   -> releasing (transfers in flight)
  *   5. any held        -> held (still awaiting release)
@@ -90,12 +93,14 @@ export const recomputeOrderEscrowStatus = async (orderId) => {
 
   const statuses = new Set(rows.map((r) => r.status));
 
-  if (statuses.size === 1 && statuses.has('released')) return 'released';
+  if (statuses.size === 1 && (statuses.has('released') || statuses.has('available'))) return 'released';
   if (statuses.has('pending')) return 'releasing';
   if (statuses.has('releasing')) return 'releasing';
   if (statuses.has('held')) return 'held';
-  if (statuses.has('available')) return 'available';
   if (statuses.has('failed')) return 'failed';
+  // Any mix of released/available allocations: escrow funds have already left
+  // the platform's escrow into vendor hands, so the order is effectively released.
+  if (statuses.has('available') || statuses.has('released')) return 'released';
   return 'held';
 };
 
