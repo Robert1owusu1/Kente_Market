@@ -180,7 +180,7 @@ const TrendingProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void 
                   
                   {/* Trending badge */}
                   {((data.rating ?? 0) >= 4.7 || ["Trending", "Hot", "Best Seller", "Popular"].includes(data.tag as string)) && (
-                    <div className='absolute top-3 left-3 bg-gradient-to-r from-orange-400 to-red-500 text-white text-xs px-2 py-1 rounded-full flex items-center gap-1 animate-pulse'>
+                    <div className='absolute top-3 left-3 bg-gradient-to-r from-orange-700 to-red-700 text-white text-xs px-2 py-1 rounded-full flex items-center gap-1'>
                       <FaFire className="text-[10px]" />
                       {data.tag || "Trending"}
                     </div>
@@ -188,7 +188,7 @@ const TrendingProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void 
 
                   {/* Savings badge */}
                   {(data.original_price || data.originalPrice) && (
-                    <div className='absolute top-3 right-3 bg-green-500 text-white text-xs px-2 py-1 rounded-full'>
+                    <div className='absolute top-3 right-3 bg-green-700 text-white text-xs px-2 py-1 rounded-full'>
                       Save ₵{calculateSavings(data.price, (data.original_price || data.originalPrice) as number | string)}
                     </div>
                   )}

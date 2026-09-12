@@ -1,7 +1,5 @@
 import React, { Suspense, lazy, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import AOS from 'aos';
-import "aos/dist/aos.css";
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import Layout from './components/Layout/Layout';
@@ -80,17 +78,23 @@ const MyCertificates = lazy(() => import('./Pages/Certificates/MyCertificates'))
 
 const App = () => {
   useEffect(() => {
-    AOS.init({
-      once: true,
-      offset: 80,
-      duration: 500,
-      easing: "ease-out",
-      delay: 0,
-      disable: () =>
-        window.matchMedia("(prefers-reduced-motion: reduce)").matches ||
-        window.innerWidth < 768,
+    // Load AOS only on large screens without reduced-motion preferences, so
+    // mobile / accessibility users never download or execute the animation
+    // engine (keeps main-thread work and TBT low on phones).
+    const mqReduced = window.matchMedia("(prefers-reduced-motion: reduce)");
+    if (window.innerWidth < 768 || mqReduced.matches) return;
+
+    import("aos").then(({ default: AOS }) => {
+      import("aos/dist/aos.css");
+      AOS.init({
+        once: true,
+        offset: 80,
+        duration: 500,
+        easing: "ease-out",
+        delay: 0,
+      });
+      AOS.refresh();
     });
-    AOS.refresh();
   }, []);
 
   return (

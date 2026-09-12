@@ -173,12 +173,12 @@ const TopProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
                 {/* Product Tags */}
                 <div className="absolute top-4 left-4 z-20">
                   {product.tag && (
-                    <span className="bg-gradient-to-r from-primary to-secondary text-white px-3 py-1 rounded-full text-xs font-bold shadow-lg">
+                    <span className="bg-gradient-to-r from-orange-700 to-red-700 text-white px-3 py-1 rounded-full text-xs font-bold shadow-lg">
                       {product.tag}
                     </span>
                   )}
                   {index < 3 && (
-                    <span className="bg-red-500 text-white px-2 py-1 rounded-full text-xs font-bold shadow-lg mt-1 block w-fit">
+                    <span className="bg-red-700 text-white px-2 py-1 rounded-full text-xs font-bold shadow-lg mt-1 block w-fit">
                       #{index + 1} Best Seller
                     </span>
                   )}

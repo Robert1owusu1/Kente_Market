@@ -397,7 +397,7 @@ const Navbar = () => {
                 <div className="relative">
                   <FaCartShopping className='text-lg sm:text-xl text-white drop-shadow-sm cursor-pointer' />
                   {cartCount > 0 && (
-                    <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs w-5 h-5 flex items-center justify-center rounded-full font-semibold">
+                    <span className="absolute -top-2 -right-2 bg-red-700 text-white text-xs w-5 h-5 flex items-center justify-center rounded-full font-semibold">
                       {cartCount > 99 ? '99+' : cartCount}
                     </span>
                   )}
