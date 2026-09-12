@@ -41,6 +41,7 @@ const CartDrawer = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
               <div className="text-6xl mb-4">🛒</div>
               <p className="text-gray-500 dark:text-white/85">Your cart is empty.</p>
               <button
+                type="button"
                 onClick={onClose}
                 className="mt-6 px-6 py-2 bg-primary text-white rounded-full"
               >
@@ -71,6 +72,7 @@ const CartDrawer = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
                     <p className="text-sm text-gray-500 dark:text-secondary">Price: GH₵ {item.price}</p>
                     <div className="flex items-center gap-2 mt-1">
                       <button
+                        type="button"
                         onClick={() =>
                           updateItemQuantity(item.id, Math.max(1, item.quantity - 1))
                         }
@@ -81,6 +83,7 @@ const CartDrawer = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
                       </button>
                       <span className="w-6 text-center font-semibold">{item.quantity}</span>
                       <button
+                        type="button"
                         onClick={() =>
                           updateItemQuantity(item.id, item.quantity + 1)
                         }
@@ -96,6 +99,7 @@ const CartDrawer = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
                   </div>
                 </div>
                 <button
+                  type="button"
                   onClick={() => removeItem(item.id)}
                   className="text-red-500 hover:text-red-700 p-1"
                   aria-label="Remove item"
@@ -132,10 +136,12 @@ const CartDrawer = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
               <span>Total:</span>
               <span>GH₵ {calcOrderTotals(cartItems).total.toFixed(2)}</span>
             </div>
-            <Link to="/cartpage" onClick={onClose}>
-              <button className="mt-4 w-full bg-primary text-white py-3 rounded-xl hover:bg-primary/90 transition font-semibold">
-                Proceed to Checkout
-              </button>
+            <Link
+              to="/cartpage"
+              onClick={onClose}
+              className="mt-4 w-full bg-primary text-white py-3 rounded-xl hover:bg-primary/90 transition font-semibold text-center block"
+            >
+              Proceed to Checkout
             </Link>
           </div>
         )}

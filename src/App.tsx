@@ -99,6 +99,7 @@ const App = () => {
               <Route path='/museum' element={<KenteMuseum />} />
               <Route path='/unsubscribe' element={<UnsubscribePage />} />
               <Route path='/cartpage' element={<CartPage />} />
+              <Route path='/cart' element={<CartPage />} />
               <Route path="/terms" element={<TermsOfService />} />
               <Route path="/privacy" element={<PrivacyPolicy />} />
             </Route>

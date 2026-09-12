@@ -3,7 +3,10 @@ import React from "react";
 import { FaStar, FaTshirt, FaClock, FaHeart, FaEye, FaShoppingCart, FaTags, FaFire } from "react-icons/fa";
 import { useCart } from "../../Context/CartContext";
 import { Link } from "react-router-dom";
-import { useGetFeaturedProductsQuery } from "../../slices/productsApiSlice";
+import {
+  useGetFeaturedProductsQuery,
+  useGetTrendingProductsQuery,
+} from "../../slices/productsApiSlice";
 import { ProductGridSkeleton } from "../loader/Skeleton";
 import { resolveImageUrl } from "../../utils/imageUrl";
 import type { Product } from "../../types/domain";
@@ -31,13 +34,17 @@ const TopProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
     isLoading,
     error: queryError,
   } = useGetFeaturedProductsQuery({ limit: 6 });
+  const { data: trendingProducts = [], isLoading: isTrendingLoading } =
+    useGetTrendingProductsQuery({ limit: 6 });
 
   // Normalize RTK error object into a displayable string.
   const queryErr = queryError as { data?: { message?: string; error?: string } } | undefined;
   const error = queryErr
     ? (queryErr.data?.message || queryErr.data?.error || 'Failed to load products. Please try again later.')
     : null;
-  const loading = isLoading;
+  const loading = isLoading || isTrendingLoading;
+  const displayProducts =
+    ProductsData && ProductsData.length > 0 ? ProductsData : trendingProducts;
 
   const handleAddToCart = (product: TopProduct) => {
     const cartItem = {
@@ -115,7 +122,7 @@ const TopProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
   }
 
   // Empty State
-  if (!ProductsData || ProductsData.length === 0) {
+  if (displayProducts.length === 0) {
     return (
       <div className="py-16 bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -152,7 +159,7 @@ const TopProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
 
         {/* Enhanced Products Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8 place-items-center">
-          {ProductsData.map((product: TopProduct, index) => {
+          {displayProducts.map((product: TopProduct, index) => {
             const productColors = product.colors_available || product.colorsAvailable || product.colors || [];
             const productPrice = Number(product.price) || Number(product.base_price) || Number(product.basePrice) || 0;
             const productOriginalPrice = product.original_price || product.originalPrice ? Number(product.original_price || product.originalPrice) : null;
@@ -340,7 +347,7 @@ const TopProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
 
         {/* Debug Info */}
         <div className="text-center mt-8 text-sm text-gray-500">
-          Showing {ProductsData.length} featured products
+          Showing {displayProducts.length} products
         </div>
       </div>
     </div>
