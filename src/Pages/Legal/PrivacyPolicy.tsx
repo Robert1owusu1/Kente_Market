@@ -29,7 +29,7 @@ const PrivacyPolicy = () => {
       <Seo
         title="Privacy Policy | Bonwire Kente"
         description="How Bonwire Kente Marketplace collects, uses and protects your personal data."
-        image="https://kente-market.vercel.app/og-cover.svg"
+        image="https://kente-market.vercel.app/og-cover.png"
       />
     <LegalDocument
       {...privacyPolicy}

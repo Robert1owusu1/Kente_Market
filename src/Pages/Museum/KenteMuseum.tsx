@@ -15,7 +15,7 @@ const KenteMuseum = () => {
       <Seo
         title="The Kente Museum - Kente Patterns, Meanings & Heritage | Bonwire Kente"
         description="Explore the Kente Museum — the patterns, names and cultural meanings behind authentic Ghanaian Kente designs, woven by approved artisans."
-        image="https://kente-market.vercel.app/og-cover.svg"
+        image="https://kente-market.vercel.app/og-cover.png"
       />
     <div className="min-h-[60vh] bg-gray-50 dark:bg-gray-900 py-12">
       <div className="container mx-auto px-4">

@@ -24,7 +24,7 @@ const homeJsonLd = [
     '@type': 'Organization',
     name: 'Bonwire Kente Marketplace',
     url: SITE_URL,
-    logo: `${SITE_URL}/og-cover.svg`,
+    logo: `${SITE_URL}/og-cover.png`,
     description:
       'Authentic Ghanaian Kente cloth, fabrics and custom-printed products from verified weavers and vendors.',
     areaServed: ['GH', 'Worldwide'],
@@ -99,7 +99,7 @@ const App = () => {
                   <Seo
                     title="Bonwire Kente - Authentic Ghanaian Kente Cloth | Buy Online"
                     description="Shop authentic Ghanaian Kente cloth and fabric online. Handwoven by verified weavers, delivered across Ghana and worldwide."
-                    image={`${SITE_URL}/og-cover.svg`}
+                    image={`${SITE_URL}/og-cover.png`}
                     jsonLd={homeJsonLd}
                   />
                   <Hero />
@@ -120,7 +120,7 @@ const App = () => {
                   <Seo
                     title="Top Kente Products & Best Sellers | Bonwire Kente"
                     description="Explore top-rated and best-selling Kente cloth, weaving and fashion. Updated weekly with trending designs."
-                    image={`${SITE_URL}/og-cover.svg`}
+                    image={`${SITE_URL}/og-cover.png`}
                   />
                   <TopProducts />
                 </>
@@ -130,7 +130,7 @@ const App = () => {
                   <Seo
                     title="Trending Kente Cloth & Fabrics | Bonwire Kente"
                     description="Discover the most popular Kente patterns and trending Ghanaian fabric designs right now."
-                    image={`${SITE_URL}/og-cover.svg`}
+                    image={`${SITE_URL}/og-cover.png`}
                   />
                   <Products />
                 </>

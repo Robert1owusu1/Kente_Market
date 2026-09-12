@@ -31,7 +31,7 @@ const TermsOfService = () => {
       <Seo
         title="Terms of Service | Bonwire Kente"
         description="Terms and conditions for using the Bonwire Kente Marketplace — ordering, payment, escrow and returns."
-        image="https://kente-market.vercel.app/og-cover.svg"
+        image="https://kente-market.vercel.app/og-cover.png"
       />
     <LegalDocument
       {...termsOfService}
