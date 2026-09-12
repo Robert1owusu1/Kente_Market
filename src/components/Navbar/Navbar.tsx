@@ -97,6 +97,7 @@ const Navbar = () => {
 
   // 📊 State Management
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [navVisible, setNavVisible] = useState(false);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -410,11 +411,24 @@ const Navbar = () => {
 
               {/* 👤 Desktop Profile Menu */}
               {userInfo && (
-                <div className="group relative cursor-pointer hidden sm:block">
-                  <div className="flex items-center gap-2 py-2 px-3 rounded-full bg-white/10 hover:bg-white/20 transition-all duration-200">
+                <div className="group relative hidden sm:block">
+                  <div
+                    className="flex items-center gap-2 py-2 px-3 rounded-full bg-white/10 hover:bg-white/20 transition-all duration-200"
+                    role="button"
+                    tabIndex={0}
+                    aria-haspopup="menu"
+                    aria-expanded={profileMenuOpen}
+                    onClick={() => setProfileMenuOpen((open) => !open)}
+                    onMouseEnter={() => setProfileMenuOpen(true)}
+                    onMouseLeave={() => setProfileMenuOpen(false)}
+                    onFocus={() => setProfileMenuOpen(true)}
+                    onBlur={() => setTimeout(() => setProfileMenuOpen(false), 150)}
+                  >
                     <img
                       src={profilePictureUrl || "/default-avatar.svg"}
                       alt="Profile"
+                      width={32}
+                      height={32}
                       className="w-8 h-8 rounded-full border-2 border-white/30 object-cover"
                       onError={(e) => {
                         const target = e.target as HTMLImageElement;
@@ -426,7 +440,7 @@ const Navbar = () => {
                     <FaCaretDown className="transition-all duration-200 group-hover:rotate-180" />
                   </div>
             
-                  <div className="absolute z-[9999] hidden group-hover:block w-[220px] right-0 rounded-lg bg-white dark:bg-gray-800 shadow-xl border dark:border-gray-700 mt-2">
+                  <div className={`absolute z-[9999] ${profileMenuOpen ? 'block' : 'hidden'} w-[220px] right-0 rounded-lg bg-white dark:bg-gray-800 shadow-xl border dark:border-gray-700 mt-2`}>
                     <div className="px-4 py-3 border-b dark:border-gray-700">
                       <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
                         {getUserFullName()}

@@ -69,10 +69,9 @@ const TopProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
       selectedColor: (product.colors_available || product.colorsAvailable || product.colors || [])[0] || 'default',
       selectedSize: (product.sizes || ['M'])[0]
     };
-    
-    console.log('Adding to cart from TopProducts:', cartItem);
+
     addToCart(cartItem);
-    
+
     if (handleOrderPopup) {
       handleOrderPopup();
     }
@@ -88,9 +87,9 @@ const TopProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
               <FaFire className="text-primary" />
               Top Products for you
             </div>
-            <h1 className="text-4xl md:text-5xl font-bold text-gray-900 dark:text-white mb-4">
+            <h2 data-aos="fade-up" className="text-4xl md:text-5xl font-bold text-gray-900 dark:text-white mb-4">
               Best Products
-            </h1>
+            </h2>
           </div>
           <ProductGridSkeleton count={6} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8 place-items-center" />
         </div>
@@ -149,9 +148,9 @@ const TopProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
             <FaFire className="text-primary" />
             Top Products for you
           </div>
-          <h1 data-aos="fade-up" className="text-4xl md:text-5xl font-bold text-gray-900 dark:text-white mb-4">
+          <h2 data-aos="fade-up" className="text-4xl md:text-5xl font-bold text-gray-900 dark:text-white mb-4">
             Best Products
-          </h1>
+          </h2>
           <p data-aos="fade-up" className="text-xl text-gray-600 dark:text-gray-300 max-w-3xl mx-auto">
             Discover our most cherished authentic Kente cloth, handwoven in Bonwire, Ghana
           </p>
@@ -168,7 +167,7 @@ const TopProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
               <div
                 key={product.id}
                 data-aos="zoom-in"
-                data-aos-delay={index * 100}
+                data-aos-delay={index * 50}
                 className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-500 transform hover:-translate-y-4 group relative overflow-hidden max-w-[350px] w-full"
               >
                 {/* Product Tags */}
@@ -186,7 +185,7 @@ const TopProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
                 </div>
 
                 {/* Favorite Button */}
-                <button className="absolute top-4 right-4 z-20 p-2 bg-white/20 backdrop-blur-sm rounded-full hover:bg-white/30 transition-all duration-300 opacity-0 group-hover:opacity-100">
+                <button aria-label={`Favorite ${product.title}`} className="absolute top-4 right-4 z-20 p-2 bg-white/20 backdrop-blur-sm rounded-full hover:bg-white/30 transition-all duration-300 opacity-0 group-hover:opacity-100">
                   <FaHeart className="text-red-500 hover:text-red-600" />
                 </button>
 
@@ -195,6 +194,8 @@ const TopProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
                   <img
                     src={resolveImageUrl(product.image || product.img)}
                     alt={product.title}
+                    width={350}
+                    height={256}
                     loading="lazy"
                     decoding="async"
                     className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
@@ -209,11 +210,12 @@ const TopProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
                   {/* Quick Action Buttons */}
                   <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300 transform translate-y-4 group-hover:translate-y-0">
                     <div className="flex gap-3">
-                      <button className="p-3 bg-white rounded-full shadow-lg hover:bg-gray-100 transition-colors duration-200 transform hover:scale-110">
+                      <button aria-label={`Quick view ${product.title}`} className="p-3 bg-white rounded-full shadow-lg hover:bg-gray-100 transition-colors duration-200 transform hover:scale-110">
                         <FaEye className="text-gray-700" />
                       </button>
                       <button 
                         onClick={() => handleAddToCart(product)}
+                        aria-label={`Add ${product.title} to cart`}
                         className="p-3 bg-primary text-white rounded-full shadow-lg hover:bg-primary/90 transition-colors duration-200 transform hover:scale-110"
                       >
                         <FaShoppingCart />

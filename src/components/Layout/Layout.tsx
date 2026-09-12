@@ -8,7 +8,9 @@ const Layout = () => {
     <>
       <Navbar />
       <BottomNav />
-      <Outlet />
+      <main id="main-content">
+        <Outlet />
+      </main>
     </>
   );
 };

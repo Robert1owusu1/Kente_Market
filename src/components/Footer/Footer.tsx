@@ -63,10 +63,10 @@ const Footer = () => {
         <div data-aos="zoom-in" className="grid md:grid-cols-3 pb-44 pt-5 safe-bottom">
           {/* company details */}
           <div className="py-8 px-4">
-            <h1 className="sm:text-3xl text-xl font-bold sm:text-left text-justify mb-3 flex items-center gap-3">
-              <img src={footerLogo} alt="" className="max-w-[50px]" />
+            <h2 className="sm:text-3xl text-xl font-bold sm:text-left text-justify mb-3 flex items-center gap-3">
+              <img src={footerLogo} alt="Bonwire Kente logo" width={50} height={50} className="max-w-[50px]" />
               Bonwire Kente
-            </h1>
+            </h2>
             <p className="text-gray-200 text-sm sm:text-base leading-relaxed">
               Authentic handwoven Kente cloth from the heritage village of
               Bonwire, Ghana. Preserving a centuries-old tradition for the
@@ -78,9 +78,9 @@ const Footer = () => {
           <div className="grid grid-cols-2 sm:grid-cols-3 col-span-2 md:pl-10">
             <div>
               <div className="py-8 px-4">
-                <h1 className="sm:text-xl text-lg font-bold sm:text-left text-justify mb-3">
+                <h3 className="sm:text-xl text-lg font-bold sm:text-left text-justify mb-3">
                   Important Links
-                </h1>
+                </h3>
                 <ul className="flex flex-col gap-3">
                   {FooterLinks.map((link) => (
                     <li
@@ -95,9 +95,9 @@ const Footer = () => {
             </div>
             <div>
               <div className="py-8 px-4">
-                <h1 className="sm:text-xl text-lg font-bold sm:text-left text-justify mb-3">
+                <h3 className="sm:text-xl text-lg font-bold sm:text-left text-justify mb-3">
                   Support & Legal
-                </h1>
+                </h3>
                 <ul className="flex flex-col gap-3">
                   {SupportLinks.map((link) => (
                     <li
@@ -115,13 +115,13 @@ const Footer = () => {
 
             <div>
               <div className="flex items-center gap-3 mt-6">
-                <a href="#">
+                <a href="#" aria-label="Instagram">
                   <FaInstagram className="text-2xl sm:text-3xl" />
                 </a>
-                <a href="#">
+                <a href="#" aria-label="Facebook">
                   <FaFacebook className="text-2xl sm:text-3xl" />
                 </a>
-                <a href="#">
+                <a href="#" aria-label="LinkedIn">
                   <FaLinkedin className="text-2xl sm:text-3xl" />
                 </a>
               </div>

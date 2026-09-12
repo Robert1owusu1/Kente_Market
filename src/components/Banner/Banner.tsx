@@ -15,21 +15,23 @@ const Banner = () => {
             <img
               src={BannerImg}
               alt="Bonwire Kente heritage cloth"
+              width={400}
+              height={350}
               className="max-w-[400px] h-[350px] w-full mx-auto drop-shadow-[-10px_10px_12px_rgba(0,0,0,1)] object-cover rounded-xl"
             />
           </div>
 
           {/* Text Section */}
           <div className="flex flex-col justify-center gap-6 sm:pt-0">
-            <h1
+            <h2
               data-aos="fade-up"
               className="font-bold text-3xl sm:text-4xl dark:text-white"
             >
               Woven in Bonwire Since the 17th Century
-            </h1>
+            </h2>
             <p
               data-aos="fade-up"
-              className="text-sm text-gray-500 dark:text-gray-400 tracking-wide leading-5"
+              className="text-sm text-gray-600 dark:text-gray-300 tracking-wide leading-5"
             >
               Kente cloth originated in the Ashanti village of Bonwire, Ghana,
               where weavers were inspired by the patterns of Anansi the spider.

@@ -83,10 +83,10 @@ const Testimonials = () => {
           <p data-aos="fade-up" className="text-sm text-primary">
             What our customers are saying
           </p>
-          <h1 data-aos="fade-up" className="text-3xl font-bold dark:text-white">
+          <h2 data-aos="fade-up" className="text-3xl font-bold dark:text-white">
             Testimonials
-          </h1>
-          <p data-aos="fade-up" className="text-xs text-gray-400">
+          </h2>
+          <p data-aos="fade-up" className="text-xs text-gray-500 dark:text-gray-300">
             Trusted by heritage lovers, wedding couples, and cultural
             institutions worldwide
           </p>
@@ -104,16 +104,18 @@ const Testimonials = () => {
                   <div className="mb-4">
                     <img
                       src={data.img}
-                      alt={(data as { title?: string }).title}
+                      alt={`${data.name} photo`}
+                      width={80}
+                      height={80}
                       className="rounded-full w-20 h-20"
                     />
                   </div>
                   <div className="flex flex-col items-center gap-4">
                     <div className="space-y-3">
                       <p className="text-xs text-gray-500 dark:text-primary/80">{data.text}</p>
-                      <h1 className="text-xl font-bold text-black/80 dark:text-primary/80">
+                      <h3 className="text-xl font-bold text-black/80 dark:text-primary/80">
                         {data.name}
-                      </h1>
+                      </h3>
                     </div>
                   </div>
                   <p className="text-black/20 text-9xl dark:text-primary/80 font-serif absolute top-0 right-0">
