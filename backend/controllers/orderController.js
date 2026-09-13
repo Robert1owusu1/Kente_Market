@@ -6,6 +6,7 @@ import Order from "../models/orderModel.js";
 import pool from "../config/db.js";
 import Coupon from "../models/couponModel.js";
 import isValidId from "../utils/isValidId.js";
+import { computeTopProductTypes } from "../utils/marketInsights.js";
 import paystackServices from "../Services/paystackservices.js";
 import { computeExpectedCompletion } from "../utils/computeExpectedCompletion.js";
 import { round2, calcSubtotal, calcTax, calcShipping, calcCouponDiscount, calcOrderTotals } from "../../shared/pricing.js";
@@ -462,6 +463,7 @@ export const updateOrderToDelivered = async (req, res) => {
       // Row was just updated; non-null.
       await Order.update(req.params.id, {
         orderStatus: "delivered",
+        deliveredAt: new Date(),
       })
     );
 
@@ -487,6 +489,16 @@ export const updateOrderToDelivered = async (req, res) => {
     }
 
     res.json({ message: "Order marked as delivered", order: updatedOrder });
+
+    // Auto-issue an authenticity certificate for every paid product once
+    // delivery is confirmed (idempotent — custom order certs were already
+    // issued at payment).
+    try {
+      const { issueCertificateForOrder } = await import('../Services/certificateService.js');
+      await issueCertificateForOrder(updatedOrder.id);
+    } catch (certErr) {
+      console.warn(`⚠️ Delivery cert auto-issue skipped: ${certErr.message}`);
+    }
   } catch (error) {
     console.error('Error marking order as delivered:', error);
     res.status(500).json({ message: "Internal server error" });
@@ -551,6 +563,16 @@ export const confirmOrderReceived = async (req, res) => {
       escrowStatus: updatedOrder?.escrowStatus,
       result,
     });
+
+    // Issue an authenticity certificate on receipt confirmation (the "gift
+    // buyers love the QR" use-case). Non-fatal: certs already exist for
+    // custom orders issued at payment.
+    try {
+      const { issueCertificateForOrder } = await import('../Services/certificateService.js');
+      await issueCertificateForOrder(req.params.id);
+    } catch (certErr) {
+      console.warn(`⚠️ Receipt cert auto-issue skipped: ${certErr.message}`);
+    }
   } catch (error) {
     console.error('Error confirming order received:', error);
     res.status(500).json({ message: "Internal server error" });
@@ -661,85 +683,13 @@ export const retryEscrowPayouts = async (req, res) => {
 // @route   GET /api/orders/top-product-types
 // @access  Private/Admin
 export const getTopProductTypes = async (req, res) => {
-  let connection;
   try {
     const { limit = 8 } = req.query;
-    connection = await pool.getConnection();
-
-    // Pull the catalog for category/pattern lookups.
-    const [catalogRows] = await connection.query(
-      `SELECT id, category, title, patternName, yards FROM product`
-    );
-    const catalog = new Map(catalogRows.map((p) => [String(p.id), p]));
-
-    const [orders] = await connection.execute(
-      `SELECT id, items, created_at
-       FROM orders
-       WHERE orderStatus != 'cancelled'
-       ORDER BY created_at DESC
-       LIMIT 2000`
-    );
-
-    const byCategory = new Map();
-    const byProduct = new Map();
-    let totalRevenue = 0;
-    let totalQty = 0;
-
-    const parseItems = (v) => (typeof v === 'string' ? (() => { try { return JSON.parse(v); } catch { return []; } })() : Array.isArray(v) ? v : []);
-    orders.forEach((order) => {
-      const items = parseItems(order.items);
-      items.forEach((item) => {
-        const pid = String(item.product || item.productId || item.id || '');
-        const name = item.title || item.name || 'Unknown Kente';
-        const category = item.category || (catalog.has(pid) && catalog.get(pid).category) || 'Uncategorised';
-        const qty = item.qty || item.quantity || 1;
-        const revenue = (item.price || 0) * qty;
-        totalRevenue += revenue;
-        totalQty += qty;
-
-        if (!byCategory.has(category)) {
-          byCategory.set(category, { category, quantity: 0, revenue: 0, products: new Set() });
-        }
-        const c = byCategory.get(category);
-        c.quantity += qty;
-        c.revenue += revenue;
-        if (pid) c.products.add(pid);
-
-        if (!byProduct.has(pid)) {
-          byProduct.set(pid, {
-            productId: pid,
-            name,
-            category,
-            patternName: catalog.has(pid) ? catalog.get(pid).patternName : null,
-            quantity: 0,
-            revenue: 0,
-          });
-        }
-        const p = byProduct.get(pid);
-        p.quantity += qty;
-        p.revenue += revenue;
-      });
-    });
-
-    const sortValues = (map) => [...map.values()].sort((a, b) => b.revenue - a.revenue);
-
-    res.json({
-      totalRevenue: parseFloat(totalRevenue.toFixed(2)),
-      totalQty,
-      topTypes: sortValues(byCategory).slice(0, parseInt(limit) || 8).map((c) => ({
-        category: c.category,
-        quantity: c.quantity,
-        revenue: parseFloat(c.revenue.toFixed(2)),
-        productCount: c.products.size,
-        share: totalRevenue > 0 ? parseFloat(((c.revenue / totalRevenue) * 100).toFixed(1)) : 0,
-      })),
-      topProducts: sortValues(byProduct).slice(0, parseInt(limit) || 8),
-    });
+    const insights = await computeTopProductTypes(parseInt(limit) || 8);
+    res.json(insights);
   } catch (error) {
     console.error('Error fetching top product types:', error);
     res.status(500).json({ message: "Internal server error" });
-  } finally {
-    if (connection) connection.release();
   }
 };
 

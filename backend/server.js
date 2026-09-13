@@ -61,6 +61,7 @@ import commissionRoutes from './routes/commissionRoutes.js';  // ⭐ NEW - Commi
 import moderationRoutes from './routes/moderationRoutes.js';  // ⭐ NEW - Product moderation
 import suggestionRoutes from './routes/suggestionRoutes.js';
 import customRequestRoutes from './routes/customRequestRoutes.js';  // 🆕 Custom orders  // ⭐ NEW - User suggestions
+import buybackRoutes from './routes/buybackRoutes.js';  // 🆕 Sell-back / borrow-back loop  // ⭐ NEW - User suggestions
 import { startCleanupSchedule } from './utils/cleanupJobs.js';
 
 // Setup __dirname for ES modules
@@ -248,6 +249,7 @@ app.get('/', (req, res) => {
 // API Routes
 app.use('/api/products', productRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api', buybackRoutes);  // 🆕 Sell-back loop (/api/orders/:id/buyback, /api/admin/buyback)
 app.use('/api/orders', orderRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/vendors', vendorRoutes);

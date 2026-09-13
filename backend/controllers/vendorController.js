@@ -282,6 +282,7 @@ export const createVendorProduct = async (req, res) => {
       patternName, patternMeaning, culturalSignificance, origin, weavingTechnique,
       yards, occasions, designStory, careInstructions, weight, wholesalePrice,
       retailPrice, madeToOrder, video, gallery, sku, stock, lowStockThreshold,
+      isRentable, rentPricePerDay,
     } = req.body;
 
     if (!title || !img || !price || !category) {
@@ -302,8 +303,9 @@ export const createVendorProduct = async (req, res) => {
          patternName, patternMeaning, culturalSignificance, origin, weavingTechnique,
          yards, occasions, designStory, careInstructions, weight, wholesalePrice,
          retailPrice, madeToOrder, video, gallery,
-         approvalStatus, approvalNote, approvedAt, stock, sku, lowStockThreshold)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         approvalStatus, approvalNote, approvedAt, stock, sku, lowStockThreshold,
+         isRentable, rentPricePerDay)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         title,
         img,
@@ -339,6 +341,8 @@ export const createVendorProduct = async (req, res) => {
         parseInt(stock) || 0,
         autoSku,
         parseInt(lowStockThreshold) || 0,
+        isRentable ? 1 : 0,
+        rentPricePerDay != null && rentPricePerDay !== '' ? parseFloat(rentPricePerDay) : null,
       ]
     );
     const [product] = await pool.execute(`SELECT * FROM product WHERE id = ?`, [result.insertId]);
@@ -374,6 +378,7 @@ export const updateVendorProduct = async (req, res) => {
       'patternName', 'patternMeaning', 'culturalSignificance', 'origin', 'weavingTechnique',
       'yards', 'occasions', 'designStory', 'careInstructions', 'weight', 'wholesalePrice',
       'retailPrice', 'madeToOrder', 'video', 'gallery', 'stock', 'sku', 'lowStockThreshold',
+      'isRentable', 'rentPricePerDay',
     ];
     const sets = [];
     const values = [];
@@ -382,10 +387,10 @@ export const updateVendorProduct = async (req, res) => {
         if (['colors', 'sizes', 'occasions', 'gallery'].includes(key)) {
           sets.push(`${key} = ?`);
           values.push(req.body[key] ? JSON.stringify(req.body[key]) : null);
-        } else if (['isCustomizable', 'madeToOrder'].includes(key)) {
+        } else if (['isCustomizable', 'madeToOrder', 'isRentable'].includes(key)) {
           sets.push(`${key} = ?`);
           values.push(req.body[key] ? 1 : 0);
-        } else if (['price', 'originalPrice', 'yards', 'weight', 'wholesalePrice', 'retailPrice'].includes(key)) {
+        } else if (['price', 'originalPrice', 'yards', 'weight', 'wholesalePrice', 'retailPrice', 'rentPricePerDay'].includes(key)) {
           sets.push(`${key} = ?`);
           values.push(req.body[key] !== '' && req.body[key] != null ? parseFloat(req.body[key]) : null);
         } else if (['stock', 'lowStockThreshold'].includes(key)) {
@@ -402,6 +407,24 @@ export const updateVendorProduct = async (req, res) => {
     await pool.execute(`UPDATE product SET ${sets.join(', ')} WHERE id = ?`, values);
 
     const [[updated]] = await pool.execute(`SELECT * FROM product WHERE id = ?`, [productId]);
+
+    // Fast path for back-in-stock alerts (safety-net sweep also runs hourly).
+    try {
+      const { processRestockForProduct } = await import('../Services/wishlistRestockService.js');
+      await processRestockForProduct(productId);
+    } catch (alertErr) {
+      console.warn(`⚠️ Restock alert skipped: ${alertErr.message}`);
+    }
+
+    // Fast path for price-drop alerts — notify wishlisted buyers who see a
+    // lower price than the snapshot they saved.
+    try {
+      const { processPriceDropsForProduct } = await import('../Services/wishlistPriceDropService.js');
+      await processPriceDropsForProduct(productId);
+    } catch (alertErr) {
+      console.warn(`⚠️ Price-drop alert skipped: ${alertErr.message}`);
+    }
+
     res.json({ message: 'Product updated', product: updated });
   } catch (error) {
     console.error('Error updating vendor product:', error);
@@ -728,7 +751,7 @@ export const updateVendorProfile = async (req, res) => {
 
     const {
       businessName, contactPhone, logo, coverImage, businessDescription,
-      weaverStory, yearsExperience, location, workshop, socialMedia,
+      weaverStory, yearsExperience, location, workshop, socialMedia, weaverVideo,
     } = req.body;
     const updates = {};
     if (businessName && businessName.trim()) {
@@ -746,6 +769,7 @@ export const updateVendorProfile = async (req, res) => {
     if (yearsExperience !== undefined) updates.yearsExperience = parseInt(yearsExperience) || 0;
     if (location !== undefined) updates.location = location;
     if (workshop !== undefined) updates.workshop = workshop;
+    if (weaverVideo !== undefined) updates.weaverVideo = weaverVideo;
     if (socialMedia !== undefined) {
       // Store only a whitelisted set of social fields (no arbitrary keys).
       const allowedSocial = ['facebook', 'instagram', 'twitter', 'youtube', 'tiktok', 'whatsapp'];
@@ -943,5 +967,106 @@ export const withdrawVendorBalance = async (req, res) => {
   } catch (error) {
     console.error('Error processing vendor withdrawal:', error);
     return res.status(500).json({ message: 'Failed to process withdrawal' });
+  }
+};
+// @desc    Public fulfilment scorecard for a vendor (on-time delivery %)
+export const getVendorFulfilment = async (req, res) => {
+  try {
+    const vendorId = parseInt(req.params.vendorId);
+    if (!vendorId || Number.isNaN(vendorId)) {
+      return res.status(400).json({ message: 'Invalid vendor ID' });
+    }
+    const { getVendorFulfilment } = await import('../Services/fulfilmentService.js');
+    const scorecard = await getVendorFulfilment(vendorId);
+    res.json(scorecard);
+  } catch (error) {
+    console.error('Error fetching fulfilment scorecard:', error);
+    res.status(500).json({ message: 'Failed to fetch fulfilment scorecard' });
+  }
+};
+
+// @desc    Admin vendor scorecard — churn predictors per vendor: on-time %,
+//          response time, review rating + verified orders. Kept as a separate
+//          lightweight endpoint so the admin vendors table can enrich rows
+//          without bloating the main list query.
+// @route   GET /api/vendors/admin-scorecard
+// @access  Private/Admin
+export const getAdminVendorScorecard = async (req, res) => {
+  try {
+    const [vendors] = await pool.execute(
+      `SELECT v.userId, v.businessName, v.status, v.verificationLevel
+       FROM vendors v
+       ORDER BY v.created_at DESC`
+    );
+    const { getVendorFulfilment } = await import('../Services/fulfilmentService.js');
+
+    const scorecards = await Promise.all(
+      vendors.map(async (v) => {
+        let onTimeRate = null;
+        try {
+          const f = await getVendorFulfilment(v.userId);
+          onTimeRate = f && f.withDeadline > 0 ? f.onTimeRate : null;
+        } catch (err) {
+          console.warn(`⚠️ Fulfilment scorecard failed for ${v.userId}: ${err.message}`);
+        }
+
+        const [[ratingRow]] = await pool.execute(
+          `SELECT COALESCE(AVG(r.vendorRating), 0) AS avgRating,
+                  COUNT(DISTINCT r.orderId) AS ratingCount
+           FROM reviews r
+           JOIN product p ON p.id = r.productId
+           WHERE p.vendorId = ? AND r.status = 'approved' AND r.isVerified = 1`,
+          [v.userId]
+        );
+
+        const [[slaRow]] = await pool.execute(
+          `SELECT COALESCE(AVG(TIMESTAMPDIFF(HOUR, created_at, updated_at)), 0) AS avgHours,
+                  COUNT(*) AS respondedCount
+           FROM custom_requests
+           WHERE vendorId = ? AND status IN ('quoted','accepted','paid','in_progress','completed')`,
+          [v.userId]
+        );
+
+        return {
+          userId: v.userId,
+          businessName: v.businessName,
+          status: v.status,
+          verificationLevel: v.verificationLevel,
+          onTimeRate: onTimeRate === null ? null : parseFloat(onTimeRate.toFixed(2)),
+          avgResponseHours: slaRow?.avgHours && slaRow.respondedCount > 0
+            ? Math.round(parseFloat(slaRow.avgHours))
+            : null,
+          responseCount: slaRow?.respondedCount || 0,
+          reviewRating: ratingRow?.avgRating ? parseFloat(ratingRow.avgRating).toFixed(1) : null,
+          verifiedOrders: ratingRow?.ratingCount || 0,
+        };
+      })
+    );
+
+    res.json(scorecards);
+  } catch (error) {
+    console.error('Error fetching admin vendor scorecard:', error);
+    res.status(500).json({ message: 'Failed to fetch vendor scorecard' });
+  }
+};
+
+// @desc    Vendor demand-prediction digest (which kente types buyers want)
+// @route   GET /api/vendors/insights
+// @access  Private (approved vendor, view_earnings)
+export const getVendorInsights = async (req, res) => {
+  try {
+    const { computeTopProductTypes } = await import('../utils/marketInsights.js');
+    const insights = await computeTopProductTypes(8);
+    const focus = insights.topTypes[0] || null;
+    res.json({
+      demand: insights,
+      focus,
+      tip: focus
+        ? `Focus weaving capacity on "${focus.category}" — it drives ${focus.share}% of marketplace sales.`
+        : 'No sales history yet — list products to start appearing in the digest.',
+    });
+  } catch (error) {
+    console.error('Error fetching vendor insights:', error);
+    res.status(500).json({ message: 'Failed to fetch demand insights' });
   }
 };

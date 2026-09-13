@@ -25,6 +25,46 @@ const createTransporter = () => {
   }
 };
 
+/**
+ * Should the app attempt real SMTP sends? Returns false (and logs once) when
+ * the transporter's credentials aren't configured, so every caller can safely
+ * fall back to in-app notifications without wrapping sendMail in try/catch.
+ */
+export const emailEnabled = () => {
+  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASSWORD) {
+    return false;
+  }
+  return process.env.ENABLE_EMAIL !== 'false';
+};
+
+/**
+ * Best-effort transactional email. Never throws: transactional emails (restock
+ * alerts, SLA escalations, vendor digests) must not break the business request
+ * that triggered them when SMTP is misconfigured. In-app notifications remain
+ * the primary channel; this is the delivery enhancement.
+ */
+export const sendEmailSafely = async (email, subject, html) => {
+  if (!email || !subject || !html) return false;
+  if (!emailEnabled()) {
+    console.warn(`⏭️  Email disabled/skipped for "${subject}" -> ${email} (set EMAIL_USER/EMAIL_PASSWORD)`);
+    return false;
+  }
+  const transporter = createTransporter();
+  try {
+    const info = await transporter.sendMail({
+      from: process.env.EMAIL_FROM || 'Bonwire Kente <noreply@bonwirekente.com>',
+      to: email,
+      subject,
+      html,
+    });
+    console.log(`📧 Sent "${subject}" to ${email}: ${info.messageId}`);
+    return true;
+  } catch (error) {
+    console.error(`❌ Email failed for "${subject}" -> ${email}:`, error.message);
+    return false;
+  }
+};
+
 // Generate 6-digit OTP
 export const generateOTP = () => {
   return crypto.randomInt(100000, 999999).toString();

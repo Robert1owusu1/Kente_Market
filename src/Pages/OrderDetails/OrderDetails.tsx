@@ -18,6 +18,7 @@ import {
   FaUndo,
 } from 'react-icons/fa';
 import ReturnRequestModal from '../../components/ReturnRequest/ReturnRequestModal';
+import SellItBackModal from './SellItBackModal';
 
 const orderStatusStyles = {
   pending: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
@@ -79,6 +80,7 @@ const OrderDetails = () => {
   const navigate = useNavigate();
   const [confirming, setConfirming] = useState(false);
   const [showReturnModal, setShowReturnModal] = useState(false);
+  const [sellBackItem, setSellBackItem] = useState<LineItem | null>(null);
 
   const {
     data: order,
@@ -330,6 +332,37 @@ const OrderDetails = () => {
         </div>
       )}
 
+      {/* Sell it back */}
+      {order.orderStatus === 'delivered' && items.length > 0 && (
+        <div className="mb-6 bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 sm:p-6">
+          <div className="flex items-center justify-between gap-4 flex-wrap mb-3">
+            <div className="flex items-start gap-3">
+              <FaUndo className="text-primary mt-1" />
+              <div>
+                <h2 className="font-semibold text-gray-900 dark:text-white">Done with an item? Sell it back</h2>
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  Offer delivered kente back to the marketplace — we review it and reply with a buyback offer.
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {items.map((it, idx) => {
+              const pid = it?.productId ?? it?.product;
+              return (
+                <button
+                  key={idx}
+                  onClick={() => pid && setSellBackItem(it)}
+                  className="inline-flex items-center gap-2 px-4 py-2 border border-primary/40 text-primary rounded-lg hover:bg-primary/10 transition-colors font-medium text-sm"
+                >
+                  <FaUndo /> Sell {itemName(it)} back
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Items */}
         <div className="lg:col-span-2 bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 sm:p-6">
@@ -447,6 +480,15 @@ const OrderDetails = () => {
             setShowReturnModal(false);
             toast.success('Return request submitted');
           }}
+        />
+      )}
+
+      {/* Sell-It-Back Modal */}
+      {sellBackItem && (
+        <SellItBackModal
+          orderId={Number(id!)}
+          product={sellBackItem}
+          onClose={() => setSellBackItem(null)}
         />
       )}
     </div>

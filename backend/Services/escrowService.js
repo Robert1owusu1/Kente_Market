@@ -107,12 +107,28 @@ export const recomputeOrderEscrowStatus = async (orderId) => {
 /**
  * Create per-vendor escrow allocations from order items at order placement.
  * Items with a vendor-owned product produce an allocation keyed by vendorId.
+ *
+ * Custom orders may pass `options.advanceRatio` (0..1) to split each vendor's
+ * escrow into an up-front "advance" allocation (released to the vendor's
+ * balance at payment) and a "balance" allocation held until delivery —
+ * the 50/50 advance-escrow model. Both rows are created as 'pending' so they
+ * are held together by the usual payment-verification flow.
  * @param {number | string} orderId
  * @param {OrderLine[]} items
+ * @param {{ advanceRatio?: number }} [options]
  * @returns {Promise<number>} number of allocations created
  */
-export const createEscrowAllocations = async (orderId, items) => {
+export const createEscrowAllocations = async (orderId, items, { advanceRatio = 0 } = {}) => {
   if (!Array.isArray(items) || items.length === 0) return 0;
+
+  // Idempotency guard: never double-create escrow for an order (replaces the
+  // removed uq_escrow_order_vendor unique key, which also blocked splitting a
+  // custom order into advance + balance rows).
+  const [[existing]] = await pool.execute(
+    `SELECT COUNT(*) AS c FROM escrow_allocations WHERE orderId = ?`,
+    [parseInt(orderId)]
+  );
+  if ((existing?.c || 0) > 0) return 0;
 
   const productIds = items
     .map((it) => it?.product || it?.productId || it?.id)
@@ -141,8 +157,10 @@ export const createEscrowAllocations = async (orderId, items) => {
     vendorTotals.set(vendorId, (vendorTotals.get(vendorId) || 0) + qty * price);
   }
 
+  const ratio = Math.max(0, Math.min(1, parseFloat(advanceRatio) || 0));
+
   let created = 0;
-  for (const [vendorId, amount] of vendorTotals) {
+  for (const [vendorId] of vendorTotals) {
     // Resolve the effective commission via the commission engine:
     // product > vendor > category > global, then vendor override, then default.
     const productForVendor = [...productRows].find((p) => p.vendorId === vendorId);
@@ -152,11 +170,39 @@ export const createEscrowAllocations = async (orderId, items) => {
       category: productForVendor?.category,
     });
     const totalAmount = vendorTotals.get(vendorId) || 0;
+
+    if (ratio > 0 && totalAmount > 0) {
+      // 50/50 (or configured) advance escrow: split into advance + balance.
+      const advanceAmount = round2(totalAmount * ratio);
+      const balanceAmount = round2(totalAmount - advanceAmount);
+      const { platformFee: advanceFee } = calcEscrowFees(advanceAmount, feeRate, PLATFORM_FEE_RATE);
+      const { platformFee: balanceFee } = calcEscrowFees(balanceAmount, feeRate, PLATFORM_FEE_RATE);
+      if (advanceAmount > 0) {
+        await pool.execute(
+          `INSERT IGNORE INTO escrow_allocations
+             (orderId, vendorId, amount, platformFeeRate, platformFee, payoutAmount, status, allocationType)
+           VALUES (?, ?, ?, ?, ?, ?, 'pending', 'advance')`,
+          [orderId, vendorId, advanceAmount, feeRate, advanceFee, round2(advanceAmount - advanceFee)]
+        );
+        created += 1;
+      }
+      if (balanceAmount > 0) {
+        await pool.execute(
+          `INSERT IGNORE INTO escrow_allocations
+             (orderId, vendorId, amount, platformFeeRate, platformFee, payoutAmount, status, allocationType)
+           VALUES (?, ?, ?, ?, ?, ?, 'pending', 'balance')`,
+          [orderId, vendorId, balanceAmount, feeRate, balanceFee, round2(balanceAmount - balanceFee)]
+        );
+        created += 1;
+      }
+      continue;
+    }
+
     const { platformFee, payoutAmount } = calcEscrowFees(totalAmount, feeRate, PLATFORM_FEE_RATE);
     await pool.execute(
       `INSERT IGNORE INTO escrow_allocations (orderId, vendorId, amount, platformFeeRate, platformFee, payoutAmount, status)
        VALUES (?, ?, ?, ?, ?, ?, 'pending')`,
-      [orderId, vendorId, round2(amount), feeRate, platformFee, payoutAmount]
+      [orderId, vendorId, round2(totalAmount), feeRate, platformFee, payoutAmount]
     );
     created += 1;
   }

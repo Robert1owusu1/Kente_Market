@@ -167,6 +167,7 @@ export const updateVendorOrderStatus = async (req, res) => {
       orderStatus,
       ...(productionNote ? { productionNote } : {}),
       ...(finalCompletion ? { expectedCompletionDate: finalCompletion } : {}),
+      ...(orderStatus === 'delivered' ? { deliveredAt: new Date() } : {}),
     });
 
     // When marked delivered, start the escrow release window (same behaviour

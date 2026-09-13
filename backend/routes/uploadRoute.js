@@ -2,6 +2,7 @@ import express from 'express';
 import upload from '../middleware/uploadMiddleware.js';
 import { protect } from '../middleware/authMiddleware.js';
 import { uploadLimiter } from '../middleware/rateLimitMiddleware.js';
+import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
@@ -10,6 +11,34 @@ const router = express.Router();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Customer reference sketches (for custom kente requests): any authenticated
+// user may upload. Ownership is enforced via the <userId>-reference- file prefix.
+const referenceDir = path.join(__dirname, '../uploads/references');
+if (!fs.existsSync(referenceDir)) fs.mkdirSync(referenceDir, { recursive: true });
+
+const referenceStorage = multer.diskStorage({
+  destination: function (_req, _file, cb) { cb(null, referenceDir); },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const ext = path.extname(file.originalname);
+    cb(null, `${req.user?.id || 'anon'}-reference-${uniqueSuffix}${ext}`);
+  },
+});
+
+const referenceFileFilter = (req, file, cb) => {
+  const allowedTypes = /jpeg|jpg|png|gif|webp/;
+  const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+  const mimetype = allowedTypes.test(file.mimetype);
+  if (extname && mimetype) cb(null, true);
+  else cb(new Error('Only image files are allowed (jpeg, jpg, png, gif, webp)'), false);
+};
+
+const referenceUpload = multer({
+  storage: referenceStorage,
+  fileFilter: referenceFileFilter,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+});
 
 // Allow admins AND approved vendors to upload product images. Vendors create
 // and sell their own products, so they must be able to upload images too —
@@ -141,6 +170,69 @@ router.delete('/:filename', protect, adminOrVendor, (req, res) => {
     res.status(500).json({ 
       message: 'Failed to delete image: ' + error.message 
     });
+  }
+});
+
+// @desc    Upload a reference image for a custom kente request
+// @route   POST /api/upload/reference
+// @access  Private (any verified/authenticated user — customers too)
+router.post('/reference', protect, uploadLimiter, (req, res) => {
+  referenceUpload.single('image')(req, res, (err) => {
+    if (err) {
+      console.error('❌ Reference upload error:', err);
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(413).json({ message: 'File too large. Maximum size is 5MB.' });
+      }
+      if (err.message && err.message.includes('Only image files')) {
+        return res.status(400).json({ message: err.message });
+      }
+      return res.status(400).json({ message: err.message || 'Upload failed' });
+    }
+    if (!req.file) {
+      return res.status(400).json({ message: 'No file uploaded. Please select an image file.' });
+    }
+    try {
+      const imagePath = `/uploads/references/${req.file.filename}`;
+      res.status(200).json({
+        message: 'Reference image uploaded successfully',
+        image: imagePath,
+        filename: req.file.filename,
+        size: req.file.size,
+        mimetype: req.file.mimetype,
+      });
+    } catch {
+      if (req.file?.path && fs.existsSync(req.file.path)) {
+        try { fs.unlinkSync(req.file.path); } catch { /* best-effort */ }
+      }
+      res.status(500).json({ message: 'Reference upload failed' });
+    }
+  });
+});
+
+// @desc    Delete a reference image the caller uploaded
+// @route   DELETE /api/upload/reference/:filename
+// @access  Private (owner or admin)
+router.delete('/reference/:filename', protect, (req, res) => {
+  try {
+    const { filename } = req.params;
+    if (req.user.role !== 'admin') {
+      const ownerId = filename.split('-', 1)[0];
+      if (!ownerId || ownerId !== String(req.user.id)) {
+        return res.status(403).json({ message: 'You can only delete files you uploaded' });
+      }
+    }
+    const sanitized = path.basename(filename);
+    const filePath = path.join(__dirname, '../uploads/references', sanitized);
+    const dir = path.join(__dirname, '../uploads/references');
+    if (!filePath.startsWith(dir)) return res.status(403).json({ message: 'Invalid file path' });
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+      res.json({ message: 'Reference image deleted', filename: sanitized });
+    } else {
+      res.status(404).json({ message: 'File not found' });
+    }
+  } catch {
+    res.status(500).json({ message: 'Failed to delete reference image' });
   }
 });
 

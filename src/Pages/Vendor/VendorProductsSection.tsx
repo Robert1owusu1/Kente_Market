@@ -24,6 +24,9 @@ interface ProductForm {
   productionTime: string;
   printType: string;
   isCustomizable: boolean;
+  isRentable: boolean;
+  madeToOrder: boolean;
+  rentPricePerDay: string;
   colors: string;
   sizes: string;
   threadTypes: string;
@@ -40,6 +43,9 @@ const emptyForm: ProductForm = {
   productionTime: '',
   printType: '',
   isCustomizable: false,
+  isRentable: false,
+  madeToOrder: false,
+  rentPricePerDay: '',
   colors: '',
   sizes: '',
   threadTypes: '',
@@ -127,6 +133,9 @@ const VendorProductsSection = ({ vendorStatus }: { vendorStatus?: string }) => {
       productionTime: product.productionTime || '',
       printType: (product.printType as string) || '',
       isCustomizable: product.isCustomizable ? true : false,
+      isRentable: product.isRentable ? true : false,
+      madeToOrder: product.madeToOrder ? true : false,
+      rentPricePerDay: product.rentPricePerDay != null ? String(product.rentPricePerDay) : '',
       colors: Array.isArray(product.colors) ? product.colors.join(', ') : '',
       sizes: Array.isArray(product.sizes) ? product.sizes.join(', ') : '',
       threadTypes: Array.isArray(product.threadTypes) ? product.threadTypes.join(', ') : '',
@@ -165,6 +174,9 @@ const VendorProductsSection = ({ vendorStatus }: { vendorStatus?: string }) => {
       printType: form.printType.trim() || null,
       productionTime: form.productionTime ? parseInt(form.productionTime, 10) : null,
       isCustomizable: form.isCustomizable,
+      madeToOrder: form.madeToOrder,
+      isRentable: form.isRentable,
+      rentPricePerDay: form.isRentable && form.rentPricePerDay ? parseFloat(form.rentPricePerDay) : null,
       colors: form.colors ? form.colors.split(',').map((c) => c.trim()).filter(Boolean) : [],
       sizes: parsedYards,
       yards: parsedYards[0] || null,
@@ -346,10 +358,34 @@ const VendorProductsSection = ({ vendorStatus }: { vendorStatus?: string }) => {
                   </div>
                 </div>
 
-                <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-                  <input type="checkbox" name="isCustomizable" checked={form.isCustomizable} onChange={handleChange} className="w-4 h-4" />
-                  Customizable
-                </label>
+                <div className="flex flex-wrap gap-6 pt-2">
+                  <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                    <input type="checkbox" name="isCustomizable" checked={form.isCustomizable} onChange={handleChange} className="w-4 h-4" />
+                    Customizable
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                    <input type="checkbox" name="madeToOrder" checked={form.madeToOrder} onChange={handleChange} className="w-4 h-4" />
+                    Made to order
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                    <input type="checkbox" name="isRentable" checked={form.isRentable} onChange={handleChange} className="w-4 h-4" />
+                    Rentable
+                  </label>
+                  {form.isRentable && (
+                    <div className="flex items-center gap-2">
+                      <input
+                        name="rentPricePerDay"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={form.rentPricePerDay}
+                        onChange={handleChange}
+                        placeholder="Rent per day (GH₵)"
+                        className="w-40 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm"
+                      />
+                    </div>
+                  )}
+                </div>
 
                 <div className="flex justify-end gap-3 pt-4">
                   <button type="button" onClick={resetForm} className="px-6 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">
@@ -402,10 +438,25 @@ const VendorProductsSection = ({ vendorStatus }: { vendorStatus?: string }) => {
                           </div>
                         )}
                         <span className="font-medium text-gray-900 dark:text-white">{p.title}</span>
+                        {(p.isRentable || p.madeToOrder) && (
+                          <span className="inline-flex gap-1 ml-1">
+                            {p.isRentable && (
+                              <span className="text-[10px] font-semibold text-purple-700 dark:text-purple-300 bg-purple-100 dark:bg-purple-900/40 px-1.5 py-0.5 rounded-full">Rent</span>
+                            )}
+                            {p.madeToOrder && (
+                              <span className="text-[10px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/40 px-1.5 py-0.5 rounded-full">Made to order</span>
+                            )}
+                          </span>
+                        )}
                       </div>
                     </td>
                     <td className="px-6 py-4 text-gray-600 dark:text-gray-400">{p.category || '-'}</td>
-                    <td className="px-6 py-4 font-semibold text-primary">GH₵{parseFloat(String(p.price || 0)).toFixed(2)}</td>
+                    <td className="px-6 py-4">
+                      <span className="font-semibold text-primary">GH₵{parseFloat(String(p.price || 0)).toFixed(2)}</span>
+                      {p.isRentable && p.rentPricePerDay && (
+                        <span className="block text-xs text-gray-500 dark:text-gray-400">or GH₵{parseFloat(String(p.rentPricePerDay)).toFixed(2)}/day rent</span>
+                      )}
+                    </td>
                     <td className="px-6 py-4 text-gray-600 dark:text-gray-400">{p.rating ? `${p.rating} ⭐` : '-'}</td>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-2">

@@ -47,6 +47,20 @@ const tableExists = async (table) => {
   return !!(res && res.c > 0);
 };
 
+// Indexes are NOT columns: colExists() queries information_schema.COLUMNS, so
+// guarding an "ADD UNIQUE KEY" with colExists never fires the second time a
+// migration runs (re-running would crash with ER_DUP_KEYNAME). Check the real
+// index registry instead.
+const indexExists = async (table, indexName) => {
+  const [[res]] = await connection.query(
+    `SELECT COUNT(*) AS c
+     FROM information_schema.STATISTICS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND INDEX_NAME = ?`,
+    [table, indexName]
+  );
+  return !!(res && res.c > 0);
+};
+
 const addColumn = async (table, column, definition, log = true) => {
   if (!(await colExists(table, column))) {
     await connection.query(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
@@ -294,7 +308,7 @@ try {
   // exactly one review row per (user, product) and bumps isVerified/vendor
   // details on each new delivered-order review, so the old key stays valid.
   if (await colExists('reviews', 'orderId')) {
-    if (!(await colExists('reviews', 'uq_review_user_order_product'))) {
+    if (!(await indexExists('reviews', 'uq_review_user_order_product'))) {
       await connection.query(
         `ALTER TABLE reviews ADD UNIQUE KEY uq_review_user_order_product (orderId, userId, productId)`
       );
@@ -318,6 +332,92 @@ try {
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       UNIQUE KEY uq_product_sales_day (saleDate, productId)
     ) ENGINE=InnoDB`);
+
+  // ============================================================
+  // HONEST + SERVICE COMMITMENTS (discovery backlog)
+  // ============================================================
+  // Custom-request SLA: set once the first 48h-escalation notification goes
+  // out, so the scheduler never double-notifies a stale pending request.
+  await addColumn('custom_requests', 'sla_notified_at', `DATETIME NULL`);
+  // Fulfilment scorecard: real delivery timestamp so "met deadline %" is
+  // measured against expectedCompletionDate instead of guesswork.
+  await addColumn('orders', 'deliveredAt', `DATETIME NULL`);
+  // 50/50 advance escrow: tags which escrow split is the upfront advance
+  // (released at payment) vs. the balance (released on delivery).
+  await addColumn('escrow_allocations', 'allocationType',
+    `ENUM('standard','advance','balance') NOT NULL DEFAULT 'standard'`);
+  // The old uq_escrow_order_vendor constraint (orderId, vendorId) cannot hold
+  // BOTH the advance and the balance row for custom orders. Replace it with a
+  // plain index; createEscrowAllocations guards against double-creation in code.
+  // (An explicit orderId index must exist first — the FK on orders needs a
+  // leading orderId index to keep its constraint valid.)
+  if (!(await indexExists('escrow_allocations', 'idx_escrow_orderId'))) {
+    await connection.query(
+      `ALTER TABLE escrow_allocations ADD INDEX idx_escrow_orderId (orderId)`
+    );
+    console.log('✅ Added escrow_allocations idx_escrow_orderId');
+  }
+  if (await indexExists('escrow_allocations', 'uq_escrow_order_vendor')) {
+    await connection.query(`ALTER TABLE escrow_allocations DROP INDEX uq_escrow_order_vendor`);
+    console.log('✅ Dropped escrow_allocations uq_escrow_order_vendor (replaced by explicit guard)');
+  }
+  if (!(await indexExists('escrow_allocations', 'idx_escrow_order_vendor'))) {
+    await connection.query(
+      `ALTER TABLE escrow_allocations ADD INDEX idx_escrow_order_vendor (orderId, vendorId)`
+    );
+    console.log('✅ Added escrow_allocations idx_escrow_order_vendor');
+  }
+  // Wishlist restock dedupe: set when a wishlisted item is in stock *now*, so
+  // back-in-stock alerts fire only on a real 0 -> >0 transition.
+  await addColumn('wishlist', 'lastRestockNotifiedAt', `DATETIME NULL`);
+
+  // ============================================================
+  // BORROW-BACK / BUYBACK LOOP (customer returns ceremonial kente,
+  // platform re-stocks it so the cloth keeps circulating)
+  // ============================================================
+  await addTable('buyback_requests', `
+    CREATE TABLE IF NOT EXISTS buyback_requests (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      customerId INT NOT NULL,
+      orderId INT NOT NULL,
+      productId INT NOT NULL,
+      quantity INT NOT NULL DEFAULT 1,
+      conditionNote VARCHAR(500) NULL COMMENT 'described by the customer',
+      expectedPrice DECIMAL(10,2) NULL,
+      buybackPrice DECIMAL(10,2) NULL COMMENT 'admin-set offer',
+      status ENUM('pending','approved','declined') NOT NULL DEFAULT 'pending',
+      adminNote TEXT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      FOREIGN KEY (customerId) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (orderId) REFERENCES orders(id) ON DELETE CASCADE,
+      FOREIGN KEY (productId) REFERENCES product(id) ON DELETE CASCADE,
+      INDEX idx_buyback_customer (customerId),
+      INDEX idx_buyback_status (status)
+    ) ENGINE=InnoDB`);
+
+  // ============================================================
+  // PHASE 12 — TRUST + LIFECYCLE (vendor video, price-drop alerts, rentable)
+  // ============================================================
+
+  // S1: Vendor weaving video — YouTube or self-hosted mp4 URL shown on storefront
+  await addColumn('vendors', 'weaverVideo', `VARCHAR(500) NULL`);
+
+  // S6: Wishlist price-drop alerts — lastAlertedPrice tracks the baseline so we
+  // only email when the live price drops below it. lastPriceDropNotifiedAt
+  // debounces to one alert per reduction.
+  await addColumn('wishlist', 'lastAlertedPrice', `DECIMAL(12,2) NULL`);
+  await addColumn('wishlist', 'lastPriceDropNotifiedAt', `DATETIME NULL`);
+
+  // S10: Rent / rental — a "rent for occasions" flag on products lets buyers
+  // see a rent badge and ask the weaver about rental terms. No separate order
+  // flow yet — the Ask thread handles rental coordination.
+  await addColumn('product', 'isRentable', `TINYINT(1) NOT NULL DEFAULT 0`);
+  await addColumn('product', 'rentPricePerDay', `DECIMAL(10,2) NULL`);
+  if (!(await indexExists('product', 'idx_product_is_rentable'))) {
+    await connection.query(`ALTER TABLE product ADD INDEX idx_product_is_rentable (isRentable)`);
+    console.log('✅ Added product idx_product_is_rentable');
+  }
 
   // ============================================================
   // DEFAULTS

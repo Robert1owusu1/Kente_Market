@@ -2,16 +2,20 @@ import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useCart } from "../../Context/CartContext";
 import { useGetProductsDetailsQuery } from "../../slices/productsApiSlice";
-import { FaShoppingCart, FaChevronLeft, FaStore, FaCheckCircle, FaMagic } from "react-icons/fa";
+import { FaShoppingCart, FaChevronLeft, FaStore, FaCheckCircle, FaMagic, FaEnvelope, FaExclamationTriangle, FaStar, FaTags } from "react-icons/fa";
 import ProductReviews from "../../components/reviews/ProductReviews";
 import SocialShare from "../../components/SocialShare/SocialShare";
 import { resolveImageUrl } from "../../utils/imageUrl";
 import Seo from "../../components/Seo/Seo";
+import { useSelector } from "react-redux";
+import type { RootState } from "../../store";
+import AskModal from "../../components/Messages/AskModal";
 
 const ProductDetails = () => {
   const { id: productId } = useParams();
   const navigate = useNavigate();
   const { addToCart } = useCart();
+  const userInfo = useSelector((state: RootState) => state.auth?.userInfo);
 
   const { data: product, isLoading, error } = useGetProductsDetailsQuery(Number(productId!));
   const apiError = error as { data?: { message?: string }; error?: string } | undefined;
@@ -20,6 +24,7 @@ const ProductDetails = () => {
   const [selectedColor, setSelectedColor] = useState("");
   const [selectedYards, setSelectedYards] = useState("");
   const [quantity, setQuantity] = useState(1);
+  const [showAsk, setShowAsk] = useState(false);
 
   useEffect(() => {
     if (product) {
@@ -65,6 +70,13 @@ const ProductDetails = () => {
 
   const colors = product.colors || product.colorsAvailable || [];
   const yardsOptions = (product.yardsAvailable as string[] | undefined) || product.sizes || [];
+
+  // Honest stock signal: 0 => sold out, low threshold => "almost gone".
+  const stockRaw = product.in_stock ?? product.stock;
+  const stockLevel = stockRaw === undefined || stockRaw === null ? Number.MAX_SAFE_INTEGER : Number(stockRaw) || 0;
+  const isOutOfStock = stockLevel <= 0;
+  const isLowStock = !isOutOfStock && stockLevel <= 5;
+  const canAsk = Boolean(userInfo) && Boolean(product.vendorId) && userInfo?.id !== product.vendorId;
 
   const productJsonLd = product
     ? {
@@ -126,7 +138,7 @@ const ProductDetails = () => {
           <h1 className="text-2xl sm:text-3xl font-bold mb-4">{product.title}</h1>
 
           {product.vendorBusinessName && (
-            <div className="flex items-center gap-2 mb-4">
+            <div className="flex flex-wrap items-center gap-2 mb-4">
               <FaStore className="text-primary" />
               <span className="text-sm text-gray-600 dark:text-gray-300">
                 Sold by <span className="font-semibold text-gray-800 dark:text-white">{product.vendorBusinessName}</span>
@@ -136,13 +148,57 @@ const ProductDetails = () => {
                   <FaCheckCircle /> Verified
                 </span>
               )}
+
+              <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+                {Number(product.verifiedReviewCount) > 0 && (
+                  <span className="inline-flex items-center gap-1 text-xs text-emerald-700 dark:text-emerald-400 font-medium">
+                    <FaStar /> {product.verifiedReviewCount} verified order{Number(product.verifiedReviewCount) === 1 ? '' : 's'}
+                  </span>
+                )}
+                {product.isRentable && (
+                  <span className="inline-flex items-center gap-1 text-xs font-semibold text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-900/20 rounded-full px-3 py-1">
+                    <FaTags /> Rentable
+                    {product.rentPricePerDay ? ` — from GH₵${product.rentPricePerDay}/day` : ''}
+                  </span>
+                )}
+                {product.madeToOrder && !isOutOfStock && (
+                  <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 rounded-full px-3 py-1">
+                    Made to order{product.productionTime ? ` — ships in ${product.productionTime}` : ''}
+                  </span>
+                )}
+              </div>
+
+              {canAsk && (
+                <button
+                  onClick={() => setShowAsk(true)}
+                  className="ml-auto inline-flex items-center gap-1.5 text-xs font-semibold text-amber-600 dark:text-amber-400 border border-amber-300 dark:border-amber-700 rounded-full px-3 py-1 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition"
+                  aria-label="Ask the weaver a question"
+                >
+                  <FaEnvelope /> Ask the weaver
+                </button>
+              )}
             </div>
           )}
 
-          <p className="text-base sm:text-lg text-gray-600 dark:text-gray-300 mb-6">
+          <p className="text-base sm:text-lg text-gray-600 dark:text-gray-300 mb-2">
             {product.description || "No description available."}
           </p>
-          <p className="text-2xl font-semibold text-primary mb-6">GH₵{product.price}</p>
+          <div className="flex flex-wrap items-center gap-3 mb-6">
+            <p className="text-2xl font-semibold text-primary">GH₵{product.price}</p>
+            {isOutOfStock ? (
+              <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 rounded-full px-3 py-1">
+                <FaExclamationTriangle /> Sold out
+              </span>
+            ) : isLowStock ? (
+              <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded-full px-3 py-1">
+                <FaExclamationTriangle /> Only {stockLevel} left
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 rounded-full px-3 py-1">
+                <FaCheckCircle /> In stock
+              </span>
+            )}
+          </div>
 
           {/* Social Share */}
           <div className="mb-4">
@@ -215,20 +271,32 @@ const ProductDetails = () => {
             <div className="flex items-center bg-gray-100 dark:bg-gray-700 rounded-lg w-fit">
               <button
                 onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                className="px-4 py-2 text-xl hover:bg-gray-200 dark:hover:bg-gray-600 rounded-l-lg"
+                className="px-4 py-2 text-xl hover:bg-gray-200 dark:hover:bg-gray-600 rounded-l-lg disabled:opacity-40"
                 aria-label="Decrease quantity"
+                disabled={isOutOfStock}
               >
                 −
               </button>
-              <span className="w-12 text-center font-bold">{quantity}</span>
+              <span className="w-12 text-center font-bold">{isOutOfStock ? 0 : quantity}</span>
               <button
-                onClick={() => setQuantity(quantity + 1)}
-                className="px-4 py-2 text-xl hover:bg-gray-200 dark:hover:bg-gray-600 rounded-r-lg"
+                onClick={() => setQuantity(Math.min(quantity + 1, isLowStock ? stockLevel : quantity + 1))}
+                className="px-4 py-2 text-xl hover:bg-gray-200 dark:hover:bg-gray-600 rounded-r-lg disabled:opacity-40"
                 aria-label="Increase quantity"
+                disabled={isOutOfStock || (isLowStock && quantity >= stockLevel)}
               >
                 +
               </button>
             </div>
+            {isLowStock && !isOutOfStock && (
+              <p className="text-xs text-amber-600 dark:text-amber-400 mt-1.5">
+                Only {stockLevel} available — we'll tell you honestly before you pay.
+              </p>
+            )}
+            {isOutOfStock && (
+              <p className="text-sm text-red-600 dark:text-red-400 mt-1.5">
+                This piece is currently sold out. Ask the weaver (above) whether more yards are being woven.
+              </p>
+            )}
           </div>
 
           {/* Try It On + Add to cart */}
@@ -241,17 +309,19 @@ const ProductDetails = () => {
             </button>
             <button
               onClick={handleAddToCart}
-              className="flex-1 px-6 py-3 bg-gray-800 dark:bg-gray-100 dark:text-gray-800 text-white rounded-xl shadow-md hover:bg-gray-700 transition flex items-center justify-center gap-2"
+              disabled={isOutOfStock}
+              title={isOutOfStock ? 'This piece is sold out' : ''}
+              className="flex-1 px-6 py-3 bg-gray-800 dark:bg-gray-100 dark:text-gray-800 text-white rounded-xl shadow-md hover:bg-gray-700 transition flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-gray-800"
             >
               <FaShoppingCart />
-              Add to Cart
+              {isOutOfStock ? 'Sold out' : 'Add to Cart'}
             </button>
           </div>
 
           {product.isCustomizable && (
             <button
               onClick={() => navigate(`/customize/${product.id}`)}
-              className="w-full mt-3 px-6 py-3 border-2 border-primary text-primary dark:text-amber-300 rounded-xl font-semibold hover:bg-primary hover:text-white transition flex items-center justify-center gap-2"
+              className="w-full mt-3 px-6 py-3 border-2 border-primary text-primary dark:text-amber-300 rounded-xl font-semibold hover:bg-primary hover:text-white transition flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <FaMagic />
               Customize This Kente (Choose Colours, Thread & Yards)
@@ -265,6 +335,15 @@ const ProductDetails = () => {
         <ProductReviews productId={product.id} />
       </div>
     </div>
+
+    {showAsk && (
+      <AskModal
+        vendorId={product.vendorId}
+        vendorName={product.vendorBusinessName}
+        productId={product.id}
+        onClose={() => setShowAsk(false)}
+      />
+    )}
     </>
   );
 };

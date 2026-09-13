@@ -157,7 +157,8 @@ class CustomRequest {
                 CONCAT(c.firstName, ' ', c.lastName) AS customerName,
                 c.email AS customerEmail,
                 c.phone AS customerPhone,
-                p.title AS baseProductTitle
+                p.title AS baseProductTitle,
+                CASE WHEN r.status = 'pending' AND r.created_at < DATE_SUB(NOW(), INTERVAL 48 HOUR) THEN 1 ELSE 0 END AS slaOverdue
          FROM custom_requests r
          LEFT JOIN vendors v ON v.userId = r.vendorId
          LEFT JOIN users c ON c.id = r.customerId
@@ -235,7 +236,10 @@ class CustomRequest {
         `SELECT COUNT(*) AS total,
                 COALESCE(AVG(vendorQuotePrice), 0) AS avgQuote,
                 COALESCE(SUM(CASE WHEN adminReviewed = 0 THEN 1 ELSE 0 END), 0) AS unreviewed,
-                COALESCE(SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END), 0) AS paid
+                COALESCE(SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END), 0) AS paid,
+                COALESCE(SUM(
+                  CASE WHEN status = 'pending' AND created_at < DATE_SUB(NOW(), INTERVAL 48 HOUR) THEN 1 ELSE 0 END
+                ), 0) AS slaOverdue
          FROM custom_requests`
       );
 
@@ -253,6 +257,7 @@ class CustomRequest {
         avgQuote: parseFloat(parseFloat(agg.avgQuote).toFixed(2)),
         unreviewed: parseInt(agg.unreviewed) || 0,
         paid: parseInt(agg.paid) || 0,
+        slaOverdue: parseInt(agg.slaOverdue) || 0,
         statusCounts,
         topCancelReasons: cancelReasons,
       };

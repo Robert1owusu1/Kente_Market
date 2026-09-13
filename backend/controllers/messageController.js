@@ -220,6 +220,50 @@ export const getMyMessages = async (req, res) => {
   }
 };
 
+// @desc    Find the existing thread between this customer and a vendor
+//          (optionally about a specific product/order) so the UI never spawns
+//          duplicate conversations from share/ask links.
+// @route   GET /api/messages/thread?vendorId=&productId=&orderId=
+// @access  Private (the customer)
+export const findThread = async (req, res) => {
+  try {
+    const vendorId = req.query.vendorId ? parseInt(req.query.vendorId) : null;
+    const productId = req.query.productId ? parseInt(req.query.productId) : null;
+    const orderId = req.query.orderId ? parseInt(req.query.orderId) : null;
+
+    if (!vendorId) return res.status(400).json({ message: 'vendorId is required' });
+
+    let sql = `
+      SELECT m.id, m.subject, m.body, m.reply, m.status, m.created_at, m.replied_at,
+             m.vendorId, m.productId, m.orderId,
+             v.businessName, v.slug, v.logo,
+             p.title AS productTitle
+      FROM vendor_messages m
+      LEFT JOIN vendors v ON v.userId = m.vendorId
+      LEFT JOIN product p ON p.id = m.productId
+      WHERE m.customerId = ? AND m.vendorId = ?`;
+    const params = [req.user.id, vendorId];
+    if (productId) {
+      sql += ` AND m.productId = ?`;
+      params.push(productId);
+    }
+    if (orderId) {
+      sql += ` AND m.orderId = ?`;
+      params.push(orderId);
+    }
+    sql += ` ORDER BY m.created_at DESC LIMIT 1`;
+
+    const [rows] = await pool.execute(sql, params);
+    const thread = rows.length > 0 ? rows[0] : null;
+    res.json({
+      thread: thread ? (await attachPosts([thread]))[0] : null,
+    });
+  } catch (error) {
+    console.error('Error finding thread:', error);
+    res.status(500).json({ message: 'Failed to find thread' });
+  }
+};
+
 // @desc    All buyer <-> vendor messages (admin oversight)
 // @route   GET /api/messages/all
 // @access  Private (admin)

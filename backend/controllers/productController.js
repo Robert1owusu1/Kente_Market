@@ -73,7 +73,13 @@ const getProductById = asyncHandler(async (req, res) => {
     const product = await Product.findById(req.params.id);
 
     if (product) {
-      res.json(product);
+      // "X verified orders" — only confirmed-purchase (delivered) reviews count
+      // toward the trust badge shown next to a product's star rating.
+      const [[verifiedRow]] = await pool.execute(
+        `SELECT COUNT(*) AS cnt FROM reviews WHERE productId = ? AND isVerified = 1`,
+        [product.id]
+      );
+      res.json({ ...product, verifiedReviewCount: verifiedRow?.cnt || 0 });
     } else {
       res.status(404);
       throw new Error("Product not found");
@@ -189,6 +195,22 @@ const updateProduct = asyncHandler(async (req, res) => {
     }
 
     const updatedProduct = await Product.update(req.params.id, req.body);
+
+    // Fast path for back-in-stock alerts (safety-net sweep also runs hourly).
+    try {
+      const { processRestockForProduct } = await import('../Services/wishlistRestockService.js');
+      await processRestockForProduct(req.params.id);
+    } catch (alertErr) {
+      console.warn(`⚠️ Restock alert skipped: ${alertErr.message}`);
+    }
+
+    // Fast path for price-drop alerts (safety-net sweep also runs hourly).
+    try {
+      const { processPriceDropsForProduct } = await import('../Services/wishlistPriceDropService.js');
+      await processPriceDropsForProduct(req.params.id);
+    } catch (alertErr) {
+      console.warn(`⚠️ Price-drop alert skipped: ${alertErr.message}`);
+    }
 
     clearCache('products');
     res.json(updatedProduct);

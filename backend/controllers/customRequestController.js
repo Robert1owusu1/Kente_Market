@@ -5,7 +5,32 @@
 import pool from "../config/db.js";
 import CustomRequest from "../models/customRequestModel.js";
 import Order from "../models/orderModel.js";
-import { createEscrowAllocations } from "../Services/escrowService.js";
+import Notification from "../models/notificationModel.js";
+import {
+  createEscrowAllocations,
+  holdEscrowForOrder,
+  getOrderAllocations,
+  releaseAllocation,
+} from "../Services/escrowService.js";
+import { CUSTOM_ADVANCE_RATIO } from "../config/businessConfig.js";
+import { issueCertificateForOrder } from "../Services/certificateService.js";
+
+// Combine needed-for date + time into a contractually visible completion date.
+const completionFromRequest = (request) => {
+  if (!request.neededForDate) return null;
+  try {
+    // The driver hands back DATE columns as JS Date objects — normalise first.
+    const day = request.neededForDate instanceof Date
+      ? request.neededForDate.toISOString().slice(0, 10)
+      : String(request.neededForDate).slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
+    const d = new Date(`${day}T${request.neededForTime || '23:59'}:00`);
+    if (Number.isNaN(d.getTime())) return null;
+    return d;
+  } catch {
+    return null;
+  }
+};
 
 // Converts colours/threadTypes from either JSON arrays or CSV strings sent by forms.
 const toArray = (value) => {
@@ -94,6 +119,19 @@ export const createRequest = async (req, res) => {
       neededForTime,
     });
 
+    // Tell the vendor a request just landed so the 48h SLA clock is loud.
+    try {
+      await Notification.create({
+        userId: parseInt(vendorId),
+        type: "custom",
+        title: `New custom request #${request.id}`,
+        message: `A customer needs ${request.yards} yd of custom Kente${request.baseProductTitle ? ` inspired by "${request.baseProductTitle}"` : ""}. ${request.neededForDate || ""} ${request.neededForTime || ""}.`,
+        link: "/vendor/custom-requests",
+      });
+    } catch {
+      /* non-fatal */
+    }
+
     res.status(201).json({
       message: "Customization request sent to the vendor. You'll see it in your portal.",
       request,
@@ -127,6 +165,17 @@ export const acceptRequest = async (req, res) => {
       return res.status(400).json({ message: `Cannot accept a request in '${request.status}' status` });
     }
     const updated = await CustomRequest.update(request.id, { status: 'accepted' });
+    try {
+      await Notification.create({
+        userId: request.vendorId,
+        type: "custom",
+        title: `Quote accepted — request #${request.id}`,
+        message: "Your quote was accepted and the customer paid. Start weaving once funds are held.",
+        link: "/vendor/custom-requests",
+      });
+    } catch {
+      /* non-fatal */
+    }
     res.json({ message: "Quote accepted — proceed to payment.", request: updated });
   } catch (error) {
     console.error("❌ acceptRequest error:", error.message);
@@ -150,6 +199,17 @@ export const cancelRequest = async (req, res) => {
       status: 'cancelled',
       customerCancelReason: customerCancelReason ? String(customerCancelReason).trim() : null,
     });
+    try {
+      await Notification.create({
+        userId: request.vendorId,
+        type: "custom",
+        title: `Request #${request.id} cancelled by customer`,
+        message: customerCancelReason ? `Reason: ${customerCancelReason.trim().slice(0, 300)}` : "The customer cancelled this request.",
+        link: "/vendor/custom-requests",
+      });
+    } catch {
+      /* non-fatal */
+    }
     res.json({ message: "Request cancelled. Your reason helps us improve.", request: updated });
   } catch (error) {
     console.error("❌ cancelRequest error:", error.message);
@@ -187,6 +247,7 @@ export const checkoutRequest = async (req, res) => {
         qty: 1,
         quantity: 1,
         price,
+        vendorId: request.vendorId,
         image: request.referenceImage || null,
         customRequestId: request.id,
         selectedColor: request.dominantColour || null,
@@ -212,15 +273,58 @@ export const checkoutRequest = async (req, res) => {
       discount: 0,
       notes: notes || `Custom kente request #${request.id} — vendor: ${request.vendorBusinessName}. Needed by: ${request.neededForDate} ${request.neededForTime}`,
       paymentReference,
+      expectedCompletionDate: completionFromRequest(request),
     });
 
-    // Hold escrow immediately (custom orders are pre-paid).
-    await createEscrowAllocations(order.id, items);
+    // Hold escrow immediately (custom orders are pre-paid). Custom orders use
+    // a 50/50 split: the advance half is released to the weaver right away
+    // (into their withdrawable balance), the balance stays held until delivery.
+    await createEscrowAllocations(order.id, items, { advanceRatio: CUSTOM_ADVANCE_RATIO });
+    try {
+      await holdEscrowForOrder(order.id);
+      const allocations = await getOrderAllocations(order.id);
+      let advancesReleased = 0;
+      for (const allocation of allocations) {
+        if (allocation.allocationType === 'advance') {
+          const released = await releaseAllocation(allocation);
+          if (released.status === 'available') advancesReleased += 1;
+        }
+      }
+      if (advancesReleased > 0) {
+        console.log(`💰 Released ${advancesReleased} advance allocation(s) for custom order ${order.id}`);
+      }
+    } catch (escrowErr) {
+      console.warn(`⚠️ Advance escrow for order ${order.id} not released: ${escrowErr.message}`);
+    }
+
+    // Paid custom orders get their authenticity certificate automatically.
+    if (request.baseProductId) {
+      try {
+        await issueCertificateForOrder(order.id, {
+          productId: request.baseProductId,
+          issuedTo: `${req.user.firstName || ''} ${req.user.lastName || ''}`.trim() || 'Verified Customer',
+        });
+      } catch (certErr) {
+        console.warn(`⚠️ Auto-certificate for order ${order.id} skipped: ${certErr.message}`);
+      }
+    }
 
     const updated = await CustomRequest.update(request.id, {
       status: 'paid',
       orderId: order.id,
     });
+
+    try {
+      await Notification.create({
+        userId: request.vendorId,
+        type: "custom",
+        title: `Custom order received — request #${request.id}`,
+        message: `Payment of GHS ${price.toFixed(2)} confirmed. ${Math.round((CUSTOM_ADVANCE_RATIO || 0) * 100)}% released to you as an advance; the rest is held until delivery is confirmed.`,
+        link: "/vendor/custom-requests",
+      });
+    } catch {
+      /* non-fatal */
+    }
 
     res.status(201).json({
       message: "Payment received. Your custom order is now with the vendor.",
@@ -282,6 +386,17 @@ export const quoteRequest = async (req, res) => {
         : "Quote sent — the customer will see you can't meet their requested time.",
       request: updated,
     });
+    try {
+      await Notification.create({
+        userId: request.customerId,
+        type: "custom",
+        title: `Quote received for request #${request.id}`,
+        message: `${request.vendorBusinessName || "Your weaver"} quoted GHS ${quoteTotal.toFixed(2)}${canMeetFlag ? "" : " and can't meet your requested time"} — review and accept or cancel.`,
+        link: "/custom-requests",
+      });
+    } catch {
+      /* non-fatal */
+    }
   } catch (error) {
     console.error("❌ quoteRequest error:", error.message);
     res.status(500).json({ message: "Failed to submit quote" });
@@ -304,6 +419,17 @@ export const declineRequest = async (req, res) => {
       status: 'declined',
       vendorMessage: vendorMessage ? String(vendorMessage).trim().slice(0, 2000) : null,
     });
+    try {
+      await Notification.create({
+        userId: request.customerId,
+        type: "custom",
+        title: `Request #${request.id} declined`,
+        message: vendorMessage ? `The weaver said: "${vendorMessage.trim().slice(0, 300)}". Try another weaver or tweak your spec.` : "The weaver couldn't take this order. Try another weaver.",
+        link: "/custom-requests",
+      });
+    } catch {
+      /* non-fatal */
+    }
     res.json({ message: "Request declined. The customer has been notified.", request: updated });
   } catch (error) {
     console.error("❌ declineRequest error:", error.message);
@@ -323,6 +449,17 @@ export const startRequest = async (req, res) => {
       return res.status(400).json({ message: `Request must be paid before weaving starts (currently '${request.status}')` });
     }
     const updated = await CustomRequest.update(request.id, { status: 'in_progress' });
+    try {
+      await Notification.create({
+        userId: request.customerId,
+        type: "custom",
+        title: `Weaving started — request #${request.id}`,
+        message: "Your weaver has started on your custom Kente. We'll keep you posted.",
+        link: "/custom-requests",
+      });
+    } catch {
+      /* non-fatal */
+    }
     res.json({ message: "Marked as in progress.", request: updated });
   } catch (error) {
     console.error("❌ startRequest error:", error.message);

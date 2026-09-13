@@ -9,6 +9,30 @@ class Wishlist {
         `INSERT IGNORE INTO wishlist (userId, productId) VALUES (?, ?)`,
         [parseInt(userId), parseInt(productId)]
       );
+      // If the item is in stock right now, they can buy it immediately — no
+      // "back in stock" alert needed until the next 0 -> >0 transition.
+      const [[product]] = await connection.execute(
+        `SELECT stock, price FROM product WHERE id = ?`,
+        [parseInt(productId)]
+      );
+      if (product && parseInt(product.stock) > 0) {
+        await connection.execute(
+          `UPDATE wishlist
+           SET lastRestockNotifiedAt = NOW()
+           WHERE userId = ? AND productId = ? AND lastRestockNotifiedAt IS NULL`,
+          [parseInt(userId), parseInt(productId)]
+        );
+      }
+      // Snapshot the price it was saved at — the baseline a future price-drop
+      // alert compares against (only set once, so re-wishlisting keeps the
+      // original baseline and we never re-alert for the same level).
+      if (product && product.price != null) {
+        await connection.execute(
+          `UPDATE wishlist SET lastAlertedPrice = ?
+           WHERE userId = ? AND productId = ? AND lastAlertedPrice IS NULL`,
+          [parseFloat(product.price), parseInt(userId), parseInt(productId)]
+        );
+      }
       return await Wishlist.isInWishlist(userId, productId);
     } catch (err) {
       console.error("DB Error (Wishlist.add):", err.message);
@@ -41,6 +65,7 @@ class Wishlist {
       connection = await pool.getConnection();
       const [rows] = await connection.execute(
         `SELECT w.id, w.userId, w.productId, w.created_at,
+                w.lastAlertedPrice, w.lastPriceDropNotifiedAt,
                 p.title, p.img, p.price, p.originalPrice, p.rating, p.reviews, p.category
          FROM wishlist w
          LEFT JOIN product p ON p.id = w.productId

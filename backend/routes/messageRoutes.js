@@ -11,6 +11,7 @@ import {
   getMyMessages,
   getAllMessages,
   closeMessage,
+  findThread,
 } from '../controllers/messageController.js';
 
 // POST /api/messages → customer opens a message to a vendor
@@ -21,6 +22,10 @@ router.route('/all').get(protect, admin, getAllMessages);
 
 // GET /api/messages/me → messages the customer sent
 router.route('/me').get(protect, getMyMessages);
+
+// GET /api/messages/thread?vendorId=... → find (not duplicate) an existing
+// threaded conversation before raising a new share/ask enquiry.
+router.route('/thread').get(protect, findThread);
 
 // PUT /api/messages/:id/reply → vendor replies
 router.route('/:id/reply').put(protect, vendor, replyToMessage);

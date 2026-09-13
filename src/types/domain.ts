@@ -38,9 +38,16 @@ export interface Product {
   rating?: number;
   reviewsCount?: number;
   in_stock?: number | string;
+  stock?: number | string;
+  lowStockThreshold?: number;
   isActive?: boolean;
   featured?: boolean;
   isCustomizable?: boolean;
+  isRentable?: boolean;
+  rentPricePerDay?: number | string;
+  madeToOrder?: boolean;
+  verifiedReviewCount?: number;
+  sku?: string;
   fabricType?: string;
   patternName?: string;
   patternMeaning?: string;

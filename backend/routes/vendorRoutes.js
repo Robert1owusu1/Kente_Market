@@ -25,18 +25,29 @@ import {
   getPublicStorefront,
   getVendorDirectory,
   updateVendorVerification,
+  getAdminVendorScorecard,
 } from '../controllers/vendorController.js';
 import {
   getVendorOrders,
   updateVendorOrderStatus,
 } from '../controllers/vendorOrderController.js';
 import { getVendorMessages } from '../controllers/messageController.js';
+import { getVendorFulfilment, getVendorInsights } from '../controllers/vendorController.js';
 
 // Public: GET /api/vendors/store/:slugOrId → public storefront
 router.route('/store/:slugOrId').get(getPublicStorefront);
 
 // Public: GET /api/vendors/directory → approved vendors list
 router.route('/directory').get(getVendorDirectory);
+
+// Public: GET /api/vendors/fulfillment/:vendorId → on-time delivery scorecard
+router.route('/fulfillment/:vendorId').get(getVendorFulfilment);
+
+// GET /api/vendors/insights → demand-prediction digest (vendor)
+router.route('/insights').get(protect, vendorOrStaff, requireVendorPermission('view_earnings'), getVendorInsights);
+
+// GET /api/vendors/admin-scorecard → on-time%, response time, rating (admin only)
+router.route('/admin-scorecard').get(protect, admin, getAdminVendorScorecard);
 
 // GET /api/vendors/messages → messages received by the vendor
 router.route('/messages').get(protect, vendorOrStaff, requireVendorPermission('view_customers'), getVendorMessages);

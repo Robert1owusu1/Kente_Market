@@ -2,15 +2,16 @@ import React, { useState } from "react";
 import { useGetTopProductTypesQuery } from "../../../slices/ordersApiSlice";
 import { useGetReviewAnalyticsQuery } from "../../../slices/miscApiSlice";
 
-type Row = { category?: string; name?: string; productId?: number | string; patternName?: string | null; quantity?: number; revenue?: number; share?: number };
+type Row = { category?: string; name?: string; productId?: number | string; patternName?: string | null; quantity?: number; revenue?: number; share?: number; avgProductionDays?: number | null; cancellationRate?: number | null };
 
 export default function ProductTypeInsights() {
   const { data: types, isLoading, isError } = useGetTopProductTypesQuery();
   const { data: reviews, isLoading: loadingReviews } = useGetReviewAnalyticsQuery();
   const [tab, setTab] = useState<"types" | "products" | "reviews">("types");
 
-  const catRows: Row[] = types?.topTypes ?? [];
-  const prodRows: Row[] = types?.topProducts ?? [];
+  const view = (types ?? {}) as { topTypes?: Row[]; topProducts?: Row[]; totalRevenue?: number; totalQty?: number };
+  const catRows: Row[] = view.topTypes ?? [];
+  const prodRows: Row[] = view.topProducts ?? [];
   const maxRevenue = Math.max(1, ...catRows.map((r) => r.revenue ?? 0));
 
   const fmt = (n?: number) => Number(n ?? 0).toLocaleString();
@@ -46,7 +47,7 @@ export default function ProductTypeInsights() {
           {tab === "types" && (
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-5">
               <p className="mb-4 text-sm text-gray-600 dark:text-gray-400">
-                Total revenue: <span className="font-bold">GHS {fmt(types.totalRevenue)}</span> · {types.totalQty} items across {catRows.length} type(s)
+                Total revenue: <span className="font-bold">GHS {fmt(view.totalRevenue)}</span> · {view.totalQty} items across {catRows.length} type(s)
               </p>
               <div className="space-y-4">
                 {catRows.map((r) => (
@@ -65,6 +66,45 @@ export default function ProductTypeInsights() {
                     </div>
                   </div>
                 ))}
+              </div>
+
+              <div className="mt-6 overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
+                      <th className="py-2 pr-4">Unit economics</th>
+                      <th className="py-2 pr-4">Avg. production</th>
+                      <th className="py-2 pr-4">Avg. margin</th>
+                      <th className="py-2 pr-4">Ordering lead</th>
+                      <th className="py-2">Cancellation rate</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {catRows.map((r) => {
+                      const rev = r.revenue ?? 0;
+                      const qty = r.quantity ?? 0;
+                      const avgPrice = qty > 0 ? rev / qty : 0;
+                      return (
+                        <tr key={`economics-${r.category}`} className="border-b border-gray-100 dark:border-gray-800">
+                          <td className="py-2 pr-4 font-medium text-gray-800 dark:text-white">{r.category}</td>
+                          <td className="py-2 pr-4 text-gray-600 dark:text-gray-300">
+                            {r.avgProductionDays != null ? `~${Math.round(Number(r.avgProductionDays))} days` : '—'}
+                          </td>
+                          <td className="py-2 pr-4 text-gray-600 dark:text-gray-300">GHS {fmt(avgPrice)}/pc</td>
+                          <td className="py-2 pr-4 text-gray-600 dark:text-gray-300">
+                            {r.avgProductionDays != null ? `order ${Math.max(2, Math.round(Number(r.avgProductionDays)) - 1)} days ahead` : '—'}
+                          </td>
+                          <td className="py-2 text-gray-600 dark:text-gray-300">
+                            {r.cancellationRate != null ? `${Math.round(Number(r.cancellationRate) * 100)}%` : '—'}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                <p className="mt-3 text-xs text-gray-400 dark:text-gray-500">
+                  Production & cancellation lookback across delivered/cancelled orders — start weaving ahead of the lead time so buyers never wait.
+                </p>
               </div>
               {catRows.length === 0 && <p className="text-gray-400 text-sm">No sales yet to predict from.</p>}
             </div>
