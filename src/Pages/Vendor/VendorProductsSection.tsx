@@ -26,6 +26,8 @@ interface ProductForm {
   isCustomizable: boolean;
   colors: string;
   sizes: string;
+  threadTypes: string;
+  dominantThread: string;
 }
 
 const emptyForm: ProductForm = {
@@ -40,6 +42,8 @@ const emptyForm: ProductForm = {
   isCustomizable: false,
   colors: '',
   sizes: '',
+  threadTypes: '',
+  dominantThread: '',
 };
 
 const VendorProductsSection = ({ vendorStatus }: { vendorStatus?: string }) => {
@@ -125,6 +129,8 @@ const VendorProductsSection = ({ vendorStatus }: { vendorStatus?: string }) => {
       isCustomizable: product.isCustomizable ? true : false,
       colors: Array.isArray(product.colors) ? product.colors.join(', ') : '',
       sizes: Array.isArray(product.sizes) ? product.sizes.join(', ') : '',
+      threadTypes: Array.isArray(product.threadTypes) ? product.threadTypes.join(', ') : '',
+      dominantThread: (product.dominantThread as string) || '',
     });
     setImage(product.img || '');
     setShowForm(true);
@@ -136,6 +142,17 @@ const VendorProductsSection = ({ vendorStatus }: { vendorStatus?: string }) => {
     if (!form.price || isNaN(Number(form.price))) return toast.error('Valid price is required');
     if (!form.category) return toast.error('Please select a category');
     if (!image) return toast.error('Please upload a product image');
+
+    const parsedYards = form.sizes
+      ? form.sizes.split(',').map((s) => s.trim()).filter(Boolean)
+      : [];
+    if (parsedYards.some((yd) => Number(yd) <= 0 || Number(yd) % 2 !== 0)) {
+      return toast.error('Available yards must be even numbers (e.g. 2, 4, 6, 8, 10, 12)');
+    }
+
+    const parsedThreads = form.threadTypes
+      ? form.threadTypes.split(',').map((t) => t.trim()).filter(Boolean)
+      : [];
 
     const payload = {
       title: form.title.trim(),
@@ -149,7 +166,10 @@ const VendorProductsSection = ({ vendorStatus }: { vendorStatus?: string }) => {
       productionTime: form.productionTime ? parseInt(form.productionTime, 10) : null,
       isCustomizable: form.isCustomizable,
       colors: form.colors ? form.colors.split(',').map((c) => c.trim()).filter(Boolean) : [],
-      sizes: form.sizes ? form.sizes.split(',').map((s) => s.trim()).filter(Boolean) : [],
+      sizes: parsedYards,
+      yards: parsedYards[0] || null,
+      threadTypes: parsedThreads,
+      dominantThread: form.dominantThread.trim() || null,
     };
 
     try {
@@ -306,12 +326,23 @@ const VendorProductsSection = ({ vendorStatus }: { vendorStatus?: string }) => {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">Colors (comma separated)</label>
+                    <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">Colors used (comma separated)</label>
                     <input name="colors" value={form.colors} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700" placeholder="e.g. Black, Gold, Red" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">Sizes (comma separated)</label>
-                    <input name="sizes" value={form.sizes} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700" placeholder="e.g. S, M, L, XL" />
+                    <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">Available yards (comma separated, even numbers)</label>
+                    <input name="sizes" value={form.sizes} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700" placeholder="e.g. 2, 4, 6, 8, 10, 12" />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">Thread types (comma separated)</label>
+                    <input name="threadTypes" value={form.threadTypes} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700" placeholder="e.g. Cotton, Rayon, Silk" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">Dominant thread</label>
+                    <input name="dominantThread" value={form.dominantThread} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700" placeholder="e.g. Cotton" />
                   </div>
                 </div>
 

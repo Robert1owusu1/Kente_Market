@@ -48,6 +48,10 @@ export interface Product {
   colors?: string[];
   colorsAvailable?: string[];
   sizes?: string[];
+  yards?: number | string;
+  yardsAvailable?: number[] | string[];
+  threadTypes?: string[];
+  dominantThread?: string;
   material?: string;
   productionTime?: string;
   origin?: string;

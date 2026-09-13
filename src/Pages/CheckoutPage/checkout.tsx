@@ -504,7 +504,8 @@ export default function CheckoutPage() {
           price: parseFloat(String(item.price)),
           image: item.img || (item as unknown as { image?: string }).image,
           selectedColor: item.selectedColor,
-          selectedSize: item.selectedSize
+          selectedSize: item.selectedSize,
+          yards: item.yards ?? item.selectedSize ?? null
         })),
         totalAmount: parseFloat(total.toFixed(2)),
         shippingAddress: {

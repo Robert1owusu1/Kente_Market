@@ -48,6 +48,8 @@ const TrendingProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void 
       image: product.image || product.img,
       color: product.color,
       size: product.sizes ? product.sizes[0] : "M",
+      yards: (product.yardsAvailable as string[] | undefined)?.[0] ?? product.sizes?.[0] ?? product.size ?? "2",
+      yardsAvailable: (product.yardsAvailable as string[] | undefined) || product.sizes || [],
       quantity: 1,
       colorsAvailable: (product.colors_available || product.colorsAvailable || product.colors || [product.color?.toLowerCase()]) as string[],
       fabricType: product.fabric_type || product.fabricType || product.material,
@@ -282,7 +284,7 @@ const TrendingProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void 
                   {/* Product features */}
                   <div className='text-xs text-gray-600 dark:text-gray-300 space-y-1 pt-2 border-t border-gray-100 dark:border-gray-600'>
                     <p>Material: {data.fabric_type || data.fabricType || data.material}</p>
-                    {data.sizes && <p>Sizes: {Array.isArray(data.sizes) ? data.sizes.join(', ') : data.sizes}</p>}
+                    {data.sizes && <p>Available yards: {Array.isArray(data.sizes) ? data.sizes.join(', ') : data.sizes}</p>}
                     {data.reviews && <p>Reviews: {data.reviews}+ customers</p>}
                   </div>
 
