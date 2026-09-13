@@ -98,6 +98,19 @@ const Navbar = () => {
   // 📊 State Management
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const profileCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // The dropdown sits 8px below the avatar, so we keep it open with a short
+  // grace delay while the cursor crosses the gap — otherwise the menu closes
+  // before you can reach any of its items.
+  const openProfileMenu = () => {
+    if (profileCloseTimer.current) clearTimeout(profileCloseTimer.current);
+    setProfileMenuOpen(true);
+  };
+  const closeProfileMenu = () => {
+    if (profileCloseTimer.current) clearTimeout(profileCloseTimer.current);
+    profileCloseTimer.current = setTimeout(() => setProfileMenuOpen(false), 250);
+  };
   const [navVisible, setNavVisible] = useState(false);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -425,8 +438,8 @@ const Navbar = () => {
                     aria-haspopup="menu"
                     aria-expanded={profileMenuOpen}
                     onClick={() => setProfileMenuOpen((open) => !open)}
-                    onMouseEnter={() => setProfileMenuOpen(true)}
-                    onMouseLeave={() => setProfileMenuOpen(false)}
+                    onMouseEnter={openProfileMenu}
+                    onMouseLeave={closeProfileMenu}
                     onFocus={() => setProfileMenuOpen(true)}
                     onBlur={() => setTimeout(() => setProfileMenuOpen(false), 150)}
                   >
@@ -446,7 +459,11 @@ const Navbar = () => {
                     <FaCaretDown className="transition-all duration-200 group-hover:rotate-180" />
                   </div>
             
-                  <div className={`absolute z-[9999] ${profileMenuOpen ? 'block' : 'hidden'} w-[220px] right-0 rounded-lg bg-white dark:bg-gray-800 shadow-xl border dark:border-gray-700 mt-2`}>
+                  <div
+                    onMouseEnter={openProfileMenu}
+                    onMouseLeave={closeProfileMenu}
+                    className={`absolute z-[9999] ${profileMenuOpen ? 'block' : 'hidden'} w-[220px] right-0 rounded-lg bg-white dark:bg-gray-800 shadow-xl border dark:border-gray-700 mt-2`}
+                  >
                     <div className="px-4 py-3 border-b dark:border-gray-700">
                       <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
                         {getUserFullName()}
