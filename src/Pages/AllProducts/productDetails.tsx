@@ -18,15 +18,15 @@ const ProductDetails = () => {
 
   // ✅ Local states (sync with product once it loads)
   const [selectedColor, setSelectedColor] = useState("");
-  const [selectedSize, setSelectedSize] = useState("");
+  const [selectedYards, setSelectedYards] = useState("");
   const [quantity, setQuantity] = useState(1);
 
   useEffect(() => {
     if (product) {
       const colors = product.colors || product.colorsAvailable || [];
-      const sizes = product.sizes || [];
+      const yardsOptions = (product.yardsAvailable as string[] | undefined) || product.sizes || [];
       setSelectedColor(colors[0] || "default");
-      setSelectedSize(sizes[0] || "M");
+      setSelectedYards(yardsOptions[0] || "2");
       setQuantity(1);
     }
   }, [product]);
@@ -54,14 +54,17 @@ const ProductDetails = () => {
     addToCart({
       ...product,
       selectedColor,
-      selectedSize,
+      yards: selectedYards,
+      yardsAvailable: (product.yardsAvailable as string[] | undefined) || product.sizes || [],
+      threadTypes: product.threadTypes,
+      dominantThread: product.dominantThread,
       quantity,
     });
     // Optionally navigate to cart or open drawer
   };
 
   const colors = product.colors || product.colorsAvailable || [];
-  const sizes = product.sizes || [];
+  const yardsOptions = (product.yardsAvailable as string[] | undefined) || product.sizes || [];
 
   const productJsonLd = product
     ? {
@@ -168,27 +171,41 @@ const ProductDetails = () => {
             </div>
           )}
 
-          {/* Size selector */}
-          {sizes.length > 0 && (
+          {/* Yards selector */}
+          {yardsOptions.length > 0 && (
             <div className="mb-4">
-              <label className="block text-sm font-medium mb-2">Size:</label>
-              <div className="flex flex-wrap gap-2" role="group" aria-label="Size selection">
-                {sizes.map((size, idx) => (
+              <label className="block text-sm font-medium mb-2">Yards:</label>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Kente is measured in yards (even numbers).</p>
+              <div className="flex flex-wrap gap-2" role="group" aria-label="Yards selection">
+                {yardsOptions.map((yd, idx) => (
                   <button
                     key={idx}
-                    onClick={() => setSelectedSize(size)}
+                    onClick={() => setSelectedYards(String(yd))}
                     className={`px-4 py-2 rounded-lg border-2 transition-all duration-200 ${
-                      selectedSize === size
+                      selectedYards === String(yd)
                         ? "border-primary bg-primary text-white"
                         : "border-gray-300 dark:border-gray-600 text-gray-800 dark:text-white hover:border-primary"
                     }`}
-                    aria-label={`Size ${size}`}
-                    aria-pressed={selectedSize === size}
+                    aria-label={`${yd} yards`}
+                    aria-pressed={selectedYards === String(yd)}
                   >
-                    {size}
+                    {yd}
                   </button>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* Thread composition */}
+          {((product.threadTypes && product.threadTypes.length > 0) || product.dominantThread) && (
+            <div className="mb-6">
+              <label className="block text-sm font-medium mb-2">Thread:</label>
+              <p className="text-sm text-gray-600 dark:text-gray-300">
+                {product.threadTypes?.length ? product.threadTypes.join(", ") : "Traditional cotton"}{" "}
+                {product.dominantThread && (
+                  <span className="text-primary font-medium">— {product.dominantThread} dominates</span>
+                )}
+              </p>
             </div>
           )}
 

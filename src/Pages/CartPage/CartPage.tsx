@@ -28,13 +28,13 @@ interface CartItemProps {
   item: CartLine;
   onRemove: (item: CartLine) => void;
   onUpdateQuantity: (id: number | string, quantity: number) => void;
-  onUpdateSize: (id: number | string, size: string) => void;
+  onUpdateYards: (id: number | string, yards: number | string) => void;
   onUpdateColors: (id: number | string, colors: string[]) => void;
   isRemoving: boolean;
 }
 
 // Memoized Cart Item Component
-const CartItem = React.memo(({ item, onRemove, onUpdateQuantity, onUpdateSize, onUpdateColors, isRemoving }: CartItemProps) => {
+const CartItem = React.memo(({ item, onRemove, onUpdateQuantity, onUpdateYards, onUpdateColors, isRemoving }: CartItemProps) => {
   return (
     <div
       className={`group bg-white/80 backdrop-blur-xl rounded-3xl p-6 border border-white/20 shadow-xl hover:shadow-2xl transition-all duration-500 hover:-translate-y-1 dark:bg-gray-800/80 dark:border-gray-700 ${
@@ -81,30 +81,30 @@ const CartItem = React.memo(({ item, onRemove, onUpdateQuantity, onUpdateSize, o
               </p>
             </div>
 
-            {/* Size selection */}
-            {item.sizes && item.sizes.length > 0 && (
+            {/* Yards selection */}
+            {(item.yardsAvailable || (item.sizes && item.sizes.length > 0)) && (
               <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-600 dark:text-gray-300">Size</label>
-                <div className="flex gap-2" role="group" aria-label="Size selection">
-                  {item.sizes.map((size) => (
+                <label className="text-sm font-medium text-gray-600 dark:text-gray-300">Yards</label>
+                <div className="flex gap-2" role="group" aria-label="Yards selection">
+                  {(item.yardsAvailable || item.sizes || []).map((yd) => (
                     <button
-                      key={`${item.id}-size-${size}`}
-                      onClick={() => onUpdateSize(item.id, size)}
+                      key={`${item.id}-yards-${yd}`}
+                      onClick={() => onUpdateYards(item.id, String(yd))}
                       className={`w-12 h-12 rounded-xl border-2 text-sm font-medium transition-all duration-300 ${
-                        item.size === size
+                        (item.yards ?? item.size) === String(yd)
                           ? 'border-blue-500 bg-blue-500 text-white shadow-lg'
                           : 'border-gray-200 dark:border-gray-600 hover:border-blue-300 dark:hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-gray-700'
                       }`}
-                      aria-label={`Size ${size}`}
-                      aria-pressed={item.size === size}
+                      aria-label={`${yd} yards`}
+                      aria-pressed={(item.yards ?? item.size) === String(yd)}
                     >
-                      {size}
+                      {yd}
                     </button>
                   ))}
                 </div>
-                {!item.size && (
+                {!(item.yards ?? item.size) && (
                   <p className="text-xs text-amber-600 font-medium" role="alert">
-                    Please select a size
+                    Please select your yards
                   </p>
                 )}
               </div>
@@ -197,7 +197,7 @@ const CartPage = () => {
     cartItems,
     removeItem,
     updateItemQuantity,
-    updateItemSize,
+    updateItemYards,
     updateItemColors,
     getTotalPrice,
   } = useCart();
@@ -253,12 +253,12 @@ const CartPage = () => {
     // Validation - check for incomplete selections
     const orderItems = cartItems as CartLine[];
     const hasIncompleteItems = orderItems.some(item => 
-      (item.sizes && item.sizes.length > 0 && !item.size) ||
+      ((item.yardsAvailable || (item.sizes && item.sizes.length > 0)) && !(item.yards ?? item.size)) ||
       (item.colorsAvailable && item.colorsAvailable.length > 0 && (!item.colors || item.colors.length === 0))
     );
 
     if (hasIncompleteItems) {
-      toast.error("Please select size and color for all items before proceeding!");
+      toast.error("Please select yards and color for all items before proceeding!");
       return;
     }
 
@@ -270,7 +270,8 @@ const CartPage = () => {
         image: item.img,
         price: item.price,
         product: item.id,
-        size: item.size || null,
+        yards: item.yards ?? item.size ?? null,
+        size: item.yards ?? item.size ?? null,
         colors: item.colors || []
       })),
       totalAmount: totalPrice,
@@ -359,7 +360,7 @@ const CartPage = () => {
                   item={item}
                   onRemove={openRemoveModal}
                   onUpdateQuantity={updateItemQuantity}
-                  onUpdateSize={updateItemSize}
+                  onUpdateYards={updateItemYards}
                   onUpdateColors={updateItemColors}
                   isRemoving={removingItems.has(item.id)}
                 />
@@ -511,7 +512,7 @@ const CartPage = () => {
                   <div className="text-left">
                     <h4 className="font-semibold text-gray-800 dark:text-white">{itemToRemove.title}</h4>
                     <p className="text-sm text-gray-500 dark:text-gray-400">
-                      Size: {itemToRemove.size || 'Not selected'} | Qty: {itemToRemove.quantity}
+                      Yards: {itemToRemove.yards ?? itemToRemove.size ?? 'Not selected'} | Qty: {itemToRemove.quantity}
                     </p>
                     <p className="text-lg font-bold text-blue-600 dark:text-blue-400">
                       GH₵ {(itemToRemove.price * itemToRemove.quantity).toFixed(2)}

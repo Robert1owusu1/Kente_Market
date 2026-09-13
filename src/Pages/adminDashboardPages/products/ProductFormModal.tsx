@@ -181,6 +181,8 @@ interface ProductFormState {
   color: string;
   sizes: string;
   colors: string;
+  threadTypes: string;
+  dominantThread: string;
   rating: string;
   reviews: string;
   printType: string;
@@ -209,6 +211,8 @@ const ProductFormModal = ({ product, onClose, onSubmit, isLoading }: ProductForm
     color: (product?.color || '') as string,
     sizes: product?.sizes ? (Array.isArray(product.sizes) ? product.sizes.join(', ') : product.sizes) : '',
     colors: product?.colors ? (Array.isArray(product.colors) ? product.colors.join(', ') : product.colors) : '',
+    threadTypes: product?.threadTypes ? (Array.isArray(product.threadTypes) ? product.threadTypes.join(', ') : product.threadTypes) : '',
+    dominantThread: (product?.dominantThread as string) || '',
     rating: (product?.rating || '') as string,
     reviews: (product?.reviews || 0) as string,
     printType: (product?.printType || '') as string,
@@ -256,6 +260,11 @@ const ProductFormModal = ({ product, onClose, onSubmit, isLoading }: ProductForm
     }
 
     // Prepare data
+    const parsedYards = formData.sizes ? formData.sizes.split(',').map(s => s.trim()).filter(Boolean) : [];
+    if (parsedYards.some((yd) => Number(yd) <= 0 || Number(yd) % 2 !== 0)) {
+      toast.error('Available yards must be even numbers (e.g. 2, 4, 6, 8, 10, 12)');
+      return;
+    }
     const submitData = {
       ...formData,
       price: parseFloat(formData.price),
@@ -264,8 +273,11 @@ const ProductFormModal = ({ product, onClose, onSubmit, isLoading }: ProductForm
       rating: formData.rating ? parseFloat(formData.rating) : null,
       reviews: parseInt(formData.reviews) || 0,
       productionTime: formData.productionTime ? parseInt(formData.productionTime) : null,
-      sizes: formData.sizes ? formData.sizes.split(',').map(s => s.trim()).filter(Boolean) : [],
+      sizes: parsedYards,
+      yards: parsedYards[0] || null,
       colors: formData.colors ? formData.colors.split(',').map(c => c.trim()).filter(Boolean) : [],
+      threadTypes: formData.threadTypes ? formData.threadTypes.split(',').map(t => t.trim()).filter(Boolean) : [],
+      dominantThread: formData.dominantThread.trim() || null,
       vendorId: formData.vendorId ? parseInt(formData.vendorId, 10) : null,
     };
 
@@ -453,7 +465,7 @@ const ProductFormModal = ({ product, onClose, onSubmit, isLoading }: ProductForm
 
               <div>
                 <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
-                  Available Sizes (comma-separated)
+                  Available Yards (comma-separated, even numbers)
                 </label>
                 <input
                   type="text"
@@ -461,7 +473,35 @@ const ProductFormModal = ({ product, onClose, onSubmit, isLoading }: ProductForm
                   value={formData.sizes}
                   onChange={handleChange}
                   className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-600"
-                  placeholder="S, M, L, XL, XXL"
+                  placeholder="2, 4, 6, 8, 10, 12"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
+                  Thread Types (comma-separated)
+                </label>
+                <input
+                  type="text"
+                  name="threadTypes"
+                  value={formData.threadTypes}
+                  onChange={handleChange}
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                  placeholder="Cotton, Rayon, Silk"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
+                  Dominant Thread
+                </label>
+                <input
+                  type="text"
+                  name="dominantThread"
+                  value={formData.dominantThread}
+                  onChange={handleChange}
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                  placeholder="e.g., Cotton"
                 />
               </div>
 

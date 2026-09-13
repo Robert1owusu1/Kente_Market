@@ -114,7 +114,7 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
   // Enhanced cart handler
   const addToCartHandler = (product: ProductCardType) => {
     const productColors = product.colors || product.colorsAvailable || [];
-    const productSizes = product.sizes || ['One Size'];
+    const productSizes = (product.yardsAvailable as string[] | undefined) || product.sizes || ['2', '4', '6', '8'];
     
     const cartItem = {
       id: product.id,
@@ -126,6 +126,10 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
       colorsAvailable: productColors,
       colors: productColors,
       sizes: productSizes,
+      yards: productSizes[0],
+      yardsAvailable: productSizes,
+      threadTypes: product.threadTypes,
+      dominantThread: product.dominantThread,
       fabricType: product.fabricType || product.material || 'Cotton',
       material: product.material || product.fabricType || 'Cotton',
       printType: product.printType || 'Standard',
@@ -652,7 +656,7 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
 
             {allSizes.length > 0 && (
               <div className="mt-6">
-                <h3 className="font-semibold text-gray-800 dark:text-white mb-3">Sizes</h3>
+                <h3 className="font-semibold text-gray-800 dark:text-white mb-3">Yards</h3>
                 <div className="flex flex-wrap gap-2">
                   {allSizes.map(size => (
                     <button
@@ -670,7 +674,7 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
                           : 'border-gray-300 bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-white hover:border-gray-400'
                       }`}
                     >
-                      {size}
+                      {size} yd
                     </button>
                   ))}
                 </div>

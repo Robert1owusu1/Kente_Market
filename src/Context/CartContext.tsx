@@ -11,9 +11,13 @@ export interface CartItem {
   quantity: number;
   selectedColor?: string | null;
   selectedSize?: string | null;
+  yards?: number | string | null;
+  yardsAvailable?: (number | string)[];
   colors?: string[];
   colorsAvailable?: string[];
   sizes?: string[];
+  threadTypes?: string[];
+  dominantThread?: string;
   fabricType?: string;
   material?: string;
   productionTime?: string;
@@ -35,8 +39,12 @@ export interface CartPayload {
   quantity?: number;
   selectedColor?: string | null;
   selectedSize?: string | null;
+  yards?: number | string | null;
+  yardsAvailable?: (number | string)[] | null;
   colorsAvailable?: string[] | null;
   sizes?: string[] | null;
+  threadTypes?: string[];
+  dominantThread?: string;
   fabricType?: string;
   material?: string;
   productionTime?: string;
@@ -57,6 +65,7 @@ type CartAction =
   | { type: "REMOVE_FROM_CART"; payload: { id: number | string } }
   | { type: "UPDATE_ITEM_QUANTITY"; payload: { id: number | string; quantity: number } }
   | { type: "UPDATE_ITEM_SIZE"; payload: { id: number | string; size: string } }
+  | { type: "UPDATE_ITEM_YARDS"; payload: { id: number | string; yards: number | string } }
   | { type: "UPDATE_ITEM_COLORS"; payload: { id: number | string; colors: string[] } }
   | { type: "CLEAR_CART" };
 
@@ -66,6 +75,7 @@ interface CartContextValue {
   removeItem: (id: number | string) => void;
   updateItemQuantity: (id: number | string, quantity: number) => void;
   updateItemSize: (id: number | string, size: string) => void;
+  updateItemYards: (id: number | string, yards: number | string) => void;
   updateItemColors: (id: number | string, colors: string[]) => void;
   clearCart: () => void;
   getTotalPrice: () => number;
@@ -75,12 +85,19 @@ interface CartContextValue {
   cartCount: number;
 }
 
+const migrateCartItem = (item: CartItem): CartItem => {
+  if (item.yards === undefined && (item.selectedSize || item.size)) {
+    return { ...item, yards: item.selectedSize || item.size };
+  }
+  return item;
+};
+
 // Load cart from localStorage
 const getInitialCart = (): CartState => {
   try {
     const storedCart = localStorage.getItem("cartItems");
     return storedCart
-      ? { cartItems: JSON.parse(storedCart) as CartItem[] }
+      ? { cartItems: (JSON.parse(storedCart) as CartItem[]).map(migrateCartItem) }
       : { cartItems: [] };
   } catch (error) {
     console.error("Error loading cart from localStorage:", error);
@@ -93,12 +110,18 @@ const cartReducer = (state: CartState, action: CartAction): CartState => {
   switch (action.type) {
     case "ADD_TO_CART": {
       const newItem = action.payload;
+      const selectedYards =
+        newItem.yards ??
+        newItem.selectedSize ??
+        newItem.yardsAvailable?.[0] ??
+        newItem.sizes?.[0] ??
+        null;
 
       const existingIndex = state.cartItems.findIndex(
         (item) =>
           item.id === newItem.id &&
           item.selectedColor === newItem.selectedColor &&
-          item.selectedSize === newItem.selectedSize
+          (item.yards ?? item.selectedSize) === selectedYards
       );
 
       if (existingIndex !== -1) {
@@ -122,9 +145,13 @@ const cartReducer = (state: CartState, action: CartAction): CartState => {
             price: Number(newItem.price) || 0,
             basePrice: Number(newItem.basePrice) || Number(newItem.price) || 0,
             selectedColor: newItem.selectedColor || newItem.colorsAvailable?.[0] || null,
-            selectedSize: newItem.selectedSize || newItem.sizes?.[0] || null,
+            selectedSize: newItem.selectedSize || selectedYards,
+            yards: selectedYards,
+            yardsAvailable: newItem.yardsAvailable || newItem.sizes || [],
             colorsAvailable: newItem.colorsAvailable || [],
             sizes: newItem.sizes || [],
+            threadTypes: newItem.threadTypes || [],
+            dominantThread: newItem.dominantThread || null,
             fabricType: newItem.fabricType || newItem.material || "Cotton",
             material: newItem.material || newItem.fabricType || "Cotton",
             productionTime: newItem.productionTime || "3-5",
@@ -158,7 +185,17 @@ const cartReducer = (state: CartState, action: CartAction): CartState => {
         ...state,
         cartItems: state.cartItems.map((item) =>
           item.id === action.payload.id
-            ? { ...item, size: action.payload.size, selectedSize: action.payload.size }
+            ? { ...item, size: action.payload.size, selectedSize: action.payload.size, yards: action.payload.size }
+            : item
+        ),
+      };
+
+    case "UPDATE_ITEM_YARDS":
+      return {
+        ...state,
+        cartItems: state.cartItems.map((item) =>
+          item.id === action.payload.id
+            ? { ...item, yards: action.payload.yards, selectedSize: String(action.payload.yards) }
             : item
         ),
       };
@@ -216,6 +253,10 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
     dispatch({ type: "UPDATE_ITEM_SIZE", payload: { id, size } });
   };
 
+  const updateItemYards = (id: number | string, yards: number | string) => {
+    dispatch({ type: "UPDATE_ITEM_YARDS", payload: { id, yards } });
+  };
+
   const updateItemColors = (id: number | string, colors: string[]) => {
     dispatch({ type: "UPDATE_ITEM_COLORS", payload: { id, colors } });
   };
@@ -252,6 +293,7 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
         removeItem,
         updateItemQuantity,
         updateItemSize,
+        updateItemYards,
         updateItemColors,
         clearCart,
         getTotalPrice,

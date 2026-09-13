@@ -122,6 +122,9 @@ try {
   // Gallery photos (multiple) as JSON array in addition to primary img.
   await addColumn('product', 'gallery', `JSON NULL`);
   await addColumn('product', 'descriptionHTML', `TEXT NULL`);
+  // Kente yarn composition: thread types used (cotton, rayon, ...) + dominant one.
+  await addColumn('product', 'threadTypes', `JSON NULL`);
+  await addColumn('product', 'dominantThread', `VARCHAR(100) NULL`);
 
   // ============================================================
   // PRODUCT APPROVAL WORKFLOW + INVENTORY

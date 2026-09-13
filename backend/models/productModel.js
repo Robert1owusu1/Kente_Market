@@ -31,6 +31,8 @@ class Product {
     this.reviews = data.reviews;
     this.isCustomizable = !!data.isCustomizable;
     this.colors = data.colors;
+    this.threadTypes = data.threadTypes;
+    this.dominantThread = data.dominantThread || null;
     this.tag = data.tag;
     this.fabricType = data.fabricType;
     this.productionTime = data.productionTime;
@@ -149,6 +151,7 @@ class Product {
             ...row,
             sizes: safeParse(row.sizes),
             colors: safeParse(row.colors),
+            threadTypes: safeParse(row.threadTypes),
           })
       );
     } catch (err) {
@@ -186,6 +189,7 @@ class Product {
         ...rows[0],
         sizes: safeParse(rows[0].sizes),
         colors: safeParse(rows[0].colors),
+        threadTypes: safeParse(rows[0].threadTypes),
       });
     } catch (err) {
       console.error("DB Error (findById):", err.message);
@@ -243,6 +247,7 @@ class Product {
             ...row,
             sizes: safeParse(row.sizes),
             colors: safeParse(row.colors),
+            threadTypes: safeParse(row.threadTypes),
           })
       );
     } catch (err) {
@@ -279,8 +284,9 @@ class Product {
           patternName, patternMeaning, culturalSignificance, origin, weavingTechnique,
           yards, occasions, designStory, careInstructions, weight, wholesalePrice,
           retailPrice, madeToOrder, video, gallery, descriptionHTML,
+          threadTypes, dominantThread,
           approvalStatus, approvalNote, approvedAt, stock, sku, lowStockThreshold
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           productData.title.trim(),
           productData.img || null,
@@ -318,6 +324,8 @@ class Product {
           productData.video || null,
           productData.gallery ? JSON.stringify(productData.gallery) : null,
           productData.descriptionHTML || null,
+          JSON.stringify(productData.threadTypes || []),
+          productData.dominantThread || null,
           productData.approvalStatus || 'approved',
           productData.approvalNote || null,
           productData.approvedAt || null,
@@ -360,6 +368,7 @@ class Product {
         'sizes', 'printType', 'material', 'reviews', 'isCustomizable', 'colors',
         'tag', 'fabricType', 'productionTime', 'featured', 'basePrice', 'vendorId',
         'description',
+        'threadTypes', 'dominantThread',
         'patternName', 'patternMeaning', 'culturalSignificance', 'origin',
         'weavingTechnique', 'yards', 'occasions', 'designStory', 'careInstructions',
         'weight', 'wholesalePrice', 'retailPrice', 'madeToOrder', 'video', 'gallery',
@@ -373,7 +382,7 @@ class Product {
       Object.keys(updateData).forEach((key) => {
         if (updateData[key] !== undefined && allowedColumns.has(key)) {
           const jsonColumns = new Set([
-            'sizes', 'colors', 'occasions', 'gallery'
+            'sizes', 'colors', 'threadTypes', 'occasions', 'gallery'
           ]);
           const floatColumns = new Set([
             'price', 'originalPrice', 'basePrice', 'yards', 'weight',

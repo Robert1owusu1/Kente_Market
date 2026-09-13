@@ -51,6 +51,7 @@ type LineItem = {
   img?: string;
   selectedColor?: string | null;
   selectedSize?: string | null;
+  yards?: string | number | null;
   isCustomizable?: boolean;
 };
 
@@ -346,9 +347,10 @@ const OrderDetails = () => {
                 )}
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-gray-900 dark:text-white truncate">{itemName(it)}</p>
-                  {(it.selectedColor || it.selectedSize) && (
+                  {(it.selectedColor || it.selectedSize || it.yards) && (
                     <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {[it.selectedColor, it.selectedSize].filter(Boolean).join(' / ')}
+                      {[it.selectedColor, it.yards != null ? `${it.yards} yd` : it.selectedSize]
+                        .filter(Boolean).join(' / ')}
                     </p>
                   )}
                   <p className="text-sm text-gray-600 dark:text-gray-400">
