@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useCart } from "../../Context/CartContext";
 import { useGetProductsDetailsQuery } from "../../slices/productsApiSlice";
-import { FaShoppingCart, FaChevronLeft, FaStore, FaCheckCircle } from "react-icons/fa";
+import { FaShoppingCart, FaChevronLeft, FaStore, FaCheckCircle, FaMagic } from "react-icons/fa";
 import ProductReviews from "../../components/reviews/ProductReviews";
 import SocialShare from "../../components/SocialShare/SocialShare";
 import { resolveImageUrl } from "../../utils/imageUrl";
@@ -247,6 +247,16 @@ const ProductDetails = () => {
               Add to Cart
             </button>
           </div>
+
+          {product.isCustomizable && (
+            <button
+              onClick={() => navigate(`/customize/${product.id}`)}
+              className="w-full mt-3 px-6 py-3 border-2 border-primary text-primary dark:text-amber-300 rounded-xl font-semibold hover:bg-primary hover:text-white transition flex items-center justify-center gap-2"
+            >
+              <FaMagic />
+              Customize This Kente (Choose Colours, Thread & Yards)
+            </button>
+          )}
         </div>
       </div>
 

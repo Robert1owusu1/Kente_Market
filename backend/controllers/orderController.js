@@ -532,6 +532,17 @@ export const confirmOrderReceived = async (req, res) => {
     const result = await releaseEscrowForOrder(req.params.id);
     const updatedOrder = await Order.findById(req.params.id);
 
+    // Mark any custom kente request tied to this order as completed — the
+    // buyer has confirmed receipt and the weaver is paid.
+    try {
+      await pool.execute(
+        `UPDATE custom_requests SET status = 'completed'
+         WHERE orderId = ? AND status IN ('paid', 'in_progress')`,
+        [parseInt(req.params.id)]
+      );
+    } catch {
+      /* non-fatal */ }
+
     const failed = result.failed > 0;
     res.status(200).json({
       message: failed
@@ -642,6 +653,93 @@ export const retryEscrowPayouts = async (req, res) => {
   } catch (error) {
     console.error('Error retrying escrow payouts:', error);
     res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+// @desc    Get top product TYPES (categories) from orders — the "which kente
+//          styles are selling a lot" signal for admin predictions.
+// @route   GET /api/orders/top-product-types
+// @access  Private/Admin
+export const getTopProductTypes = async (req, res) => {
+  let connection;
+  try {
+    const { limit = 8 } = req.query;
+    connection = await pool.getConnection();
+
+    // Pull the catalog for category/pattern lookups.
+    const [catalogRows] = await connection.query(
+      `SELECT id, category, title, patternName, yards FROM product`
+    );
+    const catalog = new Map(catalogRows.map((p) => [String(p.id), p]));
+
+    const [orders] = await connection.execute(
+      `SELECT id, items, created_at
+       FROM orders
+       WHERE orderStatus != 'cancelled'
+       ORDER BY created_at DESC
+       LIMIT 2000`
+    );
+
+    const byCategory = new Map();
+    const byProduct = new Map();
+    let totalRevenue = 0;
+    let totalQty = 0;
+
+    const parseItems = (v) => (typeof v === 'string' ? (() => { try { return JSON.parse(v); } catch { return []; } })() : Array.isArray(v) ? v : []);
+    orders.forEach((order) => {
+      const items = parseItems(order.items);
+      items.forEach((item) => {
+        const pid = String(item.product || item.productId || item.id || '');
+        const name = item.title || item.name || 'Unknown Kente';
+        const category = item.category || (catalog.has(pid) && catalog.get(pid).category) || 'Uncategorised';
+        const qty = item.qty || item.quantity || 1;
+        const revenue = (item.price || 0) * qty;
+        totalRevenue += revenue;
+        totalQty += qty;
+
+        if (!byCategory.has(category)) {
+          byCategory.set(category, { category, quantity: 0, revenue: 0, products: new Set() });
+        }
+        const c = byCategory.get(category);
+        c.quantity += qty;
+        c.revenue += revenue;
+        if (pid) c.products.add(pid);
+
+        if (!byProduct.has(pid)) {
+          byProduct.set(pid, {
+            productId: pid,
+            name,
+            category,
+            patternName: catalog.has(pid) ? catalog.get(pid).patternName : null,
+            quantity: 0,
+            revenue: 0,
+          });
+        }
+        const p = byProduct.get(pid);
+        p.quantity += qty;
+        p.revenue += revenue;
+      });
+    });
+
+    const sortValues = (map) => [...map.values()].sort((a, b) => b.revenue - a.revenue);
+
+    res.json({
+      totalRevenue: parseFloat(totalRevenue.toFixed(2)),
+      totalQty,
+      topTypes: sortValues(byCategory).slice(0, parseInt(limit) || 8).map((c) => ({
+        category: c.category,
+        quantity: c.quantity,
+        revenue: parseFloat(c.revenue.toFixed(2)),
+        productCount: c.products.size,
+        share: totalRevenue > 0 ? parseFloat(((c.revenue / totalRevenue) * 100).toFixed(1)) : 0,
+      })),
+      topProducts: sortValues(byProduct).slice(0, parseInt(limit) || 8),
+    });
+  } catch (error) {
+    console.error('Error fetching top product types:', error);
+    res.status(500).json({ message: "Internal server error" });
+  } finally {
+    if (connection) connection.release();
   }
 };
 

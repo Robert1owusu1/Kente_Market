@@ -2,7 +2,7 @@
 // Full vendor dashboard with sidebar navigation (mirrors admin dashboard)
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { FaHome, FaBox, FaShoppingCart, FaChartLine, FaCog, FaStore, FaTag, FaPercent, FaStar, FaUndo, FaWallet, FaPlus, FaBoxes, FaEnvelope, FaUserCog } from 'react-icons/fa';
+import { FaHome, FaBox, FaShoppingCart, FaChartLine, FaCog, FaStore, FaTag, FaPercent, FaStar, FaUndo, FaWallet, FaPlus, FaBoxes, FaEnvelope, FaUserCog, FaClipboardList } from 'react-icons/fa';
 import { useGetMyVendorProfileQuery } from '../../slices/vendorsApiSlice';
 import Loader from '../../components/loader/Loader';
 import VendorOverview from './VendorOverview';
@@ -17,6 +17,7 @@ import VendorSettings from './VendorSettings';
 import VendorInventory from './VendorInventory';
 import VendorMessages from './VendorMessages';
 import VendorStaff from './VendorStaff';
+import VendorCustomRequests from './VendorCustomRequests';
 
 const menuItems = [
   { id: 'overview', name: 'Overview', icon: FaHome },
@@ -29,6 +30,7 @@ const menuItems = [
   { id: 'reviews', name: 'Reviews', icon: FaStar },
   { id: 'returns', name: 'Returns', icon: FaUndo },
   { id: 'coupons', name: 'Coupons', icon: FaPercent },
+  { id: 'customRequests', name: 'Custom Requests', icon: FaClipboardList },
   { id: 'payouts', name: 'Payouts', icon: FaWallet },
   { id: 'settings', name: 'Settings', icon: FaCog },
 ];
@@ -101,6 +103,8 @@ const VendorDashboard = () => {
         return <VendorReturns />;
       case 'coupons':
         return <VendorCoupons />;
+      case 'customRequests':
+        return <VendorCustomRequests />;
       case 'payouts':
         return <VendorPayouts />;
       case 'settings':

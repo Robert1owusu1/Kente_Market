@@ -48,6 +48,7 @@ export const apiSlice = createApi({
     'VendorCoupon',
     'VendorOrder',
     'Suggestions',
+    'CustomRequest',
   ],
   endpoints: () => ({}),
 });

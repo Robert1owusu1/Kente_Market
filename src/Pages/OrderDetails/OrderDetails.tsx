@@ -7,9 +7,8 @@ import {
   useConfirmOrderReceivedMutation,
 } from '../../slices/ordersApiSlice';
 import Loader from '../../components/loader/Loader';
-import {
-  IoMdArrowBack,
-} from 'react-icons/io';
+import { IoMdArrowBack } from 'react-icons/io';
+import OrderReviewPrompt from './OrderReviewPrompt';
 import {
   FaShoppingBag,
   FaTruck,
@@ -43,6 +42,8 @@ type EscrowStatusKey = 'none' | 'held' | 'releasing' | 'released' | 'failed';
 type LineItem = {
   name?: string;
   title?: string;
+  product?: number | string;
+  productId?: number | string;
   quantity?: number | string;
   qty?: number | string;
   price?: number | string;
@@ -300,6 +301,10 @@ const OrderDetails = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {escrowStatus === 'released' && (
+        <OrderReviewPrompt orderId={order.id as number | string} items={items} />
       )}
 
       {/* Return Request */}

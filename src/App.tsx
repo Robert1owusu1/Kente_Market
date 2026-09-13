@@ -76,6 +76,9 @@ const KenteMuseum = lazy(() => import('./Pages/Museum/KenteMuseum'));
 const SuggestionsPage = lazy(() => import('./Pages/Suggestions/SuggestionsPage'));
 const MyMessages = lazy(() => import('./Pages/Messages/MyMessages'));
 const MyCertificates = lazy(() => import('./Pages/Certificates/MyCertificates'));
+const CustomRequestForm = lazy(() => import('./Pages/CustomRequest/CustomRequestForm'));
+const MyCustomRequests = lazy(() => import('./Pages/CustomRequest/MyCustomRequests'));
+const CustomRequestCheckout = lazy(() => import('./Pages/CustomRequest/CustomRequestCheckout'));
 
 const App = () => {
   useEffect(() => {
@@ -186,6 +189,9 @@ const App = () => {
                 <Route path='/orders' element={<OrdersPage />} />
                 <Route path='/messages' element={<MyMessages />} />
                 <Route path='/certificates' element={<MyCertificates />} />
+                <Route path='/customize/:id' element={<CustomRequestForm />} />
+                <Route path='/custom-requests' element={<MyCustomRequests />} />
+                <Route path='/custom-requests/:id/checkout' element={<CustomRequestCheckout />} />
               </Route>
 
               {/* Vendor Dashboard - Standalone (NO Navbar) */}
