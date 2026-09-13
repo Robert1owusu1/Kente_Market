@@ -33,10 +33,22 @@ export const uploadApiSlice = apiSlice.injectEndpoints({
         method: 'DELETE',
       }),
     }),
+
+    // Upload a reference sketch for a custom kente request (customers are
+    // allowed — the backend guards ownership, not role, for this endpoint).
+    uploadReferenceImage: builder.mutation<UploadResult, FormData>({
+      query: (formData) => ({
+        url: '/api/upload/reference',
+        method: 'POST',
+        body: formData,
+        timeout: 120000,
+      }),
+    }),
   }),
 });
 
-export const { 
-  useUploadImageMutation, 
-  useDeleteImageMutation 
+export const {
+  useUploadImageMutation,
+  useDeleteImageMutation,
+  useUploadReferenceImageMutation,
 } = uploadApiSlice;

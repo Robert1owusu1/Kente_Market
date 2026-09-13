@@ -39,9 +39,12 @@ export default function CustomRequestsAdmin() {
     }
   };
 
-  const statCards: { label: string; value: number | string }[] = [
+  const slaOverdue = (stats as { slaOverdue?: number } | undefined)?.slaOverdue ?? 0;
+
+  const statCards: { label: string; value: number | string; alert?: boolean }[] = [
     { label: "Total requests", value: stats?.total ?? list.length },
     { label: "Awaiting follow-up call", value: unreviewedPending },
+    { label: "SLA overdue (48h)", value: slaOverdue, alert: slaOverdue > 0 },
     { label: "Avg. quoted (GHS)", value: stats?.avgQuote ? Number(stats.avgQuote).toLocaleString() : "—" },
     { label: "Paid & weaving", value: stats?.paid ?? 0 },
   ];
@@ -59,9 +62,9 @@ export default function CustomRequestsAdmin() {
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {statCards.map((s) => (
-          <div key={s.label} className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4">
+          <div key={s.label} className={`bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 ${s.alert ? 'ring-2 ring-red-500/60' : ''}`}>
             <p className="text-xs text-gray-500 dark:text-gray-400">{s.label}</p>
-            <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{s.value}</p>
+            <p className={`text-2xl font-bold mt-1 ${s.alert ? 'text-red-600 dark:text-red-400 animate-pulse' : 'text-gray-900 dark:text-white'}`}>{s.value}</p>
           </div>
         ))}
       </div>

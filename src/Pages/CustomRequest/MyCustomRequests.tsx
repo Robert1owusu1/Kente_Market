@@ -13,8 +13,8 @@ const STATUS_META: Record<CustomRequestStatus, { label: string; icon: React.Comp
   pending: { label: "Awaiting quote", icon: FaHourglassHalf, color: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300" },
   quoted: { label: "Quote received", icon: FaHandshake, color: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300" },
   accepted: { label: "Approved — awaiting payment", icon: FaCreditCard, color: "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300" },
-  paid: { label: "Paid — weaving", icon: FaHammer, color: "bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300" },
-  in_progress: { label: "In progress", icon: FaHammer, color: "bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300" },
+  paid: { label: "Paid — on the loom", icon: FaHammer, color: "bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300" },
+  in_progress: { label: "Cut & finished", icon: FaHammer, color: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300" },
   completed: { label: "Completed", icon: FaBoxOpen, color: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300" },
   cancelled: { label: "Cancelled", icon: FaTimes, color: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300" },
   declined: { label: "Declined", icon: FaTimes, color: "bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300" },
@@ -128,6 +128,9 @@ function RequestCard({ request }: { request: CustomRequest }) {
             ) : (
               <p className="text-xs text-amber-600 dark:text-amber-400">Range: cannot meet your exact date</p>
             )}
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              Pay at 50% now — the other half releases to the weaver when your kente is delivered.
+            </p>
           </div>
           {request.status === "quoted" ? (
             <div className="flex gap-2">
@@ -154,10 +157,20 @@ function RequestCard({ request }: { request: CustomRequest }) {
       )}
 
       {request.status === "paid" || request.status === "in_progress" ? (
-        <p className="text-sm text-teal-600 dark:text-teal-400 flex items-center gap-2">
-          <FaHammer /> Payment received — your weaver is on it. Track it in{" "}
-          <Link to={`/order/${request.orderId}`} className="underline">your order</Link>.
-        </p>
+        <div className="text-sm text-teal-600 dark:text-teal-400 flex flex-col gap-1">
+          <p className="flex items-center gap-2">
+            <FaHammer /> Payment received — your weaver is on it. Track it in{" "}
+            <Link to={`/order/${request.orderId}`} className="underline">your order</Link>.
+          </p>
+          <p className="flex items-center gap-2 text-xs opacity-80">
+            <FaCheckCircle /> Only half was taken now — the balance releases on delivery.
+            {request.orderId && (
+              <Link to="/certificates" className="underline text-primary">
+                View your certificate
+              </Link>
+            )}
+          </p>
+        </div>
       ) : null}
 
       {request.status === "cancelled" && request.customerCancelReason && (

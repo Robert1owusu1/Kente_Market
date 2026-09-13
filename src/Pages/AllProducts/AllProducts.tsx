@@ -18,12 +18,16 @@ type ProductCardType = Product & {
   productionTime?: string;
 };
 
+// Honest stock level for a product card (missing value = treat as in stock).
+const stockOf = (p: Product): number => {
+  const raw = p.in_stock ?? p.stock;
+  if (raw === undefined || raw === null) return Number.MAX_SAFE_INTEGER;
+  return Number(raw) || 0;
+};
+
 const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) => {
-  // ✅ Get URL search params
   const [searchParams, setSearchParams] = useSearchParams();
   const urlSearchQuery = searchParams.get('search') || '';
-
-  console.log('🔍 AllProducts - URL Search Query:', urlSearchQuery);
 
   // ✅ Pass search parameter to the query
   const { data: productsData, isLoading, error, refetch } = useGetProductsQuery(
@@ -281,6 +285,33 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
             }}
           />
           <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+
+          {(() => {
+            const rawStock = stockOf(product);
+            return rawStock === Number.MAX_SAFE_INTEGER || rawStock <= 0 ? (
+              <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                <span className="text-white text-xs font-semibold bg-red-600 px-3 py-1.5 rounded-full uppercase tracking-wide">Sold out</span>
+              </div>
+            ) : (
+              <div className="absolute top-2 right-2 flex flex-col items-end gap-1">
+                {rawStock <= 5 && (
+                  <span className="text-[10px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/70 px-2 py-0.5 rounded-full">
+                    Only {rawStock} left
+                  </span>
+                )}
+                {product.isRentable && (
+                  <span className="text-[10px] font-semibold text-purple-700 dark:text-purple-300 bg-purple-100 dark:bg-purple-900/70 px-2 py-0.5 rounded-full">
+                    Rentable
+                  </span>
+                )}
+                {product.madeToOrder && (
+                  <span className="text-[10px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/70 px-2 py-0.5 rounded-full">
+                    Made to order
+                  </span>
+                )}
+              </div>
+            );
+          })()}
           
           <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300 transform translate-y-4 group-hover:translate-y-0">
             <div className="flex gap-2">
@@ -289,7 +320,8 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
               </Link>
               <button 
                 onClick={() => addToCartHandler(product)}
-                className="p-3 bg-primary text-white rounded-full shadow-lg hover:bg-primary/90 transition-colors duration-200"
+                disabled={stockOf(product) <= 0}
+                className="p-3 bg-primary text-white rounded-full shadow-lg disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors duration-200"
               >
                 <FaShoppingCart />
               </button>

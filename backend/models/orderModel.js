@@ -248,7 +248,7 @@ static async findAll(options = {}) {
         'orderStatus', 'paymentStatus', 'paymentMethod', 'shippingCost',
         'tax', 'discount', 'notes', 'items', 'shippingAddress', 'billingAddress',
         'paymentReference', 'totalAmount', 'couponId', 'escrowStatus', 'escrowReleaseDeadline',
-        'expectedCompletionDate', 'productionNote'
+        'expectedCompletionDate', 'productionNote', 'deliveredAt'
       ];
 
       const fields = [];

@@ -37,6 +37,15 @@ export const ESCROW_RELEASE_DAYS = asNumber(process.env.ESCROW_RELEASE_DAYS, 'ES
   def: 7,
 });
 
+// Custom orders: share of the quote released to the weaver up-front at payment
+// (advance) — the remainder is held in escrow until delivery is confirmed.
+// 0.5 = 50% advance / 50% held.
+export const CUSTOM_ADVANCE_RATIO = asNumber(process.env.CUSTOM_ADVANCE_RATIO, 'CUSTOM_ADVANCE_RATIO', {
+  min: 0,
+  max: 0.9,
+  def: 0.5,
+});
+
 // Maximum AI try-on generations allowed per user per day (cost-control).
 export const AI_TRYON_DAILY_LIMIT = asNumber(process.env.AI_TRYON_DAILY_LIMIT, 'AI_TRYON_DAILY_LIMIT', {
   min: 1,

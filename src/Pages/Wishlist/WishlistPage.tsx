@@ -23,8 +23,17 @@ interface WishlistView {
   material?: string;
   productionTime?: string;
   reviews?: number;
+  in_stock?: boolean;
+  inStock?: boolean;
+  stock?: number | string;
+  stockQuantity?: number | string;
   [key: string]: unknown;
 }
+
+const stockOf = (p: WishlistView) => Number(p.stock ?? p.stockQuantity ?? 0) || 0;
+const stockKnown = (p: WishlistView) => typeof (p.stock ?? p.stockQuantity) !== "undefined";
+const soldOutOf = (p: WishlistView) => (stockKnown(p) && stockOf(p) <= 0) || p.in_stock === false || p.inStock === false;
+const lowStockOf = (p: WishlistView) => !soldOutOf(p) && stockOf(p) > 0 && stockOf(p) <= 5;
 
 const WishlistPage = () => {
   const { data: wishlistData = [], isLoading, error } = useGetMyWishlistQuery();
@@ -171,6 +180,18 @@ const WishlistPage = () => {
                   />
                 </Link>
 
+                {/* Sold out / low stock badges */}
+                {soldOutOf(data) && (
+                  <div className="absolute inset-0 bg-black/45 flex items-center justify-center">
+                    <span className="bg-white text-red-600 text-sm font-bold px-4 py-1.5 rounded-full uppercase tracking-wide">Sold out</span>
+                  </div>
+                )}
+                {!soldOutOf(data) && lowStockOf(data) && (
+                  <div className="absolute top-3 right-3 bg-amber-500 text-white text-xs px-2.5 py-1 rounded-full font-semibold shadow">
+                    Only {stockOf(data)} left
+                  </div>
+                )}
+
                 {/* Rating badge */}
                 <div className="absolute bottom-3 left-3 bg-white/90 backdrop-blur-sm text-gray-800 text-xs px-2 py-1 rounded-full flex items-center gap-1">
                   <FaStar className="text-yellow-400 text-[10px]" />
@@ -208,10 +229,11 @@ const WishlistPage = () => {
                 <div className="flex gap-2 pt-2 border-t border-gray-100 dark:border-gray-600">
                   <button
                     onClick={() => handleAddToCart(data)}
-                    className="flex-1 bg-gradient-to-r from-primary to-secondary hover:from-secondary hover:to-primary text-white py-2 px-3 rounded-lg font-medium transition-all duration-300 flex items-center justify-center gap-2"
+                    disabled={soldOutOf(data)}
+                    className="flex-1 bg-gradient-to-r from-primary to-secondary hover:from-secondary hover:to-primary text-white py-2 px-3 rounded-lg font-medium transition-all duration-300 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <FaShoppingCart className="text-sm" />
-                    Add to Cart
+                    {soldOutOf(data) ? "Sold out" : "Add to Cart"}
                   </button>
                   <button
                     onClick={() => handleRemove(data)}

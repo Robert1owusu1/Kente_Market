@@ -83,6 +83,17 @@ export const marketplaceApiSlice = apiSlice.injectEndpoints({
       providesTags: ["Messages"],
       keepUnusedDataFor: 10,
     }),
+    // Find an existing thread (vendor + product/order) so "Ask a question"
+    // CTAs reuse the conversation instead of spawning duplicates.
+    findMessageThread: builder.query<{ thread: VendorMessage | null }, { vendorId: number | string; productId?: number | string; orderId?: number | string }>({
+      query: ({ vendorId, productId, orderId }) => {
+        const params = new URLSearchParams({ vendorId: String(vendorId) });
+        if (productId) params.set("productId", String(productId));
+        if (orderId) params.set("orderId", String(orderId));
+        return { url: `/api/messages/thread?${params.toString()}`, method: "GET" };
+      },
+      keepUnusedDataFor: 30,
+    }),
     getAllMessages: builder.query<VendorMessage[], void>({
       query: () => ({ url: "/api/messages/all", method: "GET" }),
       providesTags: ["Messages"],
@@ -219,6 +230,7 @@ export const {
   useGetVendorMessagesQuery,
   useGetMyMessagesQuery,
   useGetAllMessagesQuery,
+  useFindMessageThreadQuery,
   useReplyToVendorMessageMutation,
   useReplyToCustomerMessageMutation,
   useCloseVendorMessageMutation,

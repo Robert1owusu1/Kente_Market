@@ -1,9 +1,10 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
-import { FaArrowLeft, FaMagic, FaStore, FaPalette, FaYarn, FaCalendarAlt } from "react-icons/fa";
+import { FaArrowLeft, FaMagic, FaStore, FaPalette, FaYarn, FaCalendarAlt, FaImage, FaSpinner, FaTrash } from "react-icons/fa";
 import { useGetProductsDetailsQuery } from "../../slices/productsApiSlice";
 import { useCreateCustomRequestMutation } from "../../slices/customRequestsApiSlice";
+import { useUploadReferenceImageMutation } from "../../slices/uploadApiSlice";
 import { resolveImageUrl } from "../../utils/imageUrl";
 import Seo from "../../components/Seo/Seo";
 
@@ -20,6 +21,9 @@ export default function CustomRequestForm() {
   const { data: product, isLoading, isError } = useGetProductsDetailsQuery(id as string);
 
   const [createRequest, { isLoading: submitting }] = useCreateCustomRequestMutation();
+  const [uploadReference, { isLoading: uploadingRef }] = useUploadReferenceImageMutation();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadError, setUploadError] = useState("");
 
   const productColours = useMemo(() => toList(product?.colors || product?.colorsAvailable), [product]);
   const productThreads = useMemo(() => toList(product?.threadTypes), [product]);
@@ -56,6 +60,38 @@ export default function CustomRequestForm() {
   };
 
   const minDate = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+  const handleReferenceFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    setUploadError("");
+    if (!file) return;
+    if (!/image\/(jpeg|jpg|png|gif|webp)/.test(file.type)) {
+      setUploadError("Please choose an image file (JPG, PNG, GIF or WebP).");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setUploadError("Image is too large — keep it under 5MB.");
+      return;
+    }
+    const formData = new FormData();
+    formData.append("image", file);
+    try {
+      const res = await uploadReference(formData).unwrap();
+      if (res.image) {
+        setReferenceImage(String(res.image));
+        toast.success("Reference image uploaded");
+      } else {
+        setUploadError("Upload didn't return an image URL. Try again.");
+      }
+    } catch (err) {
+      const msg = (err as { data?: { message?: string }; message?: string })?.data?.message ||
+        (err as { message?: string })?.message ||
+        "Upload failed — try again.";
+      setUploadError(msg);
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -238,15 +274,44 @@ export default function CustomRequestForm() {
               {/* Reference image */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Reference image URL (optional — paste a link to a photo or sketch)
+                  Reference image (optional — upload a photo or sketch of the pattern you'd like)
                 </label>
+                {referenceImage ? (
+                  <div className="relative w-40 h-40 rounded-xl overflow-hidden border-2 border-gray-200 dark:border-gray-600">
+                    <img
+                      src={resolveImageUrl(referenceImage)}
+                      alt="Reference sketch"
+                      className="w-full h-full object-cover"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setReferenceImage("")}
+                      className="absolute top-1 right-1 w-7 h-7 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-red-600 transition"
+                      aria-label="Remove reference image"
+                    >
+                      <FaTrash className="text-xs" />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploadingRef}
+                    className="w-full border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl p-6 flex flex-col items-center gap-2 text-gray-500 dark:text-gray-400 hover:border-primary hover:text-primary transition disabled:opacity-50"
+                  >
+                    {uploadingRef ? <FaSpinner className="animate-spin text-xl" /> : <FaImage className="text-2xl" />}
+                    <span className="text-sm font-medium">{uploadingRef ? "Uploading…" : "Click to upload a reference image"}</span>
+                    <span className="text-xs">JPG, PNG, GIF or WebP · up to 5MB</span>
+                  </button>
+                )}
                 <input
-                  type="text"
-                  value={referenceImage}
-                  onChange={(e) => setReferenceImage(e.target.value)}
-                  placeholder="https://…/sketch.jpg"
-                  className={fieldClass(false)}
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/gif,image/webp"
+                  onChange={handleReferenceFile}
+                  className="hidden"
                 />
+                {uploadError && <p className="text-xs text-red-500 mt-1">{uploadError}</p>}
               </div>
 
               {/* Timeline */}

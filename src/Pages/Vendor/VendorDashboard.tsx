@@ -18,6 +18,7 @@ import VendorInventory from './VendorInventory';
 import VendorMessages from './VendorMessages';
 import VendorStaff from './VendorStaff';
 import VendorCustomRequests from './VendorCustomRequests';
+import VendorInsights from './VendorInsights';
 
 const menuItems = [
   { id: 'overview', name: 'Overview', icon: FaHome },
@@ -26,6 +27,7 @@ const menuItems = [
   { id: 'inventory', name: 'Inventory', icon: FaBoxes },
   { id: 'messages', name: 'Messages', icon: FaEnvelope },
   { id: 'staff', name: 'Team', icon: FaUserCog },
+  { id: 'insights', name: 'Demand Insights', icon: FaChartLine },
   { id: 'analytics', name: 'Analytics', icon: FaChartLine },
   { id: 'reviews', name: 'Reviews', icon: FaStar },
   { id: 'returns', name: 'Returns', icon: FaUndo },
@@ -95,6 +97,8 @@ const VendorDashboard = () => {
         return <VendorMessages />;
       case 'staff':
         return <VendorStaff />;
+      case 'insights':
+        return <VendorInsights />;
       case 'analytics':
         return <VendorAnalytics />;
       case 'reviews':

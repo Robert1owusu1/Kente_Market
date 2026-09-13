@@ -2,7 +2,7 @@
 // DESCRIPTION: Enhanced Admin Dashboard with real data, analytics, and settings
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { FaHome, FaBox, FaShoppingCart, FaUsers, FaChartLine, FaCog, FaStore, FaTag, FaPercent, FaUndo, FaStar, FaEnvelope, FaListUl, FaClipboardCheck, FaCoins, FaCertificate, FaBullhorn, FaInbox, FaLightbulb, FaClipboardList, FaChartPie } from 'react-icons/fa';
+import { FaHome, FaBox, FaShoppingCart, FaUsers, FaChartLine, FaCog, FaStore, FaTag, FaPercent, FaUndo, FaStar, FaEnvelope, FaListUl, FaClipboardCheck, FaCoins, FaCertificate, FaBullhorn, FaInbox, FaLightbulb, FaClipboardList, FaChartPie, FaRecycle } from 'react-icons/fa';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, AreaChart, Area } from 'recharts';
 import ProductsPage from '../Pages/adminDashboardPages/products/ProductsPage';
 import OrdersPage from '../Pages/adminDashboardPages/Orders/OrdersPage';
@@ -21,6 +21,7 @@ import CertificatesAdminPage from '../Pages/adminDashboardPages/Certificates/Cer
 import InboxPage from '../Pages/adminDashboardPages/Inbox/InboxPage';
 import SuggestionsAdminPage from '../Pages/adminDashboardPages/Suggestions/SuggestionsAdminPage';
 import CustomRequestsAdminPage from '../Pages/adminDashboardPages/customRequests/CustomRequestsAdmin';
+import BuybackAdmin from '../Pages/adminDashboardPages/Buyback/BuybackAdmin';
 import ProductTypeInsights from '../Pages/adminDashboardPages/insights/ProductTypeInsights';
 import { useGetAllOrdersQuery } from '../slices/ordersApiSlice';
 import { useGetSettingsQuery, useUpdateSettingsMutation } from '../slices/settingsApiSlice';
@@ -165,6 +166,7 @@ const AdminDashboard = () => {
     { id: 'inbox', name: 'Inbox', icon: FaInbox },
     { id: 'suggestions', name: 'Suggestions', icon: FaLightbulb },
     { id: 'returns', name: 'Returns', icon: FaUndo },
+    { id: 'buyback', name: 'Sell-It-Back', icon: FaRecycle },
     { id: 'customRequests', name: 'Custom Requests', icon: FaClipboardList },
     { id: 'insights', name: 'Insights', icon: FaChartPie },
     { id: 'subscribers', name: 'Subscribers', icon: FaEnvelope },
@@ -607,6 +609,8 @@ const AdminDashboard = () => {
         return <SuggestionsAdminPage />;
       case 'returns':
         return <ReturnsPage />;
+      case 'buyback':
+        return <BuybackAdmin />;
       case 'customRequests':
         return <CustomRequestsAdminPage />;
       case 'insights':

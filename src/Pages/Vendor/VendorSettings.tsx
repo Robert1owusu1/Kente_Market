@@ -15,6 +15,7 @@ interface SettingsVendor extends Vendor {
   coverImage?: string;
   businessDescription?: string;
   weaverStory?: string;
+  weaverVideo?: string;
   yearsExperience?: string | number;
   location?: string;
   workshop?: string;
@@ -32,6 +33,7 @@ interface SettingsForm {
   coverImage: string;
   businessDescription: string;
   weaverStory: string;
+  weaverVideo: string;
   yearsExperience: string;
   location: string;
   workshop: string;
@@ -51,6 +53,7 @@ const VendorSettings = ({ vendor }: { vendor: SettingsVendor }) => {
     coverImage: vendor?.coverImage || '',
     businessDescription: vendor?.businessDescription || '',
     weaverStory: vendor?.weaverStory || '',
+    weaverVideo: vendor?.weaverVideo || '',
     yearsExperience: String(vendor?.yearsExperience || ''),
     location: vendor?.location || '',
     workshop: vendor?.workshop || '',
@@ -77,6 +80,7 @@ const VendorSettings = ({ vendor }: { vendor: SettingsVendor }) => {
         coverImage: form.coverImage.trim(),
         businessDescription: form.businessDescription.trim(),
         weaverStory: form.weaverStory.trim(),
+        weaverVideo: form.weaverVideo.trim(),
         yearsExperience: parseInt(form.yearsExperience) || 0,
         location: form.location.trim(),
         workshop: form.workshop.trim(),
@@ -165,6 +169,14 @@ const VendorSettings = ({ vendor }: { vendor: SettingsVendor }) => {
           <textarea name="weaverStory" value={form.weaverStory} onChange={handleChange} rows={4}
             className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
             placeholder="Share your craft, heritage and journey." />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            Weaver video URL <span className="text-gray-400 font-normal">(YouTube link or direct mp4 — shown on your storefront)</span>
+          </label>
+          <input name="weaverVideo" value={form.weaverVideo} onChange={handleChange}
+            placeholder="https://www.youtube.com/watch?v=... or https://.../weaving.mp4"
+            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white" />
         </div>
 
         <div>

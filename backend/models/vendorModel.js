@@ -45,6 +45,7 @@ class Vendor {
     this.socialMedia = safeParse(data.socialMedia) || {};
     this.verificationLevel = data.verificationLevel || 'pending';
     this.badges = safeParse(data.badges) || [];
+    this.weaverVideo = data.weaverVideo || null;
     // Joined user info
     this.firstName = data.firstName;
     this.lastName = data.lastName;
@@ -69,6 +70,7 @@ class Vendor {
       socialMedia: this.socialMedia,
       verificationLevel: this.verificationLevel,
       badges: this.badges,
+      weaverVideo: this.weaverVideo,
       status: this.status,
       firstName: this.firstName,
       lastName: this.lastName,
@@ -168,7 +170,7 @@ class Vendor {
       'bankCode', 'momoProvider', 'momoNumber', 'recipientCode', 'recipientType',
       'platformFeeRate', 'status', 'slug', 'logo', 'coverImage',
       'businessDescription', 'weaverStory', 'yearsExperience', 'location',
-      'workshop', 'socialMedia', 'verificationLevel', 'badges'
+      'workshop', 'socialMedia', 'verificationLevel', 'badges', 'weaverVideo'
     ];
     const sets = [];
     const values = [];
@@ -288,9 +290,28 @@ class Vendor {
       [vendor.userId]
     );
 
+    // Verified reviews (only confirmed-purchase reviews count toward "X verified orders").
+    const [[verifiedRow]] = await pool.execute(
+      `SELECT COUNT(*) AS cnt
+       FROM reviews r
+       JOIN product p ON p.id = r.productId
+       WHERE p.vendorId = ? AND r.status = 'approved' AND r.isVerified = 1`,
+      [vendor.userId]
+    );
+
+    // Response SLA — average time (hours) to respond to a custom request,
+    // proxied by created_at -> updated_at for requests that left 'pending'.
+    const [[slaRow]] = await pool.execute(
+      `SELECT COALESCE(AVG(TIMESTAMPDIFF(HOUR, created_at, updated_at)), 0) AS avgHours
+       FROM custom_requests
+       WHERE vendorId = ? AND status IN ('quoted','accepted','paid','in_progress','completed')`,
+      [vendor.userId]
+    );
+
     const [products] = await pool.execute(
       `SELECT p.id, p.title, p.img, p.price, p.originalPrice, p.category, p.tag,
-              p.rating, p.reviews, p.stock, p.material, p.yards, p.patternName
+              p.rating, p.reviews, p.stock, p.material, p.yards, p.patternName,
+              p.video, p.madeToOrder, p.productionTime, p.isRentable, p.rentPricePerDay
        FROM product p
        WHERE p.vendorId = ? AND p.approvalStatus = 'approved'
        ORDER BY p.created_at DESC
@@ -302,12 +323,17 @@ class Vendor {
       vendor: vendor.toPublic(),
       rating: parseFloat(prodRows[0]?.avgRating || 0).toFixed(1),
       reviewCount: prodRows[0]?.reviewCount || 0,
+      verifiedReviewCount: verifiedRow?.cnt || 0,
+      avgResponseHours: parseFloat(slaRow?.avgHours || 0) || null,
       productCount: countRow?.total || 0,
       products: products.map((p) => ({
         ...p,
         price: parseFloat(p.price) || 0,
         originalPrice: parseFloat(p.originalPrice) || null,
         rating: parseFloat(p.rating) || 0,
+        madeToOrder: !!p.madeToOrder,
+        isRentable: !!p.isRentable,
+        rentPricePerDay: p.rentPricePerDay ? parseFloat(p.rentPricePerDay) : null,
       })),
     };
   }

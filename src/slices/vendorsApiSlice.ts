@@ -199,6 +199,48 @@ export const vendorsApiSlice = apiSlice.injectEndpoints({
       }),
       invalidatesTags: ["Vendor"],
     }),
+
+    // ✅ Public fulfilment scorecard — on-time delivery record for a store.
+    getVendorFulfilment: builder.query<
+      { fulfilled: number; withDeadline: number; onTime: number; onTimeRate: number; avgDaysEarly: number },
+      number | string
+    >({
+      query: (vendorId) => ({
+        url: `${VENDORS_URL}/fulfillment/${vendorId}`,
+        method: "GET",
+      }),
+      keepUnusedDataFor: 300,
+    }),
+
+    // ✅ Admin: per-vendor performance scorecard (on-time %, response hours,
+    //    review rating, verified order count).
+    getAdminScorecard: builder.query<
+      Record<string | number, { onTimeRate: number; avgResponseHours: number | null; reviewRating: number; verifiedOrders: number }>,
+      void
+    >({
+      query: () => ({
+        url: `${VENDORS_URL}/admin-scorecard`,
+        method: "GET",
+      }),
+      keepUnusedDataFor: 60,
+    }),
+
+    // ✅ Demand insights for the vendor dashboard (weekly digest + on request).
+    getVendorInsights: builder.query<
+      {
+        demand: { totalRevenue: number; totalQty: number; topTypes: { category: string; quantity: number; revenue: number; productCount: number; share: number }[]; topProducts: { productId: string; name: string; category: string; patternName?: string | null; quantity: number; revenue: number; share?: number }[] };
+        focus: { category: string; quantity: number; revenue: number; productCount: number; share: number };
+        tip: string;
+      },
+      void
+    >({
+      query: () => ({
+        url: `${VENDORS_URL}/insights`,
+        method: "GET",
+      }),
+      providesTags: ["VendorInsights"],
+      keepUnusedDataFor: 300,
+    }),
   }),
 });
 
@@ -222,4 +264,7 @@ export const {
   useUpdateVendorStatusMutation,
   useGetVendorOrdersQuery,
   useUpdateVendorOrderStatusMutation,
+  useGetVendorFulfilmentQuery,
+  useGetVendorInsightsQuery,
+  useGetAdminScorecardQuery,
 } = vendorsApiSlice;

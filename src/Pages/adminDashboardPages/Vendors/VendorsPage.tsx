@@ -5,6 +5,7 @@ import { toast } from 'react-toastify';
 import {
   useGetAllVendorsQuery,
   useUpdateVendorStatusMutation,
+  useGetAdminScorecardQuery,
 } from '../../../slices/vendorsApiSlice';
 import { useUpdateVendorVerificationMutation } from '../../../slices/marketplaceApiSlice';
 
@@ -26,6 +27,7 @@ const ALL_BADGES = [
 
 interface VendorRow {
   id: number | string;
+  userId?: number | string;
   businessName: string;
   firstName: string;
   lastName: string;
@@ -66,6 +68,15 @@ const formatDate = (d: string) => {
   }
 };
 
+const responseLabel = (hours?: number | null) => {
+  const h = Number(hours);
+  if (!(h > 0) || !Number.isFinite(h)) return null;
+  if (h < 1) return '~1h';
+  if (h < 24) return `~${Math.ceil(h)}h`;
+  const days = h / 24;
+  return days < 7 ? `~${Math.round(days)}d` : `${Math.round(days / 7)}w`;
+};
+
 const maskAccount = (acc: string) => {
   if (!acc) return '—';
   return acc.length > 4 ? `•••• ${acc.slice(-4)}` : acc;
@@ -82,6 +93,14 @@ const VendorsPage = () => {
   );
   const [updateVendorStatus, { isLoading: updating }] = useUpdateVendorStatusMutation();
   const [updateVerification, { isLoading: savingVerification }] = useUpdateVendorVerificationMutation();
+  const { data: scorecard = {} } = useGetAdminScorecardQuery(undefined, {
+    skipPollingIfUnfocused: true,
+  });
+
+  const scoreOf = (v: VendorRow) => {
+    const key = v.userId ?? v.id;
+    return (scorecard as Record<string | number, { onTimeRate?: number; avgResponseHours?: number | null; reviewRating?: number; verifiedOrders?: number }>)[key];
+  };
 
   const handleStatus = useCallback(async (id: number | string, status: string) => {
     try {
@@ -183,6 +202,7 @@ const VendorsPage = () => {
                   <th>Contact</th>
                   <th>Payout Method</th>
                   <th>Fee</th>
+                  <th>Performance</th>
                   <th>Joined</th>
                   <th>Status</th>
                   <th>Verified</th>
@@ -216,6 +236,24 @@ const VendorsPage = () => {
                       </td>
                       <td className="text-sm text-gray-800 dark:text-white">
                         {((parseFloat(String(vr.platformFeeRate)) || 0) * 100).toFixed(1)}%
+                      </td>
+                      <td className="text-sm">
+                        {(() => {
+                          const s = scoreOf(vr);
+                          if (!s) {
+                            return <span className="text-gray-400 dark:text-gray-500 text-xs">—</span>;
+                          }
+                          return (
+                            <div className="space-y-0.5 text-xs">
+                              <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-400 font-medium">
+                                <FaAward /> On time {Math.round(Number(s.onTimeRate ?? 0) * 100)}%
+                              </span>
+                              <p className="text-gray-500 dark:text-gray-400">
+                                {responseLabel(s.avgResponseHours) ? `Replies within ${responseLabel(s.avgResponseHours)}` : 'No SLA data'} · {s.verifiedOrders ?? 0} verified · {Number(s.reviewRating ?? 0).toFixed(1)}★
+                              </p>
+                            </div>
+                          );
+                        })()}
                       </td>
                       <td className="text-sm text-gray-800 dark:text-white">{formatDate(vr.created_at)}</td>
                       <td>

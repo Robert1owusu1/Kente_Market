@@ -1,20 +1,21 @@
 // Pages/Storefront/VendorStorefront.jsx
 // Public single-vendor storefront with Kente provenance details + direct enquiry.
 import { useState } from 'react';
-import type React from 'react';
 import { useParams, Link } from 'react-router-dom';
 import {
   FaStar, FaMapMarkerAlt, FaSpinner, FaAward, FaMedal, FaEnvelope,
-  FaTimes, FaBoxOpen, FaLayerGroup, FaLeaf, FaLandmark, FaStore,
+  FaBoxOpen, FaLayerGroup, FaLeaf, FaLandmark, FaStore,
+  FaCheckCircle, FaVideo, FaReplyAll,
 } from 'react-icons/fa';
-import { toast } from 'react-toastify';
 import { resolveImageUrl } from '../../utils/imageUrl';
 import Seo from '../../components/Seo/Seo';
-import { useGetStorefrontQuery, useSendVendorMessageMutation } from '../../slices/marketplaceApiSlice';
+import { useGetStorefrontQuery } from '../../slices/marketplaceApiSlice';
+import { useGetVendorFulfilmentQuery } from '../../slices/vendorsApiSlice';
 import { formatCedi } from '../../utils/formatCurrency';
 import { useSelector } from 'react-redux';
 import type { RootState } from '../../store';
 import type { Product } from '../../types/domain';
+import AskModal from '../../components/Messages/AskModal';
 
 interface VendorView {
   id?: number | string;
@@ -27,6 +28,7 @@ interface VendorView {
   badges?: string[];
   businessDescription?: string;
   weaverStory?: string;
+  weaverVideo?: string;
   yearsExperience?: number | string;
   workshop?: string;
   [key: string]: unknown;
@@ -38,6 +40,8 @@ interface StorefrontView {
   rating?: number | string;
   reviewCount?: number | string;
   productCount?: number | string;
+  verifiedReviewCount?: number | string;
+  avgResponseHours?: number | string;
   [key: string]: unknown;
 }
 
@@ -57,80 +61,30 @@ const badgeLabels = {
   master_artisan: 'Master Artisan',
 } as const;
 
-const MessageModal = ({ vendor, userId, onClose }: {
-  vendor: VendorView;
-  userId?: number | string;
-  onClose: () => void;
-}) => {
-  const [subject, setSubject] = useState('');
-  const [body, setBody] = useState('');
-  const [productId] = useState('');
-  const [sendMessage, { isLoading }] = useSendVendorMessageMutation();
+// Honest stock labelling reused by product cards below.
+const stockOf = (p: Product): number => {
+  const raw = p.in_stock ?? p.stock;
+  if (raw === undefined || raw === null) return Number.MAX_SAFE_INTEGER;
+  return Number(raw) || 0;
+};
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    if (!subject.trim() || !body.trim()) {
-      toast.error('Subject and message are required');
-      return;
-    }
-    try {
-      await sendMessage({
-        vendorId: userId,
-        productId: productId ? parseInt(productId) : undefined,
-        subject: subject.trim(),
-        body: body.trim(),
-      }).unwrap();
-      toast.success('Message sent to store');
-      onClose();
-    } catch (err) {
-      const apiErr = err as { data?: { message?: string }; message?: string; error?: string } | undefined;
-      toast.error(apiErr?.data?.message || 'Failed to send message');
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-lg p-6" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-bold text-gray-900 dark:text-white">Message {vendor.businessName}</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
-            <FaTimes />
-          </button>
-        </div>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Subject</label>
-            <input
-              type="text"
-              value={subject}
-              onChange={(e) => setSubject(e.target.value)}
-              maxLength={255}
-              placeholder="e.g. Custom order in blue & gold"
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Message</label>
-            <textarea
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              maxLength={5000}
-              rows={4}
-              placeholder="Tell the weaver what you are looking for..."
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={isLoading}
-            className="w-full px-4 py-2.5 bg-amber-600 text-white rounded-lg font-semibold hover:bg-amber-700 disabled:opacity-60 flex items-center justify-center gap-2"
-          >
-            {isLoading ? <FaSpinner className="animate-spin" /> : <FaEnvelope />} Send Enquiry
-          </button>
-        </form>
-      </div>
-    </div>
+// Vendor bio video — YouTube embeds or a plain mp4 player.
+const videoEmbedUrl = (url?: string): string | null => {
+  if (!url) return null;
+  const match = url.match(
+    /(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([\w-]{6,})/
   );
+  return match ? `https://www.youtube.com/embed/${match[1]}` : null;
+};
+
+// Human response-time label for the "replies within ~X" SLA badge.
+const responseLabel = (hours?: number | string): string | null => {
+  const h = Number(hours);
+  if (!(h > 0) || !Number.isFinite(h)) return null;
+  if (h < 1) return '~1h';
+  if (h < 24) return `~${Math.ceil(h)}h`;
+  const days = h / 24;
+  return days < 7 ? `~${Math.round(days)}d` : `${Math.round(days / 7)}w`;
 };
 
 const VendorStorefront = () => {
@@ -138,6 +92,11 @@ const VendorStorefront = () => {
   const [showMessage, setShowMessage] = useState(false);
   const { data, isLoading, isError } = useGetStorefrontQuery(slug ?? '');
   const userInfo = useSelector((state: RootState) => state.auth?.userInfo);
+  const vendorIdForScore = (data as unknown as StorefrontView | undefined)?.vendor?.userId;
+  const { data: fulfilment, isLoading: fulfilmentLoading } = useGetVendorFulfilmentQuery(
+    vendorIdForScore ?? 0,
+    { skip: !vendorIdForScore },
+  );
 
   if (isLoading) {
     return (
@@ -215,6 +174,11 @@ const VendorStorefront = () => {
                   ))}
                   <span className="inline-flex items-center gap-1 text-sm text-amber-500 bg-amber-50 dark:bg-amber-900/20 px-2 py-0.5 rounded-full">
                     <FaStar /> {rating} ({reviewCount} reviews)
+                    {Number(viewData.verifiedReviewCount) > 0 && (
+                      <span className="ml-1 text-emerald-600 dark:text-emerald-400">
+                        • {viewData.verifiedReviewCount} verified order{Number(viewData.verifiedReviewCount) === 1 ? '' : 's'}
+                      </span>
+                    )}
                   </span>
                 </div>
               </div>
@@ -260,7 +224,36 @@ const VendorStorefront = () => {
             {vendor.workshop && (
               <span className="flex items-center gap-1 text-gray-600 dark:text-gray-400"><FaLandmark /> {vendor.workshop}</span>
             )}
+            {!fulfilmentLoading && fulfilment && fulfilment.withDeadline > 0 && (
+              <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 px-2 py-0.5 rounded-full">
+                <FaCheckCircle /> Delivers on time {Math.round(Number(fulfilment.onTimeRate || 0) * 100)}%
+              </span>
+            )}
+            {responseLabel(viewData.avgResponseHours) && (
+              <span className="inline-flex items-center gap-1 text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded-full">
+                <FaReplyAll /> Replies within {responseLabel(viewData.avgResponseHours)}
+              </span>
+            )}
           </div>
+
+          {vendor.weaverVideo && (
+            <div className="mt-5">
+              <h3 className="font-semibold text-gray-900 dark:text-white mb-2 flex items-center gap-2">
+                <FaVideo /> Watch the weaver at work
+              </h3>
+              {videoEmbedUrl(vendor.weaverVideo) ? (
+                <iframe
+                  src={videoEmbedUrl(vendor.weaverVideo) ?? undefined}
+                  title={`Weaving demonstration by ${vendor.businessName}`}
+                  className="w-full max-w-2xl aspect-video rounded-xl"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  allowFullScreen
+                />
+              ) : (
+                <video src={vendor.weaverVideo} controls className="w-full max-w-2xl max-h-80 rounded-xl" />
+              )}
+            </div>
+          )}
         </div>
 
         {/* Products */}
@@ -290,13 +283,33 @@ const VendorStorefront = () => {
                   to={`/product/${p.id}`}
                   className="group bg-white dark:bg-gray-800 rounded-xl shadow-md hover:shadow-xl transition-all overflow-hidden"
                 >
-                  <div className="aspect-square overflow-hidden bg-gray-100 dark:bg-gray-700">
+                  <div className="relative aspect-square overflow-hidden bg-gray-100 dark:bg-gray-700">
                     {p.img ? (
                       <img src={resolveImageUrl(p.img)} alt={p.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center text-gray-400">
                         <FaBoxOpen className="text-3xl" />
                       </div>
+                    )}
+                    {stockOf(p) <= 0 && (
+                      <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                        <span className="text-white text-xs font-semibold bg-red-600 px-2 py-1 rounded-full">Sold out</span>
+                      </div>
+                    )}
+                    {stockOf(p) > 0 && stockOf(p) <= 5 && (
+                      <span className="absolute top-2 right-2 text-[10px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/70 px-2 py-0.5 rounded-full">
+                        Only {stockOf(p)} left
+                      </span>
+                    )}
+                    {p.isRentable && (
+                      <span className="absolute top-2 left-2 text-[10px] font-semibold text-purple-700 dark:text-purple-300 bg-purple-100 dark:bg-purple-900/70 px-2 py-0.5 rounded-full">
+                        Rentable
+                      </span>
+                    )}
+                    {p.madeToOrder && stockOf(p) > 0 && (
+                      <span className="absolute bottom-2 left-2 text-[10px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/70 px-2 py-0.5 rounded-full">
+                        Made to order
+                      </span>
                     )}
                   </div>
                   <div className="p-3">
@@ -313,7 +326,13 @@ const VendorStorefront = () => {
         </div>
       </div>
 
-      {showMessage && <MessageModal vendor={vendor} userId={vendor.userId} onClose={() => setShowMessage(false)} />}
+      {showMessage && (
+        <AskModal
+          vendorId={vendor.userId}
+          vendorName={vendor.businessName}
+          onClose={() => setShowMessage(false)}
+        />
+      )}
     </div>
     </>
   );

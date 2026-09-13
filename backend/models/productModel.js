@@ -66,6 +66,8 @@ class Product {
     this.stock = parseInt(data.stock) || 0;
     this.sku = data.sku || null;
     this.lowStockThreshold = parseInt(data.lowStockThreshold) || 0;
+    this.isRentable = !!data.isRentable;
+    this.rentPricePerDay = data.rentPricePerDay ? parseFloat(data.rentPricePerDay) : null;
   }
 
   // ✅ Get all products with proper LIMIT/OFFSET handling
@@ -285,8 +287,9 @@ class Product {
           yards, occasions, designStory, careInstructions, weight, wholesalePrice,
           retailPrice, madeToOrder, video, gallery, descriptionHTML,
           threadTypes, dominantThread,
-          approvalStatus, approvalNote, approvedAt, stock, sku, lowStockThreshold
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          approvalStatus, approvalNote, approvedAt, stock, sku, lowStockThreshold,
+          isRentable, rentPricePerDay
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           productData.title.trim(),
           productData.img || null,
@@ -332,6 +335,10 @@ class Product {
           parseInt(productData.stock) || 0,
           productData.sku || null,
           parseInt(productData.lowStockThreshold) || 0,
+          productData.isRentable ? 1 : 0,
+          productData.rentPricePerDay != null && productData.rentPricePerDay !== ''
+            ? parseFloat(productData.rentPricePerDay)
+            : null,
         ]
       );
 
@@ -373,7 +380,7 @@ class Product {
         'weavingTechnique', 'yards', 'occasions', 'designStory', 'careInstructions',
         'weight', 'wholesalePrice', 'retailPrice', 'madeToOrder', 'video', 'gallery',
         'descriptionHTML', 'approvalStatus', 'approvalNote', 'approvedAt',
-        'stock', 'sku', 'lowStockThreshold'
+        'stock', 'sku', 'lowStockThreshold', 'isRentable', 'rentPricePerDay'
       ]);
 
       const setClause = [];
@@ -386,10 +393,10 @@ class Product {
           ]);
           const floatColumns = new Set([
             'price', 'originalPrice', 'basePrice', 'yards', 'weight',
-            'wholesalePrice', 'retailPrice'
+            'wholesalePrice', 'retailPrice', 'rentPricePerDay'
           ]);
           const intColumns = new Set(['reviews', 'stock', 'lowStockThreshold']);
-          const boolColumns = new Set(['isCustomizable', 'featured', 'madeToOrder']);
+          const boolColumns = new Set(['isCustomizable', 'featured', 'madeToOrder', 'isRentable']);
           if (jsonColumns.has(key)) {
             setClause.push(`${key} = ?`);
             values.push(updateData[key] ? JSON.stringify(updateData[key]) : null);
