@@ -58,6 +58,24 @@ export const miscApiSlice = apiSlice.injectEndpoints({
       providesTags: ["Review"],
     }),
 
+    // ⭐ Verified purchase review (after delivery) — product + vendor rating
+    addOrderReview: builder.mutation<Review, Record<string, unknown>>({
+      query: (data) => ({
+        url: `${REVIEWS_URL}/order`,
+        method: "POST",
+        body: data,
+      }),
+      invalidatesTags: ["Product", "Review"],
+    }),
+
+    // ⭐ Admin analytics: ratings, verified count, weaver satisfaction
+    getReviewAnalytics: builder.query<Record<string, unknown>, void>({
+      query: () => ({
+        url: `${REVIEWS_URL}/analytics`,
+      }),
+      providesTags: ["Review"],
+    }),
+
     // 👥 Subscriber Admin
     getSubscriberCount: builder.query<{ count?: number }, void>({
       query: () => ({
@@ -82,6 +100,8 @@ export const {
   useGetAllReviewsQuery,
   useLazyGetProductReviewsQuery,
   useLazyGetAllReviewsQuery,
+  useAddOrderReviewMutation,
+  useGetReviewAnalyticsQuery,
   useGetSubscriberCountQuery,
   useListSubscribersQuery,
   useListContactsQuery,

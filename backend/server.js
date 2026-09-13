@@ -59,7 +59,8 @@ import campaignRoutes from './routes/campaignRoutes.js';  // ⭐ NEW - Marketing
 import certificateRoutes from './routes/certificateRoutes.js';  // ⭐ NEW - Authenticity certificates
 import commissionRoutes from './routes/commissionRoutes.js';  // ⭐ NEW - Commission engine
 import moderationRoutes from './routes/moderationRoutes.js';  // ⭐ NEW - Product moderation
-import suggestionRoutes from './routes/suggestionRoutes.js';  // ⭐ NEW - User suggestions
+import suggestionRoutes from './routes/suggestionRoutes.js';
+import customRequestRoutes from './routes/customRequestRoutes.js';  // 🆕 Custom orders  // ⭐ NEW - User suggestions
 import { startCleanupSchedule } from './utils/cleanupJobs.js';
 
 // Setup __dirname for ES modules
@@ -277,6 +278,7 @@ app.use('/api/certificates', certificateRoutes);
 app.use('/api/admin/commissions', commissionRoutes);
 app.use('/api/admin/moderation', moderationRoutes);
 app.use('/api/suggestions', suggestionRoutes);
+app.use('/api/custom-requests', customRequestRoutes);  // 🆕 Custom orders
 
 // ============================================
 // ERROR HANDLING - Must be LAST

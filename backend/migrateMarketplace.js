@@ -249,6 +249,77 @@ try {
     ) ENGINE=InnoDB`);
 
   // ============================================================
+  // CUSTOMIZATION REQUESTS (buyer -> vendor custom kente orders)
+  // ============================================================
+  await addTable('custom_requests', `
+    CREATE TABLE IF NOT EXISTS custom_requests (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      customerId INT NOT NULL,
+      vendorId INT NOT NULL COMMENT 'vendors.userId (matches product.vendorId)',
+      baseProductId INT NULL,
+      description TEXT NULL,
+      yards DECIMAL(6,2) NOT NULL DEFAULT 2,
+      colours JSON NULL,
+      dominantColour VARCHAR(100) NULL,
+      threadTypes JSON NULL,
+      dominantThread VARCHAR(100) NULL,
+      referenceImage VARCHAR(500) NULL,
+      neededForDate DATE NULL,
+      neededForTime VARCHAR(10) NULL,
+      status ENUM('pending','quoted','accepted','paid','in_progress','completed','cancelled','declined')
+        NOT NULL DEFAULT 'pending',
+      vendorQuotePrice DECIMAL(10,2) NULL,
+      vendorCanMeet TINYINT NOT NULL DEFAULT 1,
+      vendorMessage TEXT NULL,
+      customerCancelReason TEXT NULL,
+      orderId INT NULL,
+      adminReviewed TINYINT NOT NULL DEFAULT 0,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_custom_customer (customerId),
+      INDEX idx_custom_vendor (vendorId),
+      INDEX idx_custom_status (status)
+    ) ENGINE=InnoDB`);
+
+  // ============================================================
+  // REVIEWS v2 — verified purchases, vendor rating, platform feedback
+  // ============================================================
+  await addColumn('reviews', 'orderId', `INT NULL`);
+  await addColumn('reviews', 'vendorId', `INT NULL`);
+  await addColumn('reviews', 'vendorRating', `TINYINT NULL`);
+  await addColumn('reviews', 'platformSuggestion', `TEXT NULL`);
+  await addColumn('reviews', 'isVerified', `TINYINT NOT NULL DEFAULT 0`);
+  // NOTE: review_reports.fk_1 / reviews FKs (userId, productId) rely on the
+  // composite unique uq_reviews_user_product — do NOT drop it. The model keeps
+  // exactly one review row per (user, product) and bumps isVerified/vendor
+  // details on each new delivered-order review, so the old key stays valid.
+  if (await colExists('reviews', 'orderId')) {
+    if (!(await colExists('reviews', 'uq_review_user_order_product'))) {
+      await connection.query(
+        `ALTER TABLE reviews ADD UNIQUE KEY uq_review_user_order_product (orderId, userId, productId)`
+      );
+      console.log('✅ Added reviews unique key (orderId, userId, productId)');
+    }
+  }
+
+  // ============================================================
+  // PRODUCT TYPE INSIGHTS (analytics aggregation workbook)
+  // ============================================================
+  await addTable('product_sales_daily', `
+    CREATE TABLE IF NOT EXISTS product_sales_daily (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      saleDate DATE NOT NULL,
+      productId INT NULL,
+      category VARCHAR(100) NULL,
+      productTitle VARCHAR(255) NULL,
+      quantity INT NOT NULL DEFAULT 0,
+      revenue DECIMAL(12,2) NOT NULL DEFAULT 0,
+      yardTotal DECIMAL(10,2) NOT NULL DEFAULT 0,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uq_product_sales_day (saleDate, productId)
+    ) ENGINE=InnoDB`);
+
+  // ============================================================
   // DEFAULTS
   // ============================================================
   // Seed a single global commission rule at 10% if none exist.

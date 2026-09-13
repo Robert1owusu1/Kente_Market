@@ -3,34 +3,79 @@
 import pool from "../config/db.js";
 
 class Review {
-  // ✅ Create a review (one review per user per product)
-  static async create({ userId, productId, rating, comment, userName }) {
+  // ✅ Create a review (one review per user per product; verified order
+  //    reviews are keyed on orderId so a buyer can review after each order).
+  static async create({ userId, productId, rating, comment, userName,
+    orderId = null, vendorId = null, vendorRating = null,
+    platformSuggestion = null, isVerified = 0 }) {
     let connection;
     try {
       connection = await pool.getConnection();
 
-      // Guard: a user can only review a product once (upsert).
-      await connection.execute(
-        `INSERT INTO reviews (userId, productId, name, rating, comment)
-         VALUES (?, ?, ?, ?, ?)
-         ON DUPLICATE KEY UPDATE
-           rating = VALUES(rating),
-           comment = VALUES(comment),
-           updated_at = CURRENT_TIMESTAMP`,
-        [
-          userId,
-          productId,
-          (userName || "Anonymous").trim().slice(0, 100),
-          Math.max(1, Math.min(5, parseInt(rating) || 5)),
-          (comment || "").trim().slice(0, 2000),
-        ]
+      const ratingNum = Math.max(1, Math.min(5, parseInt(rating) || 5));
+      const commentText = (comment || "").trim().slice(0, 2000);
+      const vendorRatingNum = vendorRating !== null && vendorRating !== undefined
+        ? Math.max(1, Math.min(5, parseInt(vendorRating) || 5))
+        : null;
+      const suggestion = platformSuggestion ? String(platformSuggestion).trim().slice(0, 4000) : null;
+
+      // Prefer the review row that matches this order; otherwise the buyer's
+      // existing review for the product (keeps one row per product+order).
+      const [existing] = await connection.execute(
+        `SELECT id, orderId FROM reviews
+         WHERE userId = ? AND productId = ?
+         ORDER BY (orderId = ?) DESC, (orderId IS NOT NULL) DESC, id ASC LIMIT 1`,
+        [userId, productId, orderId]
       );
+
+      let reviewId;
+      if (existing.length > 0) {
+        reviewId = existing[0].id;
+        await connection.execute(
+          `UPDATE reviews SET
+             name = ?, rating = ?, comment = ?, orderId = ?, vendorId = ?,
+             vendorRating = ?, platformSuggestion = ?, isVerified = ?,
+             status = 'approved', updated_at = CURRENT_TIMESTAMP
+           WHERE id = ?`,
+          [
+            (userName || "Anonymous").trim().slice(0, 100),
+            ratingNum,
+            commentText,
+            existing[0].orderId || orderId,
+            vendorId,
+            vendorRatingNum,
+            suggestion,
+            isVerified ? 1 : 0,
+            reviewId,
+          ]
+        );
+      } else {
+        const [result] = await connection.execute(
+          `INSERT INTO reviews (
+            userId, productId, name, rating, comment, orderId, vendorId,
+            vendorRating, platformSuggestion, isVerified, status
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved')`,
+          [
+            userId,
+            productId,
+            (userName || "Anonymous").trim().slice(0, 100),
+            ratingNum,
+            commentText,
+            orderId,
+            vendorId,
+            vendorRatingNum,
+            suggestion,
+            isVerified ? 1 : 0,
+          ]
+        );
+        reviewId = result.insertId;
+      }
 
       await Review.recalculateProductStats(connection, productId);
 
       const [rows] = await connection.execute(
-        "SELECT * FROM reviews WHERE userId = ? AND productId = ?",
-        [userId, productId]
+        "SELECT * FROM reviews WHERE id = ?",
+        [reviewId]
       );
       return rows[0] || null;
     } catch (err) {

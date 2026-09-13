@@ -168,6 +168,15 @@ export const ordersApiSlice = apiSlice.injectEndpoints({
       providesTags: ["OrderStats"],
       keepUnusedDataFor: 30, // Cache for 30 seconds
     }),
+
+    // 🧵 Get top selling product types/categories (Admin only) — prediction signal
+    getTopProductTypes: builder.query<Record<string, unknown>, void>({
+      query: () => ({
+        url: `${ORDERS_URL}/top-product-types`,
+        method: "GET",
+      }),
+      providesTags: ["OrderStats"],
+    }),
   }),
 });
 
@@ -184,4 +193,5 @@ export const {
   useRetryEscrowPayoutsMutation,
   useDeleteOrderMutation,
   useGetOrderStatisticsQuery,
+  useGetTopProductTypesQuery,
 } = ordersApiSlice;

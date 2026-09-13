@@ -77,6 +77,62 @@ export interface CartItem {
   size?: string;
 }
 
+// ⭐ Custom kente request lifecycle:
+//   pending -> quoted -> accepted -> paid -> in_progress -> completed
+//   quoted/cancelled & declined are dead-ends; admin marks adminReviewed=1
+//   once they've followed up with the customer by phone.
+export type CustomRequestStatus =
+  | 'pending'
+  | 'quoted'
+  | 'accepted'
+  | 'paid'
+  | 'in_progress'
+  | 'completed'
+  | 'cancelled'
+  | 'declined';
+
+export interface CustomRequest {
+  id: number | string;
+  customerId?: number | string;
+  vendorId?: number | string;
+  baseProductId?: number | string | null;
+  baseProductTitle?: string | null;
+  description?: string | null;
+  yards?: number;
+  colours?: string[];
+  dominantColour?: string | null;
+  threadTypes?: string[];
+  dominantThread?: string | null;
+  referenceImage?: string | null;
+  neededForDate?: string | null;
+  neededForTime?: string | null;
+  status: CustomRequestStatus;
+  vendorQuotePrice?: number | null;
+  vendorCanMeet?: boolean | number;
+  vendorMessage?: string | null;
+  customerCancelReason?: string | null;
+  orderId?: number | string | null;
+  adminReviewed?: boolean | number;
+  createRequest?: string;
+  createdAt?: string;
+  created_at?: string;
+  vendorBusinessName?: string;
+  vendorStatus?: string;
+  customerName?: string;
+  customerEmail?: string;
+  [key: string]: unknown;
+}
+
+export interface CustomRequestStats {
+  total?: number;
+  avgQuote?: number;
+  unreviewed?: number;
+  paid?: number;
+  statusCounts?: Record<string, number>;
+  topCancelReasons?: { customerCancelReason: string; count: number }[];
+  [key: string]: unknown;
+}
+
 export interface OrderItem {
   productId?: number | string;
   product?: number | string;

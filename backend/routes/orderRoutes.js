@@ -26,7 +26,8 @@ import {
 import {
   getOrderStatistics,
   getSalesAnalytics,
-  getTopProducts
+  getTopProducts,
+  getTopProductTypes,
 } from "../controllers/orderController.js";
 
 // NEW: Import middleware for caching and rate limiting
@@ -60,6 +61,11 @@ router.route("/analytics")
 // Cache for 5 minutes (300 seconds)
 router.route("/top-products")
   .get(protect, admin, cacheMiddleware(300), getTopProducts);
+
+// 🧵 GET /api/orders/top-product-types → Top selling kente types (categories)
+// Cache for 5 minutes (300 seconds)
+router.route("/top-product-types")
+  .get(protect, admin, cacheMiddleware(300), getTopProductTypes);
 
 /**
  * ============================================
