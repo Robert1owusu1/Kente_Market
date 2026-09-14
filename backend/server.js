@@ -28,7 +28,6 @@ import { apiLimiter } from './middleware/rateLimitMiddleware.js';
 import { csrfProtection } from './middleware/csrfMiddleware.js';
 import { errorHandeler, notFound } from './middleware/errorMiddleware.js';
 import { requestLogger } from './utils/logger.js';
-import { captureSentryError, initSentryIfConfigured, isSentryActive } from './utils/sentryUtil.js';
 
 // Routes
 import productRoutes from './routes/productRoutes.js';
@@ -253,7 +252,6 @@ app.get('/health', async (req, res) => {
     ]);
   } catch (err) {
     db = 'down';
-    captureSentryError(err, req, { route: '/health' });
   }
   const healthy = db === 'ok';
   res.status(healthy ? 200 : 503).json({
@@ -317,11 +315,6 @@ app.use(errorHandeler);
 // START SERVER
 // ============================================
 
-// MUST be called before the banner: Render's Start Command runs
-// `node server.js` directly (no --import), so Sentry self-inits lazily here if
-// SENTRY_DSN is set, letting the banner report the *actual* runtime state
-// instead of just whether the env var happens to be populated.
-initSentryIfConfigured();
 
 const server = app.listen(port, () => {
   console.log('='.repeat(50));
@@ -340,8 +333,7 @@ const server = app.listen(port, () => {
   console.log(`📦 Body parser limit: 1mb`);
   console.log(`🖼️  Profile picture uploads enabled`);
   console.log(`🔐 OAuth routes enabled (Google, Facebook)`);  // ⭐ NEW
-  console.log(isSentryActive() ? '🚨 Error tracking active (Sentry)' : process.env.SENTRY_DSN ? '⚠️  SENTRY_DSN set but Sentry client not active — verify boot command' : '🚨 Error tracking: set SENTRY_DSN in .env to enable Sentry');
-  console.log('='.repeat(50));
+    console.log("🚨 Error tracking: not configured (set SENTRY_DSN and install @sentry/node to enable)");
 });
 
 // ============================================
@@ -351,7 +343,6 @@ const server = app.listen(port, () => {
 process.on('unhandledRejection', (err) => {
   console.error('🚨 Unhandled Promise Rejection:', err.message);
   console.error(err.stack);
-  captureSentryError(err, null, { type: 'unhandledRejection' });
   server.close(() => {
     console.log('💤 Server closed due to unhandled rejection');
     process.exit(1);
@@ -361,7 +352,6 @@ process.on('unhandledRejection', (err) => {
 process.on('uncaughtException', (err) => {
   console.error('🚨 Uncaught Exception:', err.message);
   console.error(err.stack);
-  captureSentryError(err, null, { type: 'uncaughtException' });
   process.exit(1);
 });
 
