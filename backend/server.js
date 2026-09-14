@@ -28,7 +28,7 @@ import { apiLimiter } from './middleware/rateLimitMiddleware.js';
 import { csrfProtection } from './middleware/csrfMiddleware.js';
 import { errorHandeler, notFound } from './middleware/errorMiddleware.js';
 import { requestLogger } from './utils/logger.js';
-import { captureSentryError } from './utils/sentryUtil.js';
+import { captureSentryError, initSentryIfConfigured, isSentryActive } from './utils/sentryUtil.js';
 
 // Routes
 import productRoutes from './routes/productRoutes.js';
@@ -317,6 +317,12 @@ app.use(errorHandeler);
 // START SERVER
 // ============================================
 
+// MUST be called before the banner: Render's Start Command runs
+// `node server.js` directly (no --import), so Sentry self-inits lazily here if
+// SENTRY_DSN is set, letting the banner report the *actual* runtime state
+// instead of just whether the env var happens to be populated.
+initSentryIfConfigured();
+
 const server = app.listen(port, () => {
   console.log('='.repeat(50));
   console.log(`✅ Server running in ${process.env.NODE_ENV || 'development'} mode`);
@@ -334,7 +340,7 @@ const server = app.listen(port, () => {
   console.log(`📦 Body parser limit: 1mb`);
   console.log(`🖼️  Profile picture uploads enabled`);
   console.log(`🔐 OAuth routes enabled (Google, Facebook)`);  // ⭐ NEW
-  console.log(process.env.SENTRY_DSN ? '🚨 Error tracking active (Sentry)' : '🚨 Error tracking: set SENTRY_DSN in .env to enable Sentry');
+  console.log(isSentryActive() ? '🚨 Error tracking active (Sentry)' : process.env.SENTRY_DSN ? '⚠️  SENTRY_DSN set but Sentry client not active — verify boot command' : '🚨 Error tracking: set SENTRY_DSN in .env to enable Sentry');
   console.log('='.repeat(50));
 });
 

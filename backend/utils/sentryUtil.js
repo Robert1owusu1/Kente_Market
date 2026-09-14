@@ -1,48 +1,43 @@
 // FILE LOCATION: utils/sentryUtil.js
-// DESCRIPTION: DSN-gated Sentry helpers. Sentry is initialized exactly once by
-//   backend/instrument.mjs (loaded via `node --import ./instrument.mjs server.js`)
-//   when SENTRY_DSN is set. This module reuses that client instead of calling
-//   Sentry.init() a second time (which triggers a "already initialized" warning
-//   and diverges from the instrument.mjs tracing/profiling config). When running
-//   without the --import flag (e.g. some test harnesses) it falls back to a
-//   minimal self-init only when a DSN is present — otherwise everything is a
-//   safe no-op.
+// DESCRIPTION: DSN-gated, idempotent Sentry helpers. The production deploy runs
+//   `node server.js` directly (Render's Start Command — no `--import`), so
+//   backend/instrument.mjs is NOT loaded there; this module therefore
+//   self-initializes a client once, lazily, only when SENTRY_DSN is set. Under
+//   `node --import ./instrument.mjs` (the package.json start script) it reuses
+//   the already-created client and never double-inits. With no SENTRY_DSN every
+//   helper is a safe no-op (the server must keep working with Sentry off).
 
 import * as Sentry from '@sentry/node';
 
-let fallbackInitDone = false;
+let initAttempted = false;
 
-/** @returns {boolean} true when a Sentry client is active in this process */
-export const isSentryActive = () => Boolean(process.env.SENTRY_DSN) && Boolean(Sentry.getClient());
+/** @returns {boolean} true when a Sentry client actually exists in this process */
+export const isSentryActive = () =>
+  Boolean(process.env.SENTRY_DSN) && Boolean(Sentry.getClient());
 
 /**
- * Ensures a Sentry client exists. Prefers the client already created by
- * instrument.mjs; only falls back to its own init when running outside the
- * --import entry point (and only when a DSN is configured).
- * @returns {typeof Sentry|null}
+ * Ensure a Sentry client exists (idempotent, never throws). Call once at boot
+ * so the server banner reports the real runtime state.
+ * @returns {boolean} whether a client is now active
  */
-export const getSentry = () => {
-  if (!process.env.SENTRY_DSN) return null;
-  if (!Sentry.getClient()) {
-    if (!fallbackInitDone) {
-      fallbackInitDone = true;
-      try {
-        Sentry.init({
-          dsn: process.env.SENTRY_DSN,
-          environment: process.env.NODE_ENV || 'development',
-          tracesSampleRate: parseFloat(process.env.SENTRY_TRACES_SAMPLE_RATE || '0.1') || 0.1,
-          maxBreadcrumbs: 80,
-        });
-        console.log(`🔷 Sentry self-initialized (env: ${process.env.NODE_ENV || 'development'})`);
-      } catch (err) {
-        console.error('❌ Sentry init failed:', err.message);
-        return null;
-      }
-    } else {
-      return null;
-    }
+export const initSentryIfConfigured = () => {
+  if (!process.env.SENTRY_DSN) return false;
+  if (Sentry.getClient()) return true;
+  if (initAttempted) return isSentryActive();
+  initAttempted = true;
+  try {
+    const traces = parseFloat(process.env.SENTRY_TRACES_SAMPLE_RATE || '0.1');
+    Sentry.init({
+      dsn: process.env.SENTRY_DSN,
+      environment: process.env.NODE_ENV || 'development',
+      tracesSampleRate: Number.isNaN(traces) ? 0.1 : traces,
+      maxBreadcrumbs: 80,
+    });
+    console.log(`🔷 Sentry initialized (env: ${process.env.NODE_ENV || 'development'})`);
+  } catch (err) {
+    console.error('❌ Sentry init failed:', err.message);
   }
-  return Sentry;
+  return isSentryActive();
 };
 
 /**
@@ -53,8 +48,7 @@ export const getSentry = () => {
  * @param {object} [extra]
  */
 export const captureSentryError = async (err, req = null, extra = {}) => {
-  const sentry = getSentry();
-  if (!sentry) return;
+  if (!isSentryActive()) return;
   try {
     const eventContext = {};
     if (req) {
@@ -62,15 +56,13 @@ export const captureSentryError = async (err, req = null, extra = {}) => {
         method: req.method,
         url: req.originalUrl,
         ip_address: req.ip,
-        headers: {
-          'user-agent': req.get && req.get('user-agent'),
-        },
+        headers: { 'user-agent': req.get && req.get('user-agent') },
       };
     }
     if (extra && Object.keys(extra).length > 0) {
       eventContext.extra = extra;
     }
-    sentry.captureException(err, eventContext);
+    Sentry.captureException(err, eventContext);
   } catch (e) {
     console.error('❌ Sentry capture failed:', e.message);
   }
