@@ -420,6 +420,42 @@ try {
   }
 
   // ============================================================
+  // PHASE 13 — STOCK CONFLICT HANDLING (concurrent purchases)
+  // ============================================================
+  // When two+ buyers race for the last in-stock unit, the later paid order
+  // cannot take its units (the decrement is atomic + conditional). stockShortfall
+  // records how many units could not be taken so the order is visibly flagged
+  // for admin/vendor resolution instead of silently overselling. stockConflicts
+  // keeps the per-product breakdown so a cancelled order only restores stock
+  // that was actually taken.
+  await addColumn('orders', 'stockShortfall', `INT NOT NULL DEFAULT 0`);
+  await addColumn('orders', 'stockConflicts', `JSON NULL`);
+
+  // ============================================================
+  // PHASE 14 — SERVER-SIDE CARTS (cross-device + abandoned cart recovery)
+  // ============================================================
+  // A cart exists for a signed-in user (userId) or an anonymous visitor
+  // (guestId cookie) so the same cart can be restored across devices and
+  // abandoned-cart recovery emails can reach a user who left items behind.
+  // lastRecoveryEmailAt debounces re-targeting so we never spam the same cart.
+  if (!(await tableExists('carts'))) {
+    await connection.query(`
+      CREATE TABLE carts (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        userId INT NULL,
+        guestId VARCHAR(64) NULL,
+        items JSON NULL,
+        lastRecoveryEmailAt DATETIME NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_carts_userId (userId),
+        UNIQUE KEY uq_carts_guestId (guestId),
+        CONSTRAINT fk_carts_user FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB`);
+    console.log('✅ Created carts table');
+  }
+
+  // ============================================================
   // DEFAULTS
   // ============================================================
   // Seed a single global commission rule at 10% if none exist.

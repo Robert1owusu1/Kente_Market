@@ -14,6 +14,27 @@ const parsePermissions = (value) => {
 };
 
 /**
+ * Optional auth middleware - Attach user if a valid JWT cookie exists, otherwise
+ * continue anonymously. Used by anonymous-friendly endpoints (server-side cart)
+ * that behave differently for logged-in vs guest visitors.
+ */
+const optionalAuth = asyncHandler(async (req, res, next) => {
+  const token = req.cookies?.jwt;
+  if (token) {
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      const user = await User.findById(decoded.id);
+      if (user && user.isActive) {
+        req.user = user.getProfile();
+      }
+    } catch {
+      // Invalid/expired token: treat as anonymous, never block the request.
+    }
+  }
+  next();
+});
+
+/**
  * Protect routes - Verify JWT token
  * Middleware to authenticate users via JWT token in cookies
  */
@@ -46,7 +67,7 @@ const protect = asyncHandler(async(req, res, next) => {
             req.user = user.getProfile();
             
             next();
-        } catch (error) {
+    } catch (error) {
             console.error('Token verification error:', error);
             res.status(401);
             throw new Error('Not authorized, token failed');
@@ -183,4 +204,4 @@ const requireVendorPermission = (permission) => (req, res, next) => {
     throw new Error(`Missing permission: ${permission}`);
 };
 
-export { protect, admin, vendor, vendorOrStaff, requireVendorPermission };
+export { protect, admin, vendor, vendorOrStaff, requireVendorPermission, optionalAuth };

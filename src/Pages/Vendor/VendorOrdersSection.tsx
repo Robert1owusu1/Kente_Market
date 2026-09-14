@@ -197,6 +197,11 @@ const VendorOrdersSection = () => {
                         Custom
                       </span>
                     )}
+                    {typeof (order as { stockShortfall?: number }).stockShortfall === 'number' && (order as { stockShortfall?: number }).stockShortfall! > 0 && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400">
+                        Short of stock
+                      </span>
+                    )}
                     <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${statusBadge[order.orderStatus || ''] || statusBadge.pending}`}>
                       {order.orderStatus}
                     </span>

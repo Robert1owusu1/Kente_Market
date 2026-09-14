@@ -15,6 +15,7 @@ import {
   holdEscrowForOrder,
   setEscrowReleaseDeadline,
 } from "../Services/escrowService.js";
+import { sendOrderStatusEmail } from "../utils/orderEmailService.js";
 
 import isValidId from "../utils/isValidId.js";
 
@@ -201,7 +202,16 @@ export const updateVendorOrderStatus = async (req, res) => {
         message,
         link: `/order/${order.id}`,
       });
-      if (customerEmail) console.log(`📧 Order update email to ${customerEmail} (mock)`);
+      if (customerEmail) {
+      try {
+        await sendOrderStatusEmail(order.id, {
+          statusLabel: orderStatus,
+          note: productionNote,
+        });
+      } catch (emailErr) {
+        console.warn(`⚠️ Could not email customer order update: ${emailErr.message}`);
+      }
+    }
     } catch (notifyErr) {
       console.warn(`⚠️ Could not notify customer: ${notifyErr.message}`);
     }

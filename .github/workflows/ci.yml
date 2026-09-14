@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint-unit-build:
+    name: Lint + unit tests + build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+
+      - name: Install frontend + shared deps
+        run: npm ci
+
+      - name: Install backend deps
+        run: npm ci --prefix backend
+
+      - name: Lint (eslint, whole repo)
+        run: npm run lint
+
+      - name: Backend unit tests (pure logic, no DB required)
+        # DB-backed suites (stockRace, idempotency, promotions) are skipped
+        # automatically when no database is reachable; these run everywhere.
+        run: npm run test:unit --prefix backend
+
+      - name: Build frontend
+        run: npm run build

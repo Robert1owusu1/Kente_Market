@@ -1,4 +1,6 @@
 import { createContext, useContext, useReducer, useEffect, type ReactNode } from "react";
+import { useSelector } from "react-redux";
+import axios from "axios";
 import { TAX_RATE, FREE_SHIPPING_THRESHOLD, STANDARD_SHIPPING_COST, calcTax, calcShipping } from "../utils/pricing";
 
 export interface CartItem {
@@ -67,7 +69,8 @@ type CartAction =
   | { type: "UPDATE_ITEM_SIZE"; payload: { id: number | string; size: string } }
   | { type: "UPDATE_ITEM_YARDS"; payload: { id: number | string; yards: number | string } }
   | { type: "UPDATE_ITEM_COLORS"; payload: { id: number | string; colors: string[] } }
-  | { type: "CLEAR_CART" };
+  | { type: "CLEAR_CART" }
+  | { type: "LOAD_FROM_SERVER"; payload: CartItem[] };
 
 interface CartContextValue {
   cartItems: CartItem[];
@@ -217,6 +220,9 @@ const cartReducer = (state: CartState, action: CartAction): CartState => {
     case "CLEAR_CART":
       return { ...state, cartItems: [] };
 
+    case "LOAD_FROM_SERVER":
+      return { ...state, cartItems: (Array.isArray(action.payload) ? action.payload : []).map(migrateCartItem) };
+
     default:
       return state;
   }
@@ -235,6 +241,39 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
       console.error("Error saving cart to localStorage:", error);
     }
   }, [state.cartItems]);
+
+  // Server-side cart sync: keeps the server copy in sync for cross-device
+  // continuity and abandoned-cart recovery emails. Only active for signed-in
+  // users (guests use localStorage alone). All calls are fire-and-forget so a
+  // network failure never blocks the local cart experience.
+  const userInfo = useSelector((state: any) => state?.auth?.userInfo ?? null);
+  const loggedIn = !!userInfo?.id;
+
+  useEffect(() => {
+    if (!loggedIn) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await axios.get('/api/cart');
+        const serverItems = Array.isArray(data.items) ? data.items : [];
+        if (cancelled) return;
+        if (state.cartItems.length === 0 && serverItems.length > 0) {
+          dispatch({ type: 'LOAD_FROM_SERVER', payload: serverItems });
+        } else if (state.cartItems.length > 0) {
+          await axios.post('/api/cart', { items: state.cartItems });
+        }
+      } catch { /* silent — local cart is always the source of truth */ }
+    })();
+    return () => { cancelled = true; };
+  }, [loggedIn]);
+
+  useEffect(() => {
+    if (!loggedIn) return;
+    const id = setTimeout(() => {
+      try { axios.post('/api/cart', { items: state.cartItems }); } catch { /* silent */ }
+    }, 1500);
+    return () => clearTimeout(id);
+  }, [state.cartItems, loggedIn]);
 
   // Actions
   const addToCart = (product: CartPayload) => {
@@ -263,6 +302,9 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
 
   const clearCart = () => {
     dispatch({ type: "CLEAR_CART" });
+    if (loggedIn) {
+      try { axios.delete('/api/cart'); } catch { /* silent */ }
+    }
   };
 
   // Helpers (pricing rules live in shared/pricing.js so cart, cart drawer and
