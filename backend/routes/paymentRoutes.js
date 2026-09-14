@@ -13,6 +13,7 @@ import {
 import Coupon from '../models/couponModel.js';
 import { computeExpectedCompletion } from '../utils/computeExpectedCompletion.js';
 import { decrementStockForOrder } from '../controllers/orderController.js';
+import { sendOrderConfirmationEmail } from '../utils/orderEmailService.js';
 
 const router = express.Router();
 
@@ -111,7 +112,7 @@ router.post('/verify-paystack', protect, async (req, res) => {
                 try { paidItems = JSON.parse(paidItems); } catch { paidItems = []; }
               }
               if (Array.isArray(paidItems) && paidItems.length > 0) {
-                await decrementStockForOrder(paidItems);
+                await decrementStockForOrder(paidItems, orderId);
               }
             }
           } catch (stockErr) {
@@ -139,6 +140,13 @@ router.post('/verify-paystack', protect, async (req, res) => {
             }
           } catch (compErr) {
             console.warn(`⚠️ Could not seed expected completion date: ${compErr.message}`);
+          }
+          // Receipt email — only when THIS call flipped the order, so a webhook
+          // that already handled payment never sends a duplicate.
+          try {
+            await sendOrderConfirmationEmail(orderId);
+          } catch (emailErr) {
+            console.warn(`⚠️ Could not send order confirmation email: ${emailErr.message}`);
           }
           orderMarkedPaid = true;
         }
@@ -255,7 +263,7 @@ router.post('/paystack-webhook', webhookLimiter, async (req, res) => {
 
                   // Decrement in-stock inventory now that payment is confirmed.
                   if (Array.isArray(items) && items.length > 0) {
-                    await decrementStockForOrder(items);
+                    await decrementStockForOrder(items, orderId);
                     console.log(`📦 Stock decremented for order ${orderId}`);
                   }
 
@@ -308,6 +316,15 @@ router.post('/paystack-webhook', webhookLimiter, async (req, res) => {
 
           if (!orderFound) {
             console.warn(`⚠️ Webhook: no order found for reference ${reference} after ${MAX_RETRIES} retries`);
+          } else if (orderId) {
+            // Receipt email — fires only when the webhook itself performed the
+            // paid flip. If the verify-paystack fallback already did it, the
+            // affected guard above means orderFound is false here.
+            try {
+              await sendOrderConfirmationEmail(orderId);
+            } catch (emailErr) {
+              console.warn(`⚠️ Could not send order confirmation email: ${emailErr.message}`);
+            }
           }
         }
         console.log('Payment successful:', reference);

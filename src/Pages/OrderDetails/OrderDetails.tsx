@@ -198,6 +198,11 @@ const OrderDetails = () => {
                 {order.paymentStatus}
               </span>
             )}
+            {typeof order.stockShortfall === 'number' && order.stockShortfall > 0 && (
+              <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400">
+                Stock shortfall — restock pending
+              </span>
+            )}
             <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium ${escrow.cls}`}>
               {escrow.icon ? <escrow.icon /> : null} {escrow.label}
             </span>

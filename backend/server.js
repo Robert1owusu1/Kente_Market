@@ -27,6 +27,8 @@ import { setupSecurity } from './middleware/securityMiddleware.js';
 import { apiLimiter } from './middleware/rateLimitMiddleware.js';
 import { csrfProtection } from './middleware/csrfMiddleware.js';
 import { errorHandeler, notFound } from './middleware/errorMiddleware.js';
+import { requestLogger } from './utils/logger.js';
+import { captureSentryError } from './utils/sentryUtil.js';
 
 // Routes
 import productRoutes from './routes/productRoutes.js';
@@ -40,6 +42,7 @@ import profileRoutes from './routes/profileRoutes.js';
 import authRoutes from './routes/authRoutes.js';  // ⭐ NEW - OAuth routes
 import tryOnRoutes from './routes/tryOnRoutes.js';  // ⭐ NEW - AI Try-On routes
 import contactRoutes from './routes/contactRoutes.js';  // ⭐ NEW - Contact & messages
+import cartRoutes from './routes/cartRoutes.js';  // ⭐ NEW - Server-side cart
 import subscriberRoutes from './routes/subscriberRoutes.js';  // ⭐ NEW - Newsletter
 import reviewRoutes from './routes/reviewRoutes.js';
 import promotionRoutes from './routes/promotionRoutes.js';  // ⭐ NEW - Product reviews
@@ -180,7 +183,10 @@ app.use(express.json({
 }));
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
-// 8. Serve static files from uploads directory.
+// 8b. Structured request logging (LOG_FORMAT=json for machine-friendly output).
+app.use(requestLogger);
+
+// Serve static files from uploads directory.
 // Long-lived + immutable cache: uploaded product image filenames are generated
 // once and never change, so repeat visits load them from the browser cache
 // instead of re-downloading over slow links. (Max-age 30 days.)
@@ -236,9 +242,26 @@ app.use('/api/', csrfProtection);
 // ROUTES
 // ============================================
 
-// Health check endpoint — minimal info, no internals exposed
-app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'OK' });
+// Health check endpoint — uptime + DB reachability, no internals exposed.
+// Used by the GitHub Actions keep-alive workflow and external uptime monitors.
+app.get('/health', async (req, res) => {
+  let db = 'ok';
+  try {
+    await Promise.race([
+      pool.query('SELECT 1'),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 2500)),
+    ]);
+  } catch (err) {
+    db = 'down';
+    captureSentryError(err, req, { route: '/health' });
+  }
+  const healthy = db === 'ok';
+  res.status(healthy ? 200 : 503).json({
+    status: healthy ? 'OK' : 'DEGRADED',
+    db,
+    uptime: process.uptime(),
+    ts: new Date().toISOString(),
+  });
 });
 
 // Root route
@@ -258,6 +281,7 @@ app.use('/api/profile', profileRoutes);
 app.use('/api/auth', authRoutes);  // ⭐ NEW - OAuth routes (Google, Facebook)
 app.use('/api/tryon', tryOnRoutes);  // ⭐ NEW - AI Try-On routes
 app.use('/api/contact', contactRoutes);  // ⭐ NEW - Contact & messages
+app.use('/api/cart', cartRoutes);  // ⭐ NEW - Server-side cart
 app.use('/api/subscribe', subscriberRoutes);  // ⭐ NEW - Newsletter
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/promotions', promotionRoutes);  // ⭐ NEW - Product reviews
@@ -310,6 +334,7 @@ const server = app.listen(port, () => {
   console.log(`📦 Body parser limit: 1mb`);
   console.log(`🖼️  Profile picture uploads enabled`);
   console.log(`🔐 OAuth routes enabled (Google, Facebook)`);  // ⭐ NEW
+  console.log(process.env.SENTRY_DSN ? '🚨 Error tracking active (Sentry)' : '🚨 Error tracking: set SENTRY_DSN in .env to enable Sentry');
   console.log('='.repeat(50));
 });
 
@@ -320,6 +345,7 @@ const server = app.listen(port, () => {
 process.on('unhandledRejection', (err) => {
   console.error('🚨 Unhandled Promise Rejection:', err.message);
   console.error(err.stack);
+  captureSentryError(err, null, { type: 'unhandledRejection' });
   server.close(() => {
     console.log('💤 Server closed due to unhandled rejection');
     process.exit(1);
@@ -329,6 +355,7 @@ process.on('unhandledRejection', (err) => {
 process.on('uncaughtException', (err) => {
   console.error('🚨 Uncaught Exception:', err.message);
   console.error(err.stack);
+  captureSentryError(err, null, { type: 'uncaughtException' });
   process.exit(1);
 });
 

@@ -171,6 +171,14 @@ export interface Order {
   createdAt?: string;
   created_at?: string;
   couponId?: number | string | null;
+  stockShortfall?: number;
+  stockConflicts?: Array<{
+    productId?: number | string;
+    title?: string;
+    missing?: number;
+    available?: number;
+    vendorId?: number | string;
+  }> | null;
   [key: string]: unknown;
 }
 

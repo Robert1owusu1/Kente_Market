@@ -5,6 +5,7 @@
 import Order from "../models/orderModel.js";
 import pool from "../config/db.js";
 import Coupon from "../models/couponModel.js";
+import Notification from "../models/notificationModel.js";
 import isValidId from "../utils/isValidId.js";
 import { computeTopProductTypes } from "../utils/marketInsights.js";
 import paystackServices from "../Services/paystackservices.js";
@@ -19,6 +20,8 @@ import {
   cancelEscrowForOrder,
   retryFailedAllocations,
 } from "../Services/escrowService.js";
+import { reserveStockForItems } from "../Services/reservationService.js";
+import { sendOrderConfirmationEmail, sendEscrowReleasedEmail } from "../utils/orderEmailService.js";
 
 // Client-supplied order-item images are stored and rendered to other users (e.g.
 // in the vendor's order view), so they must not be able to carry javascript: or
@@ -34,34 +37,197 @@ const safeOrderImage = (/** @type {string|null|undefined} */ image) => {
 };
 
 // Decrement in-stock inventory when an order becomes paid. Made-to-order items
-// are woven on demand so their (zero) stock is not decremented. This helper is
-// fire-and-forget: it must never block the payment confirmation flow, and any
-// partial failure is logged for operator review (see audit — stock was never
-// decremented on sale, allowing overselling).
-/** @param {Array<{product?: any, productId?: any, qty?: any, quantity?: any}>} items */
-export const decrementStockForOrder = async (items) => {
-  if (!Array.isArray(items) || items.length === 0) return;
+// are woven on demand so their (zero) stock is not decremented.
+//
+// Concurrency (oversell) protection: each product is decremented with an
+// ATOMIC + CONDITIONAL statement — `WHERE stock >= ?` — so two buyers racing
+// for the last unit serialize on the row (InnoDB), and the second one simply
+// cannot take the unit. Stock never goes negative and no paid order silently
+// oversells: products that can't be fully covered are left untouched and
+// recorded as a "stock conflict" (shortfall), which flags the order and
+// notifies admin, the vendor and the customer so it is resolved visibly
+// instead of failing at fulfilment.
+//
+// This helper must never block the payment confirmation flow (it is
+// fire-and-forget) — any failure is logged for operator review.
+/**
+ * @param {Array<{product?: any, productId?: any, qty?: any, quantity?: any}>} items
+ * @param {number|string} [orderId] when provided, shortfalls flag the order + notify
+ * @returns {Promise<{ decremented: Record<number, number>, shortfall: number, conflicts: Array<{productId: number, title: string, missing: number, available: number, vendorId: number|null}> }>}
+ */
+export const decrementStockForOrder = async (items, orderId = null) => {
+  if (!Array.isArray(items) || items.length === 0) {
+    return { decremented: {}, shortfall: 0, conflicts: [] };
+  }
   const decrements = new Map();
   for (const item of items) {
     const productId = parseInt(item.product ?? item.productId, 10);
     const qty = parseInt(item.qty ?? item.quantity, 10);
     if (!productId || isNaN(qty) || qty <= 0) continue;
-    decrements.set(productId, (decrements.get(productId) || 0) + qty);
+    const reserved = parseInt(item.reserved, 10) || 0;
+    const existing = decrements.get(productId) || { qty: 0, reserved: 0 };
+    decrements.set(productId, { qty: existing.qty + qty, reserved: existing.reserved + reserved });
   }
-  if (decrements.size === 0) return;
+  if (decrements.size === 0) {
+    return { decremented: {}, shortfall: 0, conflicts: [] };
+  }
+
+  const connection = await pool.getConnection();
+  const decremented = {};
+  const conflicts = [];
+  try {
+    for (const [productId, { qty, reserved }] of decrements) {
+      // Units already reserved at order placement are already off the stock
+      // column — only the remainder still needs taking at payment time.
+      const toTake = qty - reserved;
+      if (toTake <= 0) continue;
+
+      const [result] = await connection.execute(
+        `UPDATE product
+         SET stock = stock - ?
+         WHERE id = ? AND madeToOrder = FALSE AND stock IS NOT NULL AND stock >= ?`,
+        [toTake, productId, toTake]
+      );
+      if (result.affectedRows > 0) {
+        decremented[productId] = toTake;
+        continue;
+      }
+      // Nothing could be taken — distinguish a real shortage from products that
+      // are exempt from stock tracking (made-to-order / NULL stock).
+      const [rows] = await connection.execute(
+        `SELECT id, title, stock, madeToOrder, vendorId FROM product WHERE id = ?`,
+        [productId]
+      );
+      const p = rows[0];
+      if (p && !p.madeToOrder && p.stock !== null && p.stock !== undefined) {
+        const available = parseInt(p.stock, 10) || 0;
+        conflicts.push({
+          productId,
+          title: p.title || `Product #${productId}`,
+          missing: Math.max(1, toTake - available),
+          available,
+          vendorId: p.vendorId || null,
+        });
+      }
+    }
+
+    const shortfall = conflicts.reduce((sum, c) => sum + c.missing, 0);
+    if (orderId && conflicts.length > 0) {
+      await flagStockShortfall(orderId, conflicts);
+    }
+    return { decremented, shortfall, conflicts };
+  } catch (err) {
+    console.warn(`⚠️ Stock decrement failed: ${err.message}`);
+    return { decremented, shortfall: 0, conflicts };
+  } finally {
+    connection.release();
+  }
+};
+
+// Persist the shortfall on the order (merge by product, keep the largest
+// missing count) and notify admin, the vendor(s) and the customer. All
+// non-fatal — the payment flow is already complete by now.
+/** @param {number|string} orderId @param {Array<{productId: number, title: string, missing: number, available: number, vendorId: number|null}>} conflicts */
+const flagStockShortfall = async (orderId, conflicts) => {
+  try {
+    const [rows] = await pool.execute(
+      `SELECT COALESCE(stockShortfall, 0) AS currentShortfall, stockConflicts FROM orders WHERE id = ?`,
+      [orderId]
+    );
+    if (rows.length === 0) return;
+
+    const merged = new Map();
+    for (const c of rows[0].stockConflicts || []) {
+      if (c?.productId) merged.set(c.productId, c);
+    }
+    for (const c of conflicts) {
+      const existing = merged.get(c.productId);
+      merged.set(c.productId, existing && existing.missing >= c.missing ? existing : c);
+    }
+    const allConflicts = [...merged.values()];
+    const totalShortfall = allConflicts.reduce((s, c) => s + (c.missing || 0), 0);
+
+    await pool.execute(
+      `UPDATE orders SET stockShortfall = ?, stockConflicts = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      [Math.max(Number(rows[0].currentShortfall) || 0, totalShortfall), JSON.stringify(allConflicts), orderId]
+    );
+  } catch (err) {
+    console.warn(`⚠️ Could not flag stock shortfall for order ${orderId}: ${err.message}`);
+  }
+
+  try {
+    const [adminUsers] = await pool.execute(`SELECT id FROM users WHERE role = 'admin' LIMIT 5`);
+    const list = conflicts.map((c) => `${c.title} (${c.missing} short)`).join(', ');
+    for (const admin of adminUsers) {
+      await Notification.create({
+        userId: admin.id,
+        type: 'system',
+        title: 'Stock shortage on paid order',
+        message: `Order #${orderId} was paid but stock is short for: ${list}. Restock the items or contact the customer to resolve.`,
+        link: `/admin/orders`,
+      });
+    }
+  } catch (err) {
+    console.warn(`⚠️ Could not notify admins of stock shortfall: ${err.message}`);
+  }
+
+  try {
+    const vendorIds = [...new Set(conflicts.map((c) => c.vendorId).filter(Boolean))];
+    for (const vendorId of vendorIds) {
+      await Notification.create({
+        userId: vendorId,
+        type: 'system',
+        title: 'Sold more than you have in stock',
+        message: `A paid order #${orderId} needs more of your item(s) than are in stock. Update your stock level or contact the customer.`,
+        link: `/vendor/orders`,
+      });
+    }
+  } catch (err) {
+    console.warn(`⚠️ Could not notify vendors of stock shortfall: ${err.message}`);
+  }
+
+  try {
+    const [[orderRow]] = await pool.execute(`SELECT userId FROM orders WHERE id = ?`, [orderId]);
+    if (orderRow?.userId) {
+      await Notification.create({
+        userId: orderRow.userId,
+        type: 'system',
+        title: 'Confirming your stock',
+        message: `One of your items sold out faster than expected — we're confirming a restock with the weaver and will keep you posted.`,
+        link: `/orders/${orderId}`,
+      });
+    }
+  } catch (err) {
+    console.warn(`⚠️ Could not notify customer of stock shortfall: ${err.message}`);
+  }
+};
+
+// Restore in-stock inventory when a paid order is cancelled/refunded. Made-to-order
+// items are skipped, and products that were never taken (stock conflicts at
+// payment time) are also skipped so stock is not inflated.
+/** @param {Array<{product?: any, productId?: any, qty?: any, quantity?: any}>} items @param {{ skipProductIds?: Set<number> }} [options] */
+export const restoreStockForOrder = async (items, { skipProductIds = new Set() } = {}) => {
+  if (!Array.isArray(items) || items.length === 0) return;
+  const restores = new Map();
+  for (const item of items) {
+    const productId = parseInt(item.product ?? item.productId, 10);
+    const qty = parseInt(item.qty ?? item.quantity, 10);
+    if (!productId || isNaN(qty) || qty <= 0) continue;
+    if (skipProductIds.has(productId)) continue;
+    restores.set(productId, (restores.get(productId) || 0) + qty);
+  }
+  if (restores.size === 0) return;
 
   const connection = await pool.getConnection();
   try {
-    for (const [productId, qty] of decrements) {
+    for (const [productId, qty] of restores) {
       await connection.execute(
-        `UPDATE product
-         SET stock = GREATEST(stock - ?, 0)
-         WHERE id = ? AND madeToOrder = FALSE AND stock IS NOT NULL`,
+        `UPDATE product SET stock = stock + ? WHERE id = ? AND madeToOrder = FALSE`,
         [qty, productId]
       );
     }
   } catch (err) {
-    console.warn(`⚠️ Stock decrement failed: ${err.message}`);
+    console.warn(`⚠️ Stock restore failed: ${err.message}`);
   } finally {
     connection.release();
   }
@@ -86,6 +252,8 @@ export const decrementStockForOrder = async (items) => {
 // @access  Private
 /** @param {AppRequest} req @param {import("express").Response} res */
 export const addOrderItems = async (req, res) => {
+  // Hoisted so the catch block can roll back reservations taken in the try.
+  let reservedUnits = new Map();
   try {
     const rawItems = /** @type {Array<any>} */ (Array.isArray(req.body.items) ? req.body.items : []);
     if (rawItems.length === 0) {
@@ -147,6 +315,29 @@ export const addOrderItems = async (req, res) => {
       }
     }
 
+    // Reserve in-stock units for this pending order (atomic + conditional, one
+    // UPDATE per product). Units are deducted from `stock` immediately so two
+    // buyers can never both check out the last unit — the second one gets a
+    // clear "only N available" error here instead of a conflict after paying.
+    // The reservation converts to a sale at payment time (decrementStockForOrder
+    // skips reserved units) and is released on cancel or expiry
+    // (releaseExpiredReservations). Reservation is tracked per order item via
+    // `reserved`, and a failed reservation rejects the checkout outright.
+    for (const r of requested) {
+      const p = productMap.get(r.productId);
+      r.madeToOrder = !!p.madeToOrder;
+      r.stock = p.stock;
+    }
+    const { reserved, failures: reservationFailures } = await reserveStockForItems(requested);
+    reservedUnits = reserved;
+    if (reservationFailures.length > 0) {
+      const f = reservationFailures[0];
+      const p = productMap.get(f.productId);
+      return res.status(400).json({
+        message: `Only ${f.available} unit(s) of "${p?.title || 'this item'}" are available. Please reduce the quantity.`,
+      });
+    }
+
     const items = requested.map((r) => {
       const p = productMap.get(r.productId);
       return {
@@ -162,6 +353,7 @@ export const addOrderItems = async (req, res) => {
         // for custom orders. The vendor sets productionTime (in days) on the product.
         isCustomizable: !!p.isCustomizable,
         productionTime: parseInt(p.productionTime) || 1,
+        reserved: r.reserved || 0,
       };
     });
 
@@ -221,6 +413,17 @@ export const addOrderItems = async (req, res) => {
     res.status(201).json({ message: "Order created successfully", order: newOrder });
   } catch (error) {
     console.error('Error creating order:', error);
+    // Roll back any stock reservation taken for this order so a failed creation
+    // never permanently locks units out of the catalog.
+    if (reservedUnits.size > 0) {
+      try {
+        await restoreStockForOrder(
+          [...reservedUnits].map(([productId, qty]) => ({ product: productId, qty }))
+        );
+      } catch (restoreErr) {
+        console.warn(`⚠️ Could not roll back reservation: ${restoreErr.message}`);
+      }
+    }
     res.status(500).json({ message: "Internal server error" });
   }
 };
@@ -384,15 +587,28 @@ export const updateOrderToPaid = async (req, res) => {
       return res.status(403).json({ message: "Not authorized to mark order as paid" });
     }
 
-    await Order.update(req.params.id, {
-      paymentStatus: "paid",
-      orderStatus: "processing",
-    });
+    const existingOrder = await Order.findById(req.params.id);
+    if (!existingOrder) {
+      return res.status(404).json({ message: "Order not found" });
+    }
+
+    // Idempotency guard: if this order is already paid, the one-time side
+    // effects (escrow hold, stock decrement, coupon usage) already ran. A
+    // repeated admin click must not decrement stock or consume the coupon a
+    // second time.
+    const alreadyPaid = existingOrder.paymentStatus === 'paid';
+
+    if (!alreadyPaid) {
+      await Order.update(req.params.id, {
+        paymentStatus: "paid",
+        orderStatus: "processing",
+      });
+    }
 
     // For customised orders, seed the expected completion date (order start +
     // longest productionTime among customisable items) so the buyer sees how
     // many days are left to finish weaving. Only set if not already provided.
-    const paidOrder = await Order.findById(req.params.id);
+    const paidOrder = alreadyPaid ? existingOrder : await Order.findById(req.params.id);
     if (!paidOrder || !paidOrder.expectedCompletionDate) {
       const completion = computeExpectedCompletion(paidOrder);
       if (completion) {
@@ -405,29 +621,38 @@ export const updateOrderToPaid = async (req, res) => {
     // Hold escrow allocations for the order so vendors can be paid out
     const heldCount = await holdEscrowForOrder(req.params.id);
 
-    // Decrement in-stock inventory now that the sale is confirmed.
-    const paidOrderForStock = await Order.findById(req.params.id);
-    let paidItems = paidOrderForStock?.items;
-    if (typeof paidItems === 'string') {
-      try { paidItems = JSON.parse(paidItems); } catch { paidItems = []; }
-    }
-    if (Array.isArray(paidItems) && paidItems.length > 0) {
-      await decrementStockForOrder(paidItems);
-    }
+    // Decrement in-stock inventory now that the sale is confirmed — once only.
+    if (!alreadyPaid) {
+      const paidOrderForStock = await Order.findById(req.params.id);
+      let paidItems = paidOrderForStock?.items;
+      if (typeof paidItems === 'string') {
+        try { paidItems = JSON.parse(paidItems); } catch { paidItems = []; }
+      }
+      if (Array.isArray(paidItems) && paidItems.length > 0) {
+        await decrementStockForOrder(paidItems, req.params.id);
+      }
 
-    // Consume deferred coupon usage on admin-confirmed payment
-    const freshOrder = await Order.findById(req.params.id);
-    if (freshOrder?.couponId) {
+      // Consume deferred coupon usage on admin-confirmed payment
+      const freshOrder = await Order.findById(req.params.id);
+      if (freshOrder?.couponId) {
+        try {
+          await Coupon.incrementUses(freshOrder.couponId);
+        } catch (e) {
+          console.warn(`⚠️ Could not increment coupon usage: ${e.message}`);
+        }
+      }
+
+      // Receipt email — only when this call actually flipped the order to paid.
       try {
-        await Coupon.incrementUses(freshOrder.couponId);
-      } catch (e) {
-        console.warn(`⚠️ Could not increment coupon usage: ${e.message}`);
+        await sendOrderConfirmationEmail(req.params.id);
+      } catch (emailErr) {
+        console.warn(`⚠️ Could not send order confirmation email: ${emailErr.message}`);
       }
     }
 
     const order = await Order.findById(req.params.id);
     res.json({
-      message: "Order marked as paid",
+      message: alreadyPaid ? "Order was already paid" : "Order marked as paid",
       order,
       escrowHeld: heldCount,
     });
@@ -544,6 +769,15 @@ export const confirmOrderReceived = async (req, res) => {
     const result = await releaseEscrowForOrder(req.params.id);
     const updatedOrder = await Order.findById(req.params.id);
 
+    // Escrow-release confirmation email — once, when allocations actually moved.
+    if (result.released > 0 || result.available > 0) {
+      try {
+        await sendEscrowReleasedEmail(req.params.id);
+      } catch (emailErr) {
+        console.warn(`⚠️ Could not send escrow released email: ${emailErr.message}`);
+      }
+    }
+
     // Mark any custom kente request tied to this order as completed — the
     // buyer has confirmed receipt and the weaver is paid.
     try {
@@ -629,6 +863,40 @@ export const cancelOrder = async (req, res) => {
       orderStatus: "cancelled",
       paymentStatus: order.paymentStatus === 'paid' ? 'refunded' : order.paymentStatus,
     });
+
+    // Restore in-stock inventory for a cancelled order. This covers BOTH:
+    // - paid orders (their stock was decremented at payment), and
+    // - pending orders that still hold a reservation (units were taken off
+    //   `stock` at order creation and must go back now that the checkout is
+    //   abandoned).
+    // Products that were short at payment time (stock conflicts) were never
+    // taken, so they are skipped to avoid inflating stock. Made-to-order items
+    // are never restored.
+    const reservedTotal = (Array.isArray(order.items) ? order.items : []).reduce(
+      (sum, it) => sum + (parseInt(it?.reserved, 10) || 0),
+      0
+    );
+    if (order.paymentStatus === 'paid' || reservedTotal > 0) {
+      try {
+        const skipProductIds = new Set();
+        const storedConflicts = order.stockConflicts;
+        const conflicts = Array.isArray(storedConflicts)
+          ? storedConflicts
+          : typeof storedConflicts === 'string'
+          ? (() => { try { return JSON.parse(/** @type {string} */ (storedConflicts)); } catch { return []; } })()
+          : [];
+        for (const c of conflicts) {
+          if (c?.productId) skipProductIds.add(c.productId);
+        }
+        await restoreStockForOrder(order.items, { skipProductIds });
+        await pool.execute(
+          `UPDATE orders SET stockShortfall = 0, stockConflicts = NULL WHERE id = ?`,
+          [req.params.id]
+        );
+      } catch (restoreErr) {
+        console.warn(`⚠️ Could not restore stock for cancelled order ${req.params.id}: ${restoreErr.message}`);
+      }
+    }
 
     // Void any held escrow allocations so funds return to the platform
     if (order.escrowStatus === 'held' || order.escrowStatus === 'none') {

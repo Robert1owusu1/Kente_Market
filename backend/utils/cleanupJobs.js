@@ -4,6 +4,7 @@ import Notification from '../models/notificationModel.js';
 import { sendEmailSafely } from './emailService.js';
 import { scanWishlistRestocks } from '../Services/wishlistRestockService.js';
 import { scanWishlistPriceDrops } from '../Services/wishlistPriceDropService.js';
+import { releaseExpiredReservations } from '../Services/reservationService.js';
 import { sendWeeklyVendorDigest } from './marketInsights.js';
 
 // Delete unverified users older than 7 days
@@ -102,12 +103,86 @@ export const escalateStaleCustomRequests = async () => {
   }
 };
 
+// Abandoned cart recovery: email a signed-in user whose server cart has been
+// untouched for RECOVERY_HOURS from the last time we reached out, so each cart
+// is only re-targeted after a cooldown. Skips users who placed an order AFTER
+// they last touched their cart (already converted). Best-effort — never blocks
+// the scheduler and never resends twice for the same stint.
+export const sendAbandonedCartEmails = async () => {
+  try {
+    const cooldownHours = Math.max(1, parseInt(process.env.CART_RECOVERY_COOLDOWN_HOURS || '72', 10));
+    const [rows] = await pool.execute(
+      `SELECT c.id AS cartId, c.items, c.updated_at, c.lastRecoveryEmailAt,
+              u.id AS userId, u.email, u.firstName
+       FROM carts c
+       JOIN users u ON u.id = c.userId
+       WHERE JSON_LENGTH(COALESCE(c.items, JSON_ARRAY())) > 0
+         AND c.updated_at < DATE_SUB(NOW(), INTERVAL 1 HOUR)
+         AND (c.lastRecoveryEmailAt IS NULL
+              OR c.lastRecoveryEmailAt < DATE_SUB(NOW(), INTERVAL ? HOUR))
+       LIMIT 25`,
+      [cooldownHours]
+    );
+
+    let sent = 0;
+    for (const row of rows) {
+      try {
+        // Skip users who converted (placed an order) after last touching the cart.
+        const [[recentOrder]] = await pool.execute(
+          `SELECT id FROM orders
+           WHERE userId = ? AND created_at > ?
+           ORDER BY created_at DESC LIMIT 1`,
+          [row.userId, row.updated_at]
+        );
+        if (recentOrder) continue;
+
+        let items = row.items;
+        if (typeof items === 'string') {
+          try { items = JSON.parse(items); } catch { items = []; }
+        }
+        const list = (Array.isArray(items) ? items : [])
+          .map((it) => `<strong>${it.name || it.title || 'Item'}</strong> x${it.qty ?? it.quantity ?? 1}`)
+          .slice(0, 6)
+          .join('<br/>');
+        if (!row.email) continue;
+
+        const cartUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/cart`;
+        const ok = await sendEmailSafely(
+          row.email,
+          `You left something beautiful in your cart, ${row.firstName || 'friend'} 🧶`,
+          `<p>Hi ${row.firstName || 'there'},</p>
+           <p>You still have these pieces waiting in your Bonwire Kente cart:</p>
+           <p style="background:#f9fafb;border:1px solid #eee;border-radius:8px;padding:16px;">${list}</p>
+           <p>Kente pieces are woven by hand and quantities are limited — once a pattern is sold it may take weeks to weave again.</p>
+           <p style="text-align:center;margin:24px 0;"><a href="${cartUrl}" style="display:inline-block;padding:12px 30px;background:#f59e0b;color:#fff;text-decoration:none;border-radius:6px;font-weight:bold;">Return to my cart</a></p>
+           <p style="color:#666;font-size:13px;">Determined to leave it this time? Reply to this email and we'll save the design for you — no pressure.</p>`
+        );
+        if (ok) {
+          await pool.execute(
+            `UPDATE carts SET lastRecoveryEmailAt = NOW() WHERE id = ?`,
+            [row.cartId]
+          );
+          sent += 1;
+        }
+      } catch (rowErr) {
+        console.warn(`⚠️ Abandoned-cart email failed for cart ${row.cartId}: ${rowErr.message}`);
+      }
+    }
+    if (sent > 0) {
+      console.log(`📧 Sent ${sent} abandoned-cart recovery email(s)`);
+    }
+  } catch (err) {
+    console.error('⚠️ Abandoned-cart job failed:', err.message);
+  }
+};
+
 // Run cleanup daily
 export const startCleanupSchedule = () => {
   // Run immediately on start
   cleanupUnverifiedUsers();
   autoReleaseExpiredEscrows();
   recoverStuckPendingOrders();
+  releaseExpiredReservations();
   escalateStaleCustomRequests();
   scanWishlistRestocks();
   scanWishlistPriceDrops();
@@ -121,6 +196,9 @@ export const startCleanupSchedule = () => {
   // Recover orders stuck in pending (payment reference exists but webhook + fallback both missed)
   setInterval(recoverStuckPendingOrders, 30 * 60 * 1000);
 
+  // Release stock reservations held by abandoned checkouts (never paid)
+  setInterval(releaseExpiredReservations, 30 * 60 * 1000);
+
   // Escalate custom requests pending > 48 hours (notifications to all parties)
   setInterval(escalateStaleCustomRequests, 1 * 60 * 60 * 1000);
 
@@ -130,11 +208,15 @@ export const startCleanupSchedule = () => {
   // Price-drop alerts for wishlisted items (safety-net sweep)
   setInterval(scanWishlistPriceDrops, 1 * 60 * 60 * 1000);
 
+  // Abandoned-cart recovery emails (once per hour, re-targets only after cooldown)
+  sendAbandonedCartEmails();
+  setInterval(sendAbandonedCartEmails, 1 * 60 * 60 * 1000);
+
   // Weekly vendor demand digest (Monday mornings). Not fired on boot — the
   // settings-guarded job is idempotent per calendar week anyway.
   setInterval(() => {
     sendWeeklyVendorDigest().catch((err) => console.error('⚠️ Weekly digest job failed:', err.message));
   }, 7 * 24 * 60 * 60 * 1000);
 
-  console.log('✅ Cleanup scheduler started (users 24h, escrow 2h, stuck orders 30m, SLA 1h, restock 1h, price-drop 1h, digest weekly)');
+  console.log('✅ Cleanup scheduler started (users 24h, escrow 2h, stuck orders 30m, reservations 30m, SLA 1h, restock 1h, price-drop 1h, abandoned-cart 1h, digest weekly)');
 };

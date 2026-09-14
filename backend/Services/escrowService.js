@@ -590,7 +590,7 @@ export { ESCROW_RELEASE_DAYS };
  */
 export const recoverStuckPendingOrders = async () => {
   const [rows] = await pool.execute(
-    `SELECT id, paymentReference FROM orders
+    `SELECT id, paymentReference, items FROM orders
      WHERE paymentStatus = 'pending'
        AND paymentReference IS NOT NULL
        AND paymentReference != ''
@@ -608,12 +608,36 @@ export const recoverStuckPendingOrders = async () => {
         { headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` } }
       );
       if (resp.data?.data?.status === 'success') {
-        await pool.execute(
+        // Flip-guard: only run side effects if THIS call actually moved the
+        // order from pending to paid, so a recovery racing with the webhook or
+        // verify-paystack fallback can never double-hold escrow or
+        // double-decrement stock.
+        const [flipResult] = await pool.execute(
           `UPDATE orders SET paymentStatus = 'paid', orderStatus = 'processing', updated_at = CURRENT_TIMESTAMP
            WHERE id = ? AND paymentStatus = 'pending'`,
           [order.id]
         );
+        if (flipResult.affectedRows === 0) continue;
+
         await holdEscrowForOrder(order.id);
+
+        // This path acts like the webhook: decrement in-stock inventory now
+        // that the order is confirmed paid (guarded so it runs once, and the
+        // atomic conditional decrement prevents any oversell), so recovery
+        // never leaks stock.
+        try {
+          const { decrementStockForOrder } = await import('../controllers/orderController.js');
+          let items = order.items;
+          if (typeof items === 'string') {
+            try { items = JSON.parse(items); } catch { items = []; }
+          }
+          if (Array.isArray(items) && items.length > 0) {
+            await decrementStockForOrder(items, order.id);
+          }
+        } catch (stockErr) {
+          console.warn(`⚠️ Could not decrement stock for recovered order ${order.id}: ${stockErr.message}`);
+        }
+
         console.log(`🔧 Recovered stuck order ${order.id} via Paystack verify`);
         recovered += 1;
       }
