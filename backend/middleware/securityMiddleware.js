@@ -61,13 +61,11 @@ export const setupSecurity = (app) => {
     const origin = req.headers.origin;
 
     // Only reflect a concrete origin; never send "*" together with credentials.
-    // In production, allow the configured frontend URL(s) plus any Vercel
-    // deployment (production + preview branches share the *.vercel.app domain)
-    // and localhost, so local dev against the live API works too.
+    // CORS is an explicit allow-list. Never trust every Vercel preview: an
+    // arbitrary preview origin must not be able to send credentialed requests.
     const isAllowedOrigin = (o) => {
       if (!o) return false;
-      if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(o)) return true;
-      if (/^https:\/\/[a-z0-9-]+\.vercel\.app$/i.test(o)) return true;
+      if (process.env.NODE_ENV !== 'production' && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(o)) return true;
       return allowedOrigins.includes(o);
     };
 
