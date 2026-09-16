@@ -152,7 +152,7 @@ class PaystackService {
    * @param {string} reason - Transfer reason
    * @returns {Promise<PaystackEnvelope>} Transfer response
    */
-  async initiateTransfer(amount, recipient, reason = '') {
+  async initiateTransfer(amount, recipient, reason = '', reference) {
     try {
       const response = await axios.post(
         `${this.baseUrl}/transfer`,
@@ -162,6 +162,10 @@ class PaystackService {
           recipient,
           reason,
           currency: 'GHS',
+          // Supplying our own immutable reference makes retries safe: Paystack
+          // treats a repeated reference as the same transfer rather than a new
+          // payout.
+          ...(reference ? { reference } : {}),
         },
         { headers: this.headers }
       );

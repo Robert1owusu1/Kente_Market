@@ -10,6 +10,7 @@ import { PLATFORM_FEE_RATE, ESCROW_RELEASE_DAYS } from '../config/businessConfig
 import { resolveCommissionRate } from './commissionService.js';
 import Notification from '../models/notificationModel.js';
 import { round2, calcEscrowFees } from '../../shared/pricing.js';
+import crypto from 'crypto';
 
 /**
  * @typedef {Object} Allocation
@@ -121,15 +122,6 @@ export const recomputeOrderEscrowStatus = async (orderId) => {
 export const createEscrowAllocations = async (orderId, items, { advanceRatio = 0 } = {}) => {
   if (!Array.isArray(items) || items.length === 0) return 0;
 
-  // Idempotency guard: never double-create escrow for an order (replaces the
-  // removed uq_escrow_order_vendor unique key, which also blocked splitting a
-  // custom order into advance + balance rows).
-  const [[existing]] = await pool.execute(
-    `SELECT COUNT(*) AS c FROM escrow_allocations WHERE orderId = ?`,
-    [parseInt(orderId)]
-  );
-  if ((existing?.c || 0) > 0) return 0;
-
   const productIds = items
     .map((it) => it?.product || it?.productId || it?.id)
     .filter((id) => id !== undefined && id !== null);
@@ -178,33 +170,33 @@ export const createEscrowAllocations = async (orderId, items, { advanceRatio = 0
       const { platformFee: advanceFee } = calcEscrowFees(advanceAmount, feeRate, PLATFORM_FEE_RATE);
       const { platformFee: balanceFee } = calcEscrowFees(balanceAmount, feeRate, PLATFORM_FEE_RATE);
       if (advanceAmount > 0) {
-        await pool.execute(
+        const [insert] = await pool.execute(
           `INSERT IGNORE INTO escrow_allocations
              (orderId, vendorId, amount, platformFeeRate, platformFee, payoutAmount, status, allocationType)
            VALUES (?, ?, ?, ?, ?, ?, 'pending', 'advance')`,
           [orderId, vendorId, advanceAmount, feeRate, advanceFee, round2(advanceAmount - advanceFee)]
         );
-        created += 1;
+        created += insert.affectedRows;
       }
       if (balanceAmount > 0) {
-        await pool.execute(
+        const [insert] = await pool.execute(
           `INSERT IGNORE INTO escrow_allocations
              (orderId, vendorId, amount, platformFeeRate, platformFee, payoutAmount, status, allocationType)
            VALUES (?, ?, ?, ?, ?, ?, 'pending', 'balance')`,
           [orderId, vendorId, balanceAmount, feeRate, balanceFee, round2(balanceAmount - balanceFee)]
         );
-        created += 1;
+        created += insert.affectedRows;
       }
       continue;
     }
 
     const { platformFee, payoutAmount } = calcEscrowFees(totalAmount, feeRate, PLATFORM_FEE_RATE);
-    await pool.execute(
+    const [insert] = await pool.execute(
       `INSERT IGNORE INTO escrow_allocations (orderId, vendorId, amount, platformFeeRate, platformFee, payoutAmount, status)
        VALUES (?, ?, ?, ?, ?, ?, 'pending')`,
       [orderId, vendorId, round2(totalAmount), feeRate, platformFee, payoutAmount]
     );
-    created += 1;
+    created += insert.affectedRows;
   }
   return created;
 };
@@ -232,7 +224,7 @@ export const releaseAllocation = async (allocation) => {
     PLATFORM_FEE_RATE
   );
 
-  await pool.execute(
+  const [transition] = await pool.execute(
     `UPDATE escrow_allocations
      SET status = 'available', platformFee = ?, payoutAmount = ?,
          updated_at = CURRENT_TIMESTAMP
@@ -240,13 +232,32 @@ export const releaseAllocation = async (allocation) => {
     [platformFee, payoutAmount, allocation.id]
   );
 
+  // A concurrent delivery confirmation may have released this allocation
+  // first. Only the request that wins held -> available owns the wallet credit.
+  if (transition.affectedRows !== 1) {
+    updated.reason = 'already released by another worker';
+    return updated;
+  }
+
   // Credit the vendor's wallet balance (durable, shown on dashboard).
   const [orderRows] = await pool.execute(
     `SELECT orderNumber FROM orders WHERE id = ?`,
     [allocation.orderId]
   );
   const orderNumber = orderRows.length > 0 ? orderRows[0].orderNumber : null;
-  await creditVendorBalance(allocation.vendorId, allocation.id, payoutAmount, orderNumber);
+  try {
+    await creditVendorBalance(allocation.vendorId, allocation.id, payoutAmount, orderNumber);
+  } catch (error) {
+    // Do not strand an allocation as available without a corresponding wallet
+    // credit. Revert only our own transition so the scheduled release can
+    // safely retry; a successful concurrent credit is protected by its ledger
+    // unique key and will not be duplicated.
+    await pool.execute(
+      `UPDATE escrow_allocations SET status = 'held', updated_at = CURRENT_TIMESTAMP
+       WHERE id = ? AND status = 'available'`, [allocation.id]
+    );
+    throw error;
+  }
 
   updated.status = 'available';
   updated.platformFee = platformFee;
@@ -292,50 +303,75 @@ export const payoutAllocation = async (allocation, requestedAmount) => {
     return updated;
   }
   const fullPayout = round2(available) - round2(amount) < 0.01;
+  const reference = `kente_tr_${allocation.id}_${crypto.randomUUID().replace(/-/g, '')}`;
+
+  // Claim the funds and persist the provider idempotency key *before* any
+  // network call.  This is the critical boundary: concurrent requests cannot
+  // both send the same money to Paystack.
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [claimed] = await connection.execute(
+      `UPDATE escrow_allocations
+       SET status = CASE WHEN ? THEN 'releasing' ELSE 'available' END,
+           payoutAmount = payoutAmount - ?,
+           payoutReference = CASE WHEN ? THEN ? ELSE payoutReference END,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = ? AND status = 'available' AND payoutAmount >= ?`,
+      [fullPayout, amount, fullPayout, reference, allocation.id, amount]
+    );
+    if (claimed.affectedRows !== 1) {
+      await connection.rollback();
+      updated.reason = 'allocation was already claimed by another withdrawal';
+      return updated;
+    }
+    await connection.execute(
+      `INSERT INTO payout_attempts (allocationId, vendorId, amount, reference, isFull, status)
+       VALUES (?, ?, ?, ?, ?, 'processing')`,
+      [allocation.id, allocation.vendorId, amount, reference, fullPayout]
+    );
+    await connection.commit();
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
 
   try {
     const result = await paystackServices.initiateTransfer(
-      amount,
-      allocation.recipientCode,
-      `Escrow payout for order #${allocation.orderId}`
+      amount, allocation.recipientCode, `Escrow payout for order #${allocation.orderId}`, reference
     );
-    const reference = result?.data?.data?.reference || result?.data?.reference || null;
-    if (!reference) {
-      throw new Error('Paystack transfer returned no reference');
-    }
+    const providerReference = result?.data?.data?.reference || result?.data?.reference || reference;
+    if (!providerReference) throw new Error('Paystack transfer returned no reference');
 
+    // Paystack normally returns the supplied reference. Keep the provider's
+    // value if it differs so its webhook can still be reconciled.
+    if (providerReference !== reference) {
+      await pool.execute(`UPDATE payout_attempts SET providerReference = ? WHERE reference = ?`, [providerReference, reference]);
+    }
     if (fullPayout) {
-      await pool.execute(
-        `UPDATE escrow_allocations
-         SET status = 'releasing', payoutReference = ?, updated_at = CURRENT_TIMESTAMP
-         WHERE id = ?`,
-        [reference, allocation.id]
-      );
       updated.status = 'releasing';
     } else {
-      const remainingGross = Math.max(0, round2((parseFloat(String(allocation.amount ?? 0)) || 0) - amount));
       const remainingNet = Math.max(0, round2(available - amount));
-      await pool.execute(
-        `UPDATE escrow_allocations
-         SET amount = ?, payoutAmount = ?, payoutReference = ?, updated_at = CURRENT_TIMESTAMP
-         WHERE id = ? AND status = 'available'`,
-        [remainingGross, remainingNet, reference, allocation.id]
-      );
-      updated.amount = remainingGross;
       updated.payoutAmount = remainingNet;
       updated.status = 'available';
       updated.reason = `partial withdrawal of GHS ${round2(amount).toFixed(2)} (${round2(remainingNet).toFixed(2)} remaining)`;
     }
     updated.paid = true;
     updated.platformFee = allocation.platformFee;
-    updated.payoutReference = reference;
+    updated.payoutReference = providerReference;
   } catch (error) {
-    // Transient failure (bad recipient, Paystack declined, no balance in the
-    // payout account, etc). Keep the allocation 'available' so the vendor can
-    // fix their payout details and try again — money is NOT lost or orphaned.
+    // A timeout can mean Paystack accepted the transfer but its response was
+    // lost. Never re-open these funds automatically; reconciliation can safely
+    // retry/query the same provider reference without creating a duplicate.
+    await pool.execute(
+      `UPDATE payout_attempts SET lastError = ?, updated_at = CURRENT_TIMESTAMP WHERE reference = ? AND status = 'processing'`,
+      [String(error.message || error).slice(0, 500), reference]
+    );
     console.error(`❌ Escrow payout failed for allocation ${allocation.id}:`, error.message);
-    updated.status = 'available';
-    updated.reason = error.message;
+    updated.status = fullPayout ? 'releasing' : 'available';
+    updated.reason = `Transfer outcome pending reconciliation: ${error.message}`;
   }
   return updated;
 };

@@ -43,29 +43,39 @@ export const getWallet = async (vendorId) => {
  * @returns {Promise<boolean>} true if credited, false if already credited
  */
 export const creditVendorBalance = async (vendorId, allocationId, payoutAmount, orderNumber) => {
-  await ensureWallet(vendorId);
-  const [existing] = await pool.execute(
-    `SELECT id FROM wallet_transactions
-     WHERE vendorId = ? AND allocationId = ? AND type = 'credit'`,
-    [vendorId, allocationId]
-  );
-  if (existing.length > 0) return false; // already credited
-
   const amount = round2(parseFloat(String(payoutAmount)) || 0);
-  await pool.execute(
-    `UPDATE vendor_wallets
-     SET available_balance = available_balance + ?,
-         total_earned = total_earned + ?,
-         updated_at = CURRENT_TIMESTAMP
-     WHERE vendorId = ?`,
-    [amount, amount, vendorId]
-  );
-  await pool.execute(
-    `INSERT INTO wallet_transactions (vendorId, type, amount, allocationId, note, status)
-     VALUES (?, 'credit', ?, ?, ?, 'succeeded')`,
-    [vendorId, amount, allocationId, `Escrow release for order ${orderNumber || ''}`.trim()]
-  );
-  return true;
+  if (amount <= 0) throw new Error('Escrow credit amount must be positive');
+
+  // The ledger insert is the idempotency gate.  Do not do a SELECT followed by
+  // an UPDATE: two delivery-release workers can otherwise both credit the same
+  // allocation. uq_wallet_credit_allocation makes this durable at the DB layer.
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    await connection.execute(`INSERT IGNORE INTO vendor_wallets (vendorId) VALUES (?)`, [vendorId]);
+    const [ledger] = await connection.execute(
+      `INSERT IGNORE INTO wallet_transactions (vendorId, type, amount, allocationId, note, status)
+       VALUES (?, 'credit', ?, ?, ?, 'succeeded')`,
+      [vendorId, amount, allocationId, `Escrow release for order ${orderNumber || ''}`.trim()]
+    );
+    if (ledger.affectedRows !== 1) {
+      await connection.rollback();
+      return false;
+    }
+    await connection.execute(
+      `UPDATE vendor_wallets
+       SET available_balance = available_balance + ?, total_earned = total_earned + ?,
+           updated_at = CURRENT_TIMESTAMP WHERE vendorId = ?`,
+      [amount, amount, vendorId]
+    );
+    await connection.commit();
+    return true;
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
 };
 
 /**
@@ -79,17 +89,39 @@ export const creditVendorBalance = async (vendorId, allocationId, payoutAmount, 
 export const debitVendorBalance = async (vendorId, amount, reference, note) => {
   const amt = round2(parseFloat(String(amount)) || 0);
   if (amt <= 0) throw new Error('Withdrawal amount must be positive');
-  await pool.execute(
-    `UPDATE vendor_wallets
-     SET available_balance = available_balance - ?,
-         total_withdrawn = total_withdrawn + ?,
-         updated_at = CURRENT_TIMESTAMP
-     WHERE vendorId = ? AND available_balance >= ?`,
-    [amt, amt, vendorId, amt]
-  );
-  await pool.execute(
-    `INSERT INTO wallet_transactions (vendorId, type, amount, reference, note, status)
-     VALUES (?, 'withdrawal', ?, ?, ?, 'succeeded')`,
-    [vendorId, amt, reference, note || 'Withdrawal']
-  );
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    // A transfer webhook can be redelivered. The reference is globally unique
+    // in the payout-attempt table and is also the withdrawal-ledger key.
+    const [alreadyDebited] = await connection.execute(
+      `SELECT id FROM wallet_transactions WHERE type = 'withdrawal' AND reference = ? FOR UPDATE`,
+      [reference]
+    );
+    if (alreadyDebited.length > 0) {
+      await connection.rollback();
+      return false;
+    }
+    const [debit] = await connection.execute(
+      `UPDATE vendor_wallets SET available_balance = available_balance - ?,
+          total_withdrawn = total_withdrawn + ?, updated_at = CURRENT_TIMESTAMP
+       WHERE vendorId = ? AND available_balance >= ?`,
+      [amt, amt, vendorId, amt]
+    );
+    if (debit.affectedRows !== 1) {
+      throw new Error('Insufficient available balance while recording withdrawal');
+    }
+    await connection.execute(
+      `INSERT INTO wallet_transactions (vendorId, type, amount, reference, note, status)
+       VALUES (?, 'withdrawal', ?, ?, ?, 'succeeded')`,
+      [vendorId, amt, reference, note || 'Withdrawal']
+    );
+    await connection.commit();
+    return true;
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
 };
