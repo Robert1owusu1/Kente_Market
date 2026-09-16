@@ -3,7 +3,7 @@ import Vendor from '../models/vendorModel.js';
 import Order from '../models/orderModel.js';
 import pool from '../config/db.js';
 import paystackServices from '../Services/paystackservices.js';
-import { getWallet, debitVendorBalance } from '../Services/walletService.js';
+import { getWallet } from '../Services/walletService.js';
 import { getAvailableAllocationsForVendor, payoutAllocation } from '../Services/escrowService.js';
 import { PLATFORM_FEE_RATE } from '../config/businessConfig.js';
 
@@ -924,12 +924,10 @@ export const withdrawVendorBalance = async (req, res) => {
       const updated = await payoutAllocation(allocation, take);
       results.push(updated);
 
-      // Only debit the ledger when a transfer reference actually came back.
-      // 'releasing' = full chunk paid out; 'available' = partial paid with
-      // remainder left for a future withdrawal. A failed transfer keeps the
-      // allocation 'available' (paid=false) so it can be retried later.
+      // The wallet is debited only by the signed transfer.success webhook.
+      // A provider acknowledgement is not settlement; debiting here makes a
+      // failed/reversed transfer silently lose vendor funds.
       if (updated.paid) {
-        await debitVendorBalance(req.user.id, take, updated.payoutReference, `Withdrawal for order ${allocation.orderId}`);
         remaining = Math.round((remaining - take) * 100) / 100;
         paid += 1;
       } else {

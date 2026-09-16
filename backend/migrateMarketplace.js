@@ -346,9 +346,10 @@ try {
   // (released at payment) vs. the balance (released on delivery).
   await addColumn('escrow_allocations', 'allocationType',
     `ENUM('standard','advance','balance') NOT NULL DEFAULT 'standard'`);
-  // The old uq_escrow_order_vendor constraint (orderId, vendorId) cannot hold
-  // BOTH the advance and the balance row for custom orders. Replace it with a
-  // plain index; createEscrowAllocations guards against double-creation in code.
+  // Allocation type is part of the identity: custom orders can have one
+  // advance and one balance allocation, but concurrent requests must never
+  // create either row twice. This must be enforced by MySQL, not a SELECT
+  // guard in application code.
   // (An explicit orderId index must exist first — the FK on orders needs a
   // leading orderId index to keep its constraint valid.)
   if (!(await indexExists('escrow_allocations', 'idx_escrow_orderId'))) {
@@ -367,6 +368,54 @@ try {
     );
     console.log('✅ Added escrow_allocations idx_escrow_order_vendor');
   }
+  if (!(await indexExists('escrow_allocations', 'uq_escrow_order_vendor_type'))) {
+    await connection.query(
+      `ALTER TABLE escrow_allocations
+       ADD UNIQUE KEY uq_escrow_order_vendor_type (orderId, vendorId, allocationType)`
+    );
+    console.log('✅ Added escrow allocation idempotency key');
+  }
+
+  // Credit entries are the durable idempotency record for releasing escrow to
+  // a wallet. MySQL permits multiple NULLs, so this only constrains credits
+  // tied to a real allocation and does not block ordinary withdrawal rows.
+  if (!(await indexExists('wallet_transactions', 'uq_wallet_credit_allocation'))) {
+    await connection.query(
+      `ALTER TABLE wallet_transactions
+       ADD UNIQUE KEY uq_wallet_credit_allocation (vendorId, allocationId, type)`
+    );
+    console.log('✅ Added wallet credit idempotency key');
+  }
+
+  // Each provider call has a locally generated, unique reference written
+  // before it is sent. This is the payout outbox/reconciliation ledger.
+  await addTable('payout_attempts', `
+    CREATE TABLE IF NOT EXISTS payout_attempts (
+      id BIGINT AUTO_INCREMENT PRIMARY KEY,
+      allocationId INT NOT NULL,
+      vendorId INT NOT NULL,
+      amount DECIMAL(12,2) NOT NULL,
+      reference VARCHAR(120) NOT NULL,
+      providerReference VARCHAR(255) NULL,
+      isFull TINYINT(1) NOT NULL DEFAULT 0,
+      status ENUM('processing','succeeded','failed','reversed') NOT NULL DEFAULT 'processing',
+      lastError VARCHAR(500) NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uq_payout_attempt_reference (reference),
+      UNIQUE KEY uq_payout_attempt_provider_reference (providerReference),
+      INDEX idx_payout_attempt_allocation_status (allocationId, status),
+      FOREIGN KEY (allocationId) REFERENCES escrow_allocations(id) ON DELETE RESTRICT,
+      FOREIGN KEY (vendorId) REFERENCES users(id) ON DELETE RESTRICT
+    ) ENGINE=InnoDB`);
+
+  // Webhook receipt and business processing are separate states. A provider
+  // retry must be able to reclaim a failed event rather than being suppressed
+  // merely because its raw payload was inserted once.
+  await addColumn('webhook_events', 'processing_status',
+    `ENUM('received','processing','processed','failed') NOT NULL DEFAULT 'received'`);
+  await addColumn('webhook_events', 'attempts', `INT NOT NULL DEFAULT 0`);
+  await addColumn('webhook_events', 'last_error', `VARCHAR(500) NULL`);
   // Wishlist restock dedupe: set when a wishlisted item is in stock *now*, so
   // back-in-stock alerts fire only on a real 0 -> >0 transition.
   await addColumn('wishlist', 'lastRestockNotifiedAt', `DATETIME NULL`);

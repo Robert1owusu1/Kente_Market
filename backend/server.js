@@ -250,7 +250,7 @@ app.get('/health', async (req, res) => {
       pool.query('SELECT 1'),
       new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 2500)),
     ]);
-  } catch (err) {
+  } catch {
     db = 'down';
   }
   const healthy = db === 'ok';

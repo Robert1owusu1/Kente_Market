@@ -14,6 +14,7 @@ import Coupon from '../models/couponModel.js';
 import { computeExpectedCompletion } from '../utils/computeExpectedCompletion.js';
 import { decrementStockForOrder } from '../controllers/orderController.js';
 import { sendOrderConfirmationEmail } from '../utils/orderEmailService.js';
+import { debitVendorBalance } from '../Services/walletService.js';
 
 const router = express.Router();
 
@@ -187,6 +188,7 @@ router.post('/verify-paystack', protect, async (req, res) => {
  * @note    Requires raw body. server.js captures it via express.json({ verify }) into req.rawBody
  */
 router.post('/paystack-webhook', webhookLimiter, async (req, res) => {
+  let claimedWebhook = null;
   try {
     const signature = req.headers['x-paystack-signature'];
     if (!signature || !req.rawBody) {
@@ -210,16 +212,24 @@ router.post('/paystack-webhook', webhookLimiter, async (req, res) => {
       case 'charge.success': {
         const reference = event.data?.reference;
         if (reference) {
-          // Idempotency guard: record the event and skip replays/duplicates so a
-          // replayed (or doubly-delivered) webhook can never re-process an order.
-          const [ins] = await pool.execute(
+          // Persist first, then atomically claim processing. Receipt is not the
+          // same as completion: failed events remain retryable on redelivery.
+          await pool.execute(
             `INSERT IGNORE INTO webhook_events (event, reference, payload) VALUES (?, ?, ?)`,
             [event.event, reference, JSON.stringify(event.data || null)]
           );
-          if (ins.insertId === 0) {
-            console.log(`⏸️ Duplicate webhook ignored: ${event.event} ${reference}`);
+          const [claim] = await pool.execute(
+            `UPDATE webhook_events
+             SET processing_status = 'processing', attempts = attempts + 1, last_error = NULL
+             WHERE event = ? AND reference = ?
+               AND processing_status IN ('received', 'failed')`,
+            [event.event, reference]
+          );
+          if (claim.affectedRows !== 1) {
+            console.log(`⏸️ Webhook already being processed/processed: ${event.event} ${reference}`);
             return res.status(200).send('Duplicate ignored');
           }
+          claimedWebhook = { event: event.event, reference };
 
           // Retry loop: the POST /api/orders may not have completed yet when
           // this webhook fires. We retry up to 5 times with increasing delays
@@ -302,7 +312,18 @@ router.post('/paystack-webhook', webhookLimiter, async (req, res) => {
                 }
                 break; // success, no more retries needed
               } else {
-                // Order not yet created — wait and retry
+                // A verified-payment fallback may have completed the same
+                // order between delivery attempts. Treat that as terminally
+                // processed instead of retrying this webhook forever.
+                const [[alreadyPaid]] = await connection.execute(
+                  `SELECT id, paymentStatus FROM orders WHERE paymentReference = ?`, [reference]
+                );
+                if (alreadyPaid?.paymentStatus === 'paid') {
+                  orderFound = true;
+                  orderId = alreadyPaid.id;
+                  break;
+                }
+                // Order not yet created — wait and retry.
                 console.log(`⏳ Webhook: order not yet found for ${reference} (attempt ${attempt + 1}/${MAX_RETRIES})`);
               }
             } finally {
@@ -316,6 +337,14 @@ router.post('/paystack-webhook', webhookLimiter, async (req, res) => {
 
           if (!orderFound) {
             console.warn(`⚠️ Webhook: no order found for reference ${reference} after ${MAX_RETRIES} retries`);
+            await pool.execute(
+              `UPDATE webhook_events SET processing_status = 'failed', last_error = ?
+               WHERE event = ? AND reference = ?`,
+              ['Order was not found after retry window', event.event, reference]
+            );
+            // A non-2xx makes Paystack retry later, when order creation may
+            // have completed. The durable failed state avoids losing payment.
+            return res.status(500).send('Order not ready; retry webhook');
           } else if (orderId) {
             // Receipt email — fires only when the webhook itself performed the
             // paid flip. If the verify-paystack fallback already did it, the
@@ -326,6 +355,11 @@ router.post('/paystack-webhook', webhookLimiter, async (req, res) => {
               console.warn(`⚠️ Could not send order confirmation email: ${emailErr.message}`);
             }
           }
+          await pool.execute(
+            `UPDATE webhook_events SET processing_status = 'processed', processed_at = CURRENT_TIMESTAMP
+             WHERE event = ? AND reference = ?`, [event.event, reference]
+          );
+          claimedWebhook = null;
         }
         console.log('Payment successful:', reference);
         break;
@@ -346,27 +380,39 @@ router.post('/paystack-webhook', webhookLimiter, async (req, res) => {
             console.log(`⏸️ Duplicate webhook ignored: ${event.event} ${transferRef}`);
             return res.status(200).send('Duplicate ignored');
           }
-          const [result] = await pool.execute(
-            `UPDATE escrow_allocations
-             SET status = 'released', released_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-             WHERE payoutReference = ? AND status != 'released'`,
-            [transferRef]
+          const [attemptRows] = await pool.execute(
+            `SELECT pa.*, ea.orderId
+             FROM payout_attempts pa JOIN escrow_allocations ea ON ea.id = pa.allocationId
+             WHERE pa.reference = ? OR pa.providerReference = ? LIMIT 1`,
+            [transferRef, transferRef]
           );
-          if (result.affectedRows > 0) {
-            const [alloc] = await pool.execute(
-              `SELECT orderId FROM escrow_allocations WHERE payoutReference = ?`,
-              [transferRef]
+          const attempt = attemptRows[0];
+          if (attempt) {
+            // Mark the attempt before touching the wallet. Re-delivered
+            // webhooks are stopped by webhook_events, and this condition makes
+            // a manual/reconciliation replay safe as well.
+            const [settled] = await pool.execute(
+              `UPDATE payout_attempts SET status = 'succeeded', lastError = NULL
+               WHERE id = ? AND status = 'processing'`, [attempt.id]
             );
-            console.log(`✅ Transfer success: ${transferRef}`);
-            if (alloc.length > 0) {
-              const escrowStatus = await recomputeOrderEscrowStatus(alloc[0].orderId);
+            if (settled.affectedRows === 0) return res.status(200).send('Transfer already settled');
+            if (attempt.isFull) {
               await pool.execute(
-                `UPDATE orders SET escrowStatus = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-                [escrowStatus, alloc[0].orderId]
+                `UPDATE escrow_allocations
+                 SET status = 'released', released_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ? AND status = 'releasing'`, [attempt.allocationId]
               );
             }
+            await debitVendorBalance(attempt.vendorId, attempt.amount, attempt.reference,
+              `Withdrawal for order ${attempt.orderId}`);
+            console.log(`✅ Transfer success: ${transferRef}`);
+            const escrowStatus = await recomputeOrderEscrowStatus(attempt.orderId);
+            await pool.execute(
+              `UPDATE orders SET escrowStatus = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+              [escrowStatus, attempt.orderId]
+            );
           } else {
-            console.log(`Transfer success (no matching allocation): ${transferRef}`);
+            console.warn(`Transfer success has no payout attempt: ${transferRef}`);
           }
         }
         break;
@@ -383,26 +429,39 @@ router.post('/paystack-webhook', webhookLimiter, async (req, res) => {
             console.log(`⏸️ Duplicate webhook ignored: ${event.event} ${transferRef}`);
             return res.status(200).send('Duplicate ignored');
           }
-          const [result] = await pool.execute(
-            `UPDATE escrow_allocations
-             SET status = 'failed', updated_at = CURRENT_TIMESTAMP
-             WHERE payoutReference = ?`,
-            [transferRef]
+          const [attemptRows] = await pool.execute(
+            `SELECT pa.*, ea.orderId FROM payout_attempts pa
+             JOIN escrow_allocations ea ON ea.id = pa.allocationId
+             WHERE pa.reference = ? OR pa.providerReference = ? LIMIT 1`, [transferRef, transferRef]
           );
-          if (result.affectedRows > 0) {
-            const [alloc] = await pool.execute(
-              `SELECT orderId, id FROM escrow_allocations WHERE payoutReference = ?`,
-              [transferRef]
+          const attempt = attemptRows[0];
+          if (attempt) {
+            const [failedAttempt] = await pool.execute(
+              `UPDATE payout_attempts SET status = 'failed' WHERE id = ? AND status = 'processing'`, [attempt.id]
             );
-            console.log(`❌ Transfer failed: ${transferRef}`);
-            if (alloc.length > 0) {
-              const escrowStatus = await recomputeOrderEscrowStatus(alloc[0].orderId);
+            if (failedAttempt.affectedRows === 0) return res.status(200).send('Transfer already settled');
+            // Return the reserved amount only after Paystack definitively says
+            // it failed. Never do this for a client timeout, whose outcome is
+            // unknown until reconciliation.
+            if (attempt.isFull) {
               await pool.execute(
-                `UPDATE orders SET escrowStatus = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-                [escrowStatus, alloc[0].orderId]
+                `UPDATE escrow_allocations SET status = 'available', payoutAmount = payoutAmount + ?,
+                 payoutReference = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'releasing'`,
+                [attempt.amount, attempt.allocationId]
               );
-              // Notify the vendor about the failed payout
-              await notifyVendorPayoutFailure(alloc[0].orderId, [alloc[0].id]);
+            } else {
+              await pool.execute(
+                `UPDATE escrow_allocations SET payoutAmount = payoutAmount + ?, updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ? AND status = 'available'`, [attempt.amount, attempt.allocationId]
+              );
+            }
+            console.log(`❌ Transfer failed: ${transferRef}`);
+            {
+              const escrowStatus = await recomputeOrderEscrowStatus(attempt.orderId);
+              await pool.execute(
+                `UPDATE orders SET escrowStatus = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, [escrowStatus, attempt.orderId]
+              );
+              await notifyVendorPayoutFailure(attempt.orderId, [attempt.allocationId]);
             }
           }
         }
@@ -458,6 +517,17 @@ router.post('/paystack-webhook', webhookLimiter, async (req, res) => {
     res.status(200).send('Webhook received');
   } catch (error) {
     console.error('Webhook error:', error);
+    if (claimedWebhook) {
+      try {
+        await pool.execute(
+          `UPDATE webhook_events SET processing_status = 'failed', last_error = ?
+           WHERE event = ? AND reference = ? AND processing_status = 'processing'`,
+          [String(error.message || error).slice(0, 500), claimedWebhook.event, claimedWebhook.reference]
+        );
+      } catch (recordError) {
+        console.error('Could not record webhook failure:', recordError.message);
+      }
+    }
     res.status(500).send('Webhook processing failed');
   }
 });

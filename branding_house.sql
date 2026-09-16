@@ -204,7 +204,8 @@ CREATE TABLE escrow_allocations (
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   FOREIGN KEY (orderId) REFERENCES orders(id) ON DELETE CASCADE,
   FOREIGN KEY (vendorId) REFERENCES users(id) ON DELETE CASCADE,
-  UNIQUE KEY uq_escrow_order_vendor (orderId, vendorId),
+  allocationType ENUM('standard','advance','balance') NOT NULL DEFAULT 'standard',
+  UNIQUE KEY uq_escrow_order_vendor_type (orderId, vendorId, allocationType),
   INDEX idx_escrow_vendor (vendorId),
   INDEX idx_escrow_status (status),
   INDEX idx_escrow_payoutReference (payoutReference)
@@ -235,7 +236,29 @@ CREATE TABLE IF NOT EXISTS wallet_transactions (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   INDEX idx_wt_vendor (vendorId),
   INDEX idx_wt_allocation (allocationId),
+  UNIQUE KEY uq_wallet_credit_allocation (vendorId, allocationId, type),
   FOREIGN KEY (vendorId) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+-- Provider-facing payout outbox. A row is committed before Paystack is called
+-- so timeout retries use the same reference and cannot duplicate a transfer.
+CREATE TABLE IF NOT EXISTS payout_attempts (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  allocationId INT NOT NULL,
+  vendorId INT NOT NULL,
+  amount DECIMAL(12,2) NOT NULL,
+  reference VARCHAR(120) NOT NULL,
+  providerReference VARCHAR(255) DEFAULT NULL,
+  isFull TINYINT(1) NOT NULL DEFAULT 0,
+  status ENUM('processing','succeeded','failed','reversed') NOT NULL DEFAULT 'processing',
+  lastError VARCHAR(500) DEFAULT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_payout_attempt_reference (reference),
+  UNIQUE KEY uq_payout_attempt_provider_reference (providerReference),
+  INDEX idx_payout_attempt_allocation_status (allocationId, status),
+  FOREIGN KEY (allocationId) REFERENCES escrow_allocations(id) ON DELETE RESTRICT,
+  FOREIGN KEY (vendorId) REFERENCES users(id) ON DELETE RESTRICT
 ) ENGINE=InnoDB;
 
 -- Settings table (used by backend/models/settingModel.js)
@@ -369,6 +392,9 @@ CREATE TABLE IF NOT EXISTS webhook_events (
   reference VARCHAR(255) NOT NULL,
   payload JSON,
   processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  processing_status ENUM('received','processing','processed','failed') NOT NULL DEFAULT 'received',
+  attempts INT NOT NULL DEFAULT 0,
+  last_error VARCHAR(500) DEFAULT NULL,
   UNIQUE KEY uq_webhook_event_ref (event, reference)
 ) ENGINE=InnoDB;
 
@@ -589,4 +615,3 @@ CREATE TABLE IF NOT EXISTS authenticity_certificates (
   CONSTRAINT fk_cert_product FOREIGN KEY (productId) REFERENCES product(id) ON DELETE CASCADE,
   CONSTRAINT fk_cert_order FOREIGN KEY (orderId) REFERENCES orders(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
-

@@ -54,6 +54,9 @@ CREATE TABLE IF NOT EXISTS webhook_events (
   reference VARCHAR(255) NOT NULL,
   payload JSON,
   processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  processing_status ENUM('received','processing','processed','failed') NOT NULL DEFAULT 'received',
+  attempts INT NOT NULL DEFAULT 0,
+  last_error VARCHAR(500) NULL,
   UNIQUE KEY uq_webhook_event_ref (event, reference)
 ) ENGINE=InnoDB;
 
