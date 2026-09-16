@@ -12,7 +12,7 @@ const isAllowedOrigin = (origin) => {
   try {
     new URL(origin);
     const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin);
-    if (isLocalhost) return true;
+    if (isLocalhost && process.env.NODE_ENV !== 'production') return true;
 
     const allowedOrigins = (process.env.FRONTEND_URL || '')
       .split(',')

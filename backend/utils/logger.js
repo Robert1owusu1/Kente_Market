@@ -51,6 +51,7 @@ export const requestLogger = (req, res, next) => {
   res.on('finish', () => {
     const durationMs = Number(process.hrtime.bigint() - started) / 1e6;
     logger.info('http', {
+      requestId: req.requestId,
       method: req.method,
       path: req.originalUrl,
       status: res.statusCode,

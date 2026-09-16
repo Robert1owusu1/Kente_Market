@@ -183,6 +183,14 @@ app.use(express.json({
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
 // 8b. Structured request logging (LOG_FORMAT=json for machine-friendly output).
+app.use((req, res, next) => {
+  const supplied = req.get('x-request-id');
+  req.requestId = /^[a-zA-Z0-9_-]{8,128}$/.test(supplied || '')
+    ? supplied
+    : crypto.randomUUID();
+  res.setHeader('X-Request-Id', req.requestId);
+  next();
+});
 app.use(requestLogger);
 
 // Serve static files from uploads directory.
@@ -243,7 +251,7 @@ app.use('/api/', csrfProtection);
 
 // Health check endpoint — uptime + DB reachability, no internals exposed.
 // Used by the GitHub Actions keep-alive workflow and external uptime monitors.
-app.get('/health', async (req, res) => {
+const readiness = async (req, res) => {
   let db = 'ok';
   try {
     await Promise.race([
@@ -260,7 +268,10 @@ app.get('/health', async (req, res) => {
     uptime: process.uptime(),
     ts: new Date().toISOString(),
   });
-});
+};
+app.get('/health', readiness); // Backwards-compatible monitor endpoint.
+app.get('/health/ready', readiness);
+app.get('/health/live', (req, res) => res.status(200).json({ status: 'OK', ts: new Date().toISOString() }));
 
 // Root route
 app.get('/', (req, res) => {
