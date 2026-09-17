@@ -1,0 +1,16 @@
+# FILE LOCATION: .deploy/backup.timer (systemd example)
+# DESCRIPTION: Nightly trigger for backup.service.
+#
+# Install with the .service unit; see backup.service for the full procedure.
+# Edit OnCalendar to your window (UTC; monthly forms: "*-*-01 02:15:00").
+
+[Unit]
+Description=Nightly backup.timer for kente DB + uploads
+
+[Timer]
+OnCalendar=*-*-* 02:17:00
+Persistent=true            # fire the missed run after downtime/boot
+Unit=backup.service
+
+[Install]
+WantedBy=timers.target

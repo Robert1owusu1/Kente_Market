@@ -1,0 +1,28 @@
+# FILE LOCATION: .deploy/backup.service (systemd example)
+# DESCRIPTION: systemd unit for the nightly encrypted DB + uploads backup,
+#              with an optional off-site mirror step (keeps local retention).
+#
+# Install:
+#   sudo cp .deploy/backup.service /etc/systemd/system/
+#   sudo cp .deploy/backup.timer  /etc/systemd/system/
+#   systemctl daemon-reload && systemctl enable --now backup.timer
+#   systemctl list-timers backup.timer
+#
+#   # restore one node's latest backup: systemctl list-timers backup.timer
+#   # manual run + live log: sudo systemctl start backup.service && journalctl -u backup.service -f
+
+[Unit]
+Description=Kente Market encrypted DB + uploads backup
+Requires=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/roberto/Documents/project/ecom_new
+EnvironmentFile=-/etc/kente/backup.env
+ExecStart=/home/roberto/Documents/project/ecom_new/.deploy/backup-db.sh
+# Off-site mirror — SYNC only (local copies are the retention set). Uncomment:
+# ExecStartPost=/usr/bin/rsync -a /mnt/backups/kente/ backup-user@s3house:/kente-backups/
+#   Add a failure pager/watch on the "✗" lines for both steps.
+Nice=5
+IOSchedulingClass=idle
