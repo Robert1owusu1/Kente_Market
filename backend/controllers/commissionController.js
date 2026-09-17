@@ -3,6 +3,7 @@
 //              scoped global / category / vendor / product and resolved by
 //              specificity (product > vendor > category > global).
 import pool from '../config/db.js';
+import { auditFromRequest } from '../utils/auditLog.js';
 
 const VALID_SCOPES = ['global', 'category', 'vendor', 'product'];
 
@@ -53,6 +54,7 @@ export const createCommissionRule = async (req, res) => {
       [scope, String(targetId), rateNum, parseInt(priority) || 0]
     );
     const [[created]] = await pool.execute(`SELECT * FROM commission_rules WHERE id = ?`, [result.insertId]);
+    await auditFromRequest(req, { action: 'commission.create', entityType: 'commission', entityId: result.insertId, after: { scope, targetId: String(targetId), rate: rateNum } });
     res.status(201).json({ message: 'Commission rule created', rule: { ...created, rate: parseFloat(created.rate) } });
   } catch (error) {
     console.error('Error creating commission rule:', error);
@@ -95,6 +97,7 @@ export const updateCommissionRule = async (req, res) => {
     await pool.execute(`UPDATE commission_rules SET ${sets.join(', ')} WHERE id = ?`, vals);
 
     const [[updated]] = await pool.execute(`SELECT * FROM commission_rules WHERE id = ?`, [ruleId]);
+    await auditFromRequest(req, { action: 'commission.update', entityType: 'commission', entityId: ruleId, before: existing, after: { ...updated, rate: parseFloat(updated.rate) } });
     res.json({ message: 'Commission rule updated', rule: { ...updated, rate: parseFloat(updated.rate) } });
   } catch (error) {
     console.error('Error updating commission rule:', error);
@@ -111,6 +114,7 @@ export const deleteCommissionRule = async (req, res) => {
     const [[existing]] = await pool.execute(`SELECT id FROM commission_rules WHERE id = ?`, [ruleId]);
     if (!existing) return res.status(404).json({ message: 'Commission rule not found' });
     await pool.execute(`DELETE FROM commission_rules WHERE id = ?`, [ruleId]);
+    await auditFromRequest(req, { action: 'commission.delete', entityType: 'commission', entityId: ruleId, before: existing });
     res.json({ message: 'Commission rule deleted' });
   } catch (error) {
     console.error('Error deleting commission rule:', error);

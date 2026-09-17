@@ -118,3 +118,16 @@ export const passwordResetLimiter = rateLimit({
     res.status(429).json({ message: 'Too many reset attempts. Please try again in an hour.' });
   }
 });
+
+// Rate limiter for registration (anti-enumeration). Register intentionally
+// returns a distinct "email already exists" message for good UX, so this
+// limiter caps how fast an attacker can probe which emails are registered
+// while still allowing a shared NAT to sign up several users.
+export const registerLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10,
+  message: 'Too many registration attempts.',
+  handler: (req, res) => {
+    res.status(429).json({ message: 'Too many registration attempts. Please try again later.' });
+  }
+});

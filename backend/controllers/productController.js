@@ -41,11 +41,16 @@ const getProducts = asyncHandler(async (req, res) => {
 
     const products = await Product.findAll(options);
 
+    // Public projection: strip vendor-cost / inventory / moderation internals
+    // (wholesalePrice, retailPrice, basePrice, stock, lowStockThreshold, sku,
+    // approvalStatus, approvalNote, approvedAt) before anything reaches a browser.
+    const publicProducts = products.map((p) => p.toPublic());
+
     // Optionally include total count for pagination
     if (req.query.includeCount === 'true') {
       const totalCount = await Product.count(options);
       res.json({
-        products,
+        products: publicProducts,
         pagination: {
           total: totalCount,
           limit: options.limit,
@@ -54,7 +59,7 @@ const getProducts = asyncHandler(async (req, res) => {
         }
       });
     } else {
-      res.json(products);
+      res.json(publicProducts);
     }
   } catch (error) {
     console.error('❌ Error in getProducts:', error.message);
@@ -79,7 +84,7 @@ const getProductById = asyncHandler(async (req, res) => {
         `SELECT COUNT(*) AS cnt FROM reviews WHERE productId = ? AND isVerified = 1`,
         [product.id]
       );
-      res.json({ ...product, verifiedReviewCount: verifiedRow?.cnt || 0 });
+      res.json({ ...product.toPublic(), verifiedReviewCount: verifiedRow?.cnt || 0 });
     } else {
       res.status(404);
       throw new Error("Product not found");
@@ -108,7 +113,7 @@ const getProductsByCategory = asyncHandler(async (req, res) => {
 
     const products = await Product.findByCategory(req.params.category, options);
 
-    res.json(products);
+    res.json(products.map((p) => p.toPublic()));
   } catch (error) {
     console.error('❌ Error in getProductsByCategory:', error.message);
     
@@ -129,7 +134,7 @@ const getFeaturedProducts = asyncHandler(async (req, res) => {
 
     const products = await Product.findFeatured(options);
 
-    res.json(products);
+    res.json(products.map((p) => p.toPublic()));
   } catch (error) {
     console.error('❌ Error in getFeaturedProducts:', error.message);
     
@@ -151,7 +156,7 @@ const getTrendingProducts = asyncHandler(async (req, res) => {
 
     const products = await Product.findTrending(options);
 
-    res.json(products);
+    res.json(products.map((p) => p.toPublic()));
   } catch (error) {
     console.error('❌ Error in getTrendingProducts:', error.message);
     

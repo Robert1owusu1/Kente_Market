@@ -7,8 +7,13 @@
  *  - Precache the app shell (/, /index.html) on install.
  *  - Hashed, fingerprinted build assets (JS/CSS in /assets/*) are IMMUTABLE:
  *    cache-first, network never needed on repeat visits.
- *  - Same-origin GET /api/* -> network-first, fall back to the last cached
- *    response headers. Never touches mutations (they must reach the server).
+ *  - PUBLIC, account-agnostic GET /api/* -> network-first, fall back to the
+ *    last cached response headers. Only explicitly allow-listed endpoints are
+ *    cached (catalog, storefront, promotions, reviews ...). Never touches
+ *    mutations (they must reach the server).
+ *  - PRIVATE / user-scoped GET /api/* (profile, wallet, orders, vendor
+ *    insights ...) is NEVER intercepted or cached — another account on the
+ *    same browser must never be served the previous user's cached data.
  *  - Images/fonts -> cache-first with a size cap (offline photos).
  */
 
@@ -16,7 +21,23 @@ const SHELL = ['/', '/index.html'];
 const API_PREFIX = '/api/';
 // Cache versions; bump APP_API_KEY when the API shape changes so stale lists
 // (e.g. pre-wipe product catalogs) are purged on the next SW update.
-const APP_API_KEY = 'app-api-v2';
+const APP_API_KEY = 'app-api-v3';
+
+// PUBLIC, account-agnostic endpoints that are safe to cache. Everything else
+// under /api (profile, orders, wallet, vendor tools, admin ...) is passed
+// straight to the network and is NEVER placed in (or served from) a cache, so
+// logged-out / second-account browsers cannot receive another user's data.
+const PUBLIC_API = [
+  // [path prefix, exact-match-only?]
+  ['/api/products', false],            // list + /:id + category/featured/etc (all public)
+  ['/api/vendors/store/', true],       // public storefront
+  ['/api/vendors/directory', true],
+  ['/api/promotions/public/', true],
+  ['/api/categories', true],
+  ['/api/reviews', true],              // list only (never /analytics)
+  ['/api/reviews/product/', true],
+  ['/api/certificates/verify/', true], // token-based public verification
+];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -47,8 +68,14 @@ self.addEventListener('activate', (event) => {
 
 // Fresh immutable build assets
 const isHashedAsset = (url) => /\/assets\/.+\.(js|css)$/.test(url.pathname);
-const isApiGet = (req) =>
-  req.method === 'GET' && req.url && req.url.includes(API_PREFIX) && !isHashedAsset(req.url);
+const isApiPath = (url) => url.pathname.startsWith(API_PREFIX);
+
+// A GET on a PUBLIC allow-listed endpoint whose response is account-agnostic.
+const isPublicApiGet = (req, url) =>
+  req.method === 'GET' &&
+  isApiPath(url) &&
+  !isHashedAsset(url) &&
+  PUBLIC_API.some(([prefix, exact]) => (exact ? url.pathname === prefix : url.pathname.startsWith(prefix)));
 
 self.addEventListener('fetch', (event) => {
   const req = event.request;
@@ -77,8 +104,8 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 2) API GET -> network-first, fall back to stale cache when offline/flaky.
-  if (isApiGet(req)) {
+  // 2) PUBLIC API GET -> network-first, fall back to stale cache when offline/flaky.
+  if (isPublicApiGet(req, url)) {
     event.respondWith(
       fetch(req)
         .then((res) => {
@@ -105,6 +132,10 @@ self.addEventListener('fetch', (event) => {
     );
     return;
   }
+
+  // PRIVATE / user-scoped API GET: never intercept, never cache — the browser
+  // talks to the network directly so the response is always the caller's own.
+  if (isApiPath(url)) return;
 
   // 3) App shell (/, /index.html, and other same-origin GETs)
   // Network-first so we always get fresh HTML/assets, fall back to cached shell.

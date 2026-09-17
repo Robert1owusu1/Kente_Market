@@ -61,6 +61,7 @@ import campaignRoutes from './routes/campaignRoutes.js';  // ⭐ NEW - Marketing
 import certificateRoutes from './routes/certificateRoutes.js';  // ⭐ NEW - Authenticity certificates
 import commissionRoutes from './routes/commissionRoutes.js';  // ⭐ NEW - Commission engine
 import moderationRoutes from './routes/moderationRoutes.js';  // ⭐ NEW - Product moderation
+import adminOpsRoutes from './routes/adminOpsRoutes.js';  // 🛡️ Audit log + scheduler status
 import suggestionRoutes from './routes/suggestionRoutes.js';
 import customRequestRoutes from './routes/customRequestRoutes.js';  // 🆕 Custom orders  // ⭐ NEW - User suggestions
 import buybackRoutes from './routes/buybackRoutes.js';  // 🆕 Sell-back / borrow-back loop  // ⭐ NEW - User suggestions
@@ -312,6 +313,7 @@ app.use('/api/campaigns', campaignRoutes);
 app.use('/api/certificates', certificateRoutes);
 app.use('/api/admin/commissions', commissionRoutes);
 app.use('/api/admin/moderation', moderationRoutes);
+app.use('/api/admin/ops', adminOpsRoutes);
 app.use('/api/suggestions', suggestionRoutes);
 app.use('/api/custom-requests', customRequestRoutes);  // 🆕 Custom orders
 

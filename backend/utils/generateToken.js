@@ -5,17 +5,23 @@ import { cookieSameSite } from '../config/cookieConfig.js';
 /**
  * Generate JWT token and set it as HTTP-only cookie
  * @param {object} res - Express response object
- * @param {number} userId - User ID
+ * @param {object|number} userOrId - User record (preferred: carries .id + .tokenVersion) or user ID
  * @param {boolean} rememberMe - Whether to extend token expiration (default: false)
  */
-const generateToken = (res, userId, rememberMe = false) => {
+const generateToken = (res, userOrId, rememberMe = false) => {
+  const userId = typeof userOrId === 'object' && userOrId !== null ? userOrId.id : userOrId;
+  // Session-revocation claim: tokens are only valid while JWT `tv` matches the
+  // user's current users.tokenVersion. Password/email changes bump the version,
+  // which instantly invalidates every previously issued token.
+  const tv = typeof userOrId === 'object' && userOrId !== null ? (userOrId.tokenVersion ?? 0) : 0;
+
   // Token expiration time
   // Remember Me: 30 days, Normal: 7 days
   const expiresIn = rememberMe ? '30d' : '7d';
   
   // Generate JWT
   const token = jwt.sign(
-    { id: userId }, 
+    { id: userId, tv }, 
     process.env.JWT_SECRET,
     { expiresIn }
   );
@@ -34,7 +40,7 @@ const generateToken = (res, userId, rememberMe = false) => {
     path: '/'                                          // Cookie available for entire domain
   });
 
-  console.log(`✅ Token generated for user ${userId} (Remember Me: ${rememberMe}, Expires: ${rememberMe ? '30 days' : '7 days'})`);
+  console.log(`✅ Token generated for user ${userId} (Remember Me: ${rememberMe}, Expires: ${rememberMe ? '30 days' : '7 days'}, tv: ${tv})`);
   
   return token;
 };

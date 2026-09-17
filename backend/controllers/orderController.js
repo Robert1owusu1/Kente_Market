@@ -22,6 +22,7 @@ import {
 } from "../Services/escrowService.js";
 import { reserveStockForItems } from "../Services/reservationService.js";
 import { sendOrderConfirmationEmail, sendEscrowReleasedEmail } from "../utils/orderEmailService.js";
+import { auditFromRequest } from "../utils/auditLog.js";
 
 // Client-supplied order-item images are stored and rendered to other users (e.g.
 // in the vendor's order view), so they must not be able to carry javascript: or
@@ -651,6 +652,13 @@ export const updateOrderToPaid = async (req, res) => {
     }
 
     const order = await Order.findById(req.params.id);
+    await auditFromRequest(req, {
+      action: 'order.markPaid',
+      entityType: 'order',
+      entityId: req.params.id,
+      before: { paymentStatus: existingOrder.paymentStatus },
+      after: { paymentStatus: order?.paymentStatus, orderStatus: order?.orderStatus },
+    });
     res.json({
       message: alreadyPaid ? "Order was already paid" : "Order marked as paid",
       order,
@@ -904,6 +912,13 @@ export const cancelOrder = async (req, res) => {
     }
 
     const updatedOrder = await Order.findById(req.params.id);
+    await auditFromRequest(req, {
+      action: `order.cancel`,
+      entityType: 'order',
+      entityId: req.params.id,
+      before: { orderStatus: order.orderStatus, paymentStatus: order.paymentStatus },
+      after: { orderStatus: updatedOrder?.orderStatus, paymentStatus: updatedOrder?.paymentStatus },
+    });
     res.json({ message: "Order cancelled", order: updatedOrder });
   } catch (error) {
     console.error('Error cancelling order:', error);
@@ -934,6 +949,14 @@ export const retryEscrowPayouts = async (req, res) => {
 
     const result = await retryFailedAllocations(req.params.id);
     const updatedOrder = await Order.findById(req.params.id);
+
+    await auditFromRequest(req, {
+      action: 'payout.retry',
+      entityType: 'order',
+      entityId: req.params.id,
+      before: { escrowStatus: order.escrowStatus },
+      after: { escrowStatus: updatedOrder?.escrowStatus, retried: result.retried, failed: result.failed },
+    });
 
     res.status(200).json({
       message: `Retry complete: ${result.retried} payouts initiated, ${result.failed} failed.`,

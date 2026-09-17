@@ -24,7 +24,11 @@ const optionalAuth = asyncHandler(async (req, res, next) => {
     try {
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
       const user = await User.findById(decoded.id);
-      if (user && user.isActive) {
+      if (
+        user && user.isActive &&
+        decoded.role !== 'vendor_staff' &&
+        (user.tokenVersion === undefined || decoded.tv === user.tokenVersion)
+      ) {
         req.user = user.getProfile();
       }
     } catch {
@@ -61,6 +65,14 @@ const protect = asyncHandler(async(req, res, next) => {
             if (!user.isActive) {
                 res.status(403);
                 throw new Error('Account is deactivated');
+            }
+
+            // Session-revocation guard: every token embeds the tokenVersion in
+            // effect when it was issued; password/email changes bump it, so any
+            // pre-change tokens are rejected here and the user must log in again.
+            if (user.tokenVersion === undefined || decoded.tv !== user.tokenVersion) {
+                res.status(401);
+                throw new Error('Session expired, please log in again');
             }
             
             // Attach user to request object (without password)

@@ -1,4 +1,5 @@
 import Promotion from '../models/promotionModel.js';
+import { auditFromRequest } from '../utils/auditLog.js';
 
 // GET /api/promotions — admin: list all (including expired)
 export const listPromotions = async (req, res) => {
@@ -61,6 +62,7 @@ export const createPromotion = async (req, res) => {
   try {
     if (!req.body.title) return res.status(400).json({ message: 'Title is required' });
     const promotion = await Promotion.create(req.body);
+    await auditFromRequest(req, { action: 'promotion.create', entityType: 'promotion', entityId: promotion?.id, after: { title: promotion?.title } });
     res.status(201).json(promotion);
   } catch (error) {
     console.error('Promotions error:', error);
@@ -72,6 +74,7 @@ export const createPromotion = async (req, res) => {
 export const updatePromotion = async (req, res) => {
   try {
     const promotion = await Promotion.update(req.params.id, req.body);
+    await auditFromRequest(req, { action: 'promotion.update', entityType: 'promotion', entityId: req.params.id, after: promotion });
     res.json(promotion);
   } catch (error) {
     console.error('Promotions error:', error);
@@ -84,6 +87,7 @@ export const deletePromotion = async (req, res) => {
   try {
     const deleted = await Promotion.delete(req.params.id);
     if (!deleted) return res.status(404).json({ message: 'Promotion not found' });
+    await auditFromRequest(req, { action: 'promotion.delete', entityType: 'promotion', entityId: req.params.id });
     res.json({ message: 'Promotion deleted' });
   } catch (error) {
     console.error('Promotions error:', error);

@@ -97,6 +97,15 @@ export const moderateProduct = async (req, res) => {
       message: status === 'approved' ? 'Product approved and published' : `Product marked as ${status}`,
       product: { id: productId, approvalStatus: status, approvalNote: note || null },
     });
+
+    const { auditFromRequest } = await import('../utils/auditLog.js');
+    await auditFromRequest(req, {
+      action: 'product.moderate',
+      entityType: 'product',
+      entityId: productId,
+      before: { approvalStatus: existing.approvalStatus },
+      after: { approvalStatus: status, note: note || null },
+    });
   } catch (error) {
     console.error('Error moderating product:', error);
     res.status(500).json({ message: 'Failed to moderate product' });
