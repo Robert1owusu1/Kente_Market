@@ -2,6 +2,7 @@
 // DESCRIPTION: Coupon CRUD and public validation
 import Coupon from "../models/couponModel.js";
 import isValidId from "../utils/isValidId.js";
+import { auditFromRequest } from "../utils/auditLog.js";
 
 export const createCoupon = async (req, res) => {
   try {
@@ -18,6 +19,13 @@ export const createCoupon = async (req, res) => {
     }
 
     const coupon = await Coupon.create({ code, discountType, discountValue, minPurchase, maxUses, expiresAt, isActive });
+
+    await auditFromRequest(req, {
+      action: 'coupon.create',
+      entityType: 'coupon',
+      entityId: coupon?.id,
+      after: { code, discountType, discountValue, minPurchase, maxUses },
+    });
 
     res.status(201).json({ message: "Coupon created successfully", coupon });
   } catch (error) {
@@ -63,6 +71,13 @@ export const updateCoupon = async (req, res) => {
     }
 
     const coupon = await Coupon.update(req.params.id, req.body);
+    await auditFromRequest(req, {
+      action: 'coupon.update',
+      entityType: 'coupon',
+      entityId: coupon?.id ?? req.params.id,
+      before: existing,
+      after: coupon,
+    });
     res.json({ message: "Coupon updated successfully", coupon });
   } catch (error) {
     console.error("updateCoupon error:", error.message);
@@ -80,6 +95,12 @@ export const deleteCoupon = async (req, res) => {
       return res.status(404).json({ message: "Coupon not found" });
     }
     await Coupon.delete(req.params.id);
+    await auditFromRequest(req, {
+      action: 'coupon.delete',
+      entityType: 'coupon',
+      entityId: req.params.id,
+      before: existing,
+    });
     res.json({ message: "Coupon deleted successfully" });
   } catch (error) {
     console.error("deleteCoupon error:", error.message);

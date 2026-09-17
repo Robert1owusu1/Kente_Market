@@ -19,7 +19,7 @@ import {
     getVerificationStatus
 } from '../controllers/userController.js';
 import { protect, admin } from "../middleware/authMiddleware.js";
-import { authLimiter, passwordResetLimiter } from "../middleware/rateLimitMiddleware.js";
+import { authLimiter, passwordResetLimiter, registerLimiter } from "../middleware/rateLimitMiddleware.js";
 
 // ============================================
 // PUBLIC ROUTES (No Authentication Required)
@@ -27,7 +27,7 @@ import { authLimiter, passwordResetLimiter } from "../middleware/rateLimitMiddle
 
 // Register new user
 // POST /api/users
-router.post('/', registerUser);
+router.post('/', registerLimiter, registerUser);
 
 // Login user (rate-limited to prevent brute-force)
 // POST /api/users/auth

@@ -3,6 +3,7 @@
 
 import Setting from '../models/settingModel.js';
 import { clearCache } from '../middleware/cacheMiddleware.js';
+import { auditFromRequest } from '../utils/auditLog.js';
 
 // @desc    Get all settings
 // @route   GET /api/settings
@@ -107,6 +108,13 @@ export const updateSettings = async (req, res) => {
     res.json({ 
       message: 'Settings updated successfully',
       settings: frontendSettings
+    });
+
+    await auditFromRequest(req, {
+      action: 'settings.update',
+      entityType: 'setting',
+      entityId: null,
+      after: { keys: Object.keys(dbSettings), values: dbSettings },
     });
   } catch (error) {
     console.error('Error updating settings:', error);

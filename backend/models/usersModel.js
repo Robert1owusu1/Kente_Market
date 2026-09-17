@@ -23,6 +23,7 @@ class User {
     this.resetPasswordToken = data.reset_password_token || null;
     this.resetPasswordExpire = data.reset_password_expire || null;
     this.lastLogin = data.last_login || null;
+    this.tokenVersion = data.tokenVersion ?? 0;
     this.createdAt = data.created_at;
     this.updatedAt = data.updated_at;
   }
@@ -156,7 +157,7 @@ class User {
       connection = await pool.getConnection();
       
       const [rows] = await connection.execute(
-        'SELECT id, firstName, lastName, email, phone, address, city, state, zipCode, country, role, isActive, is_email_verified, profile_picture, last_login, created_at, updated_at FROM users WHERE id = ?', 
+        'SELECT id, firstName, lastName, email, phone, address, city, state, zipCode, country, role, isActive, is_email_verified, profile_picture, tokenVersion, last_login, created_at, updated_at FROM users WHERE id = ?', 
         [parseInt(id)]
       );
       
@@ -340,6 +341,9 @@ class User {
       }
 
       setClause.push('updated_at = CURRENT_TIMESTAMP');
+      if (sanitizedData.password || sanitizedData.email) {
+        setClause.push('tokenVersion = tokenVersion + 1');
+      }
       values.push(parseInt(id));
 
       await connection.execute(
@@ -697,6 +701,7 @@ class User {
          SET password = ?,
              reset_password_token = NULL,
              reset_password_expire = NULL,
+             tokenVersion = tokenVersion + 1,
              updated_at = CURRENT_TIMESTAMP
          WHERE id = ?`,
         [hashedPassword, userId]
@@ -738,6 +743,48 @@ class User {
     } catch (error) {
       console.error('❌ Error clearing reset token:', error);
       throw error;
+    } finally {
+      if (connection) connection.release();
+    }
+  }
+
+  // ============================================
+  // TOKEN VERSION (SESSION REVOCATION) METHODS
+  // ============================================
+
+  // Read the current tokenVersion for a user.
+  static async getTokenVersion(userId) {
+    let connection;
+    try {
+      connection = await pool.getConnection();
+      const [rows] = await connection.execute(
+        'SELECT tokenVersion FROM users WHERE id = ?',
+        [parseInt(userId)]
+      );
+      return rows[0]?.tokenVersion ?? 0;
+    } catch (error) {
+      console.error('Error in getTokenVersion:', error.message);
+      return 0;
+    } finally {
+      if (connection) connection.release();
+    }
+  }
+
+  // Invalidate every outstanding session by bumping tokenVersion. Used when a
+  // user's credentials change through a path that bypasses User.update/resetPassword
+  // (e.g. OAuth adoption of an unverified account rotates the password here).
+  static async bumpTokenVersion(userId) {
+    let connection;
+    try {
+      connection = await pool.getConnection();
+      await connection.execute(
+        'UPDATE users SET tokenVersion = tokenVersion + 1 WHERE id = ?',
+        [parseInt(userId)]
+      );
+      return true;
+    } catch (error) {
+      console.error('Error in bumpTokenVersion:', error.message);
+      return false;
     } finally {
       if (connection) connection.release();
     }

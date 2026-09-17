@@ -70,6 +70,27 @@ class Product {
     this.rentPricePerDay = data.rentPricePerDay ? parseFloat(data.rentPricePerDay) : null;
   }
 
+  /**
+   * Public-safe projection for storefront/browse responses.
+   *
+   * Anything an anonymous shopper has no business seeing is stripped: vendor
+   * margin fields (wholesalePrice / retailPrice / basePrice), inventory
+   * internals (stock, lowStockThreshold, sku) and moderation state
+   * (approvalStatus, approvalNote, approvedAt). Multi-vendor order math and the
+   * vendor panel keep using the full model — only these public routes strip it.
+   */
+  toPublic() {
+    const safe = { ...this };
+    for (const key of [
+      'basePrice', 'wholesalePrice', 'retailPrice',
+      'stock', 'lowStockThreshold', 'sku',
+      'approvalStatus', 'approvalNote', 'approvedAt',
+    ]) {
+      delete safe[key];
+    }
+    return safe;
+  }
+
   // ✅ Get all products with proper LIMIT/OFFSET handling
   static async findAll(options = {}) {
     let connection;

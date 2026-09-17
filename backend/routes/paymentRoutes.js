@@ -6,15 +6,18 @@ import { protect } from '../middleware/authMiddleware.js';
 import { apiLimiter, webhookLimiter } from '../middleware/rateLimitMiddleware.js';
 import {
   holdEscrowForOrder,
-  recomputeOrderEscrowStatus,
   trackPlatformRevenue,
-  notifyVendorPayoutFailure,
 } from '../Services/escrowService.js';
 import Coupon from '../models/couponModel.js';
 import { computeExpectedCompletion } from '../utils/computeExpectedCompletion.js';
 import { decrementStockForOrder } from '../controllers/orderController.js';
 import { sendOrderConfirmationEmail } from '../utils/orderEmailService.js';
-import { debitVendorBalance } from '../Services/walletService.js';
+import { recordFinancialEvent } from '../Services/ledgerService.js';
+import {
+  settleTransferSuccess,
+  settleTransferFailed,
+  settleTransferReversed,
+} from '../Services/transferSettlementService.js';
 
 const router = express.Router();
 
@@ -29,6 +32,53 @@ const safeEqual = (a, b) => {
   const bBuf = Buffer.from(String(b), 'utf8');
   if (aBuf.length !== bBuf.length) return false;
   return crypto.timingSafeEqual(aBuf, bBuf);
+};
+
+/**
+ * Durable webhook receipt + claim. Inserting the payload is NOT completion:
+ * only a claim transition (received|failed -> processing) may run the side
+ * effects, so a crash mid-processing leaves the event reclaimable on
+ * redelivery (and by the reconciliation scheduler which marks stale
+ * 'processing' rows back to 'failed').
+ * @param {string} eventName
+ * @param {string} reference
+ * @param {string} [payload]
+ * @returns {Promise<boolean>} true if THIS call owns the processing
+ */
+const claimWebhook = async (eventName, reference, payload) => {
+  await pool.execute(
+    `INSERT IGNORE INTO webhook_events (event, reference, payload) VALUES (?, ?, ?)`,
+    [eventName, reference, payload || null]
+  );
+  const [claim] = await pool.execute(
+    `UPDATE webhook_events
+     SET processing_status = 'processing', attempts = attempts + 1, last_error = NULL
+     WHERE event = ? AND reference = ? AND processing_status IN ('received', 'failed')`,
+    [eventName, reference]
+  );
+  return claim.affectedRows === 1;
+};
+
+/** @param {string} eventName @param {string} reference */
+const completeWebhook = async (eventName, reference) => {
+  await pool.execute(
+    `UPDATE webhook_events SET processing_status = 'processed', processed_at = CURRENT_TIMESTAMP
+     WHERE event = ? AND reference = ?`,
+    [eventName, reference]
+  );
+};
+
+/**
+ * @param {string} eventName
+ * @param {string} reference
+ * @param {unknown} error
+ */
+const failWebhook = async (eventName, reference, error) => {
+  await pool.execute(
+    `UPDATE webhook_events SET processing_status = 'failed', last_error = ?
+     WHERE event = ? AND reference = ? AND processing_status = 'processing'`,
+    [String(error?.message || error).slice(0, 500), eventName, reference]
+  );
 };
 
 /**
@@ -150,6 +200,20 @@ router.post('/verify-paystack', protect, async (req, res) => {
             console.warn(`⚠️ Could not send order confirmation email: ${emailErr.message}`);
           }
           orderMarkedPaid = true;
+          // Immutable audit event (dedupe per reference; no-op if the webhook
+          // already recorded it).
+          try {
+            await recordFinancialEvent({
+              eventType: 'charge.collected',
+              direction: 'in',
+              amount: order.totalAmount,
+              orderId,
+              reference,
+              providerReference: reference,
+              dedupeKey: `charge.collected:${reference}`,
+              payload: { event: 'verify-paystack fallback' },
+            });
+          } catch { /* journal is best-effort */ }
         }
       }
 
@@ -252,11 +316,26 @@ router.post('/paystack-webhook', webhookLimiter, async (req, res) => {
                 orderFound = true;
                 // Resolve the orderId from the reference
                 const [orderRows] = await connection.execute(
-                  `SELECT id, items, couponId FROM orders WHERE paymentReference = ?`,
+                  `SELECT id, items, couponId, totalAmount FROM orders WHERE paymentReference = ?`,
                   [reference]
                 );
                 if (orderRows.length > 0) {
                   orderId = orderRows[0].id;
+
+                  // Immutable audit event for the collected charge (dedupe per
+                  // Paystack reference — safe against webhook + fallback races).
+                  try {
+                    await recordFinancialEvent({
+                      eventType: 'charge.collected',
+                      direction: 'in',
+                      amount: orderRows[0].totalAmount,
+                      orderId,
+                      reference,
+                      providerReference: reference,
+                      dedupeKey: `charge.collected:${reference}`,
+                      payload: { event: 'charge.success' },
+                    });
+                  } catch { /* journal is best-effort */ }
 
                   // Hold escrow allocations (pending → held)
                   const heldCount = await holdEscrowForOrder(orderId);
@@ -369,50 +448,23 @@ router.post('/paystack-webhook', webhookLimiter, async (req, res) => {
         console.log('Payment failed:', event.data.reference);
         break;
 
-      case 'transfer.success': {
+case 'transfer.success': {
         const transferRef = event.data?.reference;
         if (transferRef) {
-          const [ins] = await pool.execute(
-            `INSERT IGNORE INTO webhook_events (event, reference, payload) VALUES (?, ?, ?)`,
-            [event.event, transferRef, JSON.stringify(event.data || null)]
-          );
-          if (ins.insertId === 0) {
-            console.log(`⏸️ Duplicate webhook ignored: ${event.event} ${transferRef}`);
+          if (!(await claimWebhook(event.event, transferRef, JSON.stringify(event.data || null)))) {
+            console.log(`⏸️ Duplicate/in-flight webhook ignored: ${event.event} ${transferRef}`);
             return res.status(200).send('Duplicate ignored');
           }
-          const [attemptRows] = await pool.execute(
-            `SELECT pa.*, ea.orderId
-             FROM payout_attempts pa JOIN escrow_allocations ea ON ea.id = pa.allocationId
-             WHERE pa.reference = ? OR pa.providerReference = ? LIMIT 1`,
-            [transferRef, transferRef]
-          );
-          const attempt = attemptRows[0];
-          if (attempt) {
-            // Mark the attempt before touching the wallet. Re-delivered
-            // webhooks are stopped by webhook_events, and this condition makes
-            // a manual/reconciliation replay safe as well.
-            const [settled] = await pool.execute(
-              `UPDATE payout_attempts SET status = 'succeeded', lastError = NULL
-               WHERE id = ? AND status = 'processing'`, [attempt.id]
-            );
-            if (settled.affectedRows === 0) return res.status(200).send('Transfer already settled');
-            if (attempt.isFull) {
-              await pool.execute(
-                `UPDATE escrow_allocations
-                 SET status = 'released', released_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-                 WHERE id = ? AND status = 'releasing'`, [attempt.allocationId]
-              );
+          try {
+            const outcome = await settleTransferSuccess(transferRef);
+            if (outcome === 'unknown') {
+              console.warn(`Transfer success has no payout attempt: ${transferRef}`);
             }
-            await debitVendorBalance(attempt.vendorId, attempt.amount, attempt.reference,
-              `Withdrawal for order ${attempt.orderId}`);
-            console.log(`✅ Transfer success: ${transferRef}`);
-            const escrowStatus = await recomputeOrderEscrowStatus(attempt.orderId);
-            await pool.execute(
-              `UPDATE orders SET escrowStatus = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-              [escrowStatus, attempt.orderId]
-            );
-          } else {
-            console.warn(`Transfer success has no payout attempt: ${transferRef}`);
+            await completeWebhook(event.event, transferRef);
+            if (outcome !== 'unknown') console.log(`✅ Transfer success: ${transferRef} (${outcome})`);
+          } catch (error) {
+            await failWebhook(event.event, transferRef, error);
+            throw error; // → 500 so Paystack redelivers
           }
         }
         break;
@@ -421,48 +473,20 @@ router.post('/paystack-webhook', webhookLimiter, async (req, res) => {
       case 'transfer.failed': {
         const transferRef = event.data?.reference;
         if (transferRef) {
-          const [ins] = await pool.execute(
-            `INSERT IGNORE INTO webhook_events (event, reference, payload) VALUES (?, ?, ?)`,
-            [event.event, transferRef, JSON.stringify(event.data || null)]
-          );
-          if (ins.insertId === 0) {
-            console.log(`⏸️ Duplicate webhook ignored: ${event.event} ${transferRef}`);
+          if (!(await claimWebhook(event.event, transferRef, JSON.stringify(event.data || null)))) {
+            console.log(`⏸️ Duplicate/in-flight webhook ignored: ${event.event} ${transferRef}`);
             return res.status(200).send('Duplicate ignored');
           }
-          const [attemptRows] = await pool.execute(
-            `SELECT pa.*, ea.orderId FROM payout_attempts pa
-             JOIN escrow_allocations ea ON ea.id = pa.allocationId
-             WHERE pa.reference = ? OR pa.providerReference = ? LIMIT 1`, [transferRef, transferRef]
-          );
-          const attempt = attemptRows[0];
-          if (attempt) {
-            const [failedAttempt] = await pool.execute(
-              `UPDATE payout_attempts SET status = 'failed' WHERE id = ? AND status = 'processing'`, [attempt.id]
-            );
-            if (failedAttempt.affectedRows === 0) return res.status(200).send('Transfer already settled');
-            // Return the reserved amount only after Paystack definitively says
-            // it failed. Never do this for a client timeout, whose outcome is
-            // unknown until reconciliation.
-            if (attempt.isFull) {
-              await pool.execute(
-                `UPDATE escrow_allocations SET status = 'available', payoutAmount = payoutAmount + ?,
-                 payoutReference = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'releasing'`,
-                [attempt.amount, attempt.allocationId]
-              );
-            } else {
-              await pool.execute(
-                `UPDATE escrow_allocations SET payoutAmount = payoutAmount + ?, updated_at = CURRENT_TIMESTAMP
-                 WHERE id = ? AND status = 'available'`, [attempt.amount, attempt.allocationId]
-              );
+          try {
+            const outcome = await settleTransferFailed(transferRef);
+            if (outcome === 'unknown') {
+              console.warn(`Transfer failed has no payout attempt: ${transferRef}`);
             }
-            console.log(`❌ Transfer failed: ${transferRef}`);
-            {
-              const escrowStatus = await recomputeOrderEscrowStatus(attempt.orderId);
-              await pool.execute(
-                `UPDATE orders SET escrowStatus = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, [escrowStatus, attempt.orderId]
-              );
-              await notifyVendorPayoutFailure(attempt.orderId, [attempt.allocationId]);
-            }
+            await completeWebhook(event.event, transferRef);
+            if (outcome !== 'unknown') console.log(`❌ Transfer failed settled: ${transferRef} (${outcome})`);
+          } catch (error) {
+            await failWebhook(event.event, transferRef, error);
+            throw error; // → 500 so Paystack redelivers
           }
         }
         break;
@@ -471,40 +495,20 @@ router.post('/paystack-webhook', webhookLimiter, async (req, res) => {
       case 'transfer.reversed': {
         const reversedRef = event.data?.reference;
         if (reversedRef) {
-          const [ins] = await pool.execute(
-            `INSERT IGNORE INTO webhook_events (event, reference, payload) VALUES (?, ?, ?)`,
-            [event.event, reversedRef, JSON.stringify(event.data || null)]
-          );
-          if (ins.insertId === 0) {
-            console.log(`⏸️ Duplicate webhook ignored: ${event.event} ${reversedRef}`);
+          if (!(await claimWebhook(event.event, reversedRef, JSON.stringify(event.data || null)))) {
+            console.log(`⏸️ Duplicate/in-flight webhook ignored: ${event.event} ${reversedRef}`);
             return res.status(200).send('Duplicate ignored');
           }
-          // Reversed transfers go back to 'held' so the admin can retry
-          const [result] = await pool.execute(
-            `UPDATE escrow_allocations
-             SET status = 'held', payoutReference = NULL, updated_at = CURRENT_TIMESTAMP
-             WHERE payoutReference = ? AND status IN ('releasing', 'released')`,
-            [reversedRef]
-          );
-          if (result.affectedRows > 0) {
-            // Find affected order IDs from the raw payload or from allocations
-            // that were just reverted (they no longer have the reference).
-            const [orderRows] = await pool.execute(
-              `SELECT DISTINCT orderId FROM escrow_allocations
-               WHERE status = 'held' AND payoutReference IS NULL
-                 AND updated_at >= DATE_SUB(NOW(), INTERVAL 5 SECOND)`,
-              []
-            );
-            for (const row of orderRows) {
-              const escrowStatus = await recomputeOrderEscrowStatus(row.orderId);
-              await pool.execute(
-                `UPDATE orders SET escrowStatus = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-                [escrowStatus, row.orderId]
-              );
+          try {
+            const outcome = await settleTransferReversed(reversedRef);
+            if (outcome === 'unknown') {
+              console.warn(`Transfer reversed has no payout attempt: ${reversedRef}`);
             }
-            console.log(`🔄 Transfer reversed: ${reversedRef} (${result.affectedRows} allocations reverted to held)`);
-          } else {
-            console.log(`Transfer reversed (no matching allocation): ${reversedRef}`);
+            await completeWebhook(event.event, reversedRef);
+            if (outcome !== 'unknown') console.log(`🔄 Transfer reversed settled: ${reversedRef} (${outcome})`);
+          } catch (error) {
+            await failWebhook(event.event, reversedRef, error);
+            throw error; // → 500 so Paystack redelivers
           }
         }
         break;

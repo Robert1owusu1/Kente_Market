@@ -54,7 +54,7 @@ const authUser = asyncHandler(async (req, res) => {
   await user.updateLastLogin();
 
   // Generate token with remember me support
-  generateToken(res, user.id, rememberMe === true);
+  generateToken(res, user, rememberMe === true);
 
   res.json({
     id: user.id,
@@ -121,7 +121,7 @@ const registerUser = asyncHandler(async (req, res) => {
     }
 
     // Generate token (no remember me on registration)
-    generateToken(res, user.id, false);
+    generateToken(res, user, false);
 
     res.status(201).json({
       id: user.id,

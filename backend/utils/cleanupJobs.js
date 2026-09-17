@@ -6,6 +6,11 @@ import { scanWishlistRestocks } from '../Services/wishlistRestockService.js';
 import { scanWishlistPriceDrops } from '../Services/wishlistPriceDropService.js';
 import { releaseExpiredReservations } from '../Services/reservationService.js';
 import { sendWeeklyVendorDigest } from './marketInsights.js';
+import {
+  reconcileStuckTransfers,
+  reclaimStaleProcessingWebhooks,
+} from '../Services/transferReconciliationService.js';
+import { runScheduledJob } from './schedulerJob.js';
 
 // Delete unverified users older than 7 days
 export const cleanupUnverifiedUsers = async () => {
@@ -176,47 +181,45 @@ export const sendAbandonedCartEmails = async () => {
   }
 };
 
-// Run cleanup daily
+// ============================================================
+// SCHEDULER
+// ============================================================
+// Every job runs under a MySQL distributed lock (one replica executes it), is
+// recorded in scheduler_job_status, and escalates failures to the admins
+// (throttled once/day/job). If the lock infra is missing the job still runs,
+// unlocked, so a not-yet-migrated deployment keeps working.
+const HOUR = 60 * 60 * 1000;
+const DAY = 24 * HOUR;
+
+const scheduleJobs = () => {
+  const run = (jobName, fn, intervalMs) => {
+    runScheduledJob(jobName, fn).catch(() => {});
+    setInterval(() => runScheduledJob(jobName, fn).catch(() => {}), intervalMs);
+    return jobName;
+  };
+
+  run('cleanupUnverifiedUsers', cleanupUnverifiedUsers, 24 * HOUR);
+  run('autoReleaseExpiredEscrows', autoReleaseExpiredEscrows, 2 * HOUR);
+  run('recoverStuckPendingOrders', recoverStuckPendingOrders, 30 * 60 * 1000);
+  run('releaseExpiredReservations', releaseExpiredReservations, 30 * 60 * 1000);
+  run('escalateStaleCustomRequests', escalateStaleCustomRequests, HOUR);
+  run('scanWishlistRestocks', scanWishlistRestocks, HOUR);
+  run('scanWishlistPriceDrops', scanWishlistPriceDrops, HOUR);
+  run('sendAbandonedCartEmails', sendAbandonedCartEmails, HOUR);
+  run('reconcileStuckTransfers', reconcileStuckTransfers, 30 * 60 * 1000);
+  run('reclaimStaleProcessingWebhooks', reclaimStaleProcessingWebhooks, 15 * 60 * 1000);
+  // Weekly vendor demand digest (Monday mornings). Settings-guarded and
+  // idempotent per calendar week; not fired on boot (that would email everyone).
+  setTimeout(() => runScheduledJob('sendWeeklyVendorDigest', sendWeeklyVendorDigest).catch(() => {}), 7 * DAY);
+  setInterval(() => runScheduledJob('sendWeeklyVendorDigest', sendWeeklyVendorDigest).catch(() => {}), 7 * DAY);
+
+  console.log('✅ Cleanup scheduler started (users 24h, escrow 2h, stuck orders 30m, reservations 30m, SLA 1h, restock 1h, price-drop 1h, abandoned-cart 1h, transfers 30m, webhook reclaim 15m, digest weekly) — distributed lock + job status + failure alerts active');
+};
+
 export const startCleanupSchedule = () => {
-  // Run immediately on start
-  cleanupUnverifiedUsers();
-  autoReleaseExpiredEscrows();
-  recoverStuckPendingOrders();
-  releaseExpiredReservations();
-  escalateStaleCustomRequests();
-  scanWishlistRestocks();
-  scanWishlistPriceDrops();
-
-  // Run every 24 hours
-  setInterval(cleanupUnverifiedUsers, 24 * 60 * 60 * 1000);
-
-  // Auto-release expired escrow every 2 hours
-  setInterval(autoReleaseExpiredEscrows, 2 * 60 * 60 * 1000);
-
-  // Recover orders stuck in pending (payment reference exists but webhook + fallback both missed)
-  setInterval(recoverStuckPendingOrders, 30 * 60 * 1000);
-
-  // Release stock reservations held by abandoned checkouts (never paid)
-  setInterval(releaseExpiredReservations, 30 * 60 * 1000);
-
-  // Escalate custom requests pending > 48 hours (notifications to all parties)
-  setInterval(escalateStaleCustomRequests, 1 * 60 * 60 * 1000);
-
-  // Back-in-stock alerts for wishlisted items (safety-net sweep)
-  setInterval(scanWishlistRestocks, 1 * 60 * 60 * 1000);
-
-  // Price-drop alerts for wishlisted items (safety-net sweep)
-  setInterval(scanWishlistPriceDrops, 1 * 60 * 60 * 1000);
-
-  // Abandoned-cart recovery emails (once per hour, re-targets only after cooldown)
-  sendAbandonedCartEmails();
-  setInterval(sendAbandonedCartEmails, 1 * 60 * 60 * 1000);
-
-  // Weekly vendor demand digest (Monday mornings). Not fired on boot — the
-  // settings-guarded job is idempotent per calendar week anyway.
-  setInterval(() => {
-    sendWeeklyVendorDigest().catch((err) => console.error('⚠️ Weekly digest job failed:', err.message));
-  }, 7 * 24 * 60 * 60 * 1000);
-
-  console.log('✅ Cleanup scheduler started (users 24h, escrow 2h, stuck orders 30m, reservations 30m, SLA 1h, restock 1h, price-drop 1h, abandoned-cart 1h, digest weekly)');
+  try {
+    scheduleJobs();
+  } catch (error) {
+    console.error('❌ Failed to start scheduler:', error.message);
+  }
 };

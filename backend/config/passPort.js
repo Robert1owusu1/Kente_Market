@@ -62,6 +62,7 @@ const findOrCreateOAuthUser = async (provider, profile, opts = {}) => {
         await connection.execute(
           `UPDATE users SET ${providerId} = ?, is_email_verified = 1,
              password = ?, failed_login_attempts = 0, locked_until = NULL,
+             tokenVersion = tokenVersion + 1,
              legal_consent_at = COALESCE(legal_consent_at, ?)
            WHERE id = ?`,
           [profile.id, adoptedHashedPassword, consentAt, existing.id]
@@ -72,6 +73,7 @@ const findOrCreateOAuthUser = async (provider, profile, opts = {}) => {
           [providerId]: profile.id,
           is_email_verified: 1,
           password: adoptedHashedPassword,
+          tokenVersion: (existing.tokenVersion ?? 0) + 1,
         };
       }
     }
@@ -107,9 +109,11 @@ const findOrCreateOAuthUser = async (provider, profile, opts = {}) => {
 
 // Generate JWT token for user
 // NOTE: claim MUST be `id` to match middleware/authMiddleware.js which reads decoded.id
+// `tv` carries the user's tokenVersion for session revocation (password/email
+// changes bump the version and invalidate old tokens).
 export const generateToken = (user) => {
   return jwt.sign(
-    { id: user.id, role: user.role },
+    { id: user.id, role: user.role, tv: user.tokenVersion ?? 0 },
     process.env.JWT_SECRET,
     { expiresIn: '30d' }
   );

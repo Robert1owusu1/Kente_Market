@@ -6,6 +6,7 @@
 import pool from '../config/db.js';
 import paystackServices from './paystackservices.js';
 import { creditVendorBalance } from './walletService.js';
+import { recordFinancialEvent } from './ledgerService.js';
 import { PLATFORM_FEE_RATE, ESCROW_RELEASE_DAYS } from '../config/businessConfig.js';
 import { resolveCommissionRate } from './commissionService.js';
 import Notification from '../models/notificationModel.js';
@@ -149,7 +150,7 @@ export const createEscrowAllocations = async (orderId, items, { advanceRatio = 0
     vendorTotals.set(vendorId, (vendorTotals.get(vendorId) || 0) + qty * price);
   }
 
-  const ratio = Math.max(0, Math.min(1, parseFloat(advanceRatio) || 0));
+  const ratio = Math.max(0, Math.min(1, parseFloat(String(advanceRatio)) || 0));
 
   let created = 0;
   for (const [vendorId] of vendorTotals) {
@@ -350,6 +351,24 @@ export const payoutAllocation = async (allocation, requestedAmount) => {
     if (providerReference !== reference) {
       await pool.execute(`UPDATE payout_attempts SET providerReference = ? WHERE reference = ?`, [providerReference, reference]);
     }
+
+    // Immutable audit event for the claim (dedupe by the globally unique
+    // per-attempt reference). Best-effort — the outbox row is the real guard.
+    try {
+      await recordFinancialEvent({
+        eventType: 'payout.claimed',
+        direction: 'info',
+        amount: amount,
+        vendorId: allocation.vendorId,
+        orderId: allocation.orderId,
+        allocationId: allocation.id,
+        reference,
+        providerReference,
+        dedupeKey: `payout.claimed:${reference}`,
+        payload: { isFull: fullPayout },
+      });
+    } catch { /* journal is best-effort */ }
+
     if (fullPayout) {
       updated.status = 'releasing';
     } else {
@@ -530,10 +549,14 @@ export const retryFailedAllocations = async (orderId) => {
   let failed = 0;
 
   for (const allocation of rows) {
+    // 'failed' allocations come from cancel/void (pending|held -> failed).
+    // releaseAllocation only transitions held -> available, so move the row
+    // back to 'held' FIRST; a stale 'pending' would make the release no-op
+    // and the retry would silently do nothing.
     await pool.execute(
       `UPDATE escrow_allocations
-       SET status = 'pending', updated_at = CURRENT_TIMESTAMP
-       WHERE id = ?`,
+       SET status = 'held', updated_at = CURRENT_TIMESTAMP
+       WHERE id = ? AND status = 'failed'`,
       [allocation.id]
     );
     allocation.status = 'held';
