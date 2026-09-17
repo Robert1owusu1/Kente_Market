@@ -158,6 +158,12 @@ if (process.env.NODE_ENV === 'production') {
     console.error('❌ JWT_SECRET must be set in production');
     process.exit(1);
   }
+  // CORS is an explicit allow-list; without FRONTEND_URL the live SPA is blocked
+  // silently. Fail fast at boot instead of shipping a quietly broken API.
+  if (!process.env.FRONTEND_URL) {
+    console.error('❌ FRONTEND_URL must be set in production (CORS allow-list)');
+    process.exit(1);
+  }
   const warn = (name, msg) => {
     if (!process.env[name]) console.log(`⚠️  ${name} not set — ${msg}`);
   };
@@ -165,6 +171,8 @@ if (process.env.NODE_ENV === 'production') {
   warn('EMAIL_USER', 'email delivery (OTP / password reset) will fail');
   warn('REPLICATE_API_TOKEN', 'AI try-on is disabled (503)');
   warn('GOOGLE_CLIENT_ID', 'Google sign-in is disabled');
+  warn('REDIS_URL', 'rate limiting is per-instance; set it before scaling to multiple instances');
+  warn('SENTRY_DSN', 'error tracking is disabled (recommended before launch)');
 }
 
 // ⭐ 5. Initialize Passport for OAuth
@@ -346,7 +354,9 @@ const server = app.listen(port, () => {
   console.log(`📦 Body parser limit: 1mb`);
   console.log(`🖼️  Profile picture uploads enabled`);
   console.log(`🔐 OAuth routes enabled (Google, Facebook)`);  // ⭐ NEW
-    console.log("🚨 Error tracking: not configured (set SENTRY_DSN and install @sentry/node to enable)");
+  console.log(process.env.SENTRY_DSN
+    ? '📈 Sentry error tracking enabled'
+    : '🚨 Error tracking: not configured (set SENTRY_DSN to enable)');
 });
 
 // ============================================

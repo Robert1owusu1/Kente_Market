@@ -54,7 +54,9 @@ export const setupSecurity = (app) => {
       .split(',')
       .map(o => o.trim())
       .filter(Boolean);
-    if (allowedOrigins.length === 0) {
+    // Dev convenience only: production with an empty allow-list fails at boot
+    // (server.js) rather than silently falling back to a localhost-only CORS.
+    if (allowedOrigins.length === 0 && process.env.NODE_ENV !== 'production') {
       allowedOrigins.push('http://localhost:5173');
     }
 

@@ -2,11 +2,21 @@
 // DESCRIPTION: Rate limiting to prevent abuse and DDoS attacks
 
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import { createRateLimitStore } from '../utils/redisClient.js';
+
+// Redis is optional: when REDIS_URL is set, every limiter below shares one
+// durable store so limits survive restarts and work across instances. Each
+// limiter gets a distinct prefix so no two limiters share keys.
+const redisStore = (prefix) => {
+  const store = createRateLimitStore(prefix);
+  return store ? { store } : {};
+};
 
 // General API rate limiter
 export const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100, // Limit each IP to 100 requests per windowMs
+  ...redisStore('rl:api'),
   message: 'Too many requests from this IP, please try again later.',
   standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
   legacyHeaders: false, // Disable the `X-RateLimit-*` headers
@@ -22,6 +32,7 @@ export const apiLimiter = rateLimit({
 export const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 5, // Limit each IP to 5 login attempts per windowMs
+  ...redisStore('rl:auth'),
   message: 'Too many login attempts, please try again later.',
   skipSuccessfulRequests: true, // Don't count successful logins
   handler: (req, res) => {
@@ -43,6 +54,7 @@ export const staffAuthLimiter = rateLimit({
     const email = (req.body?.email || 'unknown').toString().trim().toLowerCase();
     return `${ipKeyGenerator(req.ip)}:${email}`;
   },
+  ...redisStore('rl:staff'),
   skipSuccessfulRequests: true,
   handler: (req, res) => {
     res.status(429).json({
@@ -56,6 +68,7 @@ export const staffAuthLimiter = rateLimit({
 export const uploadLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
   max: 20, // Limit each IP to 20 uploads per hour
+  ...redisStore('rl:upload'),
   message: 'Too many file uploads, please try again later.',
   handler: (req, res) => {
     res.status(429).json({
@@ -69,7 +82,7 @@ export const uploadLimiter = rateLimit({
 export const orderLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
   max: 10, // Limit each IP to 10 orders per minute
-  message: 'Too many orders created, please slow down.',
+  ...redisStore('rl:orders'),
   skipSuccessfulRequests: false,
   handler: (req, res) => {
     res.status(429).json({
@@ -83,6 +96,7 @@ export const orderLimiter = rateLimit({
 export const webhookLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
   max: 30,
+  ...redisStore('rl:webhook'),
   message: 'Too many webhook requests.',
   handler: (req, res) => {
     res.status(429).json({ message: 'Too many webhook requests.' });
@@ -93,6 +107,7 @@ export const webhookLimiter = rateLimit({
 export const contactLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 5,
+  ...redisStore('rl:contact'),
   message: 'Too many contact submissions.',
   handler: (req, res) => {
     res.status(429).json({ message: 'Too many messages. Please try again later.' });
@@ -103,6 +118,7 @@ export const contactLimiter = rateLimit({
 export const subscribeLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 3,
+  ...redisStore('rl:subscribe'),
   message: 'Too many subscribe requests.',
   handler: (req, res) => {
     res.status(429).json({ message: 'Too many requests. Please try again later.' });
@@ -113,6 +129,7 @@ export const subscribeLimiter = rateLimit({
 export const passwordResetLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
   max: 3,
+  ...redisStore('rl:reset'),
   message: 'Too many password reset attempts.',
   handler: (req, res) => {
     res.status(429).json({ message: 'Too many reset attempts. Please try again in an hour.' });
@@ -126,6 +143,7 @@ export const passwordResetLimiter = rateLimit({
 export const registerLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 10,
+  ...redisStore('rl:register'),
   message: 'Too many registration attempts.',
   handler: (req, res) => {
     res.status(429).json({ message: 'Too many registration attempts. Please try again later.' });

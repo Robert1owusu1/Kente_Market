@@ -7,6 +7,7 @@ import { generateToken } from '../config/passPort.js';
 import { cookieSameSite } from '../config/cookieConfig.js';
 import { authLimiter } from '../middleware/rateLimitMiddleware.js';
 import { setCsrfCookie } from '../middleware/csrfMiddleware.js';
+import { consumeOnce } from '../utils/redisClient.js';
 import User from '../models/usersModel.js';
 
 const router = express.Router();
@@ -172,6 +173,9 @@ router.post('/oauth/exchange', async (req, res) => {
     }
 
     // One-time use: an exchange token must never be able to mint two sessions.
+    // In-process check first (cheap, no I/O); a durable Redis check happens
+    // after the user/token-version validation so a rejected token is never
+    // burned.
     if (consumedExchangeJtis.has(decoded.jti)) {
       return res.status(401).json({ message: 'Token already used' });
     }
@@ -185,8 +189,16 @@ router.post('/oauth/exchange', async (req, res) => {
       return res.status(401).json({ message: 'Session expired, please log in again' });
     }
 
-    consumedExchangeJtis.set(decoded.jti, Date.now());
-    pruneExchangeJtis();
+    // Consume atomically via Redis when configured (durable across restarts and
+    // instances). When Redis is unavailable, fall back to the in-process set.
+    const reused = await consumeOnce(`oauth:exchange:${decoded.jti}`, 60 * 60);
+    if (reused === false) {
+      return res.status(401).json({ message: 'Token already used' });
+    }
+    if (reused === null) {
+      consumedExchangeJtis.set(decoded.jti, Date.now());
+      pruneExchangeJtis();
+    }
 
     // Issue the real session cookie (same shape as regular login).
     const sessionToken = generateToken(user);

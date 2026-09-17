@@ -1,3 +1,5 @@
+import { captureError } from '../utils/sentry.js';
+
 const notFound = (req, res, next) => {
     const error = new Error(`Not Found - ${req.originalUrl}`);
     res.status(404);
@@ -10,7 +12,8 @@ const errorHandeler = (err, req, res, next) => {
     if (err.stack) {
         console.error(err.stack.split('\n').slice(0, 5).join('\n'));
     }
-        // Best-effort error tracking is intentionally not wired here.
+    // Send to Sentry when configured (fire-and-forget; never blocks the response).
+    captureError(err, req);
     res.status(statusCode).json({ message: 'An error occurred' });
 };
 
