@@ -48,6 +48,17 @@ export const setupSecurity = (app) => {
     ]
   }));
 
+  // Permissions-Policy: disable camera/microphone/geolocation on the API origin
+  // (and FLoC via interest-cohort). Helmet v8 no longer emits this header, so we
+  // set it explicitly to match the frontend's vercel.json policy.
+  app.use((req, res, next) => {
+    res.setHeader(
+      'Permissions-Policy',
+      'camera=(), microphone=(), geolocation=(), interest-cohort=()'
+    );
+    next();
+  });
+
 // CORS configuration
   app.use((req, res, next) => {
     const allowedOrigins = (process.env.FRONTEND_URL || '')
