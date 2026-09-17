@@ -25,6 +25,7 @@
   "author": "Robert",
   "license": "ISC",
   "dependencies": {
+    "@sentry/node": "^10.75.0",
     "axios": "^1.12.2",
     "bcryptjs": "^3.0.2",
     "colors": "^1.4.0",
@@ -47,6 +48,8 @@
     "passport": "^0.7.0",
     "passport-facebook": "^3.0.0",
     "passport-google-oauth20": "^2.0.0",
+    "rate-limit-redis": "^6.0.1",
+    "redis": "^6.2.1",
     "replicate": "^1.4.0"
   },
   "devDependencies": {
@@ -59,5 +62,10 @@
     "@types/multer": "^2.2.0",
     "@types/node": "^26.4.1",
     "nodemon": "^3.1.10"
+  },
+  "overrides": {
+    "express-mysql-session": {
+      "mysql2": "^3.24.3"
+    }
   }
 }

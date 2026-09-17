@@ -109,5 +109,33 @@ endpoint returns bucketed `stock` with no sensitive fields.
    transfer reversal, ledger, reconciliation and integration-test items above are
    exercised against Paystack test mode.
 5. Remaining gaps to close before "fully production-ready": staff-panel and
-   clawback/return integration tests, Sentry/traces, Redis-backed rate
-   limiter for multi-replica fairness, and operator-run backup automation.
+   clawback/return integration tests, and operator-run backup automation. The
+   following are now implemented and verified in this round:
+6. **Server-side session revocation on logout** — `POST /api/users/logout` bumps
+   `tokenVersion` (via JWT decode of the browser cookie, best-effort) so a stolen
+   token can no longer keep working after a user logs out. Verified e2e:
+   pre-logout token 200 → logout 200 → same token 401 → fresh login 200.
+   (`controllers/userController.js`, `models/usersModel.js` `bumpTokenVersion`)
+7. **Redis-backed rate limiting + OAuth one-time tokens (optional, additive)** —
+   when `REDIS_URL` is set, every express-rate-limit instance shares a durable
+   store (distinct `rl:*` prefixes) so limits survive restarts and work across
+   replicas; without it the app keeps the in-memory behavior. The OAuth
+   exchange-jti one-time-use check now also consumes atomically via Redis
+   (`oauth:exchange:<jti>`, 1h TTL) falling back to the in-process set, so a
+   replay across restart/replica is impossible when Redis is on.
+   (`utils/redisClient.js`, `middleware/rateLimitMiddleware.js`,
+   `routes/authRoutes.js`)
+8. **Optional Sentry error tracking** — set `SENTRY_DSN` (additive; ignored
+   otherwise). Errors are captured in `errorMiddleware.js` (user id, route,
+   status) via `utils/sentry.js`. No-op when unset.
+9. **CORS config hard-fail** — production refuses to boot without `FRONTEND_URL`
+   (`❌ FRONTEND_URL must be set in production (CORS allow-list)`, `exit 1`);
+   the CORS middleware never falls back to localhost in production.
+   (`server.js`, `middleware/securityMiddleware.js`)
+10. **Register input validation order** — required fields + password length are
+    validated before any DB lookup, so malformed/empty payloads return a clean
+    400 instead of a 500. Verified live.
+11. **Dependency audit clean** — `npm audit` reports 0 vulnerabilities
+    (`redis`, `rate-limit-redis`, `@sentry/node` added; the vulnerable nested
+    `mysql2` under `express-mysql-session` is pinned to the patched line via
+    `package.json` `overrides`).

@@ -1,5 +1,6 @@
 
 import asyncHandler from '../middleware/asyncHandler.js';
+import jwt from 'jsonwebtoken';
 import User from '../models/usersModel.js';
 import generateToken from '../utils/generateToken.js';
 import { cookieSameSite } from '../config/cookieConfig.js';
@@ -78,6 +79,17 @@ const authUser = asyncHandler(async (req, res) => {
 const registerUser = asyncHandler(async (req, res) => {
   const { firstName, lastName, email, password, phone, address, city, state, zipCode, country, legalConsentAccepted } = req.body;
 
+  // Validate required fields BEFORE touching the database, so malformed payloads
+  // get a clean 400 instead of a 500 from a pre-emptively failed lookup.
+  if (!firstName || !lastName || !email || !password) {
+    res.status(400);
+    throw new Error('Please provide first name, last name, email, and password');
+  }
+  if (typeof password !== 'string' || password.length < 8) {
+    res.status(400);
+    throw new Error('Password must be at least 8 characters long');
+  }
+
   // Check if user already exists
   const userExists = await User.findByEmail(email);
 
@@ -147,6 +159,21 @@ const registerUser = asyncHandler(async (req, res) => {
  * @access  Private
  */
 const logoutUser = asyncHandler(async (req, res) => {
+  // Revoke the server-side session so a stolen token can't keep working after
+  // logout (until natural expiry). Best-effort: even when the token is already
+  // invalid, we still clear the cookies so logout always succeeds.
+  const token = req.cookies?.jwt;
+  if (token) {
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      if (decoded?.id) {
+        await User.bumpTokenVersion(decoded.id);
+      }
+    } catch {
+      // Token already expired/invalid — nothing to revoke.
+    }
+  }
+
   res.cookie('jwt', '', {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
