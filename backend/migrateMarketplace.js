@@ -613,6 +613,12 @@ try {
     ['payout_attempts', 'idx_payout_status', '(status)'],
     ['webhook_events', 'idx_webhook_event_ref', '(event, reference(191))'],
     ['scheduler_job_status', 'idx_scheduler_job_name', '(jobName)'],
+    // Hot-list composite indexes (reported slow queries): notifications page
+    // reads by user sorted by recency; featured/trending lists filter on
+    // featured + approval together. Composites remove the filesort and let a
+    // single index serve both predicates.
+    ['notifications', 'idx_notifications_user_created', '(userId, created_at)'],
+    ['product', 'idx_product_featured_approval', '(featured, approvalStatus)'],
   ];
   for (const [table, name, cols] of wantedIndexes) {
     if (!(await indexExists(table, name))) {
