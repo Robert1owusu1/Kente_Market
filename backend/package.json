@@ -11,8 +11,8 @@
     "db:backup": "bash ../.deploy/backup-db.sh",
     "email:test": "node test-email.js",
     "password:reset:test": "node test-password-reset.js",
-    "start": "node server.js",
-    "dev": "nodemon server.js",
+    "start": "node --import=@sentry/node/import server.js",
+    "dev": "nodemon --exec \"node --import=@sentry/node/import server.js\"",
     "test": "node --test \"tests/**/*.test.js\"",
     "test:unit": "node --test tests/money.test.js tests/escrowLogic.test.js",
     "typecheck": "tsc --noEmit -p tsconfig.json"

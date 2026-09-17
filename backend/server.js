@@ -1,7 +1,10 @@
 // FILE LOCATION: backend/server.js
+// Sentry must initialize before Express loads so @sentry/node can instrument it.
+// (ESM executes static imports in source order, before any top-level code, so
+// this must be the first import.)
+import './sentry-init.js';
 import dotenv from 'dotenv';
 dotenv.config();
-initSentry();
 
 // Explicit FRONTEND_URL / OAUTH_CALLBACK_URL in .env are respected as-is. The
 // registered Google redirect URI must match what is used at runtime.
@@ -32,7 +35,6 @@ import { requestLogger } from './utils/logger.js';
 import {
   captureError,
   flushSentry,
-  initSentry,
   setupSentryErrorHandler,
 } from './utils/sentry.js';
 
