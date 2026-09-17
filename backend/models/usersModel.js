@@ -393,7 +393,10 @@ class User {
     }
   }
 
-  // Hard delete user
+  // Hard delete user — only safe when no financial footprint exists.
+  // Orders cascade to escrow/payout/wallet records under the current FK setup,
+  // so an admin deleting a user with order history would silently destroy
+  // money history. Refuse instead of cascading.
   static async delete(id) {
     let connection;
     try {
@@ -402,6 +405,18 @@ class User {
       }
 
       connection = await pool.getConnection();
+
+      const [financial] = await connection.execute(
+        `SELECT 1 FROM orders WHERE userId = ?
+         UNION SELECT 1 FROM vendor_wallets WHERE vendorId = ?
+         UNION SELECT 1 FROM wallet_transactions WHERE vendorId = ? LIMIT 1`,
+        [parseInt(id), parseInt(id), parseInt(id)]
+      );
+      if (financial.length > 0) {
+        throw new Error(
+          'This user has financial history (orders/wallet). Deactivate their account instead of deleting.'
+        );
+      }
 
       const [result] = await connection.execute(
         'DELETE FROM users WHERE id = ?', 

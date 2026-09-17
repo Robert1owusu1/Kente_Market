@@ -558,17 +558,20 @@ CREATE TABLE IF NOT EXISTS vendor_messages (
 CREATE TABLE IF NOT EXISTS campaigns (
   id INT AUTO_INCREMENT PRIMARY KEY,
   title VARCHAR(255) NOT NULL,
+  slug VARCHAR(255) NULL,
   description TEXT NULL,
   discountType ENUM('percentage','fixed') NOT NULL DEFAULT 'percentage',
   discountValue DECIMAL(10,2) NOT NULL,
-  startsAt DATETIME NOT NULL,
-  endsAt DATETIME NOT NULL,
-  status ENUM('draft','active','ended') DEFAULT 'draft',
+  startDate DATETIME NULL,
+  endDate DATETIME NULL,
+  bannerImage VARCHAR(500) NULL,
+  status ENUM('draft','scheduled','active','ended') DEFAULT 'draft',
+  channel VARCHAR(100) DEFAULT 'homepage',
   createdBy INT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_campaigns_status (status),
-  INDEX idx_campaigns_dates (startsAt, endsAt)
+  INDEX idx_campaigns_status_dates (status, startDate, endDate)
 ) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS campaign_products (

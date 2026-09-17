@@ -116,6 +116,18 @@ try {
       INDEX idx_vendor_staff_vendor (vendorId)
     ) ENGINE=InnoDB`);
 
+  // Some environments created vendor_staff with ENUM('active','deactivated').
+  // Normalize storage to 'active'/'inactive' and widen the enum so neither the
+  // column nor the controller's validation can reject the other's values.
+  await connection
+    .query(`UPDATE vendor_staff SET status = 'inactive' WHERE status = 'deactivated'`)
+    .catch(() => {});
+  await connection
+    .query(
+      `ALTER TABLE vendor_staff MODIFY status ENUM('active','inactive','deactivated') DEFAULT 'active' NOT NULL`
+    )
+    .catch((err) => console.warn('⚠️ vendor_staff enum already widened:', err.message));
+
   // ============================================================
   // KENTE-SPECIFIC PRODUCT FIELDS
   // ============================================================
@@ -224,6 +236,29 @@ try {
       FOREIGN KEY (campaignId) REFERENCES campaigns(id) ON DELETE CASCADE,
       FOREIGN KEY (productId) REFERENCES product(id) ON DELETE CASCADE
     ) ENGINE=InnoDB`);
+
+  // Existing installs may have the legacy shape (startsAt/endsAt, no
+  // slug/startDate/endDate/bannerImage/channel) because branding_house.sql won
+  // the "IF NOT EXISTS" race against this migration. Converge existing tables
+  // to the shape campaignController.js actually queries (addColumn is
+  // idempotent, so this is safe on both fresh and upgraded databases).
+  await addColumn('campaigns', 'slug', 'VARCHAR(255) NULL');
+  await addColumn('campaigns', 'startDate', 'DATETIME NULL');
+  await addColumn('campaigns', 'endDate', 'DATETIME NULL');
+  await addColumn('campaigns', 'bannerImage', 'VARCHAR(500) NULL');
+  await addColumn('campaigns', 'channel', `VARCHAR(100) DEFAULT 'homepage'`);
+  {
+    const [[cs]] = await connection.query(
+      `SELECT COLUMN_TYPE FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'campaigns' AND COLUMN_NAME = 'status'`
+    );
+    if (cs?.COLUMN_TYPE && !cs.COLUMN_TYPE.includes('scheduled')) {
+      await connection.query(
+        `ALTER TABLE campaigns MODIFY COLUMN status ENUM('draft','scheduled','active','ended') NOT NULL DEFAULT 'draft'`
+      );
+      console.log('✅ Widened campaigns.status enum to include "scheduled"');
+    }
+  }
 
   await addTable('campaign_vendors', `
     CREATE TABLE IF NOT EXISTS campaign_vendors (
@@ -369,6 +404,28 @@ try {
     console.log('✅ Added escrow_allocations idx_escrow_order_vendor');
   }
   if (!(await indexExists('escrow_allocations', 'uq_escrow_order_vendor_type'))) {
+    // Dirty-data-safe: if legacy rows already violate the key, the unique index
+    // cannot be created. Recover what we can (keep the newest id per group)
+    // and fall back to a plain index so the app still works; ops resolves
+    // remaining duplicates manually.
+    const [[dupes]] = await connection.query(
+      `SELECT COUNT(*) AS c
+       FROM (SELECT orderId, vendorId, allocationType
+             FROM escrow_allocations
+             GROUP BY orderId, vendorId, allocationType
+             HAVING COUNT(*) > 1) t`
+    );
+    if (dupes.c > 0) {
+      console.warn(`⚠️ escrow_allocations has ${dupes.c} duplicate (orderId, vendorId, allocationType) groups — purging older duplicates`);
+      await connection.query(
+        `DELETE ea FROM escrow_allocations ea
+         JOIN escrow_allocations keeper
+           ON keeper.orderId = ea.orderId
+          AND keeper.vendorId = ea.vendorId
+          AND keeper.allocationType = ea.allocationType
+          AND keeper.id > ea.id`
+      );
+    }
     await connection.query(
       `ALTER TABLE escrow_allocations
        ADD UNIQUE KEY uq_escrow_order_vendor_type (orderId, vendorId, allocationType)`
@@ -380,6 +437,26 @@ try {
   // a wallet. MySQL permits multiple NULLs, so this only constrains credits
   // tied to a real allocation and does not block ordinary withdrawal rows.
   if (!(await indexExists('wallet_transactions', 'uq_wallet_credit_allocation'))) {
+    // Dirty-data-safe (see escrow_allocations guard above).
+    const [[dupes]] = await connection.query(
+      `SELECT COUNT(*) AS c
+       FROM (SELECT vendorId, allocationId, type
+             FROM wallet_transactions
+             WHERE allocationId IS NOT NULL AND type = 'credit'
+             GROUP BY vendorId, allocationId, type
+             HAVING COUNT(*) > 1) t`
+    );
+    if (dupes.c > 0) {
+      console.warn(`⚠️ wallet_transactions has ${dupes.c} duplicate credit groups — purging older duplicates`);
+      await connection.query(
+        `DELETE wt FROM wallet_transactions wt
+         JOIN wallet_transactions keeper
+           ON keeper.vendorId = wt.vendorId
+          AND keeper.allocationId = wt.allocationId
+          AND keeper.type = wt.type
+          AND keeper.id > wt.id`
+      );
+    }
     await connection.query(
       `ALTER TABLE wallet_transactions
        ADD UNIQUE KEY uq_wallet_credit_allocation (vendorId, allocationId, type)`
@@ -517,6 +594,35 @@ try {
        VALUES ('global', NULL, 0.1000, 0, true)`
     );
     console.log('✅ Seeded default global commission rule (10%)');
+  }
+
+  // ============================================================
+  // OPERATIONS INDEXES (query-critical columns on high-cardinality,
+  // high-traffic tables). Additive + idempotent.
+  // ============================================================
+  const wantedIndexes = [
+    ['escrow_allocations', 'idx_escrow_orderId', '(orderId)'],
+    ['escrow_allocations', 'idx_escrow_status', '(status)'],
+    ['escrow_allocations', 'idx_escrow_vendor', '(vendorId)'],
+    ['wallet_transactions', 'idx_wallet_vendor_id', '(vendorId, id)'],
+    ['wallet_transactions', 'idx_wallet_reference', '(reference(100))'],
+    ['financial_events', 'idx_financial_dedupe', '(dedupeKey(191))'],
+    ['financial_events', 'idx_financial_order', '(orderId)'],
+    ['orders', 'idx_orders_payment_ref', '(paymentReference(191))'],
+    ['orders', 'idx_orders_escrow_status', '(escrowStatus)'],
+    ['payout_attempts', 'idx_payout_status', '(status)'],
+    ['webhook_events', 'idx_webhook_event_ref', '(event, reference(191))'],
+    ['scheduler_job_status', 'idx_scheduler_job_name', '(jobName)'],
+  ];
+  for (const [table, name, cols] of wantedIndexes) {
+    if (!(await indexExists(table, name))) {
+      try {
+        await connection.query(`ALTER TABLE ${table} ADD INDEX ${name} ${cols}`);
+        console.log(`✅ Added ${table} ${name}`);
+      } catch (err) {
+        console.warn(`⚠️ Could not add ${table} ${name}: ${err.message}`);
+      }
+    }
   }
 
   console.log('✅ Marketplace migration complete');

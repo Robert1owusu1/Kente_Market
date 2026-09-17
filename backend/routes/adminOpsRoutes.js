@@ -13,12 +13,15 @@ router.use(protect, admin);
 router.get('/audit-log', async (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit, 10) || 200, 500);
+    if (!Number.isFinite(limit) || limit < 1) {
+      return res.status(400).json({ message: 'Invalid limit' });
+    }
+    // Inlined integer (TiDB rejects LIMIT ? parameter markers).
     const [rows] = await pool.execute(
       `SELECT id, actorId, actorRole, actorEmail, action, entityType, entityId,
               beforeVal, afterVal, ip, created_at
        FROM admin_audit_log
-       ORDER BY id DESC LIMIT ?`,
-      [limit]
+       ORDER BY id DESC LIMIT ${Math.min(limit, 500)}`,
     );
     // JSON columns come back as parsed objects via mysql2; keep them as-is.
     res.json({ count: rows.length, entries: rows });

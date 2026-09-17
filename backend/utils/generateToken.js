@@ -1,6 +1,7 @@
 // utils/generateToken.js - COMPLETE VERSION WITH REMEMBER ME
 import jwt from 'jsonwebtoken';
 import { cookieSameSite } from '../config/cookieConfig.js';
+import { setCsrfCookie } from '../middleware/csrfMiddleware.js';
 
 /**
  * Generate JWT token and set it as HTTP-only cookie
@@ -39,6 +40,10 @@ const generateToken = (res, userOrId, rememberMe = false) => {
     maxAge: maxAge,                                    // Cookie expiration time
     path: '/'                                          // Cookie available for entire domain
   });
+
+  // Signed double-submit CSRF token (state-changing /api calls must echo it in
+  // X-CSRF-Token). Issued with every new session cookie.
+  setCsrfCookie(res);
 
   console.log(`✅ Token generated for user ${userId} (Remember Me: ${rememberMe}, Expires: ${rememberMe ? '30 days' : '7 days'}, tv: ${tv})`);
   

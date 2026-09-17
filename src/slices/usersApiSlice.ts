@@ -31,6 +31,23 @@ export const usersApiSlice = apiSlice.injectEndpoints({
         method: "POST",
       }),
       invalidatesTags: ["User"],
+      async onQueryStarted(_arg, { dispatch, queryFulfilled }) {
+        try {
+          await queryFulfilled;
+        } finally {
+          // Drop another logged-in user's data from the Redux cache so nothing
+          // sensitive survives a session switch.
+          dispatch(apiSlice.util.resetApiState());
+          // Purge any cached pages from the service worker (they may have been
+          // personalized) so the next visitor sees a fresh network response.
+          if ("caches" in window) {
+            try {
+              const keys = await caches.keys();
+              await Promise.all(keys.map((k) => caches.delete(k)));
+            } catch { /* best-effort */ }
+          }
+        }
+      },
     }),
 
     // ⭐ NEW: Verify Email

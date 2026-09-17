@@ -14,6 +14,7 @@ import {
 } from "../Services/escrowService.js";
 import { CUSTOM_ADVANCE_RATIO } from "../config/businessConfig.js";
 import { issueCertificateForOrder } from "../Services/certificateService.js";
+import PaystackService from "../Services/paystackservices.js";
 
 // Combine needed-for date + time into a contractually visible completion date.
 const completionFromRequest = (request) => {
@@ -81,6 +82,12 @@ export const createRequest = async (req, res) => {
     }
     if (vendor.status !== 'approved') {
       return res.status(400).json({ message: "This vendor is not approved to take custom orders yet" });
+    }
+    // A vendor must not be able to place a custom request against their own
+    // store: they could quote/accept it themselves and immediately withdraw the
+    // 50% advance. Self-dealing is never a legitimate customer flow.
+    if (parseInt(vendorId, 10) === req.user.id) {
+      return res.status(400).json({ message: "You cannot send a custom request to your own store" });
     }
 
     const yardNum = parseFloat(yards);
@@ -237,6 +244,30 @@ export const checkoutRequest = async (req, res) => {
     const price = parseFloat(request.vendorQuotePrice);
     if (!price || price <= 0) {
       return res.status(400).json({ message: "Vendor quote price is invalid" });
+    }
+
+    // SECURITY: this endpoint used to trust the client-supplied
+    // `paymentReference` and immediately create a PAID order that releases a
+    // 50% advance to the vendor. Anyone could pass an arbitrary string. Verify
+    // with Paystack server-side that the charge actually succeeded, settled the
+    // full quote amount, in GHS, and that the reference has not already been
+    // consumed by another order.
+    const verification = await PaystackService.verifyTransaction(paymentReference);
+    const tx = verification?.data;
+    if (!tx || tx.status !== 'success') {
+      return res.status(400).json({ message: "Payment has not been completed. Please try again." });
+    }
+    const expectedKobo = Math.round(price * 100);
+    const paidKobo = parseInt(tx.amount, 10);
+    if (tx.currency !== 'GHS' || !Number.isFinite(paidKobo) || paidKobo !== expectedKobo) {
+      return res.status(400).json({ message: "Payment amount does not match the quoted price." });
+    }
+    const [[existingRef]] = await pool.execute(
+      "SELECT id FROM orders WHERE paymentReference = ? LIMIT 1",
+      [paymentReference]
+    );
+    if (existingRef) {
+      return res.status(400).json({ message: "This payment reference has already been used." });
     }
 
     const items = [

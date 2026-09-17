@@ -44,59 +44,59 @@ router.route('/directory').get(getVendorDirectory);
 router.route('/fulfillment/:vendorId').get(getVendorFulfilment);
 
 // GET /api/vendors/insights → demand-prediction digest (vendor)
-router.route('/insights').get(protect, vendorOrStaff, requireVendorPermission('view_earnings'), getVendorInsights);
+router.route('/insights').get(vendorOrStaff, requireVendorPermission('view_earnings'), getVendorInsights);
 
 // GET /api/vendors/admin-scorecard → on-time%, response time, rating (admin only)
 router.route('/admin-scorecard').get(protect, admin, getAdminVendorScorecard);
 
 // GET /api/vendors/messages → messages received by the vendor
-router.route('/messages').get(protect, vendorOrStaff, requireVendorPermission('view_customers'), getVendorMessages);
+router.route('/messages').get(vendorOrStaff, requireVendorPermission('view_customers'), getVendorMessages);
 
 // POST /api/vendors/apply → become/update vendor application (any logged-in user)
 router.route('/apply').post(protect, applyVendor);
 
 // GET /api/vendors/me → own vendor profile + escrow summary (vendor, staff w/ view_earnings, or admin)
-router.route('/me').get(protect, vendorOrStaff, requireVendorPermission('view_earnings'), getMyVendorProfile);
+router.route('/me').get(vendorOrStaff, requireVendorPermission('view_earnings'), getMyVendorProfile);
 
 // PUT /api/vendors/profile → update business/storefront profile
-router.route('/profile').put(protect, vendorOrStaff, updateVendorProfile);
+router.route('/profile').put(vendorOrStaff, updateVendorProfile);
 
 // GET /api/vendors/analytics → vendor analytics (financial)
-router.route('/analytics').get(protect, vendorOrStaff, requireVendorPermission('view_earnings'), getVendorAnalytics);
+router.route('/analytics').get(vendorOrStaff, requireVendorPermission('view_earnings'), getVendorAnalytics);
 
 // GET /api/vendors/inventory → vendor inventory (stock, SKU, alerts)
-router.route('/inventory').get(protect, vendorOrStaff, requireVendorPermission('manage_inventory'), getVendorInventory);
+router.route('/inventory').get(vendorOrStaff, requireVendorPermission('manage_inventory'), getVendorInventory);
 
 // GET /api/vendors/reviews → reviews on vendor's products
-router.route('/reviews').get(protect, vendorOrStaff, getVendorReviews);
+router.route('/reviews').get(vendorOrStaff, getVendorReviews);
 
 // GET /api/vendors/returns → returns for vendor's products (customer PII)
-router.route('/returns').get(protect, vendorOrStaff, requireVendorPermission('view_customers'), getVendorReturns);
+router.route('/returns').get(vendorOrStaff, requireVendorPermission('view_customers'), getVendorReturns);
 
 // GET /api/vendors/coupons → vendor's coupons
 // POST /api/vendors/coupons → create vendor coupon
-router.route('/coupons').get(protect, vendorOrStaff, requireVendorPermission('manage_coupons'), getVendorCoupons);
-router.route('/coupons').post(protect, vendorOrStaff, requireVendorPermission('manage_coupons'), createVendorCoupon);
-router.route('/coupons/:id').put(protect, vendorOrStaff, requireVendorPermission('manage_coupons'), updateVendorCoupon);
-router.route('/coupons/:id').delete(protect, vendorOrStaff, requireVendorPermission('manage_coupons'), deleteVendorCoupon);
+router.route('/coupons').get(vendorOrStaff, requireVendorPermission('manage_coupons'), getVendorCoupons);
+router.route('/coupons').post(vendorOrStaff, requireVendorPermission('manage_coupons'), createVendorCoupon);
+router.route('/coupons/:id').put(vendorOrStaff, requireVendorPermission('manage_coupons'), updateVendorCoupon);
+router.route('/coupons/:id').delete(vendorOrStaff, requireVendorPermission('manage_coupons'), deleteVendorCoupon);
 
 // GET /api/vendors/myproducts → vendor's own products
 // POST /api/vendors/products → vendor creates a product
-router.route('/myproducts').get(protect, vendorOrStaff, requireVendorPermission('manage_products'), getMyProducts);
-router.route('/products').post(protect, vendorOrStaff, requireVendorPermission('manage_products'), createVendorProduct);
+router.route('/myproducts').get(vendorOrStaff, requireVendorPermission('manage_products'), getMyProducts);
+router.route('/products').post(vendorOrStaff, requireVendorPermission('manage_products'), createVendorProduct);
 
 // PUT /api/vendors/products/:id → vendor updates own product
 // DELETE /api/vendors/products/:id → vendor deletes own product
-router.route('/products/:id').put(protect, vendorOrStaff, requireVendorPermission('manage_products'), updateVendorProduct);
-router.route('/products/:id').delete(protect, vendorOrStaff, requireVendorPermission('manage_products'), deleteVendorProduct);
+router.route('/products/:id').put(vendorOrStaff, requireVendorPermission('manage_products'), updateVendorProduct);
+router.route('/products/:id').delete(vendorOrStaff, requireVendorPermission('manage_products'), deleteVendorProduct);
 
 // POST /api/vendors/withdraw → vendor withdraws from available wallet balance
-router.route('/withdraw').post(protect, vendorOrStaff, requireVendorPermission('view_earnings'), withdrawVendorBalance);
+router.route('/withdraw').post(vendorOrStaff, requireVendorPermission('view_earnings'), withdrawVendorBalance);
 
 // GET /api/vendors/orders → orders containing this vendor's products (customer PII)
 // POST /api/vendors/orders/:id/status → advance fulfilment / post progress
-router.route('/orders').get(protect, vendorOrStaff, requireVendorPermission('view_customers'), getVendorOrders);
-router.route('/orders/:id/status').post(protect, vendorOrStaff, requireVendorPermission('manage_orders'), updateVendorOrderStatus);
+router.route('/orders').get(vendorOrStaff, requireVendorPermission('view_customers'), getVendorOrders);
+router.route('/orders/:id/status').post(vendorOrStaff, requireVendorPermission('manage_orders'), updateVendorOrderStatus);
 
 // GET /api/vendors → list all vendors (admin only)
 router.route('/').get(protect, admin, listVendors);

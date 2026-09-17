@@ -88,6 +88,14 @@ class Product {
     ]) {
       delete safe[key];
     }
+
+    // Inventory UX: storefronts need to distinguish sold-out (0) and low stock
+    // (1..5) to render honest badges, but the exact on-hand count is business
+    // data. Expose a bucket that preserves that behaviour exactly — real counts
+    // only for 0..5, anything healthier collapses to 6.
+    const onHand = Number(this.stock) || 0;
+    safe.stock = onHand <= 5 ? Math.max(0, onHand) : 6;
+
     return safe;
   }
 

@@ -13,9 +13,21 @@ import store from './store'
 // flowing on cross-origin requests.
 import axios from 'axios'
 import { Base_URL } from './constant'
+import { getCsrfToken, isSafeMethod, CSRF_HEADER } from './utils/csrf'
 
 axios.defaults.baseURL = Base_URL || undefined
 axios.defaults.withCredentials = true
+
+// Echo the signed double-submit CSRF token on every state-changing request.
+// Safe to send always: the backend only validates it when a session cookie is
+// present, and the token is useless alone (attacker pages cannot read it).
+axios.interceptors.request.use((config) => {
+  if (!isSafeMethod(config.method)) {
+    const token = getCsrfToken();
+    if (token) config.headers.set(CSRF_HEADER, token);
+  }
+  return config;
+});
 
 const rootElement = document.getElementById('root');
 if (!rootElement) throw new Error('Root element #root not found');

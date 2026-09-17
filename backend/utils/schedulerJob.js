@@ -14,6 +14,11 @@ const FAILURE_ALERT_COOLDOWN_MS = 24 * 60 * 60 * 1000;
  */
 const recordJobStatus = async (jobName, status, { error, affected, durationMs } = {}) => {
   try {
+    // `lastAffected` is an INT column. Job functions may resolve to an object
+    // (e.g. reconciliation summaries); binding that object makes mysql2/TiDB
+    // fail with "stmt unknown field type 245" and the whole status row (and its
+    // failure alerting) is lost. Coerce to a finite integer or NULL.
+    const affectedCount = Number.isFinite(Number(affected)) ? Number(affected) : null;
     await pool.execute(
       `INSERT INTO scheduler_job_status (jobName, lastStatus, lastRunAt, lastDurationMs, lastAffected, lastError)
        VALUES (?, ?, NOW(), ?, ?, ?)
@@ -23,7 +28,7 @@ const recordJobStatus = async (jobName, status, { error, affected, durationMs } 
          lastDurationMs = VALUES(lastDurationMs),
          lastAffected = VALUES(lastAffected),
          lastError = VALUES(lastError)`,
-      [jobName, status, durationMs ?? null, affected ?? null, error ? String(error).slice(0, 2000) : null]
+      [jobName, status, durationMs ?? null, affectedCount, error ? String(error).slice(0, 2000) : null]
     );
   } catch (err) {
     console.warn(`⚠️  Could not record status for "${jobName}":`, err.message);

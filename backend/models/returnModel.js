@@ -111,24 +111,45 @@ class ReturnRequest {
     }
   }
 
+  // Legal state machine for returns. Approving a return triggers a real money
+  // refund, so it must be a one-way door: you cannot 'approve' an already
+  // approved (or completed/rejected) request — that would double-refund.
+  static TRANSITIONS = {
+    pending: ['approved', 'rejected'],
+    approved: ['completed'],
+  };
+
   static async updateStatus(id, status, adminNotes) {
     let connection;
     try {
       connection = await pool.getConnection();
 
+      const [[row]] = await connection.execute(
+        `SELECT status FROM return_requests WHERE id = ?`,
+        [parseInt(id)]
+      );
+      if (!row) throw new Error("Return request not found");
+
+      const allowed = ReturnRequest.TRANSITIONS[row.status] || [];
+      if (!allowed.includes(status)) {
+        throw new Error(`Cannot move a '${row.status}' return request to '${status}'`);
+      }
+
       const [result] = await connection.execute(
-        `UPDATE return_requests SET status = ?, adminNotes = ? WHERE id = ?`,
-        [status, adminNotes || null, parseInt(id)]
+        `UPDATE return_requests SET status = ?, adminNotes = ? WHERE id = ? AND status = ?`,
+        [status, adminNotes || null, parseInt(id), row.status]
       );
 
       if (result.affectedRows === 0) {
-        throw new Error("Return request not found");
+        throw new Error("Return request was already updated by another request");
       }
 
       return await ReturnRequest.findById(id);
     } catch (err) {
       console.error("DB Error (ReturnRequest.updateStatus):", err.message);
-      throw new Error(`Error updating return request: ${err.message}`);
+      throw new Error(err.message.startsWith('Cannot move') || err.message.includes('already updated')
+        ? err.message
+        : `Error updating return request: ${err.message}`);
     } finally {
       if (connection) connection.release();
     }

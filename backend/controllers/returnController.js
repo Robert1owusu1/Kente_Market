@@ -4,6 +4,7 @@ import ReturnRequest from "../models/returnModel.js";
 import Order from "../models/orderModel.js";
 import { voidEscrowForOrder } from "../Services/escrowService.js";
 import paystackServices from "../Services/paystackservices.js";
+import { recordFinancialEvent } from "../Services/ledgerService.js";
 import isValidId from "../utils/isValidId.js";
 
 const VALID_STATUSES = ["pending", "approved", "rejected", "completed"];
@@ -119,9 +120,14 @@ export const updateReturnStatus = async (req, res) => {
 
     const returnRequest = await ReturnRequest.updateStatus(req.params.id, status, adminNotes);
 
-    // When a return is approved, void the escrow so funds are not paid to the
-    // vendor. Held allocations are voided and the order escrowStatus recomputed.
-    if (status === 'approved' && existing.orderId) {
+    // Money effects below must fire exactly once. The model's state machine
+    // makes pending -> approved a one-way door, but guard on the pre-update
+    // status too so a retried request can never double-refund.
+    if (status === 'approved' && existing.status === 'pending' && existing.orderId) {
+      // Void escrow so funds are not paid to the vendor: held allocations are
+      // voided and already-credited (advance) funds are clawed back from the
+      // vendor wallet. This keeps a vendor from being paid for a fully
+      // refunded order.
       try {
         await voidEscrowForOrder(existing.orderId);
       } catch (err) {
@@ -143,6 +149,17 @@ export const updateReturnStatus = async (req, res) => {
             console.warn(`⚠️ Return ${req.params.id}: Paystack refund rejected (${refund?.message || 'unknown'}) — manual refund required`);
           } else {
             console.log(`✅ Return ${req.params.id}: customer refunded via Paystack`);
+            // Immutable journal entry for the refund (deduped per return+order).
+            await recordFinancialEvent({
+              eventType: 'refund',
+              direction: 'out',
+              amount: parseFloat(order.totalAmount) || 0,
+              orderId: order.id,
+              reference: order.paymentReference,
+              providerReference: refund?.data?.failure_reference || order.paymentReference,
+              dedupeKey: `refund:${order.id}:${req.params.id}`,
+              payload: { reason: `Return ${req.params.id} approved` },
+            }).catch(() => {});
           }
         }
       } catch (refundErr) {

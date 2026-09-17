@@ -9,6 +9,7 @@ import jwt from 'jsonwebtoken';
 import pool from '../config/db.js';
 import Vendor from '../models/vendorModel.js';
 import { cookieSameSite } from '../config/cookieConfig.js';
+import { setCsrfCookie } from '../middleware/csrfMiddleware.js';
 
 const VALID_PERMISSIONS = [
   'manage_orders',
@@ -51,6 +52,7 @@ const setStaffCookie = (res, staffId, vendorId) => {
     sameSite: cookieSameSite(),
     maxAge: 8 * 60 * 60 * 1000,
   });
+  setCsrfCookie(res);
 };
 
 // @desc    Staff login
