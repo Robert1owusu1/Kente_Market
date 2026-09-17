@@ -1,6 +1,7 @@
 // FILE LOCATION: backend/server.js
 import dotenv from 'dotenv';
 dotenv.config();
+initSentry();
 
 // Explicit FRONTEND_URL / OAUTH_CALLBACK_URL in .env are respected as-is. The
 // registered Google redirect URI must match what is used at runtime.
@@ -28,6 +29,12 @@ import { apiLimiter } from './middleware/rateLimitMiddleware.js';
 import { csrfProtection } from './middleware/csrfMiddleware.js';
 import { errorHandeler, notFound } from './middleware/errorMiddleware.js';
 import { requestLogger } from './utils/logger.js';
+import {
+  captureError,
+  flushSentry,
+  initSentry,
+  setupSentryErrorHandler,
+} from './utils/sentry.js';
 
 // Routes
 import productRoutes from './routes/productRoutes.js';
@@ -330,6 +337,7 @@ app.use('/api/custom-requests', customRequestRoutes);  // 🆕 Custom orders
 // ============================================
 
 app.use(notFound);
+setupSentryErrorHandler(app);
 app.use(errorHandeler);
 
 // ============================================
@@ -363,27 +371,31 @@ const server = app.listen(port, () => {
 // GRACEFUL SHUTDOWN HANDLERS
 // ============================================
 
+const shutdown = async (reason, exitCode = 0) => {
+  console.log(`👋 ${reason}`);
+  server.close(async () => {
+    await flushSentry();
+    console.log('💤 Server closed');
+    process.exit(exitCode);
+  });
+};
+
 process.on('unhandledRejection', (err) => {
   console.error('🚨 Unhandled Promise Rejection:', err.message);
   console.error(err.stack);
-  server.close(() => {
-    console.log('💤 Server closed due to unhandled rejection');
-    process.exit(1);
-  });
+  captureError(err);
+  shutdown('Server closed due to unhandled rejection', 1);
 });
 
 process.on('uncaughtException', (err) => {
   console.error('🚨 Uncaught Exception:', err.message);
   console.error(err.stack);
-  process.exit(1);
+  captureError(err);
+  shutdown('Server closed due to uncaught exception', 1);
 });
 
 process.on('SIGTERM', () => {
-  console.log('👋 SIGTERM received, closing server gracefully...');
-  server.close(() => {
-    console.log('💤 Server closed');
-    process.exit(0);
-  });
+  shutdown('SIGTERM received, closing server gracefully...');
 });
 
 export default app;
