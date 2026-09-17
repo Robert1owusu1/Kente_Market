@@ -19,9 +19,14 @@
 
 const SHELL = ['/', '/index.html'];
 const API_PREFIX = '/api/';
+// Bump APP_SW_VERSION whenever the app shell, build layout, or API behavior
+// changes: sw.js bytes change -> browsers re-download it -> activate drops
+// every app-* cache and re-precaches the current shell + assets. Without this,
+// cache-first immutable assets keep serving a stale bundle to old SW clients.
+const APP_SW_VERSION = 4;
 // Cache versions; bump APP_API_KEY when the API shape changes so stale lists
 // (e.g. pre-wipe product catalogs) are purged on the next SW update.
-const APP_API_KEY = 'app-api-v3';
+const APP_API_KEY = 'app-api-v4';
 
 // PUBLIC, account-agnostic endpoints that are safe to cache. Everything else
 // under /api (profile, orders, wallet, vendor tools, admin ...) is passed
