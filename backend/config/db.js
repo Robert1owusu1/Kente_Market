@@ -15,13 +15,33 @@ const pool = mysql.createPool({
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
+  // Connection latency is the dominant cost on this topology (TLS handshake to
+  // a remote TiDB + cold start when the host idles). Fail fast on a dead
+  // connection instead of queueing, and keep idle sockets alive so the pool
+  // stays warm between requests.
+  connectTimeout: 10000,
+  enableKeepAlive: true,
+  keepAliveInitialDelay: 0,
 });
+
+// Warm a few connections at boot so the first request doesn't pay a full
+// TLS handshake. The pool lazily creates the rest up to connectionLimit.
+const warmPool = async () => {
+  const warm = Math.min(parseInt(process.env.DB_WARM_CONNECTIONS) || 4, 10);
+  const acquired = [];
+  try {
+    for (let i = 0; i < warm; i++) {
+      acquired.push(await pool.getConnection());
+    }
+  } finally {
+    acquired.forEach((c) => c.release());
+  }
+};
 
 const connectDB = async () => {
   try {
-    const connection = await pool.getConnection();
+    await warmPool();
     console.log("MySQL Connected Successfully");
-    connection.release();
   } catch (error) {
     console.error("MySQL Connection Failed:", error.message);
     process.exit(1);
