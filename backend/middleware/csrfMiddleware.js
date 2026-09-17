@@ -55,6 +55,20 @@ export const setCsrfCookie = (res) => {
   return res;
 };
 
+/**
+ * Return the current CSRF cookie value, or issue one if absent. The SPA must
+ * read its CSRF token from this (via the /api/auth/csrf-token endpoint) —
+ * document.cookie cannot see the cookie because it is host-only on the API
+ * origin, while the SPA runs on a cross-site origin.
+ */
+export const getOrIssueCsrfToken = (req, res) => {
+  const existing = req.cookies?.[CSRF_COOKIE_NAME];
+  if (existing) return existing;
+  const token = issueCsrfToken();
+  res.cookie(CSRF_COOKIE_NAME, token, csrfCookieOptions());
+  return token;
+};
+
 /** Clear the CSRF cookie (used on logout, mirroring the JWT clear). */
 export const clearCsrfCookie = (res) => {
   res.cookie(CSRF_COOKIE_NAME, '', {

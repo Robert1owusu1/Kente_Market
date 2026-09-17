@@ -1,16 +1,18 @@
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 import { Base_URL } from '../constant';
-import { getCsrfToken, isSafeMethod, CSRF_HEADER } from '../utils/csrf';
+import { getOrLoadCsrfToken, isSafeMethod, CSRF_HEADER } from '../utils/csrf';
 
 // Custom fetch wrapper that:
 //  - fails fast (a fetch does not reject on HTTP errors; timeout handled by
 //    fetchBaseQuery below).
 //  - echoes the signed double-submit CSRF token on state-changing requests
 //    only (adding it to GETs would force a CORS preflight on every read).
+// The token is fetched lazily from /api/auth/csrf-token (document.cookie can't
+// see the host-only cookie set on the API origin) and cached in memory.
 const baseFetch: typeof fetch = async (input, init) => {
   const method = (init?.method || 'GET').toUpperCase();
   if (!isSafeMethod(method)) {
-    const token = getCsrfToken();
+    const token = await getOrLoadCsrfToken();
     if (token) {
       const headers = new Headers(init?.headers);
       headers.set(CSRF_HEADER, token);

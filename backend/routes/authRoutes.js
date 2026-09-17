@@ -6,7 +6,7 @@ import crypto from 'crypto';
 import { generateToken } from '../config/passPort.js';
 import { cookieSameSite } from '../config/cookieConfig.js';
 import { authLimiter } from '../middleware/rateLimitMiddleware.js';
-import { setCsrfCookie } from '../middleware/csrfMiddleware.js';
+import { setCsrfCookie, getOrIssueCsrfToken } from '../middleware/csrfMiddleware.js';
 import { consumeOnce } from '../utils/redisClient.js';
 import User from '../models/usersModel.js';
 
@@ -223,6 +223,19 @@ router.get('/status', (req, res) => {
       apple: false // Not implemented yet
     }
   });
+});
+
+// ============================================
+// CSRF TOKEN (cross-site SPA read channel)
+// ============================================
+// The double-submit cookie is host-only on the API origin, so the SPA cannot
+// read it via document.cookie (it runs on a cross-site origin). This safe GET
+// lets the SPA obtain the current token to echo back in X-CSRF-Token. GET is
+// exempt from CSRF checks, so no token is required to read it; CORS limits
+// who may read the response to FRONTEND_URL only.
+router.get('/csrf-token', (req, res) => {
+  const csrfToken = getOrIssueCsrfToken(req, res);
+  res.json({ csrfToken });
 });
 
 export default router;
