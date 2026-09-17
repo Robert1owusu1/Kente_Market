@@ -25,6 +25,10 @@ google*.html
 # User-uploaded media (never commit)
 backend/uploads/
 
+# Local-only asset images (never commit)
+src/assets/images/El Anatsui_work5.jpeg
+src/assets/images/images.jpeg
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
