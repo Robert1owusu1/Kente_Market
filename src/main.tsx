@@ -13,7 +13,7 @@ import store from './store'
 // flowing on cross-origin requests.
 import axios from 'axios'
 import { Base_URL } from './constant'
-import { getCsrfToken, isSafeMethod, CSRF_HEADER } from './utils/csrf'
+import { getOrLoadCsrfToken, isSafeMethod, CSRF_HEADER } from './utils/csrf'
 
 axios.defaults.baseURL = Base_URL || undefined
 axios.defaults.withCredentials = true
@@ -21,9 +21,11 @@ axios.defaults.withCredentials = true
 // Echo the signed double-submit CSRF token on every state-changing request.
 // Safe to send always: the backend only validates it when a session cookie is
 // present, and the token is useless alone (attacker pages cannot read it).
-axios.interceptors.request.use((config) => {
+// The token comes from /api/auth/csrf-token (document.cookie can't see the
+// host-only cookie on the API origin) and is cached in memory.
+axios.interceptors.request.use(async (config) => {
   if (!isSafeMethod(config.method)) {
-    const token = getCsrfToken();
+    const token = await getOrLoadCsrfToken();
     if (token) config.headers.set(CSRF_HEADER, token);
   }
   return config;
