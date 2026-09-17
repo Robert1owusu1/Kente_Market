@@ -10,11 +10,17 @@ import { getOrLoadCsrfToken, isSafeMethod, CSRF_HEADER } from '../utils/csrf';
 // The token is fetched lazily from /api/auth/csrf-token (document.cookie can't
 // see the host-only cookie set on the API origin) and cached in memory.
 const baseFetch: typeof fetch = async (input, init) => {
-  const method = (init?.method || 'GET').toUpperCase();
+  // fetchBaseQuery calls fetchFn with a constructed Request and no `init`.
+  // Reading only init?.method therefore classified every RTK Query mutation as
+  // GET and omitted the CSRF header once a session cookie existed.
+  const request = input instanceof Request ? input : null;
+  const method = (init?.method || request?.method || 'GET').toUpperCase();
   if (!isSafeMethod(method)) {
     const token = await getOrLoadCsrfToken();
     if (token) {
-      const headers = new Headers(init?.headers);
+      // Preserve headers already attached to the Request (such as JSON
+      // Content-Type) when fetchBaseQuery supplied the Request directly.
+      const headers = new Headers(init?.headers || request?.headers);
       headers.set(CSRF_HEADER, token);
       init = { ...init, headers };
     }
