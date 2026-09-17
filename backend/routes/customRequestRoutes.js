@@ -27,7 +27,7 @@ router.route('/my').get(protect, getMyRequests);
 // ============================================
 // VENDOR ROUTES (guarded with vendorOrStaff)
 // ============================================
-router.route('/vendor').get(protect, vendorOrStaff, requireVendorPermission('view_customers'), listVendorRequests);
+router.route('/vendor').get(vendorOrStaff, requireVendorPermission('view_customers'), listVendorRequests);
 
 // ============================================
 // ADMIN OVERSIGHT
@@ -66,9 +66,9 @@ router.route('/:id/cancel').post(protect, cancelRequest);
 router.route('/:id/checkout').post(protect, checkoutRequest);
 
 // Vendor actions (pending → quoted or declined; paid → in_progress)
-router.route('/:id/quote').post(protect, vendorOrStaff, requireVendorPermission('view_customers'), quoteRequest);
-router.route('/:id/decline').post(protect, vendorOrStaff, requireVendorPermission('view_customers'), declineRequest);
-router.route('/:id/in-progress').post(protect, vendorOrStaff, requireVendorPermission('view_customers'), startRequest);
+router.route('/:id/quote').post(vendorOrStaff, requireVendorPermission('view_customers'), quoteRequest);
+router.route('/:id/decline').post(vendorOrStaff, requireVendorPermission('view_customers'), declineRequest);
+router.route('/:id/in-progress').post(vendorOrStaff, requireVendorPermission('view_customers'), startRequest);
 
 // Admin action (mark conversation complete for customer-support follow-up)
 router.route('/:id/reviewed').post(protect, admin, markReviewed);

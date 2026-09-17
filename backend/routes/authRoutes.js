@@ -2,9 +2,11 @@
 import express from 'express';
 import passport from 'passport';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import { generateToken } from '../config/passPort.js';
 import { cookieSameSite } from '../config/cookieConfig.js';
 import { authLimiter } from '../middleware/rateLimitMiddleware.js';
+import { setCsrfCookie } from '../middleware/csrfMiddleware.js';
 import User from '../models/usersModel.js';
 
 const router = express.Router();
@@ -55,6 +57,7 @@ const setAuthCookie = (res, token) => {
     sameSite: cookieSameSite(),
     maxAge: COOKIE_MAX_AGE
   });
+  setCsrfCookie(res);
 };
 
 // Helper: Handle OAuth callback success
@@ -74,7 +77,7 @@ const handleOAuthSuccess = (req, res) => {
     // is the Vercel frontend — so partitioned storage (Firefox Total Cookie
     // Protection / Chrome partitioning) keeps it instead of dropping it.
     const exchangeToken = jwt.sign(
-      { id: user.id, purpose: 'oauth_exchange' },
+      { id: user.id, purpose: 'oauth_exchange', tv: user.tokenVersion, jti: crypto.randomUUID() },
       process.env.JWT_SECRET,
       { expiresIn: '10m' }
     );
@@ -133,6 +136,19 @@ router.get('/google/callback',
   handleOAuthSuccess
 );
 
+// Consumed OAuth exchange tokens (jti). 1h TTL > 10m token lifetime, so a
+// stolen/replayed exchange token can never mint a second session.
+const consumedExchangeJtis = new Map();
+const pruneExchangeJtis = () => {
+  const now = Date.now();
+  for (const [jti, at] of consumedExchangeJtis) {
+    if (now - at > 60 * 60 * 1000) consumedExchangeJtis.delete(jti);
+  }
+  if (consumedExchangeJtis.size > 2000) {
+    for (const jti of consumedExchangeJtis.keys()) consumedExchangeJtis.delete(jti);
+  }
+};
+
 // Exchange the short-lived fragment token (sent by the frontend after the
 // OAuth redirect) for a real session cookie. The cookie is set in this normal
 // fetch response, whose top-level site is the Vercel frontend — this is the
@@ -143,16 +159,34 @@ router.post('/oauth/exchange', async (req, res) => {
     if (!token) {
       return res.status(400).json({ message: 'Missing token' });
     }
+    if (!req.cookies || !isConsentTokenValid(req.cookies.oauth_consent)) {
+      return res.status(401).json({ message: 'Consent required' });
+    }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     if (decoded.purpose !== 'oauth_exchange') {
       return res.status(401).json({ message: 'Invalid token' });
+    }
+    if (!decoded.tv || !decoded.jti) {
+      return res.status(401).json({ message: 'Invalid token' });
+    }
+
+    // One-time use: an exchange token must never be able to mint two sessions.
+    if (consumedExchangeJtis.has(decoded.jti)) {
+      return res.status(401).json({ message: 'Token already used' });
     }
 
     const user = await User.findById(decoded.id);
     if (!user || !user.isActive) {
       return res.status(401).json({ message: 'Not authorized' });
     }
+    // Reject tokens issued before the latest credential/session change.
+    if (user.tokenVersion === undefined || decoded.tv !== user.tokenVersion) {
+      return res.status(401).json({ message: 'Session expired, please log in again' });
+    }
+
+    consumedExchangeJtis.set(decoded.jti, Date.now());
+    pruneExchangeJtis();
 
     // Issue the real session cookie (same shape as regular login).
     const sessionToken = generateToken(user);

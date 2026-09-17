@@ -23,6 +23,7 @@ import {
 import { reserveStockForItems } from "../Services/reservationService.js";
 import { sendOrderConfirmationEmail, sendEscrowReleasedEmail } from "../utils/orderEmailService.js";
 import { auditFromRequest } from "../utils/auditLog.js";
+import { recordFinancialEvent } from "../Services/ledgerService.js";
 
 // Client-supplied order-item images are stored and rendered to other users (e.g.
 // in the vendor's order view), so they must not be able to carry javascript: or
@@ -542,6 +543,18 @@ export const updateOrder = async (req, res) => {
       delete body.tax;
       delete body.discount;
       delete body.totalAmount;
+      // Escrow is a money movement: an order owner must never be able to move
+      // their own escrowReleaseDeadline into the past to trigger the 2h
+      // auto-release, or assert escrowStatus themselves. Delivery confirmation
+      // is the only customer-driven gate on escrow, and it is checked inside
+      // confirmOrderReceived. Payment/coupon references are immutable ledger
+      // facts too — an owner must not rewrite them.
+      delete body.escrowStatus;
+      delete body.escrowReleaseDeadline;
+      delete body.paymentReference;
+      delete body.couponId;
+      delete body.deliveredAt;
+      delete body.couponCode;
     }
 
     // Secure coupon application on the pre-created order path: recompute the
@@ -860,6 +873,19 @@ export const cancelOrder = async (req, res) => {
             message: `Refund failed (${refund?.message || 'unknown reason'}). Order was not cancelled. Please refund the customer manually.`,
           });
         }
+        // Immutable journal entry for the refund (idempotent per order).
+        try {
+          await recordFinancialEvent({
+            eventType: 'refund',
+            direction: 'out',
+            amount: parseFloat(order.totalAmount) || 0,
+            orderId: order.id,
+            reference: order.paymentReference,
+            providerReference: refund?.data?.failure_reference || order.paymentReference,
+            dedupeKey: `refund:${order.id}`,
+            payload: { reason: `Order ${req.params.id} cancelled` },
+          });
+        } catch { /* journal is best-effort */ }
       } catch (refundError) {
         return res.status(500).json({
           message: `Refund could not be initiated (${refundError.message}). Order was not cancelled.`,

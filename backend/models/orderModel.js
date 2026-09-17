@@ -287,12 +287,29 @@ static async findAll(options = {}) {
     }
   }
 
-  // ✅ Delete order (with check)
+  // ✅ Delete order (with financial-history guard)
   static async delete(id) {
     const connection = await pool.getConnection();
     try {
       const [check] = await connection.execute(`SELECT id FROM orders WHERE id = ?`, [id]);
       if (check.length === 0) throw new Error("Order not found");
+
+      // Financial records are immutable. If this order has any money history
+      // (escrow allocations held, ledger events, payout attempts, wallet
+      // movements) hard-deleting would silently destroy the audit trail and
+      // cascade away vendor entitlements. Refuse: an admin must cancel/refund
+      // through the controlled paths instead.
+      const [financial] = await connection.execute(
+        `SELECT 1 FROM escrow_allocations WHERE orderId = ?
+         UNION SELECT 1 FROM financial_events WHERE orderId = ?
+         UNION SELECT 1 FROM payout_attempts WHERE orderId = ? LIMIT 1`,
+        [id, id, id]
+      );
+      if (financial.length > 0) {
+        throw new Error(
+          "This order has financial history (escrow/ledger/payout). Cancel or refund it instead of deleting."
+        );
+      }
       await connection.execute("DELETE FROM orders WHERE id = ?", [id]);
       return { message: "Order deleted successfully" };
     } catch (error) {

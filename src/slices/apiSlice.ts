@@ -1,14 +1,30 @@
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 import { Base_URL } from '../constant';
+import { getCsrfToken, isSafeMethod, CSRF_HEADER } from '../utils/csrf';
 
-// Custom fetchBaseQuery wrapper that:
-//  - fails fast (default ~15s) so a dead / flaky connection doesn't leave the
-//    UI spinning on a hung request (retries happen at the RTK layer on focus,
-//    and the local cache serves repeats instantly).
+// Custom fetch wrapper that:
+//  - fails fast (a fetch does not reject on HTTP errors; timeout handled by
+//    fetchBaseQuery below).
+//  - echoes the signed double-submit CSRF token on state-changing requests
+//    only (adding it to GETs would force a CORS preflight on every read).
+const baseFetch: typeof fetch = async (input, init) => {
+  const method = (init?.method || 'GET').toUpperCase();
+  if (!isSafeMethod(method)) {
+    const token = getCsrfToken();
+    if (token) {
+      const headers = new Headers(init?.headers);
+      headers.set(CSRF_HEADER, token);
+      init = { ...init, headers };
+    }
+  }
+  return fetch(input, init);
+};
+
 export const baseQuery = fetchBaseQuery({
   baseUrl: Base_URL,
   credentials: 'include', // Send cookies with requests for authentication
   timeout: 15000,
+  fetchFn: baseFetch,
 });
 
 export const apiSlice = createApi({

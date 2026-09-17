@@ -10,19 +10,37 @@ import {
   reconcileStuckTransfers,
   reclaimStaleProcessingWebhooks,
 } from '../Services/transferReconciliationService.js';
+import { reconcileAvailableAllocations } from '../Services/escrowService.js';
 import { runScheduledJob } from './schedulerJob.js';
 
-// Delete unverified users older than 7 days
+// Deactivate (not destroy) stale unverified users. Never hard-delete a user
+// who has any financial footprint: orders cascade to escrow allocations under
+// the current FK setup, so DELETE could destroy money history. Rows without any
+// order/wallet footprint are removed outright; the rest are soft-deactivated.
 export const cleanupUnverifiedUsers = async () => {
   try {
     const [result] = await pool.execute(
-      `DELETE FROM users 
-       WHERE is_email_verified = false 
-       AND created_at < DATE_SUB(NOW(), INTERVAL 7 DAY)`
+      `DELETE FROM users
+       WHERE is_email_verified = false
+         AND created_at < DATE_SUB(NOW(), INTERVAL 7 DAY)
+         AND NOT EXISTS (SELECT 1 FROM orders o WHERE o.userId = users.id)
+         AND NOT EXISTS (SELECT 1 FROM wallet_transactions wt WHERE wt.vendorId = users.id)
+         AND NOT EXISTS (SELECT 1 FROM vendor_wallets vw WHERE vw.vendorId = users.id)`
     );
-    
+
     if (result.affectedRows > 0) {
-      console.log(`🧹 Cleaned up ${result.affectedRows} unverified users`);
+      console.log(`🧹 Cleaned up ${result.affectedRows} unverified users (no financial footprint)`);
+    }
+
+    const [deactivated] = await pool.execute(
+      `UPDATE users
+       SET isActive = 0
+       WHERE is_email_verified = false
+         AND isActive = 1
+         AND created_at < DATE_SUB(NOW(), INTERVAL 7 DAY)`
+    );
+    if (deactivated.affectedRows > 0) {
+      console.log(`🚫 Soft-deactivated ${deactivated.affectedRows} stale unverified users with financial data`);
     }
   } catch (error) {
     console.error('❌ Cleanup job failed:', error);
@@ -208,6 +226,7 @@ const scheduleJobs = () => {
   run('sendAbandonedCartEmails', sendAbandonedCartEmails, HOUR);
   run('reconcileStuckTransfers', reconcileStuckTransfers, 30 * 60 * 1000);
   run('reclaimStaleProcessingWebhooks', reclaimStaleProcessingWebhooks, 15 * 60 * 1000);
+  run('reconcileAvailableAllocations', reconcileAvailableAllocations, 15 * 60 * 1000);
   // Weekly vendor demand digest (Monday mornings). Settings-guarded and
   // idempotent per calendar week; not fired on boot (that would email everyone).
   setTimeout(() => runScheduledJob('sendWeeklyVendorDigest', sendWeeklyVendorDigest).catch(() => {}), 7 * DAY);

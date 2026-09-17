@@ -169,6 +169,64 @@ export const debitVendorBalanceInTransaction = async (connection, vendorId, amou
 };
 
 /**
+ * Recover funds a vendor's wallet was credited (escrow clawback on refunds/
+ * returns). Mirrors the withdrawal debit but uses its own `clawback` ledger
+ * type and never inflates `total_withdrawn`. Idempotent per reference.
+ * @param {number | string} vendorId
+ * @param {number | string} amount (GHS)
+ * @param {string} reference unique key for this clawback
+ * @param {string} [note]
+ * @returns {Promise<boolean>} true if applied
+ */
+export const clawbackVendorBalance = async (vendorId, amount, reference, note) => {
+  const amt = round2(parseFloat(String(amount)) || 0);
+  if (amt <= 0) throw new Error('Clawback amount must be positive');
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [already] = await connection.execute(
+      `SELECT id FROM wallet_transactions WHERE type = 'clawback' AND reference = ? FOR UPDATE`,
+      [reference]
+    );
+    if (already.length > 0) {
+      await connection.rollback();
+      return false;
+    }
+    const [debit] = await connection.execute(
+      `UPDATE vendor_wallets SET available_balance = available_balance - ?,
+          updated_at = CURRENT_TIMESTAMP
+       WHERE vendorId = ? AND available_balance >= ?`,
+      [amt, vendorId, amt]
+    );
+    if (debit.affectedRows !== 1) {
+      throw new Error('Insufficient available balance while recording clawback');
+    }
+    await connection.execute(
+      `INSERT INTO wallet_transactions (vendorId, type, amount, reference, note, status)
+       VALUES (?, 'clawback', ?, ?, ?, 'succeeded')`,
+      [vendorId, amt, reference, note || 'Escrow clawback']
+    );
+    await recordFinancialEvent({
+      connection,
+      eventType: 'wallet.clawback',
+      direction: 'out',
+      amount: amt,
+      vendorId,
+      reference,
+      dedupeKey: `wallet.clawback:${reference}`,
+      payload: { note: note || null },
+    });
+    await connection.commit();
+    return true;
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+};
+
+/**
  * Credit a vendor's available balance after a Paystack transfer was reversed
  * (the money has returned to the platform). Must be called inside the payer's
  * transaction so the payout_attempt claim, allocation restore and wallet

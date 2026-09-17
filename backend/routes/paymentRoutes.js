@@ -302,10 +302,38 @@ router.post('/paystack-webhook', webhookLimiter, async (req, res) => {
           const BASE_DELAY_MS = 1000;
           let orderId = null;
           let orderFound = false;
+          let validationError = null;
 
           for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
             const connection = await pool.getConnection();
             try {
+              // Never flip an order to paid before validating the provider's
+              // charge against the actual order: a webhook must confirm the
+              // FULL order amount, in GHS. A reference must also map to exactly
+              // one order — multiple matches means a reused/forged reference.
+              const [preRows] = await connection.execute(
+                `SELECT id, totalAmount, paymentStatus FROM orders WHERE paymentReference = ?`,
+                [reference]
+              );
+              if (preRows.length > 1) {
+                validationError = `Reference ${reference} maps to ${preRows.length} orders`;
+                break;
+              }
+              if (preRows.length === 1) {
+                const expectedKobo = Math.round(parseFloat(preRows[0].totalAmount) * 100);
+                const paidKobo = parseInt(event.data?.amount, 10);
+                if (
+                  event.data?.currency !== 'GHS' ||
+                  !Number.isFinite(paidKobo) ||
+                  paidKobo !== expectedKobo
+                ) {
+                  validationError =
+                    `Amount/currency mismatch for ${reference}: ` +
+                    `paid ${paidKobo} ${event.data?.currency}, expected ${expectedKobo} GHS ` +
+                    `(order ${preRows[0].id})`;
+                  break;
+                }
+              }
               const [result] = await connection.execute(
                 `UPDATE orders 
                  SET paymentStatus = 'paid', orderStatus = 'processing', updated_at = CURRENT_TIMESTAMP
@@ -414,7 +442,17 @@ router.post('/paystack-webhook', webhookLimiter, async (req, res) => {
             }
           }
 
-          if (!orderFound) {
+if (!orderFound) {
+            if (validationError) {
+              console.error(`❌ ${validationError}`);
+              await pool.execute(
+                `UPDATE webhook_events SET processing_status = 'failed', last_error = ?
+                 WHERE event = ? AND reference = ?`,
+                [validationError.slice(0, 500), event.event, reference]
+              );
+              // 400 permanently rejects the charge so it is never replayed.
+              return res.status(400).send('Payment does not match the order');
+            }
             console.warn(`⚠️ Webhook: no order found for reference ${reference} after ${MAX_RETRIES} retries`);
             await pool.execute(
               `UPDATE webhook_events SET processing_status = 'failed', last_error = ?

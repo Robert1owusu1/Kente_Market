@@ -41,14 +41,19 @@ export const reconcileStuckTransfers = async ({
 
   let rows;
   try {
+    // Coerce/validate the offsets to plain integers. TiDB/MySQL reject a string
+    // parameter for `LIMIT ?` ("Incorrect arguments to LIMIT"), which silently
+    // disabled reconciliation; the values are already clamped so inlining the
+    // interval is safe and keeps the driver happy.
+    const safeOlderThanMinutes = Math.max(1, parseInt(olderThanMinutes, 10) || 30);
+    const safeLimit = Math.max(1, parseInt(limit, 10) || 25);
     [rows] = await pool.execute(
       `SELECT id, reference, providerReference, created_at
        FROM payout_attempts
        WHERE status = 'processing'
-         AND created_at < DATE_SUB(NOW(), INTERVAL ? MINUTE)
+         AND created_at < DATE_SUB(NOW(), INTERVAL ${safeOlderThanMinutes} MINUTE)
        ORDER BY created_at ASC
-       LIMIT ?`,
-      [String(Math.max(1, Number(olderThanMinutes) || 30)), String(Math.max(1, Number(limit) || 25))]
+       LIMIT ${safeLimit}`
     );
   } catch (error) {
     if (error.code === 'ER_NO_SUCH_TABLE') {

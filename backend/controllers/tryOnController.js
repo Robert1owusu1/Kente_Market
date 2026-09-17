@@ -50,8 +50,27 @@ const reserveTryOnCredit = async (userId) => {
  * POST /api/tryon/generate
  * Body: { modelImage, garmentImage, garmentName, category }
  */
+/** Fail-closed feature flag: the AI try-on is OFF unless the operator has
+ *  explicitly enabled it (AI_TRYON_ENABLED !== 'false') AND configured a token. */
+export const isTryOnEnabled = () =>
+  process.env.AI_TRYON_ENABLED !== 'false' && !!process.env.REPLICATE_API_TOKEN;
+
+/**
+ * Public capability check so the UI can hide the try-on entry points when the
+ * backend has not enabled the feature.
+ * GET /api/tryon/status
+ */
+export const status = expressAsyncHandler(async (_req, res) => {
+  res.json({ enabled: isTryOnEnabled() });
+});
+
 export const generateTryOn = expressAsyncHandler(async (req, res) => {
   const { modelImage, garmentImage, garmentName, category } = req.body;
+
+  if (!isTryOnEnabled()) {
+    res.status(503);
+    throw new Error("AI try-on is not enabled. Configure REPLICATE_API_TOKEN / AI_TRYON_ENABLED.");
+  }
 
   if (!modelImage || !garmentImage) {
     res.status(400);

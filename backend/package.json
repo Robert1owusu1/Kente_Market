@@ -7,7 +7,7 @@
   "scripts": {
     "setup-admin": "node setupFirstAdmin.js",
     "db:setup": "node setupDB.js",
-    "db:migrate": "node migrateNewTables.js && node migrateMarketplace.js && node migrateHardening.js && node migrateOps.js",
+    "db:migrate": "node migrateNewTables.js && node migrateMarketplace.js && node migrateHardening.js && node migrateOps.js && node migrateSuggestions.js && node migrateMessagePosts.js",
     "db:backup": "bash ../.deploy/backup-db.sh",
     "email:test": "node test-email.js",
     "password:reset:test": "node test-password-reset.js",

@@ -2,6 +2,8 @@
 import asyncHandler from '../middleware/asyncHandler.js';
 import User from '../models/usersModel.js';
 import generateToken from '../utils/generateToken.js';
+import { cookieSameSite } from '../config/cookieConfig.js';
+import { clearCsrfCookie } from '../middleware/csrfMiddleware.js';
 import { 
   generateOTP, 
   getOTPExpiry, 
@@ -147,8 +149,12 @@ const registerUser = asyncHandler(async (req, res) => {
 const logoutUser = asyncHandler(async (req, res) => {
   res.cookie('jwt', '', {
     httpOnly: true,
-    expires: new Date(0)
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: cookieSameSite(),
+    expires: new Date(0),
+    path: '/'
   });
+  clearCsrfCookie(res);
 
   res.status(200).json({ message: 'Logged out successfully' });
 });

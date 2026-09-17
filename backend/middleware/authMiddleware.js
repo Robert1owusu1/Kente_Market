@@ -148,6 +148,12 @@ const vendorOrStaff = async (req, res, next) => {
                 res.status(403);
                 throw new Error('Account is deactivated');
             }
+            // Session-revocation guard (same as `protect`): password/email
+            // changes bump tokenVersion, invalidating pre-change vendor tokens.
+            if (user.tokenVersion === undefined || decoded.tv !== user.tokenVersion) {
+                res.status(401);
+                throw new Error('Session expired, please log in again');
+            }
             req.user = user.getProfile();
             if (!(req.user.role === 'vendor' || req.user.role === 'admin')) {
                 res.status(403);

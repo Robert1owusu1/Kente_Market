@@ -5,7 +5,7 @@
 // paid out to each vendor via Paystack Transfers minus the platform commission.
 import pool from '../config/db.js';
 import paystackServices from './paystackservices.js';
-import { creditVendorBalance } from './walletService.js';
+import { creditVendorBalance, clawbackVendorBalance } from './walletService.js';
 import { recordFinancialEvent } from './ledgerService.js';
 import { PLATFORM_FEE_RATE, ESCROW_RELEASE_DAYS } from '../config/businessConfig.js';
 import { resolveCommissionRate } from './commissionService.js';
@@ -494,24 +494,27 @@ export const autoReleaseExpiredEscrows = async () => {
  * @param {number | string} orderId
  * @returns {Promise<void>}
  */
+/**
+ * Cancel escrow for an order: void any not-yet-released allocations and claw
+ * back any funds that were already credited to a vendor wallet (returns/cancels
+ * after an early advance release, or a full refund). This is what keeps the
+ * "vendor paid after full refund" double-spend from happening.
+ * @param {number | string} orderId
+ * @returns {Promise<void>}
+ */
 export const cancelEscrowForOrder = async (orderId) => {
-  await pool.execute(
-    `UPDATE escrow_allocations
-     SET status = 'failed', updated_at = CURRENT_TIMESTAMP
-     WHERE orderId = ? AND status IN ('pending', 'held')`,
-    [orderId]
-  );
-  const escrowStatus = await recomputeOrderEscrowStatus(orderId);
-  await pool.execute(
-    `UPDATE orders SET escrowStatus = ?, updated_at = CURRENT_TIMESTAMP
-     WHERE id = ?`,
-    [escrowStatus, orderId]
-  );
+  await voidEscrowForOrder(orderId);
 };
 
 /**
- * Void escrow for an order when a return is approved (full refund scenario).
- * Voids held allocations so funds are returned to the platform balance.
+ * Void escrow for an order when a return is approved / order cancelled (full
+ * refund scenario).
+ *  - pending/held allocations → failed (funds return to the platform balance)
+ *  - available allocations   → clawed back from the vendor wallet (conditional
+ *    debit, idempotent per allocation) then marked failed
+ *  - releasing/released      → cannot be clawed back automatically; left as-is
+ *    so the audit trail shows the vendor was already paid and manual recovery
+ *    is required
  * @param {number | string} orderId
  * @returns {Promise<void>}
  */
@@ -522,6 +525,71 @@ export const voidEscrowForOrder = async (orderId) => {
      WHERE orderId = ? AND status IN ('pending', 'held')`,
     [orderId]
   );
+
+  const available = await pool.execute(
+    `SELECT id, vendorId, amount, platformFee, payoutAmount
+     FROM escrow_allocations
+     WHERE orderId = ? AND status = 'available'`,
+    [orderId]
+  );
+
+  for (const allocation of available[0]) {
+    const amount = round2(parseFloat(String(allocation.payoutAmount ?? 0)) || 0);
+    if (amount <= 0) {
+      await pool.execute(
+        `UPDATE escrow_allocations
+         SET status = 'failed', reason = 'voided (no payout)', updated_at = CURRENT_TIMESTAMP
+         WHERE id = ? AND status = 'available'`,
+        [allocation.id]
+      );
+      continue;
+    }
+
+    // Atomic claim: only ONE worker may claw back this allocation. Guarded on
+    // the remaining payoutAmount so a racing partial withdrawal can't be
+    // double-clawed; we recover whatever is still theirs.
+    const [claim] = await pool.execute(
+      `UPDATE escrow_allocations
+       SET status = 'failed', reason = 'clawed back (refunded)', updated_at = CURRENT_TIMESTAMP
+       WHERE id = ? AND status = 'available' AND payoutAmount >= ?`,
+      [allocation.id, amount]
+    );
+    if (claim.affectedRows !== 1) continue;
+
+    try {
+      const debited = await clawbackVendorBalance(
+        allocation.vendorId,
+        amount,
+        `clawback:${allocation.id}`,
+        `Escrow clawed back for order ${orderId} (refund/return approved)`
+      );
+      if (!debited) {
+        console.warn(`⚠️ Clawback no-op for allocation ${allocation.id}: already withdrawn (check balance manually)`);
+      }
+      // Idempotent journal per allocation — only recorded when THIS worker won
+      // the claim above, so a redelivery can't double record.
+      await recordFinancialEvent({
+        eventType: 'escrow.clawback',
+        direction: 'out',
+        amount,
+        vendorId: allocation.vendorId,
+        orderId,
+        allocationId: allocation.id,
+        reference: `escrow.clawback:${allocation.id}`,
+        dedupeKey: `escrow.clawback:${allocation.id}`,
+        payload: { reason: 'refund/return approved' },
+      });
+    } catch (error) {
+      // Balance was insufficient (funds already withdrawn elsewhere): leave the
+      // allocation marked failed + reason below so reconciliation can find it.
+      console.error(`❌ Clawback debit failed for allocation ${allocation.id}: ${error.message}`);
+      await pool.execute(
+        `UPDATE escrow_allocations SET reason = 'clawback failed: manual recovery needed' WHERE id = ?`,
+        [allocation.id]
+      );
+    }
+  }
+
   const escrowStatus = await recomputeOrderEscrowStatus(orderId);
   await pool.execute(
     `UPDATE orders SET escrowStatus = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
@@ -572,6 +640,53 @@ export const retryFailedAllocations = async (orderId) => {
   );
 
   return { retried, failed };
+};
+
+/**
+ * Recover allocations that were transitioned held -> available but whose wallet
+ * credit never committed (a hard crash between the two steps in
+ * releaseAllocation). Purely idempotent: creditVendorBalance is gated by the
+ * uq_wallet_credit_allocation unique key, so any allocation that was already
+ * credited is skipped and never double-credited.
+ * @returns {Promise<{ credited: number, errored: number }>}
+ */
+export const reconcileAvailableAllocations = async () => {
+  const [rows] = await pool.execute(
+    `SELECT ea.*, v.businessName, v.recipientCode
+     FROM escrow_allocations ea
+     JOIN vendors v ON v.userId = ea.vendorId
+     WHERE ea.status = 'available'
+     ORDER BY ea.id ASC
+     LIMIT 200`
+  );
+  let credited = 0;
+  let errored = 0;
+  for (const allocation of rows) {
+    try {
+      const [orderRows] = await pool.execute(
+        `SELECT orderNumber FROM orders WHERE id = ?`,
+        [allocation.orderId]
+      );
+      const orderNumber = orderRows.length > 0 ? orderRows[0].orderNumber : null;
+      const { payoutAmount } = calcEscrowFees(
+        allocation.amount,
+        allocation.platformFeeRate,
+        PLATFORM_FEE_RATE
+      );
+      const applied = await creditVendorBalance(
+        allocation.vendorId,
+        allocation.id,
+        payoutAmount,
+        orderNumber
+      );
+      if (applied) credited += 1;
+    } catch (error) {
+      errored += 1;
+      console.error(`❌ reconcileAvailableAllocations: allocation ${allocation.id} errored: ${error.message}`);
+    }
+  }
+  if (credited > 0) console.log(`🔁 reconcileAvailableAllocations credited ${credited} previously uncredited allocation(s)`);
+  return { credited, errored };
 };
 
 /**
