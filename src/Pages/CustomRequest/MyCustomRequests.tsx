@@ -129,7 +129,7 @@ function RequestCard({ request }: { request: CustomRequest }) {
               <p className="text-xs text-amber-600 dark:text-amber-400">Range: cannot meet your exact date</p>
             )}
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              Pay at 50% now — the other half releases to the weaver when your kente is delivered.
+              You pay the full quote now. Half releases to the weaver right away; the rest is held in escrow until your kente is delivered.
             </p>
           </div>
           {request.status === "quoted" ? (
