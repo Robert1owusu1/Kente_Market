@@ -113,7 +113,7 @@ const CartDrawer = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
 
         {/* Total section */}
         {cartItems.length > 0 && (
-          <div className="p-4 border-t dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+          <div className="pt-4 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] border-t dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
             <div className="space-y-1 text-sm text-gray-600 dark:text-gray-300">
               <div className="flex justify-between">
                 <span>Subtotal</span>
@@ -139,7 +139,7 @@ const CartDrawer = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
             <Link
               to="/cartpage"
               onClick={onClose}
-              className="mt-4 w-full bg-primary text-white py-3 rounded-xl hover:bg-primary/90 transition font-semibold text-center block"
+              className="mt-4 w-full bg-primary text-white py-3.5 min-h-[48px] rounded-xl hover:bg-primary/90 transition font-semibold text-center block flex items-center justify-center"
             >
               Proceed to Checkout
             </Link>
