@@ -1,7 +1,7 @@
-import React, { useState, useMemo, useCallback } from "react";
+import React, { useState, useMemo, useCallback, useEffect } from "react";
 import { useCart, type CartItem } from "../../Context/CartContext";
 import { Link, useNavigate } from "react-router-dom";
-import { FaShoppingCart, FaMinus, FaPlus, FaTrash, FaHeart, FaArrowRight, FaStar, FaCheck } from "react-icons/fa";
+import { FaShoppingCart, FaMinus, FaPlus, FaTrash, FaArrowRight, FaStar, FaCheck } from "react-icons/fa";
 import { useCreateOrderMutation } from "../../slices/ordersApiSlice";
 import { toast } from "react-toastify";
 import { TAX_RATE, FREE_SHIPPING_THRESHOLD, STANDARD_SHIPPING_COST, calcOrderTotals } from "../../utils/pricing";
@@ -37,47 +37,41 @@ interface CartItemProps {
 const CartItem = React.memo(({ item, onRemove, onUpdateQuantity, onUpdateYards, onUpdateColors, isRemoving }: CartItemProps) => {
   return (
     <div
-      className={`group bg-white/80 backdrop-blur-xl rounded-3xl p-6 border border-white/20 shadow-xl hover:shadow-2xl transition-all duration-500 hover:-translate-y-1 dark:bg-gray-800/80 dark:border-gray-700 ${
+      className={`group rounded-3xl border border-gray-200/80 bg-white/90 p-4 shadow-lg backdrop-blur-xl transition-all duration-300 hover:shadow-xl dark:border-gray-700 dark:bg-gray-800/90 sm:p-6 ${
         isRemoving ? 'animate-pulse opacity-50 scale-95' : ''
       }`}
     >
-      <div className="flex flex-col md:flex-row gap-6">
+      <div className="flex flex-col gap-5 lg:flex-row lg:gap-6">
         {/* Product Image & Info */}
-        <div className="flex items-start gap-4 w-full md:w-2/3">
+        <div className="flex min-w-0 w-full items-start gap-3 sm:gap-4 lg:w-2/3">
           <div className="relative flex-shrink-0">
-            <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-2xl overflow-hidden bg-gradient-to-br from-gray-100 to-gray-200 shadow-lg dark:from-gray-700 dark:to-gray-800">
+            <div className="h-20 w-20 overflow-hidden rounded-2xl bg-gradient-to-br from-gray-100 to-gray-200 shadow-lg sm:h-32 sm:w-32 dark:from-gray-700 dark:to-gray-800">
               <img
                 src={resolveImageUrl(item.img)}
-                alt={item.title}
-                className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                alt={item.title || "Cart item"}
+                className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
                 loading="lazy"
                 decoding="async"
                 onError={(e) => { const target = e.target as HTMLImageElement; target.onerror = null; target.src = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="150" height="150"><rect fill="#f4eee1" width="150" height="150"/><text x="75" y="80" font-family="sans-serif" font-size="14" fill="#8a6d3b" text-anchor="middle">Kente</text></svg>'); }}
               />
             </div>
-            <button 
-              className="absolute -top-2 -right-2 w-8 h-8 bg-white rounded-full shadow-lg flex items-center justify-center hover:bg-red-50 hover:text-red-500 transition-all duration-300 dark:bg-gray-700 dark:hover:bg-gray-600"
-              aria-label="Add to wishlist"
-            >
-              <FaHeart className="w-4 h-4" />
-            </button>
           </div>
 
-          <div className="flex-1 space-y-4 min-w-0">
+          <div className="min-w-0 flex-1 space-y-4">
             <div>
-              <h4 className="text-lg sm:text-xl font-bold text-gray-800 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors duration-300 leading-snug">
+              <h4 className="line-clamp-2 text-base font-bold leading-snug text-gray-800 transition-colors duration-300 dark:text-white sm:text-xl">
                 {item.title}
               </h4>
-              <div className="flex items-center gap-2 mt-1">
+              <div className="mt-2 flex items-center gap-2">
                 <div className="flex" role="img" aria-label="4.8 out of 5 stars">
                   {[...Array(5)].map((_, i) => (
                     <FaStar key={`${item.id}-star-${i}`} className="w-3 h-3 sm:w-4 sm:h-4 text-yellow-400" />
                   ))}
                 </div>
-                <span className="text-sm text-gray-500">(4.8)</span>
+                <span className="text-xs text-gray-500 dark:text-gray-400 sm:text-sm">(4.8)</span>
               </div>
-              <p className="text-xl sm:text-2xl font-bold text-blue-600 dark:text-blue-400 mt-2">
-                GH₵ {item.price.toFixed(2)}
+              <p className="mt-2 text-lg font-bold text-primary sm:text-2xl">
+                GH₵ {Number(item.price).toFixed(2)}
               </p>
             </div>
 
@@ -85,12 +79,12 @@ const CartItem = React.memo(({ item, onRemove, onUpdateQuantity, onUpdateYards, 
             {(item.yardsAvailable || (item.sizes && item.sizes.length > 0)) && (
               <div className="space-y-2">
                 <label className="text-sm font-medium text-gray-600 dark:text-gray-300">Yards</label>
-                <div className="flex gap-2" role="group" aria-label="Yards selection">
+                <div className="flex flex-wrap gap-2" role="group" aria-label="Yards selection">
                   {(item.yardsAvailable || item.sizes || []).map((yd) => (
                     <button
                       key={`${item.id}-yards-${yd}`}
                       onClick={() => onUpdateYards(item.id, String(yd))}
-                      className={`w-12 h-12 rounded-xl border-2 text-sm font-medium transition-all duration-300 ${
+                      className={`h-10 min-w-10 rounded-xl border-2 px-3 text-sm font-medium transition-all duration-300 sm:h-12 sm:min-w-12 ${
                         (item.yards ?? item.size) === String(yd)
                           ? 'border-blue-500 bg-blue-500 text-white shadow-lg'
                           : 'border-gray-200 dark:border-gray-600 hover:border-blue-300 dark:hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-gray-700'
@@ -114,14 +108,14 @@ const CartItem = React.memo(({ item, onRemove, onUpdateQuantity, onUpdateYards, 
             {item.colorsAvailable && item.colorsAvailable.length > 0 && (
               <div className="space-y-2">
                 <label className="text-sm font-medium text-gray-600 dark:text-gray-300">Color</label>
-                <div className="flex gap-3" role="group" aria-label="Color selection">
+                <div className="flex flex-wrap gap-3" role="group" aria-label="Color selection">
                   {item.colorsAvailable.map((color) => {
                     const isSelected = item.colors?.[0] === color;
                     return (
                       <button
                         key={`${item.id}-color-${color}`}
                         onClick={() => onUpdateColors(item.id, [color])}
-                        className={`relative w-12 h-12 rounded-full border-4 transition-all duration-300 hover:scale-110 ${
+                        className={`relative h-10 w-10 rounded-full border-4 transition-all duration-300 hover:scale-110 sm:h-12 sm:w-12 ${
                           isSelected ? 'border-blue-500 shadow-lg' : 'border-gray-200 dark:border-gray-600'
                         }`}
                         style={{ backgroundColor: COLOR_MAP[color] || color.toLowerCase() }}
@@ -147,8 +141,8 @@ const CartItem = React.memo(({ item, onRemove, onUpdateQuantity, onUpdateYards, 
         </div>
 
         {/* Quantity & Remove */}
-        <div className="flex flex-row md:flex-col items-center md:items-end justify-between gap-4 w-full md:w-1/3">
-          <div className="flex items-center bg-gray-100 rounded-2xl p-1 dark:bg-gray-700" role="group" aria-label="Quantity controls">
+        <div className="flex w-full flex-row items-center justify-between gap-3 border-t border-gray-100 pt-4 lg:w-1/3 lg:flex-col lg:items-end lg:border-t-0 lg:pt-0 dark:border-gray-700">
+          <div className="flex items-center rounded-2xl bg-gray-100 p-1 dark:bg-gray-700" role="group" aria-label="Quantity controls">
             <button
               onClick={() => onUpdateQuantity(item.id, Math.max(1, item.quantity - 1))}
               className="w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center rounded-xl hover:bg-white hover:shadow-md transition-all duration-300 dark:hover:bg-gray-600"
@@ -171,14 +165,14 @@ const CartItem = React.memo(({ item, onRemove, onUpdateQuantity, onUpdateYards, 
           
           <div className="text-right">
             <p className="text-sm text-gray-600 dark:text-gray-300">Subtotal</p>
-            <p className="text-xl sm:text-2xl font-bold text-gray-800 dark:text-white">
-              GH₵ {(item.price * item.quantity).toFixed(2)}
+            <p className="text-lg font-bold text-gray-800 dark:text-white sm:text-2xl">
+              GH₵ {(Number(item.price) * item.quantity).toFixed(2)}
             </p>
           </div>
 
           <button
             onClick={() => onRemove(item)}
-            className="flex items-center gap-2 text-red-500 hover:text-red-700 hover:bg-red-50 px-4 py-2 rounded-xl transition-all duration-300 dark:hover:text-red-400 dark:hover:bg-red-900/20"
+            className="flex min-h-10 items-center gap-2 rounded-xl px-3 py-2 text-red-500 transition-all duration-300 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-900/20 dark:hover:text-red-400 sm:px-4"
             aria-label={`Remove ${item.title} from cart`}
           >
             <FaTrash className="w-4 h-4" />
@@ -243,6 +237,23 @@ const CartPage = () => {
     setShowRemoveModal(false);
     setItemToRemove(null);
   }, []);
+
+  useEffect(() => {
+    if (!showRemoveModal) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") cancelRemove();
+    };
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [showRemoveModal, cancelRemove]);
 
   const placeOrderHandler = async () => {
     if (cartItems.length === 0) {
@@ -317,43 +328,44 @@ const CartPage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 pb-20 sm:pb-8 dark:from-gray-950 dark:via-gray-900 dark:to-gray-800">
-      <div className="max-w-7xl mx-auto px-4 py-8">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 pb-20 dark:from-gray-950 dark:via-gray-900 dark:to-gray-800 sm:pb-8">
+      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-10 lg:px-8">
         {/* Modern Header */}
-        <div className="mb-8 sm:mb-12">
-          <div className="flex items-center gap-3 sm:gap-4 mb-6">
-            <div className="w-11 h-11 sm:w-14 sm:h-14 bg-gradient-to-br from-blue-600 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg flex-shrink-0">
+        <div className="mb-8 sm:mb-10">
+          <div className="mb-6 flex items-center gap-3 sm:gap-4">
+            <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-secondary shadow-lg sm:h-14 sm:w-14">
               <FaShoppingCart className="w-6 h-6 sm:w-7 sm:h-7 text-white" />
             </div>
             <div>
-              <h1 className="text-2xl sm:text-4xl font-bold bg-gradient-to-r from-gray-800 to-gray-600 dark:from-white dark:to-gray-300 bg-clip-text text-transparent leading-tight">
+              <h1 className="bg-gradient-to-r from-gray-800 to-gray-600 bg-clip-text text-2xl font-bold leading-tight text-transparent dark:from-white dark:to-gray-300 sm:text-4xl">
                 Your Shopping Cart
               </h1>
-              <p className="text-gray-600 dark:text-gray-300 mt-1 text-sm sm:text-base">
-                {cartItems.length} {cartItems.length === 1 ? 'item' : 'items'} in your cart
+              <p className="mt-1 text-sm text-gray-600 dark:text-gray-300 sm:text-base">
+                {totalItems} {totalItems === 1 ? 'item' : 'items'} in your cart
               </p>
             </div>
           </div>
         </div>
 
         {cartItems.length === 0 ? (
-          <div className="text-center py-20">
-            <div className="w-32 h-32 mx-auto mb-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center shadow-2xl">
-              <FaShoppingCart className="w-16 h-16 text-white" />
+          <div className="rounded-3xl border border-white/60 bg-white/70 px-5 py-16 text-center shadow-xl backdrop-blur-xl dark:border-gray-700 dark:bg-gray-800/70 sm:py-24">
+            <div className="mx-auto mb-8 flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-br from-primary to-secondary shadow-2xl sm:h-32 sm:w-32">
+              <FaShoppingCart className="h-12 w-12 text-white sm:h-16 sm:w-16" />
             </div>
-            <h2 className="text-3xl font-bold text-gray-800 dark:text-white mb-4">Your cart is empty</h2>
-            <p className="text-gray-600 dark:text-gray-300 text-lg mb-8">Looks like you haven't added anything yet.</p>
-            <Link to="/allproducts">
-              <button className="inline-flex items-center gap-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white px-8 py-4 rounded-2xl font-semibold hover:shadow-2xl transition-all duration-300 hover:scale-105">
+            <h2 className="mb-4 text-2xl font-bold text-gray-800 dark:text-white sm:text-3xl">Your cart is empty</h2>
+            <p className="mb-8 text-base text-gray-600 dark:text-gray-300 sm:text-lg">Looks like you haven't added anything yet.</p>
+            <Link
+              to="/products"
+              className="inline-flex min-h-[52px] items-center gap-3 rounded-2xl bg-gradient-to-r from-primary to-secondary px-8 py-4 font-semibold text-white transition-all duration-300 hover:shadow-2xl hover:scale-105"
+            >
                 Start Shopping
                 <FaArrowRight className="w-5 h-5" />
-              </button>
             </Link>
           </div>
         ) : (
-          <div className="grid lg:grid-cols-3 gap-8">
+          <div className="grid gap-6 lg:grid-cols-3 lg:gap-8">
             {/* Cart Items */}
-            <div className="lg:col-span-2 space-y-6">
+            <div className="space-y-4 lg:col-span-2 lg:space-y-6">
               {cartItems.map((item, index) => (
                 <CartItem
                   key={`cart-item-${item.id}-${index}`}
@@ -370,13 +382,18 @@ const CartPage = () => {
             {/* Order Summary */}
             <div className="lg:col-span-1">
               <div className="sticky top-8">
-                <div className="bg-white/80 backdrop-blur-xl rounded-3xl p-8 border border-white/20 shadow-xl dark:bg-gray-800/80 dark:border-gray-700">
-                  <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-6">Order Summary</h2>
+                <div className="rounded-3xl border border-white/60 bg-white/85 p-5 shadow-xl backdrop-blur-xl dark:border-gray-700 dark:bg-gray-800/85 sm:p-8">
+                  <div className="mb-6 flex items-center justify-between gap-4">
+                    <h2 className="text-xl font-bold text-gray-800 dark:text-white sm:text-2xl">Order Summary</h2>
+                    <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+                      {totalItems} {totalItems === 1 ? "item" : "items"}
+                    </span>
+                  </div>
                   
                   <div className="space-y-4 mb-6">
                     {/* Subtotal */}
                     <div className="flex justify-between text-gray-600 dark:text-gray-300">
-                      <span>Subtotal ({totalItems} items)</span>
+                      <span>Subtotal</span>
                       <span className="font-semibold">GH₵ {subtotal.toFixed(2)}</span>
                     </div>
                     
@@ -417,10 +434,10 @@ const CartPage = () => {
                     <button
                       onClick={placeOrderHandler}
                       disabled={isCreatingOrder || cartItems.length === 0}
-                      className={`w-full py-4 rounded-2xl font-semibold text-lg transition-all duration-300 flex items-center justify-center gap-2 ${
+                      className={`flex min-h-[54px] w-full items-center justify-center gap-2 rounded-2xl py-4 text-base font-semibold transition-all duration-300 sm:text-lg ${
                         isCreatingOrder || cartItems.length === 0
                           ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                          : 'bg-gradient-to-r from-blue-600 to-purple-600 text-white hover:shadow-2xl hover:scale-105'
+                          : 'bg-gradient-to-r from-primary to-secondary text-white shadow-lg shadow-primary/20 hover:shadow-2xl hover:scale-[1.02]'
                       }`}
                     >
                       {isCreatingOrder ? (
@@ -436,10 +453,11 @@ const CartPage = () => {
                       )}
                     </button>
 
-                    <Link to="/products">
-                      <button className="w-full border-2 border-gray-200 text-gray-600 py-4 rounded-2xl font-semibold hover:border-blue-300 hover:text-blue-600 transition-all duration-300 dark:border-gray-700 dark:text-gray-300 dark:hover:border-blue-500 dark:hover:text-blue-400">
+                    <Link
+                      to="/products"
+                      className="flex min-h-[54px] w-full items-center justify-center rounded-2xl border-2 border-gray-200 py-4 font-semibold text-gray-600 transition-all duration-300 hover:border-primary hover:text-primary dark:border-gray-700 dark:text-gray-300 dark:hover:border-primary dark:hover:text-primary"
+                    >
                         Continue Shopping
-                      </button>
                     </Link>
                   </div>
 
@@ -482,58 +500,58 @@ const CartPage = () => {
         {/* Remove Confirmation Modal */}
         {showRemoveModal && itemToRemove && (
           <div 
-            className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+            className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
             role="dialog"
             aria-modal="true"
             aria-labelledby="modal-title"
             onClick={cancelRemove}
           >
             <div 
-              className="bg-white dark:bg-gray-800 rounded-3xl p-8 max-w-md w-full shadow-2xl transform"
+              className="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-3xl bg-white p-5 shadow-2xl dark:bg-gray-800 sm:p-8"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="text-center">
-                <div className="w-16 h-16 mx-auto mb-4 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center">
+                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30">
                   <FaTrash className="w-8 h-8 text-red-500" />
                 </div>
 
-                <h3 id="modal-title" className="text-2xl font-bold text-gray-800 dark:text-white mb-2">
+                <h3 id="modal-title" className="mb-2 text-2xl font-bold text-gray-800 dark:text-white">
                   Remove Item?
                 </h3>
 
-                <div className="flex items-center gap-4 bg-gray-50 dark:bg-gray-700 rounded-2xl p-4 mb-6">
+                <div className="mb-6 flex items-center gap-4 rounded-2xl bg-gray-50 p-4 text-left dark:bg-gray-700">
                   <img
-                    src={itemToRemove.img}
-                    alt={itemToRemove.title}
+                    src={resolveImageUrl(itemToRemove.img)}
+                    alt={itemToRemove.title || "Cart item"}
                     loading="lazy"
                     decoding="async"
                     className="w-16 h-16 object-cover rounded-xl"
                   />
                   <div className="text-left">
-                    <h4 className="font-semibold text-gray-800 dark:text-white">{itemToRemove.title}</h4>
+                    <h4 className="line-clamp-2 font-semibold text-gray-800 dark:text-white">{itemToRemove.title}</h4>
                     <p className="text-sm text-gray-500 dark:text-gray-400">
                       Yards: {itemToRemove.yards ?? itemToRemove.size ?? 'Not selected'} | Qty: {itemToRemove.quantity}
                     </p>
-                    <p className="text-lg font-bold text-blue-600 dark:text-blue-400">
-                      GH₵ {(itemToRemove.price * itemToRemove.quantity).toFixed(2)}
+                    <p className="text-lg font-bold text-primary">
+                      GH₵ {(Number(itemToRemove.price) * itemToRemove.quantity).toFixed(2)}
                     </p>
                   </div>
                 </div>
 
-                <p className="text-gray-600 dark:text-gray-300 mb-8">
+                <p className="mb-8 text-gray-600 dark:text-gray-300">
                   Are you sure you want to remove this item from your cart? This action cannot be undone.
                 </p>
 
-                <div className="flex gap-3">
+                <div className="flex flex-col-reverse gap-3 sm:flex-row">
                   <button
                     onClick={cancelRemove}
-                    className="flex-1 py-3 px-6 border-2 border-gray-200 text-gray-600 rounded-2xl font-semibold hover:border-gray-300 hover:bg-gray-50 transition-all duration-300 dark:border-gray-700 dark:text-gray-300 dark:hover:border-gray-600 dark:hover:bg-gray-700"
+                    className="min-h-12 flex-1 rounded-2xl border-2 border-gray-200 px-6 py-3 font-semibold text-gray-600 transition-all duration-300 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:border-gray-600 dark:hover:bg-gray-700"
                   >
                     Keep Item
                   </button>
                   <button
                     onClick={() => handleRemoveItem(itemToRemove.id)}
-                    className="flex-1 py-3 px-6 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-2xl font-semibold hover:from-red-600 hover:to-red-700 hover:shadow-lg transition-all duration-300"
+                    className="min-h-12 flex-1 rounded-2xl bg-gradient-to-r from-red-500 to-red-600 px-6 py-3 font-semibold text-white transition-all duration-300 hover:from-red-600 hover:to-red-700 hover:shadow-lg"
                   >
                     Yes, Remove
                   </button>
