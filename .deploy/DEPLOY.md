@@ -81,19 +81,27 @@ TRUST_PROXY=1
 DB_HOST=127.0.0.1
 DB_PORT=3306
 DB_USER=ecom
-DB_PASSWORD=<same as step 6>
+DB_PASSWORD="<same as step 6>"
 DB_NAME=branding_house
 
-JWT_SECRET=$(openssl rand -hex 64)
-SESSION_SECRET=$(openssl rand -hex 64)
+# ⚠ Generate BOTH secrets FIRST in a separate shell (run the command twice)
+#   and paste the printed values below. .env is read LITERALLY, never
+#   evaluated — writing the $(...) command itself would sign every session
+#   with the predictable string "$(openssl rand -hex 64)". The two values
+#   must differ from each other.
+#     openssl rand -hex 64
+JWT_SECRET="<paste 1st output>"
+SESSION_SECRET="<paste 2nd output>"
 
 FRONTEND_URL=https://yourdomain.me
 OAUTH_CALLBACK_URL=https://yourdomain.me
 
 PAYSTACK_SECRET_KEY=sk_live_...
 EMAIL_USER=kenterobert@gmail.com
-EMAIL_PASSWORD=<gmail-app-password>
-EMAIL_FROM=Bonwire Kente <noreply@yourdomain.me>
+EMAIL_PASSWORD="<gmail-app-password>"
+# MUST stay quoted: multi-word values that are not quoted are unparseable by
+# bash, and backup-db.sh / restore-db.sh now refuse to run on such a file.
+EMAIL_FROM="Bonwire Kente <noreply@yourdomain.me>"
 
 GOOGLE_CLIENT_ID=...apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=...
@@ -104,8 +112,8 @@ REPLICATE_API_TOKEN=r8_...
 ## 9. Create database schema + admin
 
 ```bash
-npm run db:setup     # drops & recreates branding_house
-npm run db:migrate   # applies pending migrations
+npm run db:setup     # drops & recreates branding_house, then applies ALL migrations
+npm run db:migrate   # idempotent — safe to re-run whenever new migrations land
 npm run setup-admin  # creates first admin (prompts for email/password)
 ```
 
@@ -113,7 +121,11 @@ npm run setup-admin  # creates first admin (prompts for email/password)
 
 ```bash
 cd ~/Kente_Market
-# ensure frontend .env has VITE_API_URL= (empty) and VITE_PAYSTACK_PUBLIC_KEY=pk_live_...
+# frontend .env: VITE_PAYSTACK_PUBLIC_KEY=pk_live_... and
+# VITE_API_URL= (EMPTY) — nginx serves the SPA and proxies /api on the same
+# origin, so requests stay relative. Only set a full https://... URL if the API
+# lives on a different host than the page. Vercel: leave it empty too —
+# vercel.json rewrites /api/* and /uploads/* to the Render backend.
 npm ci && npm run build
 mkdir -p /var/www/kente && cp -r dist/* /var/www/kente/
 ```
@@ -121,17 +133,28 @@ mkdir -p /var/www/kente && cp -r dist/* /var/www/kente/
 ## 11. Systemd service
 
 ```bash
+# One-time API user (the service runs non-root — see [Service] below):
+sudo useradd -r -m -d /var/lib/kente-api -s /usr/sbin/nologin kente
+sudo chgrp -R kente /root/Kente_Market && sudo chmod -R g+rX /root/Kente_Market
+sudo chmod 640 /root/Kente_Market/backend/.env      # group-readable, not world
+sudo chown -R kente:kente /root/Kente_Market/backend/uploads
+
 cat > /etc/systemd/system/kente-api.service << 'EOF'
 [Unit]
 Description=Kente Marketplace API
 After=network.target mysql.service
 
 [Service]
+User=kente
+Group=kente
 WorkingDirectory=/root/Kente_Market/backend
 EnvironmentFile=/root/Kente_Market/backend/.env
 ExecStart=/usr/bin/node server.js
 Restart=always
 RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
 
 [Install]
 WantedBy=multi-user.target
@@ -139,6 +162,8 @@ EOF
 
 systemctl daemon-reload && systemctl enable --now kente-api
 curl -s http://127.0.0.1:5000/health   # expect {"status":"OK"}
+# If it won't start: journalctl -u kente-api -e — the usual cause is a path the
+# kente user cannot read/write (fix ownership; do NOT revert to root).
 ```
 
 ## 12. Nginx + HTTPS

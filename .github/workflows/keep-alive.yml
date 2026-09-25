@@ -2,12 +2,16 @@ name: keep-alive
 
 on:
   schedule:
-    # Every 12 minutes, all day, every day — Render's free tier sleeps after
-    # ~15 min of inactivity, so pinging the health endpoint keeps the API warm
-    # and avoids multi-second cold starts (which show up as slow FCP/LCP and
-    # console errors in Lighthouse).
-    - cron: '*/12 * * * *'
+    # Every 6 hours — Render's free tier sleeps after ~15 min of inactivity,
+    # so pinging the health endpoint keeps the API warm and avoids
+    # multi-second cold starts (which show up as slow FCP/LCP and console
+    # errors in Lighthouse). Kept to a low burn rate (4 runs/day instead of
+    # 120).
+    - cron: '0 */6 * * *'
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   ping:
@@ -15,7 +19,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Ping kente-api health check
+        # -f/--fail-with-body: a non-2xx response fails the step, turning the
+        # job red when the API is actually down (no `|| echo` escape hatch).
         run: |-
           curl -fsS --retry 3 --retry-delay 5 -m 30 \
-            https://kente-api.onrender.com/health \
-            || echo "Health check returned non-200 (server may be cold-starting or down)."
+            --fail-with-body \
+            https://kente-api.onrender.com/health

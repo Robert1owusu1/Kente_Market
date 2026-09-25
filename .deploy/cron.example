@@ -1,11 +1,22 @@
 # FILE LOCATION: .deploy/cron.example
 # DESCRIPTION: Example crontab entries for nightly encrypted DB backups.
 #
+# ⚠ EVERYTHING IN THIS FILE IS COMMENTED OUT — installing the file does
+#   nothing. Nothing here runs until you paste an entry into `crontab -e`
+#   (or install .deploy/backup.timer, the preferred scheduler — it also fires
+#   after downtime via Persistent=true, which cron cannot do).
+#
 # Install:
 #   1. Put BACKUP_* + DB_* values in /etc/kente/backup.env (chmod 600).
+#      Also set BACKUP_ALERT_WEBHOOK=<JSON POST URL> there: both backup-db.sh
+#      and backup-offsite.sh ping it on any non-zero exit, so a dead nightly
+#      pages you instead of surfacing at restore time.
 #   2. crontab -e and add the minty entries below.
-#   3. Off-site rule (DISASTER_RECOVERY.md): RSYNC the .aes/.gpg + .sha256 files
-#      out of BACKUP_DIR to separate object storage right after each run.
+#   3. Off-site rule (DISASTER_RECOVERY.md): mirror the newest .aes/.gpg +
+#      .sha256 (+ uploads archive) right after each run with
+#      .deploy/backup-offsite.sh (set BACKUP_OFFSITE_RSYNC_TARGET in
+#      backup.env, then chain it in the job below or let backup.service's
+#      ExecStartPost handle it).
 #
 # Env file is passed with set -a so every export lands in the environment:
 #   CRON_TZ=UTC
@@ -37,4 +48,8 @@
 #       echo "$out" | tail -2
 #     ' >> /var/log/kente-backup.log 2>&1
 #
-# Also point that last job's failure path at your pager/alerting endpoint.
+# Set BACKUP_ALERT_WEBHOOK in backup.env (step 1) instead of grepping logs —
+# the scripts self-report failures. To also mirror off-site from this cron
+# job, chain `.deploy/backup-offsite.sh` after backup-db.sh in the same
+# command (backup.env supplies BACKUP_OFFSITE_RSYNC_TARGET), or let
+# backup.service's ExecStartPost do it under systemd.

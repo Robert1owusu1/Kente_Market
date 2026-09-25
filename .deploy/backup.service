@@ -1,15 +1,36 @@
 # FILE LOCATION: .deploy/backup.service (systemd example)
 # DESCRIPTION: systemd unit for the nightly encrypted DB + uploads backup,
-#              with an optional off-site mirror step (keeps local retention).
+#              with an OPTIONAL off-site mirror step that is gated on
+#              BACKUP_OFFSITE_RSYNC_TARGET in /etc/kente/backup.env — set that
+#              variable and the mirror runs; leave it unset and ExecStartPost
+#              is a no-op. Local copies remain the retention set either way.
 #
 # Install:
-#   sudo cp .deploy/backup.service /etc/systemd/system/
-#   sudo cp .deploy/backup.timer  /etc/systemd/system/
-#   systemctl daemon-reload && systemctl enable --now backup.timer
-#   systemctl list-timers backup.timer
+#   1. Dedicated non-root backup user (cannot log in):
+#        sudo useradd -r -m -d /var/lib/kente-backup -s /usr/sbin/nologin kente
+#      The checkout must be readable by it. For a root-owned checkout
+#      (/root/Kente_Market) either:
+#        sudo chgrp -R kente /root/Kente_Market && sudo chmod -R g+rX /root/Kente_Market
+#      or set `User=root` in this unit (documented exception — not preferred).
+#   2. Backup destination (must exist and be owned by the backup user):
+#        sudo install -d -o kente -g kente -m 750 /var/backups/kente
+#      BACKUP_DIR defaults to /var/backups/kente below; override in
+#      /etc/kente/backup.env. If your BACKUP_DIR lives under $HOME, remove
+#      ProtectHome=read-only or the run will fail at write time.
+#   3. Config: /etc/kente/backup.env (chmod 600, root:root) with DB_*,
+#      BACKUP_*, BACKUP_ALERT_WEBHOOK=<JSON POST URL> (failure paging — the
+#      backup and off-site scripts both ping it on non-zero exit), and
+#      optionally KENTE_HOME=<checkout> and BACKUP_OFFSITE_RSYNC_TARGET=<rsync
+#      destination> to enable the mirror. This file OVERRIDES the Environment=
+#      defaults below.
+#   4. Install:
+#        sudo cp .deploy/backup.service .deploy/backup.timer /etc/systemd/system/
+#        sudo systemctl daemon-reload && sudo systemctl enable --now backup.timer
+#        systemctl list-timers backup.timer
 #
-#   # restore one node's latest backup: systemctl list-timers backup.timer
 #   # manual run + live log: sudo systemctl start backup.service && journalctl -u backup.service -f
+#   # alert on failures:     add OnFailure=backup-alert@.service (your pager unit)
+#                            or just set BACKUP_ALERT_WEBHOOK — covered already.
 
 [Unit]
 Description=Kente Market encrypted DB + uploads backup
@@ -18,11 +39,26 @@ After=network-online.target
 
 [Service]
 Type=oneshot
-WorkingDirectory=/home/roberto/Documents/project/ecom_new
+# Checkout + destination — override either in /etc/kente/backup.env.
+Environment=KENTE_HOME=/root/Kente_Market
+Environment=BACKUP_DIR=/var/backups/kente
 EnvironmentFile=-/etc/kente/backup.env
-ExecStart=/home/roberto/Documents/project/ecom_new/.deploy/backup-db.sh
-# Off-site mirror — SYNC only (local copies are the retention set). Uncomment:
-# ExecStartPost=/usr/bin/rsync -a /mnt/backups/kente/ backup-user@s3house:/kente-backups/
-#   Add a failure pager/watch on the "✗" lines for both steps.
+# Dedicated non-root user; see step 1 above for a root-owned checkout.
+User=kente
+Group=kente
+# bash -c so $KENTE_HOME comes from the environment above (unit files cannot
+# expand variables in other directives).
+ExecStart=/bin/bash -c 'exec "${KENTE_HOME}/.deploy/backup-db.sh"'
+# Off-site mirror — runs only when BACKUP_OFFSITE_RSYNC_TARGET is set;
+# backup-offsite.sh itself pings BACKUP_ALERT_WEBHOOK on failure.
+ExecStartPost=/bin/bash -c '[ -z "${BACKUP_OFFSITE_RSYNC_TARGET:-}" ] || exec "${KENTE_HOME}/.deploy/backup-offsite.sh"'
+# Hardening: if a directive breaks your layout you will see it immediately in
+# `journalctl -u backup.service` — relax only the specific line, don't delete
+# the block. (ProtectSystem=full makes /usr, /boot and /etc read-only;
+# ProtectHome=read-only requires BACKUP_DIR outside $HOME — see step 2.)
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=read-only
+ProtectSystem=full
 Nice=5
 IOSchedulingClass=idle
