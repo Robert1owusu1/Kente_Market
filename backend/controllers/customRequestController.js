@@ -289,23 +289,40 @@ export const checkoutRequest = async (req, res) => {
       },
     ];
 
-    const order = await Order.create({
-      userId: req.user.id,
-      orderNumber: `CUS-${Date.now()}`,
-      items,
-      totalAmount: price,
-      shippingAddress: shippingAddress || {},
-      billingAddress: shippingAddress || {},
-      paymentMethod: paymentMethod || "Card Payment",
-      paymentStatus: "paid",
-      orderStatus: "processing",
-      shippingCost: 0,
-      tax: 0,
-      discount: 0,
-      notes: notes || `Custom kente request #${request.id} — vendor: ${request.vendorBusinessName}. Needed by: ${request.neededForDate} ${request.neededForTime}`,
-      paymentReference,
-      expectedCompletionDate: completionFromRequest(request),
-    });
+    // The SELECT-then-INSERT above is not atomic: two concurrent checkouts
+    // with the same reference could both pass it. The DB UNIQUE key on
+    // orders.paymentReference is the real guard — catch the race and fail
+    // this checkout cleanly so one charge can never create two paid orders
+    // (each of which would release a 50% advance to the vendor).
+    let order;
+    try {
+      order = await Order.create({
+        userId: req.user.id,
+        orderNumber: `CUS-${Date.now()}`,
+        items,
+        totalAmount: price,
+        shippingAddress: shippingAddress || {},
+        billingAddress: shippingAddress || {},
+        paymentMethod: paymentMethod || "Card Payment",
+        paymentStatus: "paid",
+        orderStatus: "processing",
+        shippingCost: 0,
+        tax: 0,
+        discount: 0,
+        notes: notes || `Custom kente request #${request.id} — vendor: ${request.vendorBusinessName}. Needed by: ${request.neededForDate} ${request.neededForTime}`,
+        paymentReference,
+        expectedCompletionDate: completionFromRequest(request),
+      });
+    } catch (createErr) {
+      if (
+        createErr?.code === 'ER_DUP_ENTRY' ||
+        String(createErr?.message || '').includes('uq_orders_paymentReference') ||
+        String(createErr?.message || '').includes('Duplicate entry')
+      ) {
+        return res.status(400).json({ message: "This payment reference has already been used." });
+      }
+      throw createErr;
+    }
 
     // Hold escrow immediately (custom orders are pre-paid). Custom orders use
     // a 50/50 split: the advance half is released to the weaver right away

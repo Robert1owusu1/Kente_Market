@@ -13,7 +13,10 @@ const pool = mysql.createPool({
   port: process.env.DB_PORT || 3306,
   ssl: mysqlTls(),
   waitForConnections: true,
-  connectionLimit: 10,
+  // Pool size is tunable per environment (default 10). mysql2 has no
+  // per-statement timeout, so a hung query holds a slot until connect/query
+  // level timeouts fire — size this consciously and keep connectTimeout low.
+  connectionLimit: Math.min(50, Math.max(1, parseInt(process.env.DB_POOL_SIZE, 10) || 10)),
   queueLimit: 0,
   // Connection latency is the dominant cost on this topology (TLS handshake to
   // a remote TiDB + cold start when the host idles). Fail fast on a dead

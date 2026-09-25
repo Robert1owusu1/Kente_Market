@@ -71,8 +71,14 @@ export const exportSubscribers = async (req, res) => {
     const subscribers = await Subscriber.findAll(10000);
 
     const header = "ID,Email,Subscribed,Created At\n";
+    // Neutralize CSV formula injection: a stored value starting with = + - @
+    // becomes a live formula when an admin opens the export in Excel/Sheets.
+    const cell = (v) => {
+      const s = String(v ?? "");
+      return /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;
+    };
     const rows = subscribers
-      .map((s) => `${s.id},"${(s.email || "").replace(/"/g, '""')}",${s.subscribed ? "Yes" : "No"},${s.created_at || ""}`)
+      .map((s) => `${s.id},"${cell(s.email).replace(/"/g, '""')}",${s.subscribed ? "Yes" : "No"},${cell(s.created_at)}`)
       .join("\n");
 
     res.setHeader("Content-Type", "text/csv");

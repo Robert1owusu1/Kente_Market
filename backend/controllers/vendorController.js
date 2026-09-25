@@ -649,6 +649,13 @@ export const createVendorCoupon = async (req, res) => {
     if (discountValue === undefined || isNaN(discountValue) || parseFloat(discountValue) <= 0) {
       return res.status(400).json({ message: 'Discount value must be greater than 0' });
     }
+    // Vendors may not issue near-free coupons: escrow is now allocated net of
+    // discounts (so the platform can no longer be driven negative per order),
+    // but a 90% vendor coupon still underprices the catalogue and undercuts
+    // other vendors. Platform (admin) coupons are not subject to this cap.
+    if (discountType === 'percentage' && parseFloat(discountValue) > 50) {
+      return res.status(400).json({ message: 'Vendor percentage coupons are capped at 50%' });
+    }
 
     const [result] = await pool.execute(
       `INSERT INTO coupons (code, discountType, discountValue, minPurchase, maxUses, expiresAt, isActive, vendorId)
@@ -681,13 +688,30 @@ export const createVendorCoupon = async (req, res) => {
 export const updateVendorCoupon = async (req, res) => {
   try {
     const couponId = parseInt(req.params.id);
-    const [[existing]] = await pool.execute(`SELECT id, vendorId FROM coupons WHERE id = ?`, [couponId]);
+    const [[existing]] = await pool.execute(
+      `SELECT id, vendorId, discountType, discountValue FROM coupons WHERE id = ?`,
+      [couponId]
+    );
     if (!existing) return res.status(404).json({ message: 'Coupon not found' });
     // Platform (vendorId NULL) coupons are admin-owned — a vendor may only touch
     // their own coupons. The old `existing.vendorId &&` check was falsy for NULL,
     // which let any vendor modify/delete global coupons (broken access control).
     if (existing.vendorId !== req.user.id && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Not authorized' });
+    }
+
+    // Same vendor cap as createVendorCoupon: a vendor-owned percentage coupon
+    // may not exceed 50% (admin/platform coupons are unrestricted). Evaluate
+    // the EFFECTIVE values so sending only one of the two fields can't sneak
+    // a >50% coupon through.
+    if (existing.vendorId != null) {
+      const nextType = req.body.discountType !== undefined ? req.body.discountType : existing.discountType;
+      const nextValue = req.body.discountValue !== undefined
+        ? parseFloat(req.body.discountValue)
+        : parseFloat(existing.discountValue);
+      if (nextType === 'percentage' && Number.isFinite(nextValue) && nextValue > 50) {
+        return res.status(400).json({ message: 'Vendor percentage coupons are capped at 50%' });
+      }
     }
 
     const allowedColumns = ['discountType', 'discountValue', 'minPurchase', 'maxUses', 'expiresAt', 'isActive'];

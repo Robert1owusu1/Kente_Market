@@ -2,6 +2,7 @@
 // DESCRIPTION: Return request CRUD with ownership checks
 import ReturnRequest from "../models/returnModel.js";
 import Order from "../models/orderModel.js";
+import pool from "../config/db.js";
 import { voidEscrowForOrder } from "../Services/escrowService.js";
 import paystackServices from "../Services/paystackservices.js";
 import { recordFinancialEvent } from "../Services/ledgerService.js";
@@ -149,6 +150,17 @@ export const updateReturnStatus = async (req, res) => {
             console.warn(`⚠️ Return ${req.params.id}: Paystack refund rejected (${refund?.message || 'unknown'}) — manual refund required`);
           } else {
             console.log(`✅ Return ${req.params.id}: customer refunded via Paystack`);
+            // Flip the order to 'refunded' the moment the money actually
+            // moved. This is what makes the refund RETRIABLE (an admin cancel
+            // only refunds when paymentStatus is still 'paid', so a failed
+            // refund here can be completed there) and what stops a second
+            // refund from ever being issued after a successful one — the
+            // guard is now our own ledger, not Paystack's rejection.
+            await pool.execute(
+              `UPDATE orders SET paymentStatus = 'refunded', updated_at = CURRENT_TIMESTAMP
+               WHERE id = ? AND paymentStatus = 'paid'`,
+              [existing.orderId]
+            ).catch((e) => console.warn(`⚠️ Could not mark order ${existing.orderId} refunded: ${e.message}`));
             // Immutable journal entry for the refund (deduped per return+order).
             await recordFinancialEvent({
               eventType: 'refund',

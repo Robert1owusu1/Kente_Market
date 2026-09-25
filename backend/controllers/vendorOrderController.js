@@ -61,16 +61,56 @@ const getCustomerEmail = async (userId) => {
 // @access  Private/Vendor
 export const getVendorOrders = async (req, res) => {
   try {
+    const vendorUserId = parseInt(req.user.id, 10);
+
+    // Prefilter in SQL: an order belongs to this vendor iff some item carries
+    // their inline vendorId, or some item references one of their products.
+    // The old query loaded EVERY order (with a users PII join) and filtered in
+    // JS — an unbounded full-table scan any vendor could trigger. The JSON
+    // LIKE prefilter narrows the rows + join; the JS filter below remains the
+    // source of truth (LIKE can over-match, never under-match).
+    let where = '';
+    const params = [];
+    const clauses = [];
+    if (Number.isFinite(vendorUserId)) {
+      clauses.push(`o.items LIKE ?`, `o.items LIKE ?`);
+      params.push(`%"vendorId":${vendorUserId}%`, `%"vendorId":"${vendorUserId}"%`);
+      try {
+        const [owned] = await pool.execute(
+          `SELECT id FROM product WHERE vendorId = ? LIMIT 300`,
+          [vendorUserId]
+        );
+        if (owned.length > 0) {
+          for (const p of owned) {
+            clauses.push(`o.items LIKE ?`, `o.items LIKE ?`);
+            params.push(`%"product":${p.id}%`, `%"productId":${p.id}%`);
+          }
+        }
+      } catch {
+        // product table unavailable — fall back to the inline vendorId match
+      }
+      // Too many products to inline safely: skip the prefilter entirely
+      // (behaves exactly like the old full scan; JS filter still decides).
+      if (clauses.length > 601) {
+        where = '';
+        params.length = 0;
+      } else {
+        where = `WHERE (${clauses.join(' OR ')})`;
+      }
+    }
+
     const [rows] = await pool.execute(
       `SELECT o.*, u.firstName, u.lastName, u.email
        FROM orders o
        LEFT JOIN users u ON o.userId = u.id
-       ORDER BY o.created_at DESC`
+       ${where}
+       ORDER BY o.created_at DESC`,
+      params
     );
     const orders = rows.map((row) => new Order(row));
 
-    // Resolve product -> vendor ownership for every order in one query so the
-    // vendor list works even though line items don't persist a vendorId.
+    // Resolve product -> vendor ownership for every candidate order in one
+    // query so the list works even though line items don't persist a vendorId.
     const productIds = [...new Set(
       orders.flatMap((o) => (Array.isArray(o.items) ? o.items : []))
         .map((it) => it.product ?? it.productId ?? it.id)
@@ -86,7 +126,6 @@ export const getVendorOrders = async (req, res) => {
       for (const pr of prodRows) productVendor.set(String(pr.id), parseInt(pr.vendorId, 10));
     }
 
-    const vendorUserId = parseInt(req.user.id, 10);
     const vendorOrders = orders.filter((o) => {
       const items = Array.isArray(o.items) ? o.items : [];
       return items.some((it) => {

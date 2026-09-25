@@ -78,7 +78,7 @@ CREATE TABLE vendors (
   recipientType VARCHAR(20) COMMENT 'Paystack recipient type: nuban or mobile_money',
   platformFeeRate DECIMAL(5,4) DEFAULT 0.1000 COMMENT 'Platform commission deducted from escrow payout',
   status ENUM('pending', 'approved', 'suspended') DEFAULT 'pending',
-  slug VARCHAR(255) NULL COMMENT 'Human-friendly storefront URL segment',
+  slug VARCHAR(200) NULL COMMENT 'Human-friendly storefront URL segment',
   logo VARCHAR(500) NULL,
   coverImage VARCHAR(500) NULL,
   businessDescription TEXT NULL,
@@ -94,7 +94,7 @@ CREATE TABLE vendors (
   FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE,
   UNIQUE KEY uq_vendors_userId (userId),
   INDEX idx_vendors_status (status),
-  INDEX idx_vendors_slug (slug),
+  UNIQUE KEY uq_vendors_slug (slug),
   INDEX idx_vendors_level (verificationLevel)
 );
 
@@ -167,7 +167,7 @@ CREATE TABLE orders (
   billingAddress JSON,
   paymentMethod VARCHAR(50) DEFAULT 'pending',
   paymentStatus ENUM('pending', 'paid', 'failed', 'refunded') DEFAULT 'pending',
-  orderStatus ENUM('pending', 'processing', 'packaging', 'shipped', 'arrived', 'delivered', 'cancelled') DEFAULT 'pending',
+  orderStatus ENUM('pending', 'processing', 'packaging', 'shipped', 'arrived', 'delivered', 'cancelled') NOT NULL DEFAULT 'pending',
   escrowStatus ENUM('none', 'held', 'releasing', 'released', 'failed') DEFAULT 'none' COMMENT 'Escrow lifecycle for multi-vendor payouts',
   escrowReleaseDeadline DATETIME NULL COMMENT 'Auto-release timestamp when customer does not confirm receipt',
   shippingCost DECIMAL(10,2) DEFAULT 0,
@@ -182,7 +182,9 @@ CREATE TABLE orders (
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE,
   INDEX idx_orders_userId (userId),
-  INDEX idx_orders_paymentReference (paymentReference),
+  -- One Paystack charge may map to exactly ONE order (see
+  -- migratePaymentHardening.js; blank references are normalized to NULL).
+  UNIQUE KEY uq_orders_paymentReference (paymentReference),
   INDEX idx_orders_paymentStatus (paymentStatus),
   INDEX idx_orders_orderStatus (orderStatus),
   INDEX idx_orders_escrowStatus (escrowStatus)
@@ -205,6 +207,7 @@ CREATE TABLE escrow_allocations (
   FOREIGN KEY (orderId) REFERENCES orders(id) ON DELETE CASCADE,
   FOREIGN KEY (vendorId) REFERENCES users(id) ON DELETE CASCADE,
   allocationType ENUM('standard','advance','balance') NOT NULL DEFAULT 'standard',
+  reason VARCHAR(255) NULL COMMENT 'Why the allocation is failed/voided (clawback, no payout, ...)',
   UNIQUE KEY uq_escrow_order_vendor_type (orderId, vendorId, allocationType),
   INDEX idx_escrow_vendor (vendorId),
   INDEX idx_escrow_status (status),
@@ -227,7 +230,7 @@ CREATE TABLE IF NOT EXISTS vendor_wallets (
 CREATE TABLE IF NOT EXISTS wallet_transactions (
   id INT AUTO_INCREMENT PRIMARY KEY,
   vendorId INT NOT NULL,
-  type ENUM('credit','withdrawal','fee') NOT NULL,
+  type ENUM('credit','withdrawal','fee','reversal','clawback') NOT NULL,
   amount DECIMAL(12,2) NOT NULL,
   reference VARCHAR(100) DEFAULT NULL,
   note VARCHAR(255) DEFAULT NULL,

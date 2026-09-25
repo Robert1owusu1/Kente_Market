@@ -45,8 +45,8 @@ export const reconcileStuckTransfers = async ({
     // parameter for `LIMIT ?` ("Incorrect arguments to LIMIT"), which silently
     // disabled reconciliation; the values are already clamped so inlining the
     // interval is safe and keeps the driver happy.
-    const safeOlderThanMinutes = Math.max(1, parseInt(olderThanMinutes, 10) || 30);
-    const safeLimit = Math.max(1, parseInt(limit, 10) || 25);
+    const safeOlderThanMinutes = Math.max(1, Number(olderThanMinutes) || 30);
+    const safeLimit = Math.max(1, Number(limit) || 25);
     [rows] = await pool.execute(
       `SELECT id, reference, providerReference, created_at
        FROM payout_attempts
@@ -102,6 +102,26 @@ export const reconcileStuckTransfers = async ({
           break;
       }
     } catch (error) {
+      const status = error.response?.status;
+      const ageMs = Date.now() - new Date(attempt.created_at).getTime();
+      if (status === 404 && Number.isFinite(ageMs) && ageMs > 60 * 60 * 1000) {
+        // Paystack has never heard of this reference. The reference is stored
+        // in payout_attempts BEFORE the network call, so a 404 past the grace
+        // period means the initiate request never reached the provider (client
+        // timeout before/without dispatch) — the money was never sent. Settle
+        // it as failed: this restores the allocation in the same guarded,
+        // idempotent way as a provider-side failure, so the vendor can retry
+        // instead of their funds sitting in 'releasing' forever.
+        try {
+          await settleTransferFailed(queryRef);
+          summary.failed += 1;
+          console.log(`🔁 Released payout attempt ${attempt.reference}: no such transfer at Paystack (never reached provider)`);
+        } catch (settleErr) {
+          summary.errored += 1;
+          console.warn(`⚠️  Could not release payout attempt ${attempt.reference}: ${settleErr.message}`);
+        }
+        continue;
+      }
       summary.errored += 1;
       console.warn(`⚠️  Transfer reconciliation failed for ${queryRef}: ${error.message}`);
     }

@@ -144,18 +144,34 @@ export const settleTransferFailed = async (transferRef) => {
       return 'already';
     }
     if (attempt.isFull) {
-      await connection.execute(
+      const [restored] = await connection.execute(
         `UPDATE escrow_allocations SET status = 'available', payoutAmount = payoutAmount + ?,
            payoutReference = NULL, updated_at = CURRENT_TIMESTAMP
          WHERE id = ? AND status = 'releasing'`,
         [attempt.amount, attempt.allocationId]
       );
+      if (restored.affectedRows !== 1) {
+        // The allocation is not in the state this restore expects. Marking
+        // the attempt terminal anyway would silently swallow the vendor's
+        // money (claimed at payout time, never returned) with no journal and
+        // no way to re-run. Throw instead: the whole transaction (including
+        // the attempt claim) rolls back, so the attempt stays 'processing'
+        // and Paystack redelivery / the reconciler will retry it loudly.
+        throw new Error(
+          `Allocation ${attempt.allocationId} not in 'releasing' — cannot restore ${attempt.amount} for failed payout ${attempt.reference}`
+        );
+      }
     } else {
-      await connection.execute(
+      const [restored] = await connection.execute(
         `UPDATE escrow_allocations SET payoutAmount = payoutAmount + ?, updated_at = CURRENT_TIMESTAMP
          WHERE id = ? AND status = 'available'`,
         [attempt.amount, attempt.allocationId]
       );
+      if (restored.affectedRows !== 1) {
+        throw new Error(
+          `Allocation ${attempt.allocationId} not in 'available' — cannot restore ${attempt.amount} for failed payout ${attempt.reference}`
+        );
+      }
     }
     await recordFinancialEvent({
       connection,
@@ -223,18 +239,33 @@ export const settleTransferReversed = async (transferRef) => {
     );
 
     if (attempt.isFull) {
-      await connection.execute(
+      const [restored] = await connection.execute(
         `UPDATE escrow_allocations SET status = 'available', payoutAmount = payoutAmount + ?,
            payoutReference = NULL, updated_at = CURRENT_TIMESTAMP
          WHERE id = ? AND status IN ('released', 'releasing')`,
         [attempt.amount, attempt.allocationId]
       );
+      if (restored.affectedRows !== 1) {
+        // Same rule as settleTransferFailed: never mark the attempt terminal
+        // without actually returning the money. Roll back so the reversal can
+        // be re-settled (idempotently) once the allocation is back in a
+        // restorable state — a terminal attempt here would double-charge the
+        // vendor (wallet debit from transfer.success + no allocation restore).
+        throw new Error(
+          `Allocation ${attempt.allocationId} not in 'released/releasing' — cannot restore ${attempt.amount} for reversed payout ${attempt.reference}`
+        );
+      }
     } else {
-      await connection.execute(
+      const [restored] = await connection.execute(
         `UPDATE escrow_allocations SET payoutAmount = payoutAmount + ?, updated_at = CURRENT_TIMESTAMP
          WHERE id = ? AND status = 'available'`,
         [attempt.amount, attempt.allocationId]
       );
+      if (restored.affectedRows !== 1) {
+        throw new Error(
+          `Allocation ${attempt.allocationId} not in 'available' — cannot restore ${attempt.amount} for reversed payout ${attempt.reference}`
+        );
+      }
     }
 
     if (wasDebited) {

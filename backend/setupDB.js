@@ -25,6 +25,17 @@ if (!fs.existsSync(sqlPath)) {
   process.exit(1);
 }
 
+// DROP DATABASE is unconditional — refuse to run it against production
+// without an explicit, separate opt-in (a mis-pointed .env would otherwise
+// wipe the live database).
+if (process.env.NODE_ENV === 'production' && process.env.ALLOW_DESTRUCTIVE_DB !== '1') {
+  console.error(
+    '❌ Refusing to DROP DATABASE: NODE_ENV=production. ' +
+    'If this is truly intended, re-run with ALLOW_DESTRUCTIVE_DB=1.'
+  );
+  process.exit(1);
+}
+
 const connection = await mysql.createConnection({
   host: process.env.DB_HOST,
   user: process.env.DB_USER,

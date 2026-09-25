@@ -302,7 +302,9 @@ static async findAll(options = {}) {
       const [financial] = await connection.execute(
         `SELECT 1 FROM escrow_allocations WHERE orderId = ?
          UNION SELECT 1 FROM financial_events WHERE orderId = ?
-         UNION SELECT 1 FROM payout_attempts WHERE orderId = ? LIMIT 1`,
+         UNION SELECT 1 FROM payout_attempts pa
+                  JOIN escrow_allocations ea ON ea.id = pa.allocationId
+                  WHERE ea.orderId = ? LIMIT 1`,
         [id, id, id]
       );
       if (financial.length > 0) {

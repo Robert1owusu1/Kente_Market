@@ -5,6 +5,7 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { protect } from '../middleware/authMiddleware.js';
 import { uploadLimiter } from '../middleware/rateLimitMiddleware.js';
+import { validateImageFile } from '../utils/imageValidator.js';
 import User from '../models/usersModel.js';
 
 const router = express.Router();
@@ -20,6 +21,14 @@ if (!fs.existsSync(profilesDir)) {
   console.log('✅ Created profiles directory:', profilesDir);
 }
 
+// Belt-and-braces: users.profile_picture is only ever written by this route,
+// but if a traversal value ever landed in the column, unlinking it would
+// delete arbitrary files. Only delete inside uploads/profiles.
+const resolveProfilePath = (storedPath) => {
+  const resolved = path.resolve(__dirname, '..', storedPath);
+  return resolved.startsWith(profilesDir + path.sep) ? resolved : null;
+};
+
 // Configure storage
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -33,13 +42,13 @@ const storage = multer.diskStorage({
   },
 });
 
-// File filter - only allow images
+// File filter - only allow images. Anchored regexes (the old unanchored
+// /jpeg|jpg|png/ matched any MIME or filename CONTAINING a token).
 const fileFilter = (req, file, cb) => {
-  const allowedTypes = /jpeg|jpg|png|gif|webp/;
-  const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-  const mimetype = allowedTypes.test(file.mimetype);
+  const allowedExt = /\.(jpe?g|png|gif|webp)$/i;
+  const allowedMime = /^image\/(jpe?g|png|gif|webp)$/;
 
-  if (mimetype && extname) {
+  if (allowedMime.test(file.mimetype) && allowedExt.test(path.extname(file.originalname))) {
     return cb(null, true);
   } else {
     cb(new Error('Only image files are allowed (jpeg, jpg, png, gif, webp)'));
@@ -64,6 +73,15 @@ router.post('/upload', protect, uploadLimiter, upload.single('profilePicture'), 
       return res.status(400).json({ message: 'No file uploaded' });
     }
 
+    // Client-supplied MIME/extension can lie — validate the actual bytes
+    // (magic numbers + header-derived dimensions) exactly like the product
+    // upload path does. Invalid content is deleted, never stored.
+    const verdict = validateImageFile(req.file.path);
+    if (!verdict.valid) {
+      fs.unlinkSync(req.file.path);
+      return res.status(400).json({ message: verdict.reason || 'Invalid image file' });
+    }
+
     const userId = req.user.id;
     const user = await User.findById(userId);
 
@@ -75,8 +93,8 @@ router.post('/upload', protect, uploadLimiter, upload.single('profilePicture'), 
 
     // Delete old profile picture if exists
     if (user.profile_picture) {
-      const oldPicturePath = path.join(__dirname, '..', user.profile_picture);
-      if (fs.existsSync(oldPicturePath)) {
+      const oldPicturePath = resolveProfilePath(user.profile_picture);
+      if (oldPicturePath && fs.existsSync(oldPicturePath)) {
         fs.unlinkSync(oldPicturePath);
         console.log('🗑️ Deleted old profile picture:', oldPicturePath);
       }
@@ -126,9 +144,9 @@ router.delete('/picture', protect, async (req, res) => {
       return res.status(400).json({ message: 'No profile picture to delete' });
     }
 
-    // Delete file from filesystem
-    const picturePath = path.join(__dirname, '..', user.profile_picture);
-    if (fs.existsSync(picturePath)) {
+    // Delete file from filesystem (only inside uploads/profiles)
+    const picturePath = resolveProfilePath(user.profile_picture);
+    if (picturePath && fs.existsSync(picturePath)) {
       fs.unlinkSync(picturePath);
       console.log('🗑️ Deleted profile picture:', picturePath);
     }

@@ -10,6 +10,7 @@ import pool from '../config/db.js';
 const CERT_PREFIX = 'KT';
 const CERT_SEQUENCE_KEY = 'certificate_last_seq';
 
+/** @param {Awaited<ReturnType<typeof pool.getConnection>>} connection */
 const nextCertificateNumber = async (connection) => {
   const [rows] = await connection.execute(
     `SELECT settingValue FROM settings WHERE settingKey = ? FOR UPDATE`,
@@ -44,7 +45,7 @@ export const issueCertificateForOrder = async (orderId, { productId = null, issu
     const [[order]] = await connection.execute(
       `SELECT id, userId, orderNumber, items, paymentStatus, orderStatus
        FROM orders WHERE id = ?`,
-      [parseInt(orderId)]
+      [Number(orderId)]
     );
     if (!order) {
       await connection.execute('SELECT RELEASE_LOCK(?)', ['certificate_issue']);
@@ -57,6 +58,7 @@ export const issueCertificateForOrder = async (orderId, { productId = null, issu
       return { message: 'Order is not paid', issued: false };
     }
 
+    /** @type {any[]} */
     let items = [];
     try { items = typeof order.items === 'string' ? JSON.parse(order.items || '[]') : order.items || []; } catch { items = []; }
 
@@ -74,7 +76,7 @@ export const issueCertificateForOrder = async (orderId, { productId = null, issu
     // Reject duplicates (idempotent), returning the existing certificate.
     const [dupRows] = await connection.execute(
       `SELECT id FROM authenticity_certificates WHERE orderId = ? AND productId = ?`,
-      [order.id, parseInt(targetId)]
+      [order.id, Number(targetId)]
     );
     if (dupRows.length > 0) {
       const [[dup]] = await connection.execute(
@@ -93,7 +95,7 @@ export const issueCertificateForOrder = async (orderId, { productId = null, issu
        FROM product p
        LEFT JOIN vendors v ON v.userId = p.vendorId
        WHERE p.id = ?`,
-      [parseInt(targetId)]
+      [Number(targetId)]
     );
     if (!product) {
       await connection.execute('SELECT RELEASE_LOCK(?)', ['certificate_issue']);

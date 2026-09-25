@@ -21,6 +21,14 @@ import {
 
 const RUN_ID = `stl-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
+// DB gate: self-skip when no database is reachable (see promotions.test.js).
+let dbAvailable = true;
+try {
+  await pool.query('SELECT 1');
+} catch {
+  dbAvailable = false;
+}
+
 /** @type {number[]} */
 const createdUserIds = [];
 /** @type {number[]} */
@@ -98,8 +106,12 @@ const cleanup = async () => {
   createdAllocationIds.length = 0;
 };
 
-describe('Transfer settlement idempotency (webhook + reconciler shared path)', () => {
+describe('Transfer settlement idempotency (webhook + reconciler shared path)', { skip: !dbAvailable }, () => {
   after(async () => {
+    if (!dbAvailable) {
+      await pool.end();
+      return;
+    }
     await cleanup();
     await pool.end();
   });
