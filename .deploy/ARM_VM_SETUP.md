@@ -76,7 +76,9 @@ npm run setup-admin  # creates the first admin account
 
 ```bash
 cd ~/Kente_Market
-# frontend .env:  VITE_API_URL= (empty, same-origin)  VITE_PAYSTACK_PUBLIC_KEY=pk_live_...
+# frontend .env:  VITE_API_URL= (empty, same-origin — also empty on Vercel,
+#                 whose vercel.json rewrites /api/* to the Render backend)
+#                 VITE_PAYSTACK_PUBLIC_KEY=pk_live_...
 npm ci && npm run build
 sudo cp -r dist/* /var/www/kente/
 ```

@@ -5,16 +5,19 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   lint-unit-build:
-    name: Lint + unit tests + build
+    name: Lint + tests + build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Setup Node 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: npm
@@ -28,13 +31,19 @@ jobs:
       - name: Install backend deps
         run: npm ci --prefix backend
 
+      - name: Typecheck (tsc --noEmit)
+        run: npx tsc --noEmit -p tsconfig.json
+
+      - name: Backend typecheck (tsc over // @ts-check files)
+        run: npm run typecheck --prefix backend
+
       - name: Lint (eslint, whole repo)
         run: npm run lint
 
-      - name: Backend unit tests (pure logic, no DB required)
-        # DB-backed suites (stockRace, idempotency, promotions) are skipped
-        # automatically when no database is reachable; these run everywhere.
-        run: npm run test:unit --prefix backend
+      - name: Backend tests (full suite)
+        # DB-backed suites skip automatically when no database is reachable,
+        # so the full suite passes in CI without a database.
+        run: npm test --prefix backend
 
       - name: Build frontend
         run: npm run build
