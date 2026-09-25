@@ -14,7 +14,7 @@ const CartDrawer = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
 
   const totals = useMemo(() => calcOrderTotals(cartItems), [cartItems]);
   const totalItems = useMemo(
-    () => cartItems.reduce((total, item) => total + item.quantity, 0),
+    () => cartItems.reduce((total, item) => total + (Number(item.quantity) || 0), 0),
     [cartItems]
   );
 

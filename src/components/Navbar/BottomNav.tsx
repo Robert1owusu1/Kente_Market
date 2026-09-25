@@ -8,7 +8,7 @@ import { useCart } from "../../Context/CartContext";
 const BottomNav = () => {
   const { pathname } = useLocation();
   const { cartItems } = useCart();
-  const cartCount = cartItems.reduce((total, item) => total + item.quantity, 0);
+  const cartCount = cartItems.reduce((total, item) => total + (Number(item.quantity) || 0), 0);
 
   const isActive = (path: string) =>
     pathname === path || (path !== "/" && pathname.startsWith(path));

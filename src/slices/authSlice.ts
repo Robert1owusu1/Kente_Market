@@ -25,6 +25,30 @@ const persistUserInfo = (user: AuthUser): void => {
   }
 };
 
+// Backend may return the user directly or nested under `user`, and may send
+// `isAdmin` or only `role`. Normalize everything into a flat AuthUser with a
+// consistent isAdmin flag.
+const normalizeUser = (payload: Record<string, unknown>): AuthUser => {
+  const source = payload.user && typeof payload.user === 'object'
+    ? (payload.user as Record<string, unknown>)
+    : payload;
+  const userData = { ...source } as Record<string, unknown>;
+  const { token: _token, ...rest } = userData;
+  void _token;
+  const user = { ...rest } as AuthUser;
+  if (typeof user.role === 'string' && typeof user.isAdmin !== 'boolean') {
+    user.isAdmin = user.role === 'admin';
+  }
+  // MySQL sends 1/0; strict guards (VerifiedRoute) only accept a real boolean.
+  // Normalize whenever the key is present so a verified user is never bounced
+  // to /verify-email. A missing key stays missing (treated as unverified).
+  if ('isEmailVerified' in user) {
+    const raw = user.isEmailVerified as unknown;
+    user.isEmailVerified = raw === true || raw === 1 || raw === '1';
+  }
+  return user;
+};
+
 // Safe load: malformed JSON must never crash the app at module load (same
 // pattern as CartContext.getInitialCart). Also enforces the 7-day lifetime and
 // migrates the legacy bare-object format by attaching "now" as savedAt.
@@ -71,24 +95,12 @@ const loadUserInfo = (): AuthUser | null => {
 };
 
 const initialState: AuthState = {
-  userInfo: loadUserInfo(),
-};
-
-// Backend may return the user directly or nested under `user`, and may send
-// `isAdmin` or only `role`. Normalize everything into a flat AuthUser with a
-// consistent isAdmin flag.
-const normalizeUser = (payload: Record<string, unknown>): AuthUser => {
-  const source = payload.user && typeof payload.user === 'object'
-    ? (payload.user as Record<string, unknown>)
-    : payload;
-  const userData = { ...source } as Record<string, unknown>;
-  const { token: _token, ...rest } = userData;
-  void _token;
-  const user = { ...rest } as AuthUser;
-  if (typeof user.role === 'string' && typeof user.isAdmin !== 'boolean') {
-    user.isAdmin = user.role === 'admin';
-  }
-  return user;
+  // Persisted sessions (even legacy ones carrying numeric isEmailVerified)
+  // must go through the same normalization as fresh logins.
+  userInfo: (() => {
+    const persisted = loadUserInfo();
+    return persisted ? normalizeUser(persisted as unknown as Record<string, unknown>) : null;
+  })(),
 };
 
 const authSlice = createSlice({

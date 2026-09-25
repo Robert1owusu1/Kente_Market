@@ -52,6 +52,7 @@ const TrendingProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void 
       yardsAvailable: (product.yardsAvailable as string[] | undefined) || product.sizes || [],
       quantity: 1,
       colorsAvailable: (product.colors_available || product.colorsAvailable || product.colors || [product.color?.toLowerCase()]) as string[],
+      colors: (product.colors_available || product.colorsAvailable || product.colors || (product.color ? [product.color] : [])) as string[],
       fabricType: product.fabric_type || product.fabricType || product.material,
       productionTime: (product.production_time || product.productionTime || 3) as string
     };
