@@ -122,7 +122,7 @@ const Navbar = () => {
   // RTK Query lazy search - cached in the Redux store.
   const [triggerSearch] = useLazyGetProductsQuery();
 
-  const cartCount = cartItems.reduce((total, item) => total + item.quantity, 0);
+  const cartCount = cartItems.reduce((total, item) => total + (Number(item.quantity) || 0), 0);
 
   // 🎭 Effects
   useEffect(() => {
