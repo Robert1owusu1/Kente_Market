@@ -2,7 +2,13 @@
 // DESCRIPTION: Rate limiting to prevent abuse and DDoS attacks
 
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import dotenv from 'dotenv';
 import { createRateLimitStore } from '../utils/redisClient.js';
+
+// Self-contained: this module reads process.env at import time, so load .env
+// here too (same pattern as config/businessConfig.js) in case an entry point
+// reaches it before server.js's own dotenv.config() runs.
+dotenv.config();
 
 // Redis is optional: when REDIS_URL is set, every limiter below shares one
 // durable store so limits survive restarts and work across instances. Each
@@ -13,9 +19,16 @@ const redisStore = (prefix) => {
 };
 
 // General API rate limiter
+// The default is deliberately generous: a single SPA page view fans out to
+// ~10 API calls (profile, notifications x2, cart, CSRF, banners, popups...),
+// so a tight cap would 429 a normal shopping session — taking down the WHOLE
+// site for that IP, since every /api route shares this bucket. Real abuse is
+// caught by the targeted limiters below (auth, upload, orders, reset...).
+// Override with API_RATE_LIMIT_MAX if your traffic profile differs.
+const apiMax = Number(process.env.API_RATE_LIMIT_MAX);
 export const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per windowMs
+  max: Number.isFinite(apiMax) && apiMax >= 1 ? apiMax : 600, // per IP per windowMs
   ...redisStore('rl:api'),
   message: 'Too many requests from this IP, please try again later.',
   standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
