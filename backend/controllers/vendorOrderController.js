@@ -69,12 +69,31 @@ export const getVendorOrders = async (req, res) => {
     // JS — an unbounded full-table scan any vendor could trigger. The JSON
     // LIKE prefilter narrows the rows + join; the JS filter below remains the
     // source of truth (LIKE can over-match, never under-match).
+    //
+    // IMPORTANT: `orders.items` is a JSON column, and MySQL re-renders stored
+    // documents with a space after the colon (`"vendorId": 240001`) no matter
+    // how the row was stringified, while a TEXT/plain-JSON row stays compact
+    // (`"vendorId":240001`). Matching only one spelling UNDER-matches and
+    // silently empties this list (the vendor's Orders tab showed "No orders
+    // found" while the dashboard counted the same orders), so push BOTH the
+    // compact and spaced forms of every key — numeric and quoted-string.
+    const jsonLikes = (key, value) => [
+      `%"${key}":${value}%`,
+      `%"${key}": ${value}%`,
+      `%"${key}":"${value}"%`,
+      `%"${key}": "${value}"%`,
+    ];
     let where = '';
     const params = [];
     const clauses = [];
+    const pushLikes = (key, value) => {
+      for (const pattern of jsonLikes(key, value)) {
+        clauses.push(`o.items LIKE ?`);
+        params.push(pattern);
+      }
+    };
     if (Number.isFinite(vendorUserId)) {
-      clauses.push(`o.items LIKE ?`, `o.items LIKE ?`);
-      params.push(`%"vendorId":${vendorUserId}%`, `%"vendorId":"${vendorUserId}"%`);
+      pushLikes('vendorId', vendorUserId);
       try {
         const [owned] = await pool.execute(
           `SELECT id FROM product WHERE vendorId = ? LIMIT 300`,
@@ -82,8 +101,8 @@ export const getVendorOrders = async (req, res) => {
         );
         if (owned.length > 0) {
           for (const p of owned) {
-            clauses.push(`o.items LIKE ?`, `o.items LIKE ?`);
-            params.push(`%"product":${p.id}%`, `%"productId":${p.id}%`);
+            pushLikes('product', p.id);
+            pushLikes('productId', p.id);
           }
         }
       } catch {
@@ -91,7 +110,8 @@ export const getVendorOrders = async (req, res) => {
       }
       // Too many products to inline safely: skip the prefilter entirely
       // (behaves exactly like the old full scan; JS filter still decides).
-      if (clauses.length > 601) {
+      // Budget: 4 vendorId clauses + 300 products x 8 clauses = 2404.
+      if (clauses.length > 2404) {
         where = '';
         params.length = 0;
       } else {

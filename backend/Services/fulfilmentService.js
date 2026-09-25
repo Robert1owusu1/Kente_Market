@@ -22,6 +22,15 @@ export const getVendorFulfilment = async (vendorId) => {
   const vid = Number(vendorId);
   const scorecard = { fulfilled: 0, withDeadline: 0, onTime: 0, onTimeRate: 0, avgDaysEarly: 0 };
 
+  // Ownership: items may carry an inline vendorId, but rows written before
+  // that field existed don't — fall back to the product's vendorId (same
+  // rule the orders list and analytics use), otherwise delivered orders
+  // predating the inline field vanish from the scorecard.
+  const [ownedProducts] = await pool.execute(
+    `SELECT id FROM product WHERE vendorId = ?`, [vid]
+  );
+  const ownedProductIds = new Set(ownedProducts.map((p) => String(p.id)));
+
   const [orders] = await pool.execute(
     `SELECT id, items, expectedCompletionDate, deliveredAt, orderStatus
      FROM orders
@@ -34,7 +43,10 @@ export const getVendorFulfilment = async (vendorId) => {
   let diffCount = 0;
   for (const order of orders) {
     const items = safeParse(order.items);
-    const owned = items.some((it) => parseInt(it.vendorId) === vid);
+    const owned = items.some((it) => {
+      if (it.vendorId != null && parseInt(it.vendorId, 10) === vid) return true;
+      return ownedProductIds.has(String(it.product ?? it.productId ?? it.id));
+    });
     if (!owned) continue;
     scorecard.fulfilled += 1;
 

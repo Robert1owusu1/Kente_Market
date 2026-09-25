@@ -468,21 +468,40 @@ export const getVendorAnalytics = async (req, res) => {
       `SELECT COUNT(*) AS totalProducts FROM product WHERE vendorId = ?`, [vendorUserId]
     );
 
-    // Orders containing vendor products
+    // Orders containing vendor products.
+    //
+    // Line items MAY carry an inline vendorId, but many rows (anything written
+    // before that field existed) don't — ownership is then derived from the
+    // product's vendorId, exactly like the GET /api/vendors/orders list does.
+    // Checking only the inline field made the dashboard disagree with the
+    // Orders tab (6 vs 8 orders for the same vendor).
+    const [ownedProducts] = await pool.execute(
+      `SELECT id FROM product WHERE vendorId = ?`, [vendorUserId]
+    );
+    const ownedProductIds = new Set(ownedProducts.map(p => String(p.id)));
+    const isVendorItem = (it) => {
+      if (it.vendorId != null && parseInt(it.vendorId, 10) === vendorUserId) return true;
+      return ownedProductIds.has(String(it.product ?? it.productId ?? it.id));
+    };
+    // Checkout lines store `qty` and custom-order lines store `quantity`
+    // (some store both) — reading only `quantity` counted every standard
+    // line as 1 and underreported revenue on multi-unit orders.
+    const itemQty = (it) => parseInt(it.quantity ?? it.qty, 10) || 1;
+
     const [allOrders] = await pool.execute(
       `SELECT o.* FROM orders o ORDER BY o.created_at DESC`
     );
     const vendorOrders = allOrders.filter(o => {
       const items = Order.safeParse(o.items, []);
-      return items.some(it => parseInt(it.vendorId) === vendorUserId);
+      return items.some(isVendorItem);
     });
 
     const totalOrders = vendorOrders.length;
     const paidOrders = vendorOrders.filter(o => o.paymentStatus === 'paid');
     const totalRevenue = paidOrders.reduce((sum, o) => {
       const items = Order.safeParse(o.items, []);
-      const vendorItems = items.filter(it => parseInt(it.vendorId) === vendorUserId);
-      return sum + vendorItems.reduce((s, it) => s + (parseFloat(it.price) || 0) * (parseInt(it.quantity) || 1), 0);
+      const vendorItems = items.filter(isVendorItem);
+      return sum + vendorItems.reduce((s, it) => s + (parseFloat(it.price) || 0) * itemQty(it), 0);
     }, 0);
     const avgOrderValue = paidOrders.length > 0 ? totalRevenue / paidOrders.length : 0;
 
@@ -511,8 +530,8 @@ export const getVendorAnalytics = async (req, res) => {
       if (monthsData[monthKey]) {
         if (o.paymentStatus === 'paid') {
           const items = Order.safeParse(o.items, []);
-          const vendorItems = items.filter(it => parseInt(it.vendorId) === vendorUserId);
-          monthsData[monthKey].sales += vendorItems.reduce((s, it) => s + (parseFloat(it.price) || 0) * (parseInt(it.quantity) || 1), 0);
+          const vendorItems = items.filter(isVendorItem);
+          monthsData[monthKey].sales += vendorItems.reduce((s, it) => s + (parseFloat(it.price) || 0) * itemQty(it), 0);
         }
         monthsData[monthKey].orders += 1;
       }
@@ -523,11 +542,16 @@ export const getVendorAnalytics = async (req, res) => {
     vendorOrders.forEach(o => {
       if (o.paymentStatus === 'paid') {
         const items = Order.safeParse(o.items, []);
-        items.filter(it => parseInt(it.vendorId) === vendorUserId).forEach(it => {
-          const key = it.productId || it.name;
+        items.filter(isVendorItem).forEach(it => {
+          // Custom lines also carry `product` (their base product) — keying
+          // them by it would merge one-off custom orders into the base
+          // product's row. Group custom lines by their own name instead.
+          const key = it.customRequestId != null
+            ? `custom:${it.name || it.title}`
+            : (it.product ?? it.productId ?? it.id ?? it.name);
           if (!productSales[key]) productSales[key] = { name: it.name || it.title, quantity: 0, revenue: 0 };
-          productSales[key].quantity += parseInt(it.quantity) || 1;
-          productSales[key].revenue += (parseFloat(it.price) || 0) * (parseInt(it.quantity) || 1);
+          productSales[key].quantity += itemQty(it);
+          productSales[key].revenue += (parseFloat(it.price) || 0) * itemQty(it);
         });
       }
     });
