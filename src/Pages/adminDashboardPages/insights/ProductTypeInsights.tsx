@@ -10,6 +10,17 @@ export default function ProductTypeInsights() {
   const [tab, setTab] = useState<"types" | "products" | "reviews">("types");
 
   const view = (types ?? {}) as { topTypes?: Row[]; topProducts?: Row[]; totalRevenue?: number; totalQty?: number };
+  // The endpoint is typed Record<string, unknown>; give the review payload a
+  // shape so nothing `unknown` leaks into JSX.
+  const rv = (reviews ?? {}) as {
+    total?: number;
+    avgRating?: number;
+    avgVendorRating?: number;
+    verifiedCount?: number;
+    vendorRatings?: { vendorName?: string; avgRating?: string; reviews?: number }[];
+    suggestionCount?: number;
+    suggestions?: { id?: number | string; platformSuggestion?: string; customerName?: string }[];
+  };
   const catRows: Row[] = view.topTypes ?? [];
   const prodRows: Row[] = view.topProducts ?? [];
   const maxRevenue = Math.max(1, ...catRows.map((r) => r.revenue ?? 0));
@@ -143,10 +154,10 @@ export default function ProductTypeInsights() {
                 <>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     {[
-                      { label: "Reviews", value: reviews.total },
-                      { label: "Avg. product rating", value: reviews.avgRating },
-                      { label: "Avg. weaver rating", value: reviews.avgVendorRating },
-                      { label: "Verified (purchase)", value: reviews.verifiedCount },
+                      { label: "Reviews", value: rv.total },
+                      { label: "Avg. product rating", value: rv.avgRating },
+                      { label: "Avg. weaver rating", value: rv.avgVendorRating },
+                      { label: "Verified (purchase)", value: rv.verifiedCount },
                     ].map((s) => (
                       <div key={s.label} className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4">
                         <p className="text-xs text-gray-500 dark:text-gray-400">{s.label}</p>
@@ -158,8 +169,8 @@ export default function ProductTypeInsights() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-5">
                       <h3 className="font-semibold text-gray-700 dark:text-gray-300 mb-3">Weaver satisfaction</h3>
-                      {(reviews.vendorRatings ?? []).length === 0 && <p className="text-gray-400 text-sm">No vendor ratings yet.</p>}
-                      {(reviews.vendorRatings ?? []).map((v: { vendorName?: string; avgRating?: string; reviews?: number }) => (
+                      {(rv.vendorRatings ?? []).length === 0 && <p className="text-gray-400 text-sm">No vendor ratings yet.</p>}
+                      {(rv.vendorRatings ?? []).map((v) => (
                         <div key={v.vendorName} className="flex justify-between py-1 text-sm">
                           <span className="text-gray-700 dark:text-gray-300">{v.vendorName}</span>
                           <span className="text-gray-500 dark:text-gray-400">{Number(v.avgRating ?? 0).toFixed(1)} ★ · {v.reviews} review(s)</span>
@@ -167,10 +178,10 @@ export default function ProductTypeInsights() {
                       ))}
                     </div>
                     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-5">
-                      <h3 className="font-semibold text-gray-700 dark:text-gray-300 mb-3">Platform-suggestions ({reviews.suggestionCount})</h3>
-                      {(reviews.suggestions ?? []).length === 0 && <p className="text-gray-400 text-sm">No suggestions yet.</p>}
+                      <h3 className="font-semibold text-gray-700 dark:text-gray-300 mb-3">Platform-suggestions ({rv.suggestionCount})</h3>
+                      {(rv.suggestions ?? []).length === 0 && <p className="text-gray-400 text-sm">No suggestions yet.</p>}
                       <div className="space-y-2 max-h-56 overflow-y-auto">
-                        {(reviews.suggestions ?? []).map((s: { id?: number | string; platformSuggestion?: string; customerName?: string }) => (
+                        {(rv.suggestions ?? []).map((s) => (
                           <p key={String(s.id)} className="text-sm text-gray-600 dark:text-gray-400">
                             <span className="font-medium text-gray-800 dark:text-white">{s.customerName}:</span> "{s.platformSuggestion}"
                           </p>

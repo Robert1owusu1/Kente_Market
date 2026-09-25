@@ -10,6 +10,8 @@ import { resolveImageUrl } from '../../utils/imageUrl';
 
 export interface SellBackProduct {
   productId?: number | string;
+  /** Order-item JSON also stores the product id under `product`. */
+  product?: number | string;
   name?: string;
   title?: string;
   image?: string;

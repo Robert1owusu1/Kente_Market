@@ -14,6 +14,8 @@ import store from './store'
 import axios from 'axios'
 import { Base_URL } from './constant'
 import { getOrLoadCsrfToken, isSafeMethod, CSRF_HEADER } from './utils/csrf'
+import { handleUnauthorized } from './utils/sessionExpiry'
+import ErrorBoundary from './components/ErrorBoundary/ErrorBoundary'
 
 axios.defaults.baseURL = Base_URL || undefined
 axios.defaults.withCredentials = true
@@ -31,16 +33,37 @@ axios.interceptors.request.use(async (config) => {
   return config;
 });
 
+// Global 401 handling: any raw axios call answered 401 means the session is
+// gone (expired/revoked cookie), so the local session is cleared too — the UI
+// must never keep showing a signed-in user the API rejects. Login/register
+// attempts are filtered out inside handleUnauthorized, which also collapses a
+// burst of parallel 401s into a single logout (and never re-issues a request,
+// so it cannot loop). The RTK Query path is covered in slices/apiSlice.ts.
+axios.interceptors.response.use(
+  (response) => response,
+  (error: unknown) => {
+    const config = (error as { config?: { url?: string; method?: string } } | undefined)?.config;
+    const status = (error as { response?: { status?: number } } | undefined)?.response?.status;
+    if (status === 401) handleUnauthorized(config?.url, config?.method);
+    return Promise.reject(error);
+  }
+);
+
 const rootElement = document.getElementById('root');
 if (!rootElement) throw new Error('Root element #root not found');
 createRoot(rootElement).render(
-  <Provider store={store}>
-    <CartProvider>
-      <StrictMode>
-        <App />
-      </StrictMode>
-    </CartProvider>
-  </Provider>
+  // Outermost boundary: catches render errors thrown inside <Provider> /
+  // <CartProvider> themselves (App.tsx has its own inner boundary for
+  // route-level failures, so the closest boundary always handles those).
+  <ErrorBoundary>
+    <Provider store={store}>
+      <CartProvider>
+        <StrictMode>
+          <App />
+        </StrictMode>
+      </CartProvider>
+    </Provider>
+  </ErrorBoundary>
 )
 
 // Register the offline-first service worker ONLY in production builds. In dev

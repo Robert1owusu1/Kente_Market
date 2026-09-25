@@ -48,7 +48,7 @@ const TrendingProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void 
       image: product.image || product.img,
       color: product.color,
       size: product.sizes ? product.sizes[0] : "M",
-      yards: (product.yardsAvailable as string[] | undefined)?.[0] ?? product.sizes?.[0] ?? product.size ?? "2",
+      yards: String((product.yardsAvailable as string[] | undefined)?.[0] ?? product.sizes?.[0] ?? product.size ?? "2"),
       yardsAvailable: (product.yardsAvailable as string[] | undefined) || product.sizes || [],
       quantity: 1,
       colorsAvailable: (product.colors_available || product.colorsAvailable || product.colors || [product.color?.toLowerCase()]) as string[],

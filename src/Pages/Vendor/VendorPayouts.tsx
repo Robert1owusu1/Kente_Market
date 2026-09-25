@@ -13,20 +13,52 @@ const txBadge: Record<string, string> = {
   fee: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
 };
 
+// Shapes returned by GET /api/vendors/profile (heterogeneous payload, so only
+// the fields this screen renders are typed).
+interface VendorProfilePayoutMethod {
+  payoutType?: string;
+  momoProvider?: string;
+  momoNumber?: string;
+  bankName?: string;
+  accountNumber?: string;
+  [key: string]: unknown;
+}
+
+interface VendorWalletSummary {
+  availableBalance?: number;
+  totalEarned?: number;
+  pendingPayout?: number;
+  [key: string]: unknown;
+}
+
+interface VendorPayoutRow {
+  id: number | string;
+  orderNumber?: string;
+  orderPlacedAt: string;
+  amount: number;
+  platformFee: number;
+  payoutAmount: number;
+  status: string;
+  [key: string]: unknown;
+}
+
+interface VendorWalletTransaction {
+  id: number | string;
+  created_at: string;
+  type: string;
+  amount: number;
+  reference?: string;
+  note?: string;
+  [key: string]: unknown;
+}
+
 const VendorPayouts = () => {
   const { data, isLoading } = useGetMyVendorProfileQuery() as {
     data?: {
-      vendor?: {
-        payoutType?: string;
-        momoProvider?: string;
-        momoNumber?: string;
-        bankName?: string;
-        accountNumber?: string;
-        [key: string]: unknown;
-      };
-      summary?: Record<string, any>;
-      payouts?: Array<Record<string, any>>;
-      walletTransactions?: Array<Record<string, any>>;
+      vendor?: VendorProfilePayoutMethod;
+      summary?: VendorWalletSummary;
+      payouts?: VendorPayoutRow[];
+      walletTransactions?: VendorWalletTransaction[];
       [key: string]: unknown;
     };
     isLoading: boolean;
@@ -142,7 +174,7 @@ const VendorPayouts = () => {
                 </tr>
               </thead>
               <tbody>
-                {payouts.slice(0, 20).map((p: any) => (
+                {payouts.slice(0, 20).map((p) => (
                   <tr key={p.id} className="border-b border-gray-100 dark:border-gray-700 last:border-0">
                     <td className="py-3 pr-4 font-mono text-xs">{p.orderNumber}</td>
                     <td className="py-3 pr-4">{new Date(p.orderPlacedAt).toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}</td>
@@ -180,7 +212,7 @@ const VendorPayouts = () => {
                 </tr>
               </thead>
               <tbody>
-                {walletTransactions.slice(0, 30).map((t: any) => (
+                {walletTransactions.slice(0, 30).map((t) => (
                   <tr key={t.id} className="border-b border-gray-100 dark:border-gray-700 last:border-0">
                     <td className="py-3 pr-4 text-xs">{new Date(t.created_at).toLocaleDateString()}</td>
                     <td className="py-3 pr-4">

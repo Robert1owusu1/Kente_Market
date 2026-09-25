@@ -1,7 +1,7 @@
-import { createContext, useContext, useReducer, useEffect, type ReactNode } from "react";
-import { useSelector } from "react-redux";
+import { createContext, useContext, useReducer, useEffect, useRef, type ReactNode } from "react";
 import axios from "axios";
 import { TAX_RATE, FREE_SHIPPING_THRESHOLD, STANDARD_SHIPPING_COST, calcTax, calcShipping } from "../utils/pricing";
+import { useAppSelector } from "../store";
 
 export interface CartItem {
   id: number | string;
@@ -13,13 +13,15 @@ export interface CartItem {
   quantity: number;
   selectedColor?: string | null;
   selectedSize?: string | null;
+  /** Legacy field kept alongside `selectedSize` by the reducer (old carts). */
+  size?: string | null;
   yards?: number | string | null;
   yardsAvailable?: (number | string)[];
   colors?: string[];
   colorsAvailable?: string[];
   sizes?: string[];
   threadTypes?: string[];
-  dominantThread?: string;
+  dominantThread?: string | null;
   fabricType?: string;
   material?: string;
   productionTime?: string;
@@ -119,6 +121,10 @@ const cartReducer = (state: CartState, action: CartAction): CartState => {
         newItem.yardsAvailable?.[0] ??
         newItem.sizes?.[0] ??
         null;
+      // `selectedSize` is stored as a string (or null) so sizes and yardage
+      // render/type identically wherever they are read.
+      const selectedSize =
+        newItem.selectedSize || (selectedYards === null ? null : String(selectedYards));
 
       const existingIndex = state.cartItems.findIndex(
         (item) =>
@@ -148,7 +154,7 @@ const cartReducer = (state: CartState, action: CartAction): CartState => {
             price: Number(newItem.price) || 0,
             basePrice: Number(newItem.basePrice) || Number(newItem.price) || 0,
             selectedColor: newItem.selectedColor || newItem.colorsAvailable?.[0] || null,
-            selectedSize: newItem.selectedSize || selectedYards,
+            selectedSize,
             yards: selectedYards,
             yardsAvailable: newItem.yardsAvailable || newItem.sizes || [],
             colorsAvailable: newItem.colorsAvailable || [],
@@ -246,8 +252,16 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
   // continuity and abandoned-cart recovery emails. Only active for signed-in
   // users (guests use localStorage alone). All calls are fire-and-forget so a
   // network failure never blocks the local cart experience.
-  const userInfo = useSelector((state: any) => state?.auth?.userInfo ?? null);
+  const userInfo = useAppSelector((state) => state.auth.userInfo);
   const loggedIn = !!userInfo?.id;
+
+  // Mirror of the current cart for the sync effect below: reading it through a
+  // ref keeps the effect's dependency list at [loggedIn] (as intended — we only
+  // re-sync on sign-in/out) without tripping exhaustive-deps.
+  const cartItemsRef = useRef(state.cartItems);
+  useEffect(() => {
+    cartItemsRef.current = state.cartItems;
+  }, [state.cartItems]);
 
   useEffect(() => {
     if (!loggedIn) return;
@@ -257,10 +271,10 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
         const { data } = await axios.get('/api/cart');
         const serverItems = Array.isArray(data.items) ? data.items : [];
         if (cancelled) return;
-        if (state.cartItems.length === 0 && serverItems.length > 0) {
+        if (cartItemsRef.current.length === 0 && serverItems.length > 0) {
           dispatch({ type: 'LOAD_FROM_SERVER', payload: serverItems });
-        } else if (state.cartItems.length > 0) {
-          await axios.post('/api/cart', { items: state.cartItems });
+        } else if (cartItemsRef.current.length > 0) {
+          await axios.post('/api/cart', { items: cartItemsRef.current });
         }
       } catch { /* silent — local cart is always the source of truth */ }
     })();
@@ -270,7 +284,9 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     if (!loggedIn) return;
     const id = setTimeout(() => {
-      try { axios.post('/api/cart', { items: state.cartItems }); } catch { /* silent */ }
+      // Fire-and-forget: attach a rejection handler so a failed sync can never
+      // surface as an unhandled promise rejection.
+      axios.post('/api/cart', { items: state.cartItems }).catch(() => { /* silent */ });
     }, 1500);
     return () => clearTimeout(id);
   }, [state.cartItems, loggedIn]);
@@ -303,7 +319,8 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
   const clearCart = () => {
     dispatch({ type: "CLEAR_CART" });
     if (loggedIn) {
-      try { axios.delete('/api/cart'); } catch { /* silent */ }
+      // Fire-and-forget with a rejection handler so failures stay silent.
+      axios.delete('/api/cart').catch(() => { /* silent */ });
     }
   };
 

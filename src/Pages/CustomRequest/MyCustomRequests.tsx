@@ -239,7 +239,7 @@ export default function MyCustomRequests() {
         {isLoading && <div className="text-center py-12 text-gray-500"><FaSpinner className="animate-spin inline mr-2" /> Loading…</div>}
         {isError && <div className="text-center py-12 text-red-500">Could not load your requests. Please try again.</div>}
 
-        {!isLoading && !isError && requests.length === 0 && (
+        {!isLoading && !isError && requests?.length === 0 && (
           <div className="bg-white dark:bg-gray-800 rounded-2xl p-10 text-center">
             <FaMagic className="mx-auto text-4xl text-primary mb-3" />
             <p className="text-gray-600 dark:text-gray-300 mb-4">No custom requests yet. Pick any kente marked "Customizable" and describe your vision.</p>

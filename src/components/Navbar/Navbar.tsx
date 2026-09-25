@@ -244,8 +244,14 @@ const Navbar = () => {
       navigate("/");
       setMobileMenuOpen(false);
     } catch (err) {
-      toast.error("Logout failed");
+      // The API call failed (offline / server error) — still end the local
+      // session so the user is never stuck signed in (mirrors UserProfile.tsx).
       console.error("Logout error:", err);
+      dispatch(logout());
+      clearCart();
+      toast.info("Signed out. We couldn't reach the server to end the remote session.");
+      navigate("/");
+      setMobileMenuOpen(false);
     }
   };
 

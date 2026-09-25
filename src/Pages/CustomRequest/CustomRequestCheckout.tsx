@@ -1,10 +1,16 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
 import axios from "axios";
 import { FaArrowLeft, FaCreditCard, FaLock, FaSpinner, FaMapMarkerAlt, FaCheckCircle } from "react-icons/fa";
 import { useGetCustomRequestQuery } from "../../slices/customRequestsApiSlice";
 import { useAppSelector } from "../../store";
+import {
+  savePendingPaymentRef,
+  readPendingPaymentRef,
+  clearPendingPaymentRef,
+  PAYMENT_CONFIRMATION_DELAYED_MESSAGE,
+} from "../../utils/paymentRef";
 import type { CustomRequest } from "../../types/domain";
 
 interface PaystackResponse {
@@ -55,6 +61,11 @@ export default function CustomRequestCheckout() {
   });
   const [isProcessing, setIsProcessing] = useState(false);
   const [paystackKey, setPaystackKey] = useState<string>("");
+
+  // In-memory copy of the reference of a charge that already succeeded, backed
+  // up in sessionStorage (keyed by request id) so a failure below can retry
+  // with the SAME reference instead of asking for a second payment.
+  const pendingPaymentRef = useRef<string | null>(null);
 
   useEffect(() => {
     setShipping((s) => ({ ...s, email: userInfo?.email || s.email }));
@@ -150,6 +161,14 @@ export default function CustomRequestCheckout() {
       setIsProcessing(false);
       return;
     }
+
+    // ✅ The charge already SUCCEEDED: persist the reference right away
+    // (in-memory ref + sessionStorage keyed by the request id) so a failure in
+    // the checkout call below can be retried with the SAME reference instead
+    // of discarding it and inviting a second charge.
+    pendingPaymentRef.current = reference;
+    savePendingPaymentRef(req.id, reference);
+
     try {
       const { data } = await axios.post(`/api/custom-requests/${req.id}/checkout`, {
         shippingAddress: shipping,
@@ -157,10 +176,41 @@ export default function CustomRequestCheckout() {
         paymentMethod: "paystack",
         paymentReference: reference,
       });
+      // Confirmed — drop the persisted reference.
+      pendingPaymentRef.current = null;
+      clearPendingPaymentRef(req.id);
       toast.success(data.message || "Payment received — your custom order is with the weaver.");
       const orderId = data.order?.id || data.request?.orderId;
       navigate(orderId ? `/order/${orderId}` : "/custom-requests");
     } catch (err) {
+      // The money has left the account already: retry the confirmation with
+      // the SAME persisted reference before showing any error.
+      const savedReference = pendingPaymentRef.current || readPendingPaymentRef(req.id);
+      if (savedReference) {
+        try {
+          const retry = await axios.post(`/api/custom-requests/${req.id}/checkout`, {
+            shippingAddress: shipping,
+            billingAddress: shipping,
+            paymentMethod: "paystack",
+            paymentReference: savedReference,
+          });
+          pendingPaymentRef.current = null;
+          clearPendingPaymentRef(req.id);
+          toast.success(retry.data?.message || "Payment received — your custom order is with the weaver.");
+          const retryOrderId = retry.data?.order?.id || retry.data?.request?.orderId;
+          navigate(retryOrderId ? `/order/${retryOrderId}` : "/custom-requests");
+          return;
+        } catch (retryError) {
+          console.error("Payment re-confirmation failed:", retryError);
+        }
+
+        // Re-confirmation failed too: explain the delay and do NOT offer a
+        // fresh reference (that would charge the customer twice).
+        toast.error(PAYMENT_CONFIRMATION_DELAYED_MESSAGE);
+        setIsProcessing(false);
+        return;
+      }
+
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ||
         (err as { message?: string })?.message ||
         "Payment received, but we couldn't finalize the order. Please contact support.";

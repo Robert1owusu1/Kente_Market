@@ -9,7 +9,10 @@ const VerifiedRoute = () => {
     return <Navigate to="/login" replace />;
   }
 
-  if (userInfo.isEmailVerified === false) {
+  // Strict: only an explicit `true` passes. `undefined`/`null` (e.g. a legacy
+  // session payload that never carried the flag) is treated as unverified so
+  // verification-gated pages stay closed until the server confirms it.
+  if (userInfo.isEmailVerified !== true) {
     return <Navigate to="/verify-email" replace />;
   }
 

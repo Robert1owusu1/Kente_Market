@@ -19,7 +19,7 @@ interface SettingsVendor extends Vendor {
   yearsExperience?: string | number;
   location?: string;
   workshop?: string;
-  socialMedia?: Record<string, any>;
+  socialMedia?: Record<string, string>;
   slug?: string;
   payoutType?: string;
   platformFeeRate?: string | number;
@@ -42,8 +42,8 @@ interface SettingsForm {
 
 const VendorSettings = ({ vendor }: { vendor: SettingsVendor }) => {
   const profile = (useGetMyVendorProfileQuery().data as { vendor?: SettingsVendor } | undefined)?.vendor || vendor;
-  const socials: Record<string, any> =
-    profile?.socialMedia && typeof profile.socialMedia === 'object' ? (profile.socialMedia as Record<string, any>) : {};
+  const socials: Record<string, string> =
+    profile?.socialMedia && typeof profile.socialMedia === 'object' ? profile.socialMedia : {};
 
   const [updateProfile, { isLoading: saving }] = useUpdateVendorProfileMutation();
   const [form, setForm] = useState<SettingsForm>({
