@@ -8,6 +8,7 @@ import {
   useStartCustomRequestMutation,
 } from "../../slices/customRequestsApiSlice";
 import type { CustomRequest } from "../../types/domain";
+import { resolveImageUrl } from "../../utils/imageUrl";
 
 export default function VendorCustomRequests() {
   const { data: requests, isLoading, isError } = useGetVendorCustomRequestsQuery();
@@ -104,6 +105,13 @@ function RequestRow({ req, onQuote, onDecline }: {
     }
   };
 
+  // Only hand a reference image to <a href> when it resolves to http(s):
+  // javascript:, data:, vbscript: or other schemes in a user-supplied URL
+  // would execute in our origin when the vendor clicks the link.
+  const referenceImageUrl = resolveImageUrl(req.referenceImage);
+  const safeReferenceImageUrl =
+    referenceImageUrl && /^https?:\/\//i.test(referenceImageUrl) ? referenceImageUrl : null;
+
   return (
     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -123,8 +131,8 @@ function RequestRow({ req, onQuote, onDecline }: {
             <FaYarn className="text-primary" /> {req.threadTypes?.join(", ") || "—"} {req.dominantThread && `(${req.dominantThread})`}
           </p>
           {req.description && <p className="text-sm text-gray-600 dark:text-gray-300 mt-1 italic">"{req.description}"</p>}
-          {req.referenceImage && (
-            <a href={req.referenceImage} target="_blank" rel="noreferrer" className="text-xs text-primary underline">View reference image</a>
+          {safeReferenceImageUrl && (
+            <a href={safeReferenceImageUrl} target="_blank" rel="noreferrer" className="text-xs text-primary underline">View reference image</a>
           )}
           {req.vendorMessage && <p className="text-xs bg-gray-100 dark:bg-gray-700/50 rounded p-2 text-gray-600 dark:text-gray-300">Your reply: {req.vendorMessage}</p>}
         </div>

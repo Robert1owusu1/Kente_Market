@@ -10,16 +10,9 @@
     <changefreq>weekly</changefreq>
     <priority>0.9</priority>
   </url>
-  <url>
-    <loc>https://kente-market.vercel.app/product/30001</loc>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://kente-market.vercel.app/product/1</loc>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
+  <!-- Placeholder /product/30001 and /product/1 entries removed: real product
+       URLs are injected dynamically; hardcoding IDs that may not exist only
+       generates 404s for crawlers. -->
   <url>
     <loc>https://kente-market.vercel.app/topproducts</loc>
     <changefreq>weekly</changefreq>

@@ -6,7 +6,7 @@ import {
   useGetCustomRequestStatsQuery,
   useMarkCustomRequestReviewedMutation,
 } from "../../../slices/customRequestsApiSlice";
-import type { CustomRequest } from "../../types/domain";
+import type { CustomRequest } from "../../../types/domain";
 
 const PILL: Record<string, string> = {
   pending: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
@@ -49,7 +49,8 @@ export default function CustomRequestsAdmin() {
     { label: "Paid & weaving", value: stats?.paid ?? 0 },
   ];
 
-  const cancelReasons: { reason: string; count: number }[] = Array.isArray(stats?.topCancelReasons) ? stats.topCancelReasons : [];
+  // Backend returns `SELECT customerCancelReason, COUNT(*) AS count` rows.
+  const cancelReasons: { customerCancelReason: string; count: number }[] = Array.isArray(stats?.topCancelReasons) ? stats.topCancelReasons : [];
 
   return (
     <div className="space-y-6">
@@ -75,7 +76,7 @@ export default function CustomRequestsAdmin() {
           <div className="flex flex-wrap gap-2">
             {cancelReasons.map((r, i) => (
               <span key={i} className="px-3 py-1 rounded-full bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300 text-xs font-medium">
-                "{r.reason}" ×{r.count}
+                "{r.customerCancelReason}" ×{r.count}
               </span>
             ))}
           </div>

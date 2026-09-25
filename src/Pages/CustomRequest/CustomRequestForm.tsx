@@ -124,7 +124,8 @@ export default function CustomRequestForm() {
         neededForDate,
         neededForTime,
       }).unwrap();
-      toast.success(request?.message || "Request sent to the vendor!");
+      const okMsg = typeof request?.message === "string" ? request.message : "Request sent to the vendor!";
+      toast.success(okMsg);
       navigate("/custom-requests");
     } catch (err) {
       const msg = (err as { data?: { message?: string } })?.data?.message || "Could not send the request. Try again.";

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import type React from 'react';
 import { 
   FaCreditCard, 
@@ -18,6 +18,13 @@ import { toast } from 'react-toastify';
 import { useCart } from '../../Context/CartContext';
 import { calcOrderTotals } from '../../utils/pricing';
 import { sanitizeInput } from '../../utils/sanitize';
+import {
+  savePendingPaymentRef,
+  readPendingPaymentRef,
+  clearPendingPaymentRef,
+  PAYMENT_CONFIRMATION_DELAYED_MESSAGE,
+} from '../../utils/paymentRef';
+import { useGetOrderByIdQuery } from '../../slices/ordersApiSlice';
 import axios from 'axios';
 import type { FormErrors } from "../../types/domain";
 
@@ -82,6 +89,15 @@ export default function CheckoutPage() {
   const navigate = useNavigate();
   const { id: orderIdParam } = useParams();
   const { cartItems, getTotalPrice, clearCart } = useCart();
+
+  // Pre-created order (created by CartPage before it routed here). Used to
+  // (a) charge the SERVER's total and (b) key the persisted payment reference.
+  const preOrderId = orderIdParam && !Number.isNaN(Number(orderIdParam)) ? Number(orderIdParam) : null;
+
+  // In-memory copy of the Paystack reference of the charge that already
+  // succeeded; sessionStorage (see utils/paymentRef) backs it up so a
+  // refresh/redirect can still recover it.
+  const pendingPaymentRef = useRef<string | null>(null);
 
   const [activeStep, setActiveStep] = useState(1);
   const [paymentMethod, setPaymentMethod] = useState('');
@@ -176,7 +192,17 @@ export default function CheckoutPage() {
     return { subtotal, shipping, tax, discount, total, amountInPesewas };
   }, [cartItems, appliedCoupon]);
 
-  const { subtotal, shipping, tax, discount, total, amountInPesewas } = orderTotals;
+  const { subtotal, shipping, tax, discount, total } = orderTotals;
+
+  // ✅ Charge the SERVER's total, not localStorage cart prices. The pre-created
+  // order already carries the API's own tax/shipping/discount math, so its
+  // totalAmount is what Paystack must be initialized with. The localStorage
+  // computation (orderTotals above) is only the fallback while the order has
+  // not loaded yet (or if that request fails).
+  const { data: serverOrder } = useGetOrderByIdQuery(preOrderId ?? 0, { skip: !preOrderId });
+  const serverTotal = serverOrder ? Number(serverOrder.totalAmount) : NaN;
+  const payableTotal = Number.isFinite(serverTotal) && serverTotal > 0 ? serverTotal : total;
+  const payableAmountInPesewas = Math.round(payableTotal * 100);
 
   // Validate total amount
   useEffect(() => {
@@ -419,8 +445,9 @@ export default function CheckoutPage() {
       return;
     }
 
-    // Validate amount
-    if (amountInPesewas <= 0) {
+    // Validate amount (server total once the order has loaded, otherwise the
+    // local cart fallback)
+    if (payableAmountInPesewas <= 0) {
       toast.error('Invalid payment amount');
       return;
     }
@@ -433,7 +460,8 @@ export default function CheckoutPage() {
       const config = {
         key: paystackPublicKey,
         email: shippingAddress.email,
-        amount: amountInPesewas,
+        // Charge the order's server-side total, never raw localStorage prices.
+        amount: payableAmountInPesewas,
         currency: "GHS",
         ref: `ORDER_${Date.now()}_${Math.random().toString(36).substring(7)}`,
         channels: paymentMethod === 'momo' 
@@ -487,15 +515,27 @@ export default function CheckoutPage() {
   // ✅ Improved success handler with better error handling
   const handlePaystackSuccess = async (response: PaystackResponse) => {
     setIsProcessing(true);
-    
-    try {
-      // Handle different response formats from Paystack
-      const reference = response.reference || response.trxref || response.transaction;
-      
-      if (!reference) {
-        throw new Error('Payment reference not found');
-      }
 
+    // Handle different response formats from Paystack
+    const reference = response.reference || response.trxref || response.transaction;
+    if (!reference) {
+      console.error('Payment reference missing from Paystack response:', response);
+      toast.error('Payment reference not found');
+      setIsProcessing(false);
+      return;
+    }
+
+    // ✅ The charge SUCCEEDED — persist the reference IMMEDIATELY (in-memory
+    // ref + sessionStorage keyed by order id). If the follow-up PUT/verify
+    // throws, the catch below retries with this SAME reference instead of
+    // discarding it (a discarded reference is what invites a double charge).
+    pendingPaymentRef.current = reference;
+    savePendingPaymentRef(preOrderId, reference);
+
+    // Hoisted so the catch block can still navigate/verify with it.
+    let orderId = preOrderId;
+
+    try {
       const orderData = {
         items: cartItems.map(item => ({
           product: item.id,
@@ -537,8 +577,6 @@ export default function CheckoutPage() {
       // mark it 'paid'. If we verify first and the reference is never attached
       // (e.g. a missing order id), the order stays 'pending' forever even
       // though the customer was charged.
-      let orderId = orderIdParam && !Number.isNaN(Number(orderIdParam)) ? Number(orderIdParam) : null;
-
       if (orderId) {
         // Update the pre-created order (created by CartPage) with the payment
         // reference so the Paystack webhook can match and confirm it.
@@ -560,6 +598,10 @@ export default function CheckoutPage() {
       });
 
       if (verifyResponse.data.status === 'success') {
+        // Confirmed — drop the persisted reference.
+        pendingPaymentRef.current = null;
+        clearPendingPaymentRef(preOrderId);
+
         toast.success('🎉 Payment successful! Order created.');
         clearCart();
         
@@ -574,6 +616,36 @@ export default function CheckoutPage() {
       }
     } catch (error) {
       console.error('Order creation error:', error);
+
+      // The customer has already been charged. Retry verification with the
+      // SAME persisted reference before showing any error; a fresh reference
+      // (i.e. a second charge) is never generated from here.
+      const savedReference = pendingPaymentRef.current || readPendingPaymentRef(preOrderId);
+      if (savedReference) {
+        try {
+          const retryResponse = await axios.post('/api/payments/verify-paystack', {
+            reference: savedReference,
+          });
+          if (retryResponse.data?.status === 'success') {
+            pendingPaymentRef.current = null;
+            clearPendingPaymentRef(preOrderId);
+
+            toast.success('🎉 Payment successful! Order confirmed.');
+            clearCart();
+            navigate(orderId ? `/order/${orderId}` : '/orders');
+            return;
+          }
+        } catch (retryError) {
+          console.error('Payment re-verification failed:', retryError);
+        }
+
+        // Re-verification did not confirm it either: tell the user the truth
+        // and explicitly do NOT invite a re-payment.
+        toast.error(PAYMENT_CONFIRMATION_DELAYED_MESSAGE);
+        setIsProcessing(false);
+        return;
+      }
+
       const apiErr = error as { response?: { data?: { message?: string } }; message?: string } | undefined;
       const errorMessage = apiErr?.response?.data?.message || apiErr?.message || 'Failed to create order after payment';
       toast.error(errorMessage);
@@ -1100,7 +1172,7 @@ export default function CheckoutPage() {
           ) : !isPaystackLoaded ? (
             'Loading Payment System...'
           ) : (
-            `Pay GH₵ ${total.toFixed(2)}`
+            `Pay GH₵ ${payableTotal.toFixed(2)}`
           )}
         </button>
 

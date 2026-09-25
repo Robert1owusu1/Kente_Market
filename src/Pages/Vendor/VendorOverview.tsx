@@ -129,7 +129,7 @@ const VendorOverview = () => {
                   fill="#8884d8"
                   dataKey="value"
                 >
-                  {ordersByStatus.map((entry: any, index: number) => (
+                  {ordersByStatus.map((_entry, index) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>
@@ -145,7 +145,7 @@ const VendorOverview = () => {
             <p className="text-sm text-gray-500 dark:text-gray-400 py-6 text-center">No sales data yet</p>
           ) : (
             <div className="space-y-3">
-              {topProducts.slice(0, 5).map((p: any, i: number) => (
+              {topProducts.slice(0, 5).map((p, i) => (
                 <div key={i} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
                   <div className="flex items-center gap-3">
                     <span className="text-lg font-bold text-gray-400 w-6">{i + 1}</span>

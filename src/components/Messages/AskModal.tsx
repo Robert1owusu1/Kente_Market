@@ -71,7 +71,7 @@ const AskModal = ({ vendorId, vendorName, productId, onClose }: AskModalProps) =
       toast.error('Write a message first');
       return;
     }
-    if (!thread) return;
+    if (thread?.id == null) return;
     try {
       await sendFollowUp({ id: thread.id, body: followUp.trim() }).unwrap();
       setFollowUp('');

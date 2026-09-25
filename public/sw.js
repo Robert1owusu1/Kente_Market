@@ -21,32 +21,44 @@ const SHELL = ['/', '/index.html'];
 const API_PREFIX = '/api/';
 // Bump APP_SW_VERSION whenever the app shell, build layout, or API behavior
 // changes: sw.js bytes change -> browsers re-download it -> activate drops
-// every app-* cache and re-precaches the current shell + assets. Without this,
-// cache-first immutable assets keep serving a stale bundle to old SW clients.
+// every app-* cache from OLDER versions and re-precaches the current shell +
+// assets. Without this, cache-first immutable assets keep serving a stale
+// bundle to old SW clients. All cache names below are derived from it, so a
+// single bump deterministically busts the shell, asset and API caches.
 const APP_SW_VERSION = 4;
-// Cache versions; bump APP_API_KEY when the API shape changes so stale lists
+// Cache versions; bump APP_SW_VERSION when the API shape changes so stale lists
 // (e.g. pre-wipe product catalogs) are purged on the next SW update.
-const APP_API_KEY = 'app-api-v4';
+const SHELL_CACHE = `app-shell-v${APP_SW_VERSION}`;
+const ASSETS_CACHE = `app-assets-v${APP_SW_VERSION}`;
+const APP_API_KEY = `app-api-v${APP_SW_VERSION}`;
+// Caches owned by THIS version — activate() must never delete them (they were
+// just precached). Anything else starting with "app-" is an old version or an
+// "app-api-*" leftover and gets purged.
+const CURRENT_CACHES = [SHELL_CACHE, ASSETS_CACHE, APP_API_KEY];
 
 // PUBLIC, account-agnostic endpoints that are safe to cache. Everything else
 // under /api (profile, orders, wallet, vendor tools, admin ...) is passed
 // straight to the network and is NEVER placed in (or served from) a cache, so
 // logged-out / second-account browsers cannot receive another user's data.
 const PUBLIC_API = [
-  // [path prefix, exact-match-only?]
-  ['/api/products', false],            // list + /:id + category/featured/etc (all public)
-  ['/api/vendors/store/', true],       // public storefront
-  ['/api/vendors/directory', true],
-  ['/api/promotions/public/', true],
-  ['/api/categories', true],
-  ['/api/reviews', true],              // list only (never /analytics)
-  ['/api/reviews/product/', true],
-  ['/api/certificates/verify/', true], // token-based public verification
+  // [path, match mode]
+  // 'prefix' — every path under it (use ONLY for endpoints that are public
+  //            all the way down, i.e. paths ending in "/").
+  // 'exact'  — the literal pathname only (default; keeps "/api/reviews" from
+  //            ever matching "/api/reviews/analytics" or any user-scoped path).
+  ['/api/products', 'prefix'],              // list + /:id + category/featured/etc (all public)
+  ['/api/vendors/store/', 'prefix'],        // public storefront /:slug (+ its public subroutes)
+  ['/api/vendors/directory', 'exact'],
+  ['/api/promotions/public/', 'prefix'],
+  ['/api/categories', 'exact'],
+  ['/api/reviews', 'exact'],                // list only (never /analytics)
+  ['/api/reviews/product/', 'prefix'],      // per-product reviews
+  ['/api/certificates/verify/', 'prefix'],  // token-based public verification
 ];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open('app-shell-v1').then((cache) =>
+    caches.open(SHELL_CACHE).then((cache) =>
       // best-effort precache; failures are non-fatal
       Promise.allSettled(
         SHELL.map((url) => fetch(url, { cache: 'no-cache' }).then((r) => {
@@ -59,13 +71,21 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('activate', (event) => {
-  // Drop every app cache from earlier versions. Old cached API JSON may
-  // reference data that no longer exists (e.g. after a data wipe).
+  // Drop app caches from EARLIER versions only (old cached API JSON may
+  // reference data that no longer exists, e.g. after a data wipe, and stale
+  // hashed assets shadow new ones). The caches for the version that just
+  // precached them — including 'app-api-v*' leftovers from older versions —
+  // are left alone: deleting SHELL_CACHE/ASSETS_CACHE here would throw away
+  // the shell we just installed.
   event.waitUntil(
     caches
       .keys()
       .then((keys) =>
-        Promise.all(keys.filter((k) => k.startsWith('app-')).map((k) => caches.delete(k)))
+        Promise.all(
+          keys
+            .filter((k) => k.startsWith('app-') && !CURRENT_CACHES.includes(k))
+            .map((k) => caches.delete(k))
+        )
       )
       .then(() => self.clients.claim())
   );
@@ -76,11 +96,15 @@ const isHashedAsset = (url) => /\/assets\/.+\.(js|css)$/.test(url.pathname);
 const isApiPath = (url) => url.pathname.startsWith(API_PREFIX);
 
 // A GET on a PUBLIC allow-listed endpoint whose response is account-agnostic.
+// 'prefix' entries must end with "/" so they can never swallow a longer,
+// user-scoped path; 'exact' entries match the literal pathname only.
 const isPublicApiGet = (req, url) =>
   req.method === 'GET' &&
   isApiPath(url) &&
   !isHashedAsset(url) &&
-  PUBLIC_API.some(([prefix, exact]) => (exact ? url.pathname === prefix : url.pathname.startsWith(prefix)));
+  PUBLIC_API.some(([path, mode]) =>
+    mode === 'prefix' ? url.pathname.startsWith(path) : url.pathname === path
+  );
 
 self.addEventListener('fetch', (event) => {
   const req = event.request;
@@ -102,7 +126,7 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       caches.match(req).then((cached) => cached || fetch(req).then((res) => {
         const copy = res.clone();
-        caches.open('app-assets-v1').then((c) => c.put(req, copy));
+        caches.open(ASSETS_CACHE).then((c) => c.put(req, copy));
         return res;
       }))
     );
@@ -149,7 +173,7 @@ self.addEventListener('fetch', (event) => {
     fetch(req)
       .then((res) => {
         const copy = res.clone();
-        caches.open('app-shell-v1').then((c) => c.put(req, copy));
+        caches.open(SHELL_CACHE).then((c) => c.put(req, copy));
         return res;
       })
       .catch(() =>

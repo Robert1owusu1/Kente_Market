@@ -1,6 +1,7 @@
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 import { Base_URL } from '../constant';
 import { getOrLoadCsrfToken, isSafeMethod, CSRF_HEADER } from '../utils/csrf';
+import { handleUnauthorized } from '../utils/sessionExpiry';
 
 // Custom fetch wrapper that:
 //  - fails fast (a fetch does not reject on HTTP errors; timeout handled by
@@ -25,7 +26,14 @@ const baseFetch: typeof fetch = async (input, init) => {
       init = { ...init, headers };
     }
   }
-  return fetch(input, init);
+  const response = await fetch(input, init);
+  // Global session-expiry handling: a 401 on any RTK Query call means the
+  // cookie/JWT is gone — clear the local session (login/register attempts are
+  // filtered out inside handleUnauthorized, which also dedupes 401 bursts).
+  if (response.status === 401) {
+    handleUnauthorized(request?.url || String(input), method);
+  }
+  return response;
 };
 
 export const baseQuery = fetchBaseQuery({

@@ -45,7 +45,12 @@ const ProductsPage = () => {
 
   // RTK Query hooks
   const { data: productsData = [], isLoading, error, refetch } = useGetProductsQuery({});
-  const products = (Array.isArray(productsData) ? productsData : (productsData?.products ?? [])) as Product[];
+  // Own useMemo: deriving it inline made `products` a fresh array every render,
+  // which re-ran every memo that depends on it (exhaustive-deps warnings).
+  const products = useMemo(
+    () => (Array.isArray(productsData) ? productsData : (productsData?.products ?? [])) as Product[],
+    [productsData]
+  );
   const [createProduct, { isLoading: isCreating }] = useCreateProductMutation();
   const [updateProduct, { isLoading: isUpdating }] = useUpdateProductMutation();
   const [deleteProduct] = useDeleteProductMutation();

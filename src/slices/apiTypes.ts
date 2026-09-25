@@ -167,14 +167,50 @@ export interface Vendor {
 }
 
 // Vendor analytics/dashboard aggregates — heterogeneous admin shapes.
+export interface VendorAnalyticsSliceRow {
+  name: string;
+  value: number;
+}
+
+export interface VendorSalesChartPoint {
+  month: string;
+  sales: number;
+  orders?: number;
+}
+
+export interface VendorTopProduct {
+  name: string;
+  quantity: number;
+  revenue: number;
+}
+
+export interface VendorWallet {
+  available_balance?: number;
+  total_earned?: number;
+  [key: string]: unknown;
+}
+
 export interface VendorAnalytics {
-  totalRevenue?: number;
+  // Fields the overview/analytics screens dereference directly (arrays are
+  // required: both screens iterate them without a guard, so a missing payload
+  // is a hard failure we want the type to surface, not hide).
+  totalRevenue: number;
+  avgOrderValue: number;
+  totalOrders: number;
+  totalProducts: number;
+  ordersByStatus: VendorAnalyticsSliceRow[];
+  salesChartData: VendorSalesChartPoint[];
+  topProducts: VendorTopProduct[];
+  // Remaining aggregates are optional/heterogeneous.
   totalSales?: number;
   pendingPayout?: number;
   availableBalance?: number;
-  totalProducts?: number;
-  totalOrders?: number;
-  [key: string]: any;
+  pendingOrders?: number;
+  processingOrders?: number;
+  deliveredOrders?: number;
+  cancelledOrders?: number;
+  wallet?: VendorWallet;
+  [key: string]: unknown;
 }
 
 export interface DashboardStats {
@@ -186,13 +222,18 @@ export interface DashboardStats {
   pendingOrders?: number;
   pendingProducts?: number;
   pendingReviews?: number;
-  [key: string]: any;
+  // Moderation queue counters (GET /api/moderation/stats).
+  pending?: number;
+  approved?: number;
+  rejected?: number;
+  changes_requested?: number;
+  [key: string]: unknown;
 }
 
 export interface OrderStatistics {
   totalOrders?: number;
   totalRevenue?: number;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface Storefront {
@@ -204,7 +245,7 @@ export interface Storefront {
   banner?: string;
   status?: string;
   followers?: number;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface InventoryItem {
