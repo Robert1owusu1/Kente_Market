@@ -20,7 +20,7 @@ import { sendEmailSafely } from '../utils/emailService.js';
  * @returns {Promise<number>} number of users notified
  */
 export const processRestockForProduct = async (productId) => {
-  const pid = parseInt(productId);
+  const pid = Number(productId);
   if (!pid || Number.isNaN(pid)) return 0;
 
   const [[product]] = await pool.execute(

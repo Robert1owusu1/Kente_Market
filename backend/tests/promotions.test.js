@@ -11,7 +11,18 @@ import Promotion from '../models/promotionModel.js';
 
 const UNIQUE = `test-promo-${Date.now()}`;
 
+// DB gate: these tests need a live database. Probe once at load so the suite
+// SELF-SKIPS (rather than failing) when no DB is reachable — this is what lets
+// CI run the full `npm test` without a database service.
+let dbAvailable = true;
+try {
+  await pool.query('SELECT 1');
+} catch {
+  dbAvailable = false;
+}
+
 before(async () => {
+  if (!dbAvailable) return;
   // Ensure the promotions table exists before we test against it.
   await pool.query(`
     CREATE TABLE IF NOT EXISTS promotions (
@@ -37,12 +48,16 @@ before(async () => {
 });
 
 after(async () => {
+  if (!dbAvailable) {
+    await pool.end();
+    return;
+  }
   // Remove any rows this test created.
   await pool.execute(`DELETE FROM promotions WHERE title = ?`, [UNIQUE]);
   await pool.end();
 });
 
-describe('Promotion model against live DB', () => {
+describe('Promotion model against live DB', { skip: !dbAvailable }, () => {
   test('create persists full row and returns defaults', async () => {
     const promo = await Promotion.create({
       title: UNIQUE,

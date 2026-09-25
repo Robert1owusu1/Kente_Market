@@ -189,8 +189,11 @@ app.use(passport.initialize());
 app.use(passport.session());
 configurePassport();
 
-// 6. Upload routes - MUST come BEFORE body parsers
-app.use('/api/upload', uploadRoutes);
+// 6. Upload routes - MUST come BEFORE body parsers (multer parses the body
+// itself). Rate limiting and CSRF are attached HERE rather than relying on the
+// global /api/ middlewares below, because this mount short-circuits before
+// they run — otherwise DELETE /api/upload/:filename would have neither.
+app.use('/api/upload', apiLimiter, csrfProtection, uploadRoutes);
 
 // 7. Body parser middleware - applied AFTER upload routes
 // Captures the raw body so Paystack webhook signatures can be verified against it.

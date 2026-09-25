@@ -36,12 +36,21 @@ export const createRateLimitStore = (prefix) => {
   const client = getRedisClient();
   if (!client) return undefined;
 
-  let warned = false;
+  let warnedAt = 0;
   const sendCommand = async (args) => {
     if (client.isReady) return client.sendCommand(args);
-    if (!warned) {
-      warned = true;
-      console.warn('⚠️  Redis not ready — rate-limit enforcement degraded for this instance');
+    // Fail-open by design (availability over strictness), but a degraded
+    // limiter means unlimited auth/login attempts — so make the failure mode
+    // IMPOSSIBLE TO MISS: re-warn every 5 minutes (not just once per boot)
+    // and surface it to Sentry when configured.
+    const now = Date.now();
+    if (now - warnedAt > 5 * 60 * 1000) {
+      warnedAt = now;
+      console.warn('⚠️  Redis not ready — rate-limit enforcement DEGRADED (fail-open) for this instance');
+      try {
+        const Sentry = await import('@sentry/node');
+        Sentry.captureMessage('Redis unavailable: rate limiting degraded (fail-open)', 'warning');
+      } catch { /* Sentry optional */ }
     }
     return '0';
   };

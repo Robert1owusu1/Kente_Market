@@ -117,10 +117,10 @@ export const recomputeOrderEscrowStatus = async (orderId) => {
  * are held together by the usual payment-verification flow.
  * @param {number | string} orderId
  * @param {OrderLine[]} items
- * @param {{ advanceRatio?: number }} [options]
+ * @param {{ advanceRatio?: number, discount?: number }} [options]
  * @returns {Promise<number>} number of allocations created
  */
-export const createEscrowAllocations = async (orderId, items, { advanceRatio = 0 } = {}) => {
+export const createEscrowAllocations = async (orderId, items, { advanceRatio = 0, discount = 0 } = {}) => {
   if (!Array.isArray(items) || items.length === 0) return 0;
 
   const productIds = items
@@ -138,16 +138,31 @@ export const createEscrowAllocations = async (orderId, items, { advanceRatio = 0
   const productRows = products;
   const productMap = new Map(productRows.map((p) => [p.id, p]));
 
-  // vendorId -> total amount owed to that vendor
+  // vendorId -> total amount owed to that vendor (gross, before discount)
   const vendorTotals = new Map();
+  let grossSubtotal = 0;
   for (const it of items) {
     const pid = /** @type {any} */ (it?.product || it?.productId || it?.id);
     const product = productMap.get(pid);
     const vendorId = product?.vendorId || it?.vendorId || null;
-    if (!vendorId) continue; // platform-owned items skip escrow
     const qty = parseFloat(String(it?.quantity)) || 1;
     const price = parseFloat(String(it?.price ?? product?.price)) || 0;
+    grossSubtotal += qty * price;
+    if (!vendorId) continue; // platform-owned items skip escrow
     vendorTotals.set(vendorId, (vendorTotals.get(vendorId) || 0) + qty * price);
+  }
+
+  // Vendors must be paid on the DISCOUNTED amount the customer actually
+  // spent, not the gross price — otherwise the platform (not the vendor)
+  // funds every coupon, and a large vendor-issued discount drives each order
+  // net-negative for the platform. Apportion the order-level discount across
+  // all items pro rata (platform-owned items share it too), then allocate.
+  const discountAmount = Math.max(0, parseFloat(String(discount)) || 0);
+  const netFactor = grossSubtotal > 0 ? Math.max(0, 1 - discountAmount / grossSubtotal) : 1;
+  if (netFactor < 1) {
+    for (const [vendorId, gross] of vendorTotals) {
+      vendorTotals.set(vendorId, round2(gross * netFactor));
+    }
   }
 
   const ratio = Math.max(0, Math.min(1, parseFloat(String(advanceRatio)) || 0));
@@ -764,7 +779,7 @@ export { ESCROW_RELEASE_DAYS };
  */
 export const recoverStuckPendingOrders = async () => {
   const [rows] = await pool.execute(
-    `SELECT id, paymentReference, items FROM orders
+    `SELECT id, paymentReference, items, totalAmount FROM orders
      WHERE paymentStatus = 'pending'
        AND paymentReference IS NOT NULL
        AND paymentReference != ''
@@ -781,7 +796,26 @@ export const recoverStuckPendingOrders = async () => {
         `https://api.paystack.co/transaction/verify/${order.paymentReference}`,
         { headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` } }
       );
-      if (resp.data?.data?.status === 'success') {
+      const tx = resp.data?.data;
+      if (tx?.status === 'success') {
+        // CRITICAL: this job must validate the charge exactly like the webhook
+        // and verify-paystack fallback do — full order amount, in GHS. Without
+        // these checks a 1 GHS charge's reference pasted onto a 5,000 GHS
+        // order would be fulfilled here ~1h later even though both guarded
+        // paths correctly rejected it.
+        const expectedKobo = Math.round(parseFloat(order.totalAmount) * 100);
+        const paidKobo = parseInt(tx.amount, 10);
+        if (
+          tx.currency !== 'GHS' ||
+          !Number.isFinite(paidKobo) ||
+          paidKobo !== expectedKobo
+        ) {
+          console.warn(
+            `⚠️ Stuck order ${order.id}: payment mismatch — paid ${paidKobo} ${tx.currency}, ` +
+            `expected ${expectedKobo} GHS (ref ${order.paymentReference}); NOT recovering`
+          );
+          continue;
+        }
         // Flip-guard: only run side effects if THIS call actually moved the
         // order from pending to paid, so a recovery racing with the webhook or
         // verify-paystack fallback can never double-hold escrow or

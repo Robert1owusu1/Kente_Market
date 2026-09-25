@@ -52,7 +52,8 @@ const claimWebhook = async (eventName, reference, payload) => {
   );
   const [claim] = await pool.execute(
     `UPDATE webhook_events
-     SET processing_status = 'processing', attempts = attempts + 1, last_error = NULL
+     SET processing_status = 'processing', attempts = attempts + 1, last_error = NULL,
+         processed_at = CURRENT_TIMESTAMP
      WHERE event = ? AND reference = ? AND processing_status IN ('received', 'failed')`,
     [eventName, reference]
   );
@@ -117,7 +118,16 @@ router.post('/verify-paystack', protect, async (req, res) => {
         [reference]
       );
       let orderMarkedPaid = false;
-      if (existing.length > 0 && existing[0].paymentStatus !== 'paid') {
+      if (existing.length > 1) {
+        // A reference must map to exactly one order — more than one means a
+        // reused/forged reference. Refuse to flip anything (the DB now also
+        // enforces this with a UNIQUE key; this is the friendly error).
+        return res.status(400).json({
+          success: false,
+          message: `Payment reference maps to ${existing.length} orders`,
+        });
+      }
+      if (existing.length === 1 && existing[0].paymentStatus !== 'paid') {
         const order = existing[0];
 
         // Only the order owner may flip it to paid, and only when Paystack
@@ -136,10 +146,14 @@ router.post('/verify-paystack', protect, async (req, res) => {
           });
         }
 
+        // Flip exactly ONE order (this one), never every row sharing the
+        // reference — before the UNIQUE key existed, two pending orders with
+        // the same client-supplied reference were both marked paid by one
+        // verified charge (double-spend).
         const [flipResult] = await pool.execute(
           `UPDATE orders SET paymentStatus = 'paid', orderStatus = 'processing', updated_at = CURRENT_TIMESTAMP
-           WHERE paymentReference = ? AND paymentStatus != 'paid'`,
-          [reference]
+           WHERE id = ? AND paymentReference = ? AND paymentStatus != 'paid'`,
+          [order.id, reference]
         );
         const orderId = order.id;
         // Idempotency: only run the post-payment side effects (escrow hold,

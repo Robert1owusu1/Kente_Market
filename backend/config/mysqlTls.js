@@ -12,10 +12,24 @@ export const mysqlTls = () => {
     try {
       return { ca: fs.readFileSync(process.env.DB_SSL_CA, 'utf8'), rejectUnauthorized: true };
     } catch (err) {
+      // A configured-but-unreadable CA means the operator INTENDED verified
+      // TLS. Silently falling back to rejectUnauthorized:false would downgrade
+      // production DB traffic to an unverifiable MITM-able connection on a typo
+      // — fail closed instead so the misconfiguration is fixed, not masked.
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error(
+          `DB_SSL_CA could not be read (${process.env.DB_SSL_CA}): ${err.message} — ` +
+          `refusing to start with unverified TLS in production. Fix the path or unset DB_SSL_CA.`
+        );
+      }
       console.warn(
-        `⚠️  DB_SSL_CA could not be read (${process.env.DB_SSL_CA}): ${err.message} — falling back to unverified TLS`
+        `⚠️  DB_SSL_CA could not be read (${process.env.DB_SSL_CA}): ${err.message} — falling back to unverified TLS (dev only)`
       );
     }
+  } else if (process.env.NODE_ENV === 'production') {
+    console.warn(
+      '⚠️  DB_SSL=1 without DB_SSL_CA: TLS is enabled but certificates are NOT verified. Set DB_SSL_CA for production.'
+    );
   }
   return { rejectUnauthorized: false };
 };

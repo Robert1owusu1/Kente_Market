@@ -5,10 +5,11 @@
 //              that carried a promised completion date (standard AND custom).
 import pool from '../config/db.js';
 
+/** @param {unknown} v @returns {any[]} */
 const safeParse = (v) => {
   if (!v) return [];
   if (Array.isArray(v)) return v;
-  try { return JSON.parse(v); } catch { return []; }
+  try { return JSON.parse(/** @type {string} */ (v)); } catch { return []; }
 };
 
 /**
@@ -18,7 +19,7 @@ const safeParse = (v) => {
  * @returns {Promise<{ fulfilled: number, withDeadline: number, onTime: number, onTimeRate: number, avgDaysEarly: number }>}
  */
 export const getVendorFulfilment = async (vendorId) => {
-  const vid = parseInt(vendorId);
+  const vid = Number(vendorId);
   const scorecard = { fulfilled: 0, withDeadline: 0, onTime: 0, onTimeRate: 0, avgDaysEarly: 0 };
 
   const [orders] = await pool.execute(
@@ -45,7 +46,7 @@ export const getVendorFulfilment = async (vendorId) => {
     if (delivered <= deadline) {
       scorecard.onTime += 1;
     }
-    dayDiffSum += (delivered - deadline) / 86400000;
+    dayDiffSum += (delivered.getTime() - deadline.getTime()) / 86400000;
     diffCount += 1;
   }
 

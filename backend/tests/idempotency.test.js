@@ -13,6 +13,14 @@ import pool from '../config/db.js';
 const EVENT = 'charge.success';
 const REF = `test-ref-${Date.now()}`;
 
+// DB gate: self-skip when no database is reachable (see promotions.test.js).
+let dbAvailable = true;
+try {
+  await pool.query('SELECT 1');
+} catch {
+  dbAvailable = false;
+}
+
 // Mirrors the production handler's dedup step.
 const recordWebhookEvent = async () => {
   const [ins] = await pool.execute(
@@ -22,11 +30,16 @@ const recordWebhookEvent = async () => {
   return { insertId: ins.insertId, affectedRows: ins.affectedRows };
 };
 
-describe('Webhook idempotency (webhook_events UNIQUE constraint)', () => {
+describe('Webhook idempotency (webhook_events UNIQUE constraint)', { skip: !dbAvailable }, () => {
   before(async () => {
+    if (!dbAvailable) return;
     await pool.execute(`DELETE FROM webhook_events WHERE reference = ?`, [REF]);
   });
   after(async () => {
+    if (!dbAvailable) {
+      await pool.end();
+      return;
+    }
     await pool.execute(`DELETE FROM webhook_events WHERE reference = ?`, [REF]);
     await pool.end();
   });

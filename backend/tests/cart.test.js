@@ -6,24 +6,24 @@
 //   - merge correctly deduplicates and sums quantities,
 //   - clear empties the stored cart.
 // NOTE: Uses the real (dev) database; inserts and cleans up after itself.
-import { test, describe, before, after } from 'node:test';
+import { test, describe, after } from 'node:test';
 import assert from 'node:assert/strict';
 
 let pool = null;
+// DB gate: probe at module load (top-level await) so `{ skip: !dbAvailable }`
+// below is already correct when the tests are REGISTERED — a before() hook
+// runs too late for that and the suite would fail without a database (CI).
 let dbAvailable = true;
+try {
+  pool = (await import('../config/db.js')).default;
+  await pool.query('SELECT 1');
+} catch {
+  dbAvailable = false;
+  pool = null;
+}
 
 const GUEST_ID = `test-cart-${Date.now()}`;
 const userId = 270001; // existing customer in dev DB
-
-before(async () => {
-  try {
-    pool = (await import('../config/db.js')).default;
-    await pool.query('SELECT 1');
-  } catch {
-    dbAvailable = false;
-    return;
-  }
-});
 
 after(async () => {
   if (!dbAvailable || !pool) return;

@@ -53,8 +53,8 @@ const safeOrderImage = (/** @type {string|null|undefined} */ image) => {
 // This helper must never block the payment confirmation flow (it is
 // fire-and-forget) — any failure is logged for operator review.
 /**
- * @param {Array<{product?: any, productId?: any, qty?: any, quantity?: any}>} items
- * @param {number|string} [orderId] when provided, shortfalls flag the order + notify
+ * @param {Array<{product?: any, productId?: any, qty?: any, quantity?: any, reserved?: any}>} items
+ * @param {number|string|null} [orderId] when provided, shortfalls flag the order + notify
  * @returns {Promise<{ decremented: Record<number, number>, shortfall: number, conflicts: Array<{productId: number, title: string, missing: number, available: number, vendorId: number|null}> }>}
  */
 export const decrementStockForOrder = async (items, orderId = null) => {
@@ -75,6 +75,7 @@ export const decrementStockForOrder = async (items, orderId = null) => {
   }
 
   const connection = await pool.getConnection();
+  /** @type {Record<number, number>} */
   const decremented = {};
   const conflicts = [];
   try {
@@ -274,6 +275,11 @@ export const addOrderItems = async (req, res) => {
         selectedColor: item.selectedColor || item.color || null,
         selectedSize: item.selectedSize || item.size || null,
         name: typeof item.name === "string" ? item.name.slice(0, 200) : null,
+        // Filled in later: madeToOrder/stock from the product row (below),
+        // reserved by reserveStockForItems (defaults to 0 when not reserved).
+        madeToOrder: false,
+        stock: /** @type {number|null} */ (null),
+        reserved: 0,
       };
     });
 
@@ -402,15 +408,39 @@ export const addOrderItems = async (req, res) => {
       couponId: appliedCouponId,
     };
 
+    // A payment reference identifies exactly ONE Paystack charge. Refuse to
+    // create a second order carrying a reference that already exists — one
+    // charge must never be able to pay two orders.
+    if (orderData.paymentReference) {
+      const [[dupRef]] = await pool.execute(
+        `SELECT id FROM orders WHERE paymentReference = ? LIMIT 1`,
+        [orderData.paymentReference]
+      );
+      if (dupRef) {
+        if (reservedUnits.size > 0) {
+          try {
+            await restoreStockForOrder(
+              [...reservedUnits].map(([productId, qty]) => ({ product: productId, qty }))
+            );
+          } catch (restoreErr) {
+            console.warn(`⚠️ Could not roll back reservation: ${restoreErr.message}`);
+          }
+        }
+        return res.status(400).json({ message: "This payment reference has already been used" });
+      }
+    }
+
     const newOrder = await Order.create(orderData);
 
     // Coupon usage is NOT consumed here. It is deferred until payment is
     // confirmed (Paystack charge.success webhook or admin mark-as-paid), so a
     // coupon is never wasted on an abandoned checkout.
 
-    // Multi-vendor escrow: split the order into per-vendor allocations at placement.
-    // Platform-owned items are excluded automatically (no vendorId on the product).
-    await createEscrowAllocations(newOrder.id, items);
+    // Multi-vendor escrow: split the order into per-vendor allocations at
+    // placement. Platform-owned items are excluded automatically (no vendorId
+    // on the product). Pass the order-level discount so vendors are allocated
+    // net of it — the platform must not fund coupons out of its own share.
+    await createEscrowAllocations(newOrder.id, items, { discount });
 
     res.status(201).json({ message: "Order created successfully", order: newOrder });
   } catch (error) {
@@ -551,17 +581,56 @@ export const updateOrder = async (req, res) => {
       // facts too — an owner must not rewrite them.
       delete body.escrowStatus;
       delete body.escrowReleaseDeadline;
-      delete body.paymentReference;
       delete body.couponId;
       delete body.deliveredAt;
       delete body.couponCode;
+
+      // paymentReference is the ONE money reference an owner may still set —
+      // but exactly once, while it is empty and the order is not yet paid.
+      // The standard checkout creates the order BEFORE Paystack is invoked
+      // (CartPage → /checkout/:orderId) and PUTs the reference back after a
+      // successful charge; deleting it outright left every such order stuck
+      // 'pending' forever (webhook/verify look orders up BY REFERENCE only).
+      // Once set — or once the order is paid — it is immutable.
+      if ('paymentReference' in body) {
+        const providedRef = typeof body.paymentReference === 'string'
+          ? body.paymentReference.trim().slice(0, 255)
+          : '';
+        const currentRef = existingOrder?.paymentReference
+          ? String(existingOrder.paymentReference).trim()
+          : '';
+        const alreadyPaid = existingOrder?.paymentStatus === 'paid'
+          || existingOrder?.paymentStatus === 'refunded';
+        if (!providedRef || currentRef || alreadyPaid) {
+          delete body.paymentReference;
+        } else {
+          const [[dup]] = await pool.execute(
+            `SELECT id FROM orders WHERE paymentReference = ? AND id != ? LIMIT 1`,
+            [providedRef, req.params.id]
+          );
+          if (dup) {
+            return res.status(400).json({
+              message: "This payment reference has already been used by another order",
+            });
+          }
+          body.paymentReference = providedRef;
+        }
+      }
     }
 
     // Secure coupon application on the pre-created order path: recompute the
     // totals from the stored items + a server-validated coupon, never from the
     // client's numbers. Only reachable by the order owner (guarded above).
+    // NEVER after payment: rewriting totalAmount/discount/couponId on a paid
+    // order would diverge the books from what Paystack actually collected (and
+    // would let a coupon be applied without its use ever being consumed).
     const couponCode = (req.body.couponCode || "").trim();
     if (req.user.role !== 'admin' && couponCode) {
+      if (existingOrder.paymentStatus === 'paid' || existingOrder.paymentStatus === 'refunded') {
+        return res.status(400).json({
+          message: "A coupon can only be applied before payment",
+        });
+      }
       const rawItems = Array.isArray(existingOrder.items) ? existingOrder.items : [];
       const subtotal = calcSubtotal(rawItems);
       const couponResult = await Coupon.validate(couponCode, subtotal);
@@ -999,6 +1068,7 @@ export const retryEscrowPayouts = async (req, res) => {
 //          styles are selling a lot" signal for admin predictions.
 // @route   GET /api/orders/top-product-types
 // @access  Private/Admin
+/** @param {AppRequest} req @param {import("express").Response} res */
 export const getTopProductTypes = async (req, res) => {
   try {
     const { limit = 8 } = req.query;

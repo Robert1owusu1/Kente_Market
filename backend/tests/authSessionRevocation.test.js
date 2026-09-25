@@ -15,6 +15,14 @@ import { protect, optionalAuth } from '../middleware/authMiddleware.js';
 const RUN_ID = `revok-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const createdUserIds = [];
 
+// DB gate: self-skip when no database is reachable (see promotions.test.js).
+let dbAvailable = true;
+try {
+  await pool.query('SELECT 1');
+} catch {
+  dbAvailable = false;
+}
+
 const makeUser = async () => {
   const email = `${RUN_ID}-${createdUserIds.length}@test.local`;
   const [res] = await pool.execute(
@@ -51,8 +59,12 @@ const runMiddleware = (mw, req) =>
     });
   });
 
-describe('Session revocation via users.tokenVersion', () => {
+describe('Session revocation via users.tokenVersion', { skip: !dbAvailable }, () => {
   after(async () => {
+    if (!dbAvailable) {
+      await pool.end();
+      return;
+    }
     for (const uid of createdUserIds) {
       await pool.execute(`DELETE FROM users WHERE id = ?`, [uid]);
     }

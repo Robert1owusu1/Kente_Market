@@ -13,20 +13,24 @@ import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 
 let pool = null;
+// DB gate: probe at module load (top-level await) so `{ skip: !dbAvailable }`
+// is already correct when the tests are REGISTERED — a before() hook runs too
+// late for that, and the suite would fail without a database (CI).
 let dbAvailable = true;
+try {
+  pool = (await import('../config/db.js')).default;
+  await pool.query('SELECT 1');
+} catch {
+  dbAvailable = false;
+  pool = null;
+}
 
 /** @type {{ productId?: number; orderIds: number[] }} */
 const state = { productId: null, orderIds: [] };
 const ts = Date.now();
 
 before(async () => {
-  try {
-    pool = (await import('../config/db.js')).default;
-    await pool.query('SELECT 1');
-  } catch {
-    dbAvailable = false;
-    return;
-  }
+  if (!dbAvailable || !pool) return;
 
   const [pRes] = await pool.execute(
     `INSERT INTO product (title, img, price, category, stock, vendorId, madeToOrder, approvalStatus)

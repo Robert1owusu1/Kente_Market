@@ -150,6 +150,7 @@ class PaystackService {
    * @param {number} amount - Amount in GHS
    * @param {string} recipient - Recipient code
    * @param {string} reason - Transfer reason
+   * @param {string} [reference] - Our idempotency key, persisted before this call
    * @returns {Promise<PaystackEnvelope>} Transfer response
    */
   async initiateTransfer(amount, recipient, reason = '', reference) {
@@ -162,9 +163,12 @@ class PaystackService {
           recipient,
           reason,
           currency: 'GHS',
-          // Supplying our own immutable reference makes retries safe: Paystack
-          // treats a repeated reference as the same transfer rather than a new
-          // payout.
+          // The reference is generated ONCE per payout attempt and persisted
+          // in payout_attempts BEFORE this call (see escrowService), so if the
+          // response is lost, reconciliation verifies this exact reference —
+          // Paystack treats a repeated reference as the same transfer rather
+          // than a new payout. A NEW withdrawal attempt deliberately gets a
+          // NEW reference because it claims fresh funds.
           ...(reference ? { reference } : {}),
         },
         { headers: this.headers }

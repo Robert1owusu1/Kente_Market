@@ -137,10 +137,18 @@ export const reviewBuybackRequest = async (req, res) => {
       const connection = await pool.getConnection();
       try {
         await connection.beginTransaction();
-        await connection.execute(
-          `UPDATE buyback_requests SET status = 'approved', buybackPrice = ?, adminNote = ? WHERE id = ?`,
+        // Conditional claim: approval must transition from 'pending' in the
+        // same statement that writes the decision, so two racing admin
+        // approvals can never both restore stock for one physical item.
+        const [claimed] = await connection.execute(
+          `UPDATE buyback_requests SET status = 'approved', buybackPrice = ?, adminNote = ?
+           WHERE id = ? AND status = 'pending'`,
           [price, adminNote ? String(adminNote).trim() : null, parseInt(id)]
         );
+        if (claimed.affectedRows !== 1) {
+          await connection.rollback();
+          return res.status(409).json({ message: 'This request was already reviewed' });
+        }
         await connection.execute(
           `UPDATE product SET stock = stock + ? WHERE id = ?`,
           [parseInt(request.quantity) || 1, parseInt(request.productId)]
@@ -168,10 +176,17 @@ export const reviewBuybackRequest = async (req, res) => {
     }
 
     if (decision === 'declined') {
-      const updated = await BuybackRequest.update(id, {
-        status: 'declined',
-        adminNote: adminNote ? String(adminNote).trim() : null,
-      });
+      // Same conditional claim as approval: a decline racing an approval must
+      // not overwrite 'approved' (the approval already restored stock).
+      const [declined] = await pool.execute(
+        `UPDATE buyback_requests SET status = 'declined', adminNote = ?
+         WHERE id = ? AND status = 'pending'`,
+        [adminNote ? String(adminNote).trim() : null, parseInt(id)]
+      );
+      if (declined.affectedRows !== 1) {
+        return res.status(409).json({ message: 'This request was already reviewed' });
+      }
+      const updated = await BuybackRequest.findById(id);
       try {
         await Notification.create({
           userId: request.customerId,

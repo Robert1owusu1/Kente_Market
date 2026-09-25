@@ -12,7 +12,21 @@ import {connectDB} from "./config/db.js";
 
 dotenv.config();
 
+// Destructive scripts (truncate/drop) must never run against production
+// without an explicit, separate opt-in — a mis-pointed .env or an accidental
+// `npm run data:destroy` would otherwise wipe the live database.
+const refuseIfProduction = (what) => {
+  if (process.env.NODE_ENV === 'production' && process.env.ALLOW_DESTRUCTIVE_DB !== '1') {
+    console.error(
+      `❌ Refusing to ${what}: NODE_ENV=production. ` +
+      `If this is truly intended, re-run with ALLOW_DESTRUCTIVE_DB=1.`
+    );
+    process.exit(1);
+  }
+};
+
 const clearAllTables = async () => {
+  refuseIfProduction('truncate live tables');
   const connection = await mysql.createConnection({
     host: process.env.DB_HOST,
     user: process.env.DB_USER,
@@ -39,6 +53,16 @@ const clearAllTables = async () => {
 
 const importData = async () => {
   try {
+    // The seed admin's password comes from the environment, never from the
+    // repo (the old hardcoded credential was a standing default-account risk).
+    if (!users.some((u) => u.password)) {
+      console.error(
+        "❌ SEED_ADMIN_PASSWORD is not set.\n" +
+        "   Run with e.g.  SEED_ADMIN_PASSWORD=<strong-password> node seeder.js -i\n" +
+        "   or create the first admin interactively with:  npm run setup-admin"
+      );
+      process.exit(1);
+    }
     await connectDB();
 
     console.log("Clearing old data...");
@@ -72,7 +96,7 @@ const destroyData = async () => {
     console.log("🗑️ Data Destroyed!");
     process.exit();
   } catch (error) {
-    console.error(`❌ Destroy Error: ${error.message}`.red.inverse);
+    console.error(`❌ Destroy Error: ${error.message}`);
     process.exit(1);
   }
 };
@@ -85,7 +109,8 @@ if (process.argv[2] === "-d") {
 } else {
   console.log(`
 Usage:
-  node seeder.js -i    Import data
-  node seeder.js -d    Destroy data
+  node seeder.js -i    Import data (requires SEED_ADMIN_PASSWORD in the env)
+  node seeder.js -d    Destroy data (refused when NODE_ENV=production
+                       unless ALLOW_DESTRUCTIVE_DB=1)
   `);
 }

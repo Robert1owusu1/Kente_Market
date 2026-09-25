@@ -218,10 +218,18 @@ class Coupon {
     let connection;
     try {
       connection = await pool.getConnection();
-      await connection.execute(
-        "UPDATE coupons SET usesUsed = usesUsed + 1 WHERE id = ?",
+      // Conditional increment: never let usesUsed exceed maxUses. Validation
+      // (Coupon.validate) and this consumption are deliberately not the same
+      // statement — usage is deferred until payment confirms — so N in-flight
+      // checkouts that all saw "1 use left" must not push the counter past the
+      // cap here. affectedRows 0 = limit reached at consumption time.
+      const [result] = await connection.execute(
+        "UPDATE coupons SET usesUsed = usesUsed + 1 WHERE id = ? AND (maxUses IS NULL OR usesUsed < maxUses)",
         [parseInt(id)]
       );
+      if (result.affectedRows === 0) {
+        console.warn(`⚠️ Coupon ${id}: usage not consumed — limit reached at payment time`);
+      }
       return await Coupon.findById(id);
     } catch (err) {
       console.error("DB Error (Coupon.incrementUses):", err.message);
