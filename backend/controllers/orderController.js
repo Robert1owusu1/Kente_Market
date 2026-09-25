@@ -1223,19 +1223,33 @@ export const getTopProducts = async (req, res) => {
 
     (/** @type {Array<any>} */ (orders)).forEach(order => {
       try {
-        const items = /** @type {Array<any>} */ (JSON.parse(order.items));
+        // JSON columns come back already parsed (or as a raw string on some
+        // drivers) — accept both, like Order.safeParse does.
+        let items = order.items;
+        if (typeof items === 'string') items = JSON.parse(items);
+        if (!Array.isArray(items)) return;
         items.forEach(item => {
-          const key = item.productId || item.id || item.title;
+          // Standard lines: key by product id (name only as a last resort).
+          // Custom lines reference their base product too, so keying them by
+          // `product` would merge one-off custom orders into the base
+          // product's row and relabel it with whichever line arrived first —
+          // group those by their own title instead.
+          const isCustom = item.customRequestId != null;
+          const key = isCustom
+            ? `custom:${item.name || item.title}`
+            : (item.product ?? item.productId ?? item.id ?? item.name);
           if (!productSales[key]) {
             productSales[key] = {
               productId: key,
-              name: item.title || item.name || 'Unknown Product',
+              name: item.name || item.title || 'Unknown Product',
               quantity: 0,
               revenue: 0
             };
           }
-          productSales[key].quantity += item.quantity || 1;
-          productSales[key].revenue += (item.price || 0) * (item.quantity || 1);
+          // Standard lines store `qty`, custom lines store `quantity`.
+          const qty = parseInt(item.quantity ?? item.qty, 10) || 1;
+          productSales[key].quantity += qty;
+          productSales[key].revenue += (item.price || 0) * qty;
         });
       } catch (e) {
         console.error('Error parsing order items:', e);
