@@ -277,7 +277,11 @@ const readiness = async (req, res) => {
   try {
     await Promise.race([
       pool.query('SELECT 1'),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 2500)),
+      // A cold connect to TiDB measures ~3.3s from this topology; the old
+      // 2.5s budget reported DEGRADED for a perfectly healthy database and
+      // invited restart loops on cold starts. Keep this above the connect
+      // timeout (10s is for worst case; warm-path checks answer <1s).
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 6000)),
     ]);
   } catch {
     db = 'down';
