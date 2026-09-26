@@ -13,6 +13,7 @@ interface CampaignCardData {
   discountValue?: number | string;
   bannerImage?: string;
   productCount?: number | string;
+  vendorCount?: number | string;
   startDate?: string;
   endDate?: string;
   [key: string]: unknown;
@@ -30,6 +31,16 @@ const formatEnd = (d?: string): string | null => {
   const date = new Date(d);
   if (Number.isNaN(date.getTime())) return null;
   return date.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+};
+
+// Campaigns scoped to no products AND no vendors are site-wide merchandising
+// banners (they apply to every product) — saying "0 products" there was a lie.
+const scopeLabel = (c: CampaignCardData): string => {
+  const products = Number(c.productCount) || 0;
+  const vendors = Number(c.vendorCount) || 0;
+  if (products > 0) return `${products} ${products === 1 ? "product" : "products"}`;
+  if (vendors > 0) return `${vendors} ${vendors === 1 ? "vendor" : "vendors"}`;
+  return "All products";
 };
 
 const CampaignSection = () => {
@@ -118,7 +129,7 @@ const CampaignSection = () => {
                   )}
                   <div className="mt-auto pt-4 flex items-center justify-between">
                     <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                      {Number(c.productCount) || 0} products
+                      {scopeLabel(c)}
                     </span>
                     <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary dark:text-yellow-400">
                       Shop Deal <FaArrowRight className="text-xs" />
