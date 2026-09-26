@@ -647,6 +647,14 @@ export const updateOrder = async (req, res) => {
       // Coupon usage is deferred until payment is confirmed.
     }
 
+    // Fulfilment data integrity: flipping to 'delivered' must always record
+    // WHEN. This generic path could previously set orderStatus without
+    // deliveredAt, so the vendor on-time scorecard (which needs deliveredAt)
+    // silently skipped the order and reported onTimeRate as null.
+    if (body.orderStatus === 'delivered' && !body.deliveredAt && !existingOrder.deliveredAt) {
+      body.deliveredAt = new Date();
+    }
+
     const updatedOrder = await Order.update(req.params.id, body);
     res.json({ message: "Order updated successfully", order: updatedOrder });
   } catch (error) {
