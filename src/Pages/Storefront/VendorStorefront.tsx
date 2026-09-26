@@ -226,7 +226,7 @@ const VendorStorefront = () => {
             )}
             {!fulfilmentLoading && fulfilment && fulfilment.withDeadline > 0 && (
               <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 px-2 py-0.5 rounded-full">
-                <FaCheckCircle /> Delivers on time {Math.round(Number(fulfilment.onTimeRate || 0) * 100)}%
+                <FaCheckCircle /> Delivers on time {Math.round(Number(fulfilment.onTimeRate || 0))}%
               </span>
             )}
             {responseLabel(viewData.avgResponseHours) && (
