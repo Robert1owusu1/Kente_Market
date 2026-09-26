@@ -7,7 +7,7 @@
   "scripts": {
     "setup-admin": "node setupFirstAdmin.js",
     "db:setup": "node setupDB.js && npm run db:migrate",
-    "db:migrate": "node migrateNewTables.js && node migrateMarketplace.js && node migrateHardening.js && node migratePaymentHardening.js && node migrateOps.js && node migrateSuggestions.js && node migrateMessagePosts.js",
+    "db:migrate": "node migrateNewTables.js && node migrateMarketplace.js && node migrateHardening.js && node migratePaymentHardening.js && node migrateOps.js && node migrateSuggestions.js && node migrateMessagePosts.js && node migrateFulfilment.js",
     "db:backup": "bash ../.deploy/backup-db.sh",
     "password:reset:test": "node test-password-reset.js",
     "start": "node --import=@sentry/node/import server.js",

@@ -20,6 +20,9 @@ class Order {
     this.couponId = orderData.couponId || null;
     this.expectedCompletionDate = orderData.expectedCompletionDate;
     this.productionNote = orderData.productionNote;
+    // Present on every row (SELECT o.*) — must survive the constructor or
+    // callers can't tell an already-delivered order from a fresh one.
+    this.deliveredAt = orderData.deliveredAt || null;
     this.escrowStatus = orderData.escrowStatus || 'none';
     this.escrowReleaseDeadline = orderData.escrowReleaseDeadline;
     this.escrowAllocations = orderData.escrowAllocations || [];
