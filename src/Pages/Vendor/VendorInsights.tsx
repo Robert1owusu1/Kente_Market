@@ -48,7 +48,8 @@ const VendorInsights = () => {
   const hasData = demand.totalQty > 0;
   const maxTypeQty = Math.max(1, ...topTypes.map((t) => Number(t.quantity) || 0));
   const onTimeRate = Number(fulfilment?.onTimeRate || 0);
-  const onTimePct = Math.round(onTimeRate * 100);
+  // Backend already returns a percentage (0-100), not a fraction.
+  const onTimePct = Math.round(onTimeRate);
 
   return (
     <div className="space-y-6">

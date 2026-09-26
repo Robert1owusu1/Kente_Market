@@ -246,7 +246,7 @@ const VendorsPage = () => {
                           return (
                             <div className="space-y-0.5 text-xs">
                               <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-400 font-medium">
-                                <FaAward /> On time {Math.round(Number(s.onTimeRate ?? 0) * 100)}%
+                                <FaAward /> On time {s.onTimeRate == null ? '—' : `${Math.round(Number(s.onTimeRate))}%`}
                               </span>
                               <p className="text-gray-500 dark:text-gray-400">
                                 {responseLabel(s.avgResponseHours) ? `Replies within ${responseLabel(s.avgResponseHours)}` : 'No SLA data'} · {s.verifiedOrders ?? 0} verified · {Number(s.reviewRating ?? 0).toFixed(1)}★
