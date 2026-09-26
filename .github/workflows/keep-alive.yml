@@ -19,9 +19,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Ping kente-api health check
-        # -f/--fail-with-body: a non-2xx response fails the step, turning the
-        # job red when the API is actually down (no `|| echo` escape hatch).
-        run: |-
-          curl -fsS --retry 3 --retry-delay 5 -m 30 \
-            --fail-with-body \
-            https://kente-api.onrender.com/health
+        # Single-line curl (no backslash continuations), no --fail-with-body:
+        # the previous multi-line form failed instantly with "exit code 2"
+        # (curl's usage-error code) on every scheduled run since 327d3d8, and
+        # Action logs need sign-in, so failures are surfaced as annotations
+        # (curl exit + HTTP code) that show up on the run page itself.
+        # --retry-all-errors + -m 60 rides out Render free-tier cold starts
+        # (the sleeping instance keeps waking after a timed-out attempt).
+        run: |
+          echo "curl $(curl --version | head -1)"
+          set +e
+          code=$(curl -sS --retry 3 --retry-delay 5 --retry-all-errors --retry-max-time 240 -m 60 -o /tmp/health.json -w '%{http_code}' https://kente-api.onrender.com/health 2>/tmp/health.err)
+          rc=$?
+          set -e
+          echo "curl exit=$rc http=$code"
+          echo "--- body ---"; cat /tmp/health.json 2>/dev/null || true
+          echo "--- stderr ---"; cat /tmp/health.err 2>/dev/null || true
+          if [ "$rc" -ne 0 ] || [ -z "$code" ] || [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then
+            echo "::error::kente-api health ping failed (curl exit ${rc}, HTTP ${code:-none}) — see body/stderr above"
+            exit 1
+          fi
+          echo "::notice::kente-api healthy (HTTP $code)"
