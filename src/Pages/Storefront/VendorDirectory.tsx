@@ -132,7 +132,7 @@ const VendorDirectory = () => {
 
                   <div className="flex items-center justify-between mt-4 pt-4 border-t dark:border-gray-700 text-sm text-gray-500 dark:text-gray-400">
                     <span className="flex items-center gap-1">
-                      <FaBoxOpen /> {v.productCount || 0} products
+                      <FaBoxOpen /> {v.productCount || 0} {(v.productCount || 0) === 1 ? 'product' : 'products'}
                     </span>
                     <span className="text-amber-600 dark:text-amber-400 font-medium">Visit store →</span>
                   </div>

@@ -208,7 +208,7 @@ const CampaignsPage = () => {
                 <p className="flex items-center gap-1"><FaCalendarAlt /> Ends {formatDate(c.endDate as string)}</p>
               </div>
               <div className="mt-3 text-xs text-gray-500 dark:text-gray-400">
-                {c.productCount || 0} products · {c.vendorCount || 0} vendors
+                {c.productCount || 0} {(c.productCount || 0) === 1 ? 'product' : 'products'} · {c.vendorCount || 0} {(c.vendorCount || 0) === 1 ? 'vendor' : 'vendors'}
               </div>
             </div>
           ))}

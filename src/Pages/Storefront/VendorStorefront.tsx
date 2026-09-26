@@ -172,14 +172,16 @@ const VendorStorefront = () => {
                       <FaMedal /> {badgeLabels[b as keyof typeof badgeLabels] || b}
                     </span>
                   ))}
-                  <span className="inline-flex items-center gap-1 text-sm text-amber-500 bg-amber-50 dark:bg-amber-900/20 px-2 py-0.5 rounded-full">
-                    <FaStar /> {rating} ({reviewCount} reviews)
-                    {Number(viewData.verifiedReviewCount) > 0 && (
-                      <span className="ml-1 text-emerald-600 dark:text-emerald-400">
-                        • {viewData.verifiedReviewCount} verified order{Number(viewData.verifiedReviewCount) === 1 ? '' : 's'}
-                      </span>
-                    )}
-                  </span>
+                  {(Number(rating) > 0 || Number(reviewCount) > 0) && (
+                    <span className="inline-flex items-center gap-1 text-sm text-amber-500 bg-amber-50 dark:bg-amber-900/20 px-2 py-0.5 rounded-full">
+                      <FaStar /> {rating} ({reviewCount} {Number(reviewCount) === 1 ? 'review' : 'reviews'})
+                      {Number(viewData.verifiedReviewCount) > 0 && (
+                        <span className="ml-1 text-emerald-600 dark:text-emerald-400">
+                          • {viewData.verifiedReviewCount} verified order{Number(viewData.verifiedReviewCount) === 1 ? '' : 's'}
+                        </span>
+                      )}
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
