@@ -4,6 +4,7 @@ import { useCart } from "../../Context/CartContext";
 import Brands from "../../Pages/AllProducts/Brands";
 import { useGetProductsQuery } from '../../slices/productsApiSlice';
 import { useGetCategoriesQuery } from '../../slices/categoriesApiSlice';
+import { useWishlistAction } from '../../hooks/useWishlistAction';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ProductGridSkeleton } from '../../components/loader/Skeleton';
 import { resolveImageUrl } from '../../utils/imageUrl';
@@ -44,6 +45,7 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
   console.log('📦 Products received from API:', products.length, products);
   
   const { addToCart } = useCart();
+  const saveToFavorites = useWishlistAction();
   
   // State management
   const [searchQuery, setSearchQuery] = useState(urlSearchQuery);
@@ -267,7 +269,11 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
           )}
         </div>
 
-        <button className="absolute top-3 right-3 z-10 p-2 bg-white/20 backdrop-blur-sm rounded-full hover:bg-white/30 transition-all duration-300 opacity-0 group-hover:opacity-100">
+        <button
+          onClick={() => saveToFavorites(product.id)}
+          aria-label={`Add ${product.title} to wishlist`}
+          className="absolute top-3 right-3 z-10 p-2 bg-white/20 backdrop-blur-sm rounded-full hover:bg-white/30 transition-all duration-300 opacity-0 group-hover:opacity-100"
+        >
           <FaHeart className="text-red-500 hover:text-red-600" />
         </button>
 
@@ -348,19 +354,24 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
             </div>
           )}
           
-          <div className="flex items-center gap-2 mb-2">
-            <div className="flex text-yellow-400 text-xs sm:text-sm">
-              {[...Array(5)].map((_, i) => (
-                <FaStar 
-                  key={`${product.id}-star-${i}`} 
-                  className={i < Math.floor(productRating) ? 'text-yellow-400' : 'text-gray-300'} 
-                />
-              ))}
+          {/* Rating — hidden until the product has real reviews */}
+          {(productRating > 0 || productReviews > 0) && (
+            <div className="flex items-center gap-2 mb-2">
+              {productRating > 0 && (
+                <div className="flex text-yellow-400 text-xs sm:text-sm">
+                  {[...Array(5)].map((_, i) => (
+                    <FaStar 
+                      key={`${product.id}-star-${i}`} 
+                      className={i < Math.floor(productRating) ? 'text-yellow-400' : 'text-gray-300'} 
+                    />
+                  ))}
+                </div>
+              )}
+              <span className="text-xs sm:text-sm text-gray-600 dark:text-gray-300">
+                ({productReviews})
+              </span>
             </div>
-            <span className="text-xs sm:text-sm text-gray-600 dark:text-gray-300">
-              ({productReviews})
-            </span>
-          </div>
+          )}
 
           <div className="flex items-center gap-2 mb-3 flex-wrap">
             <span className="text-lg sm:text-2xl font-bold text-primary">

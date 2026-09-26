@@ -2,7 +2,8 @@
 import React from "react";
 import { FaStar, FaTshirt, FaClock, FaHeart, FaEye, FaShoppingCart, FaTags, FaFire } from "react-icons/fa";
 import { useCart } from "../../Context/CartContext";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import { useWishlistAction } from "../../hooks/useWishlistAction";
 import {
   useGetFeaturedProductsQuery,
   useGetTrendingProductsQuery,
@@ -26,6 +27,8 @@ interface TopProduct extends Product {
 
 const TopProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) => {
   const { addToCart } = useCart();
+  const navigate = useNavigate();
+  const saveToFavorites = useWishlistAction();
 
   // ⭐ RTK Query hook - cached in the Redux store, no duplicate network calls
   // when navigating between pages.
@@ -189,7 +192,12 @@ const TopProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
                 </div>
 
                 {/* Favorite Button */}
-                <button aria-label={`Favorite ${product.title}`} className="absolute top-4 right-4 z-20 p-2 bg-white/20 backdrop-blur-sm rounded-full hover:bg-white/30 transition-all duration-300 opacity-0 group-hover:opacity-100">
+                <button
+                  type="button"
+                  onClick={() => saveToFavorites(product.id)}
+                  aria-label={`Favorite ${product.title}`}
+                  className="absolute top-4 right-4 z-20 p-2 bg-white/20 backdrop-blur-sm rounded-full hover:bg-white/30 transition-all duration-300 opacity-0 group-hover:opacity-100"
+                >
                   <FaHeart className="text-red-500 hover:text-red-600" />
                 </button>
 
@@ -214,7 +222,12 @@ const TopProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
                   {/* Quick Action Buttons */}
                   <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300 transform translate-y-4 group-hover:translate-y-0">
                     <div className="flex gap-3">
-                      <button aria-label={`Quick view ${product.title}`} className="p-3 bg-white rounded-full shadow-lg hover:bg-gray-100 transition-colors duration-200 transform hover:scale-110">
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/product/${product.id}`)}
+                        aria-label={`Quick view ${product.title}`}
+                        className="p-3 bg-white rounded-full shadow-lg hover:bg-gray-100 transition-colors duration-200 transform hover:scale-110"
+                      >
                         <FaEye className="text-gray-700" />
                       </button>
                       <button 
@@ -227,13 +240,15 @@ const TopProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
                     </div>
                   </div>
 
-                  {/* Floating Rating */}
-                  <div className="absolute bottom-4 left-4 bg-white/90 backdrop-blur-sm rounded-full px-3 py-1 shadow-lg">
-                    <div className="flex items-center gap-1">
-                      <FaStar className="text-yellow-400 text-sm" />
-                      <span className="text-sm font-bold text-gray-800">{product.rating || 0}</span>
+                  {/* Floating Rating — hidden while the product has no reviews */}
+                  {Number(product.rating) > 0 && (
+                    <div className="absolute bottom-4 left-4 bg-white/90 backdrop-blur-sm rounded-full px-3 py-1 shadow-lg">
+                      <div className="flex items-center gap-1">
+                        <FaStar className="text-yellow-400 text-sm" />
+                        <span className="text-sm font-bold text-gray-800">{Number(product.rating).toFixed(1)}</span>
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
 
                 {/* Enhanced Details Section */}
@@ -243,26 +258,30 @@ const TopProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
                     {product.title}
                   </h3>
 
-                  {/* Rating with Reviews */}
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      <div className="flex text-yellow-400">
-                        {[...Array(5)].map((_, i) => (
-                          <FaStar
-                            key={i}
-                            className={`text-sm ${
-                              i < Math.floor(product.rating || 0)
-                                ? "text-yellow-400"
-                                : "text-gray-300"
-                            }`}
-                          />
-                        ))}
+                  {/* Rating with Reviews — only shown once there is real data */}
+                  {(Number(product.rating) > 0 || (product.reviews || 0) > 0) && (
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-2">
+                        {Number(product.rating) > 0 && (
+                          <div className="flex text-yellow-400">
+                            {[...Array(5)].map((_, i) => (
+                              <FaStar
+                                key={i}
+                                className={`text-sm ${
+                                  i < Math.floor(Number(product.rating))
+                                    ? "text-yellow-400"
+                                    : "text-gray-300"
+                                }`}
+                              />
+                            ))}
+                          </div>
+                        )}
+                        <span className="text-sm text-gray-600 dark:text-gray-300">
+                          ({product.reviews || 0} reviews)
+                        </span>
                       </div>
-                      <span className="text-sm text-gray-600 dark:text-gray-300">
-                        ({product.reviews || 0} reviews)
-                      </span>
                     </div>
-                  </div>
+                  )}
 
                   {/* Product Features */}
                   <div className="grid grid-cols-2 gap-3 mb-4">
