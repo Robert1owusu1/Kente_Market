@@ -99,7 +99,7 @@ const VendorsPage = () => {
 
   const scoreOf = (v: VendorRow) => {
     const key = v.userId ?? v.id;
-    return (scorecard as Record<string | number, { onTimeRate?: number; avgResponseHours?: number | null; reviewRating?: number; verifiedOrders?: number }>)[key];
+    return scorecard[key];
   };
 
   const handleStatus = useCallback(async (id: number | string, status: string) => {

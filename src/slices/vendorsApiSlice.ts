@@ -5,6 +5,19 @@ import type { Product, Order, Review, Coupon } from "../types/domain";
 
 const VENDORS_URL = "/api/vendors";
 
+/** One row of the admin performance scorecard (GET /admin-scorecard). */
+interface AdminScorecard {
+  userId: number;
+  businessName: string;
+  status: string;
+  verificationLevel: string;
+  onTimeRate: number | null;
+  avgResponseHours: number | null;
+  responseCount?: number;
+  reviewRating: string | number | null;
+  verifiedOrders: number;
+}
+
 export const vendorsApiSlice = apiSlice.injectEndpoints({
   endpoints: (builder) => ({
     // ✅ Apply / update vendor application (own account)
@@ -215,13 +228,22 @@ export const vendorsApiSlice = apiSlice.injectEndpoints({
     // ✅ Admin: per-vendor performance scorecard (on-time %, response hours,
     //    review rating, verified order count).
     getAdminScorecard: builder.query<
-      Record<string | number, { onTimeRate: number; avgResponseHours: number | null; reviewRating: number; verifiedOrders: number }>,
+      Record<string | number, AdminScorecard>,
       void
     >({
       query: () => ({
         url: `${VENDORS_URL}/admin-scorecard`,
         method: "GET",
       }),
+      // The API returns an ARRAY of scorecards; index it by userId here so
+      // consumers can look up a vendor directly (scorecard[userId] on an
+      // array is always undefined, which silently hid the whole column).
+      transformResponse: (
+        response: AdminScorecard[] | Record<string | number, AdminScorecard>
+      ) =>
+        Array.isArray(response)
+          ? Object.fromEntries(response.map((card) => [card.userId, card]))
+          : response,
       keepUnusedDataFor: 60,
     }),
 
