@@ -277,7 +277,7 @@ const TopProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
                           </div>
                         )}
                         <span className="text-sm text-gray-600 dark:text-gray-300">
-                          ({product.reviews || 0} reviews)
+                          ({product.reviews || 0} {(product.reviews || 0) === 1 ? "review" : "reviews"})
                         </span>
                       </div>
                     </div>
@@ -372,7 +372,7 @@ const TopProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
 
         {/* Debug Info */}
         <div className="text-center mt-8 text-sm text-gray-500">
-          Showing {displayProducts.length} products
+          Showing {displayProducts.length} {displayProducts.length === 1 ? "product" : "products"}
         </div>
       </div>
     </div>
