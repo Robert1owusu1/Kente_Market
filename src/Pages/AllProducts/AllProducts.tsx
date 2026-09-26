@@ -516,7 +516,7 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
               </button>
               
               <span className="text-sm text-gray-600 dark:text-gray-300">
-                {filteredProducts.length} of {products?.length || 0} products
+                {filteredProducts.length} of {products?.length || 0} {(products?.length || 0) === 1 ? 'product' : 'products'}
               </span>
 
               {(searchQuery || selectedCategory !== 'All' || selectedColors.length > 0 || selectedSizes.length > 0) && (
