@@ -1,9 +1,10 @@
 // FILE: frontend/src/components/TrendingProducts/TrendingProducts.jsx
 import React from 'react';
 import { FaStar, FaHeart, FaEye, FaShoppingCart, FaFire, FaTags, FaStore, FaCheckCircle } from "react-icons/fa";
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useCart } from "../../Context/CartContext";
 import { useGetTrendingProductsQuery } from "../../slices/productsApiSlice";
+import { useWishlistAction } from "../../hooks/useWishlistAction";
 import { ProductGridSkeleton } from "../loader/Skeleton";
 import { resolveImageUrl } from "../../utils/imageUrl";
 import type { Product } from "../../types/domain";
@@ -23,6 +24,8 @@ interface TrendProduct extends Product {
 
 const TrendingProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) => {
   const { addToCart } = useCart();
+  const navigate = useNavigate();
+  const saveToFavorites = useWishlistAction();
 
   // ⭐ RTK Query hook - cached in the Redux store, no duplicate network calls
   // when navigating between pages.
@@ -54,7 +57,8 @@ const TrendingProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void 
       colorsAvailable: (product.colors_available || product.colorsAvailable || product.colors || [product.color?.toLowerCase()]) as string[],
       colors: (product.colors_available || product.colorsAvailable || product.colors || (product.color ? [product.color] : [])) as string[],
       fabricType: product.fabric_type || product.fabricType || product.material,
-      productionTime: (product.production_time || product.productionTime || 3) as string
+      productionTime: (product.production_time || product.productionTime || 3) as string,
+      rating: Number(product.rating) || 0
     };
     
     addToCart(cartItem);
@@ -196,15 +200,22 @@ const TrendingProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void 
                     </div>
                   )}
 
-                  {/* Rating badge */}
-                  <div className='absolute bottom-3 left-3 bg-white/90 backdrop-blur-sm text-gray-800 text-xs px-2 py-1 rounded-full flex items-center gap-1'>
-                    <FaStar className='text-yellow-400 text-[10px]' />
-                    <span className="font-semibold">{data.rating || 0}</span>
-                  </div>
+                  {/* Rating badge — only when the product actually has reviews */}
+                  {Number(data.rating) > 0 && (
+                    <div className='absolute bottom-3 left-3 bg-white/90 backdrop-blur-sm text-gray-800 text-xs px-2 py-1 rounded-full flex items-center gap-1'>
+                      <FaStar className='text-yellow-400 text-[10px]' />
+                      <span className="font-semibold">{Number(data.rating).toFixed(1)}</span>
+                    </div>
+                  )}
 
                   {/* Quick actions overlay */}
                   <div className='absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center gap-3'>
-                    <button aria-label={`Quick view ${data.title}`} className='bg-white/90 hover:bg-white p-2 rounded-full transform scale-0 group-hover:scale-100 transition-transform duration-200 delay-100'>
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/product/${data.id}`)}
+                      aria-label={`Quick view ${data.title}`}
+                      className='bg-white/90 hover:bg-white p-2 rounded-full transform scale-0 group-hover:scale-100 transition-transform duration-200 delay-100'
+                    >
                       <FaEye className='text-gray-700' />
                     </button>
                     <button 
@@ -214,7 +225,12 @@ const TrendingProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void 
                     >
                       <FaShoppingCart />
                     </button>
-                    <button aria-label={`Add ${data.title} to wishlist`} className='bg-white/90 hover:bg-white p-2 rounded-full transform scale-0 group-hover:scale-100 transition-transform duration-200 delay-300'>
+                    <button
+                      type="button"
+                      onClick={() => saveToFavorites(data.id)}
+                      aria-label={`Add ${data.title} to wishlist`}
+                      className='bg-white/90 hover:bg-white p-2 rounded-full transform scale-0 group-hover:scale-100 transition-transform duration-200 delay-300'
+                    >
                       <FaHeart className='text-red-500' />
                     </button>
                   </div>

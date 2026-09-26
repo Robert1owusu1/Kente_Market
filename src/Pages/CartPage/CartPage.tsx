@@ -62,14 +62,20 @@ const CartItem = React.memo(({ item, onRemove, onUpdateQuantity, onUpdateYards, 
               <h4 className="line-clamp-2 text-base font-bold leading-snug text-gray-800 transition-colors duration-300 dark:text-white sm:text-xl">
                 {item.title}
               </h4>
-              <div className="mt-2 flex items-center gap-2">
-                <div className="flex" role="img" aria-label="4.8 out of 5 stars">
-                  {[...Array(5)].map((_, i) => (
-                    <FaStar key={`${item.id}-star-${i}`} className="w-3 h-3 sm:w-4 sm:h-4 text-yellow-400" />
-                  ))}
+              {/* Real rating only — never fabricate a score for unrated items */}
+              {Number(item.rating) > 0 && (
+                <div className="mt-2 flex items-center gap-2">
+                  <div className="flex" role="img" aria-label={`${Number(item.rating)} out of 5 stars`}>
+                    {[...Array(5)].map((_, i) => (
+                      <FaStar
+                        key={`${item.id}-star-${i}`}
+                        className={`w-3 h-3 sm:w-4 sm:h-4 ${i < Math.floor(Number(item.rating)) ? 'text-yellow-400' : 'text-gray-300'}`}
+                      />
+                    ))}
+                  </div>
+                  <span className="text-xs text-gray-500 dark:text-gray-400 sm:text-sm">({Number(item.rating).toFixed(1)})</span>
                 </div>
-                <span className="text-xs text-gray-500 dark:text-gray-400 sm:text-sm">(4.8)</span>
-              </div>
+              )}
               <p className="mt-2 text-lg font-bold text-primary sm:text-2xl">
                 GH₵ {Number(item.price).toFixed(2)}
               </p>
