@@ -29,7 +29,7 @@ export const getVendorFulfilment = async (vendorId) => {
   const [ownedProducts] = await pool.execute(
     `SELECT id FROM product WHERE vendorId = ?`, [vid]
   );
-  const ownedProductIds = new Set(ownedProducts.map((p) => String(p.id)));
+  const ownedProductIds = new Set((/** @type {Array<any>} */ (ownedProducts)).map((p) => String(p.id)));
 
   const [orders] = await pool.execute(
     `SELECT id, items, expectedCompletionDate, deliveredAt, orderStatus
