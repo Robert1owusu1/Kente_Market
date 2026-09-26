@@ -174,7 +174,7 @@ export default function CheckoutPage() {
   // ⚡ Memoized calculations for performance
   const orderTotals = useMemo(() => {
     // Use the shared pricing helper so checkout totals always match what the
-    // cart page persisted when it created the order (12.5% tax, GH₵15 ship).
+    // cart page persisted when it created the order (VAT from shared/pricing.js, GH₵15 ship).
     let appliedDiscountValue = 0;
     if (appliedCoupon) {
       const discountValue = Number(appliedCoupon.discountValue) || 0;

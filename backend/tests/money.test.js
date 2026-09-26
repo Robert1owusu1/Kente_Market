@@ -23,7 +23,7 @@ const item = (price, quantity = 1) => ({ price, quantity });
 
 describe('Business pricing rules (single source of truth in shared/pricing.js)', () => {
   test('tax rate, shipping threshold and cost match production config', () => {
-    assert.equal(TAX_RATE, 0.125); // 12.5% VAT
+    assert.equal(TAX_RATE, 0.15); // 15% VAT
     assert.equal(FREE_SHIPPING_THRESHOLD, 200); // free shipping >= GH¢200
     assert.equal(STANDARD_SHIPPING_COST, 15);
     assert.equal(DEFAULT_PLATFORM_FEE_RATE, 0.1); // 10% platform commission
@@ -44,30 +44,30 @@ describe('round2 (2-dp money rounding, GHS)', () => {
   });
 });
 
-describe('calcOrderTotals (12.5% VAT, GH¢15 shipping, free over GH¢200)', () => {
-  test('subtotal below threshold -> GH¢15 shipping + 12.5% tax', () => {
+describe('calcOrderTotals (15% VAT, GH¢15 shipping, free over GH¢200)', () => {
+  test('subtotal below threshold -> GH¢15 shipping + 15% tax', () => {
     const { subtotal, shipping, tax, total } = calcOrderTotals([
       item(80, 1),
       item(90, 1),
     ]);
     assert.equal(subtotal, 170);
     assert.equal(shipping, 15);
-    assert.equal(tax, 21.25);
-    assert.equal(total, 206.25);
+    assert.equal(tax, 25.5); // 170 * 0.15
+    assert.equal(total, 210.5); // 170 + 15 + 25.5
   });
 
   test('subtotal over threshold -> free shipping', () => {
     const { subtotal, shipping, tax, total } = calcOrderTotals([item(120, 2)]);
     assert.equal(subtotal, 240);
     assert.equal(shipping, 0);
-    assert.equal(tax, 30);
-    assert.equal(total, 270);
+    assert.equal(tax, 36); // 240 * 0.15
+    assert.equal(total, 276);
   });
 
   test('exactly GH¢200 is free-shipped (>= boundary)', () => {
     const { shipping, total } = calcOrderTotals([item(200, 1)]);
     assert.equal(shipping, 0);
-    assert.equal(total, 225);
+    assert.equal(total, 230); // 200 + 30 VAT, no shipping
   });
 
   test('multi-line subtotal sums quantity x price', () => {
@@ -110,10 +110,10 @@ describe('calcCouponDiscount (server-side, never trusted from the client)', () =
       { discount: 10 }
     );
     assert.equal(subtotal, 100);
-    assert.equal(tax, 12.5);
+    assert.equal(tax, 15); // 100 * 0.15
     assert.equal(shipping, 15);
     assert.equal(discount, 10);
-    assert.equal(total, 117.5); // 100 + 12.5 + 15 - 10
+    assert.equal(total, 120); // 100 + 15 + 15 - 10
   });
 });
 

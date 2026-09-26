@@ -10,7 +10,7 @@
 // pick up the same values automatically, so the price shown == price charged.
 
 // --- Order pricing rules ---
-export const TAX_RATE = 0.125; // 12.5% VAT
+export const TAX_RATE = 0.15; // 15% VAT (Ghana standard rate)
 export const FREE_SHIPPING_THRESHOLD = 200; // subtotal >= this ships free
 export const STANDARD_SHIPPING_COST = 15;
 
