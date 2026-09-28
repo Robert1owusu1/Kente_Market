@@ -216,9 +216,15 @@ export const updateVendorStatus = async (req, res) => {
 // @access  Private (vendor or admin)
 export const getMyProducts = async (req, res) => {
   try {
+    // Every field the vendor edit form prefills must be present, otherwise a
+    // vendor who only changes the price would save empty values over the
+    // product's real description/colours/yard ladder/threads.
     const [rows] = await pool.execute(
       `SELECT id, title, img, price, originalPrice, category, tag, featured,
-              isCustomizable, created_at, stock, sku, lowStockThreshold,
+              isCustomizable, description, material, printType, productionTime,
+              isRentable, madeToOrder, rentPricePerDay,
+              colors, sizes, threadTypes, dominantThread,
+              created_at, stock, sku, lowStockThreshold,
               approvalStatus, approvalNote,
               CASE
                 WHEN stock = 0 THEN 'out_of_stock'
@@ -283,7 +289,7 @@ export const createVendorProduct = async (req, res) => {
       patternName, patternMeaning, culturalSignificance, origin, weavingTechnique,
       yards, occasions, designStory, careInstructions, weight, wholesalePrice,
       retailPrice, madeToOrder, video, gallery, sku, stock, lowStockThreshold,
-      isRentable, rentPricePerDay,
+      isRentable, rentPricePerDay, threadTypes, dominantThread,
     } = req.body;
 
     if (!title || !img || !price || !category) {
@@ -311,8 +317,8 @@ export const createVendorProduct = async (req, res) => {
          yards, occasions, designStory, careInstructions, weight, wholesalePrice,
          retailPrice, madeToOrder, video, gallery,
          approvalStatus, approvalNote, approvedAt, stock, sku, lowStockThreshold,
-         isRentable, rentPricePerDay)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         isRentable, rentPricePerDay, threadTypes, dominantThread)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         title,
         img,
@@ -350,6 +356,8 @@ export const createVendorProduct = async (req, res) => {
         parseInt(lowStockThreshold) || 0,
         isRentable ? 1 : 0,
         rentPricePerDay != null && rentPricePerDay !== '' ? parseFloat(rentPricePerDay) : null,
+        threadTypes && threadTypes.length ? JSON.stringify(threadTypes) : null,
+        dominantThread || null,
       ]
     );
     const [product] = await pool.execute(`SELECT * FROM product WHERE id = ?`, [result.insertId]);
@@ -391,12 +399,13 @@ export const updateVendorProduct = async (req, res) => {
       'yards', 'occasions', 'designStory', 'careInstructions', 'weight', 'wholesalePrice',
       'retailPrice', 'madeToOrder', 'video', 'gallery', 'stock', 'sku', 'lowStockThreshold',
       'isRentable', 'rentPricePerDay',
+      'threadTypes', 'dominantThread',
     ];
     const sets = [];
     const values = [];
     for (const key of allowedFields) {
       if (req.body[key] !== undefined) {
-        if (['colors', 'sizes', 'occasions', 'gallery'].includes(key)) {
+        if (['colors', 'sizes', 'occasions', 'gallery', 'threadTypes'].includes(key)) {
           sets.push(`${key} = ?`);
           values.push(req.body[key] ? JSON.stringify(req.body[key]) : null);
         } else if (['isCustomizable', 'madeToOrder', 'isRentable'].includes(key)) {
