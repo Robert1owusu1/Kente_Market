@@ -3,6 +3,7 @@ import asyncHandler from "../middleware/asyncHandler.js";
 import Product from "../models/productModel.js";
 import pool from "../config/db.js";
 import { clearCache } from "../middleware/cacheMiddleware.js";
+import { hasInvalidYards, INVALID_YARDS_MESSAGE } from "../utils/yards.js";
 
 // @desc    Fetch curated Kente Museum pieces (approved products with pattern
 //          provenance metadata), for the cultural showcase page.
@@ -170,13 +171,23 @@ const getTrendingProducts = asyncHandler(async (req, res) => {
 // @access  Private/Admin
 const createProduct = asyncHandler(async (req, res) => {
   try {
+    if (hasInvalidYards(req.body.sizes)) {
+      res.status(400);
+      throw new Error(INVALID_YARDS_MESSAGE);
+    }
     const product = await Product.create(req.body);
 
     clearCache('products');
     res.status(201).json(product);
   } catch (error) {
     console.error('❌ Error in createProduct:', error.message);
-    
+
+    // A 4xx status set deliberately inside the try (invalid yardage, …)
+    // must pass through verbatim — don't wrap it as a generic 500.
+    if (res.statusCode >= 400 && res.statusCode < 500) {
+      throw error;
+    }
+
     if (error.message.includes('required') || error.message.includes('already exists')) {
       res.status(400);
       throw error;
@@ -197,6 +208,11 @@ const updateProduct = asyncHandler(async (req, res) => {
     if (!product) {
       res.status(404);
       throw new Error("Product not found");
+    }
+
+    if (hasInvalidYards(req.body.sizes)) {
+      res.status(400);
+      throw new Error(INVALID_YARDS_MESSAGE);
     }
 
     const updatedProduct = await Product.update(req.params.id, req.body);
@@ -221,7 +237,13 @@ const updateProduct = asyncHandler(async (req, res) => {
     res.json(updatedProduct);
   } catch (error) {
     console.error('❌ Error in updateProduct:', error.message);
-    
+
+    // 4xx set deliberately inside the try (invalid yardage, …) passes
+    // through verbatim instead of being re-wrapped as a 500.
+    if (res.statusCode >= 400 && res.statusCode < 500) {
+      throw error;
+    }
+
     if (res.statusCode === 404) {
       throw error;
     }

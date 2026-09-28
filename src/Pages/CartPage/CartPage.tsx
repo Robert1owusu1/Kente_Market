@@ -6,19 +6,7 @@ import { useCreateOrderMutation } from "../../slices/ordersApiSlice";
 import { toast } from "react-toastify";
 import { TAX_RATE, FREE_SHIPPING_THRESHOLD, STANDARD_SHIPPING_COST, calcOrderTotals } from "../../utils/pricing";
 import { resolveImageUrl } from "../../utils/imageUrl";
-
-const COLOR_MAP: Record<string, string> = {
-  Red: "#EF4444",
-  Blue: "#3B82F6", 
-  Black: "#1F2937",
-  White: "#F9FAFB",
-  Yellow: "#EAB308",
-  Navy: "#1E3A8A",
-  Pink: "#EC4899",
-  Purple: "#8B5CF6",
-  Green: "#10B981",
-  Beige: "#D4B896"
-};
+import { yardOptionsFor } from "../../utils/yards";
 
 // The cart reducer persists a legacy `size` field (set alongside `selectedSize`)
 // that is NOT part of the CartContext.CartItem interface, so add it back here.
@@ -29,12 +17,11 @@ interface CartItemProps {
   onRemove: (item: CartLine) => void;
   onUpdateQuantity: (id: number | string, quantity: number) => void;
   onUpdateYards: (id: number | string, yards: number | string) => void;
-  onUpdateColors: (id: number | string, colors: string[]) => void;
   isRemoving: boolean;
 }
 
 // Memoized Cart Item Component
-const CartItem = React.memo(({ item, onRemove, onUpdateQuantity, onUpdateYards, onUpdateColors, isRemoving }: CartItemProps) => {
+const CartItem = React.memo(({ item, onRemove, onUpdateQuantity, onUpdateYards, isRemoving }: CartItemProps) => {
   return (
     <div
       className={`group rounded-3xl border border-gray-200/80 bg-white/90 p-4 shadow-lg backdrop-blur-xl transition-all duration-300 hover:shadow-xl dark:border-gray-700 dark:bg-gray-800/90 sm:p-6 ${
@@ -81,68 +68,33 @@ const CartItem = React.memo(({ item, onRemove, onUpdateQuantity, onUpdateYards, 
               </p>
             </div>
 
-            {/* Yards selection */}
-            {(item.yardsAvailable || (item.sizes && item.sizes.length > 0)) && (
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-600 dark:text-gray-300">Yards</label>
-                <div className="flex flex-wrap gap-2" role="group" aria-label="Yards selection">
-                  {(item.yardsAvailable || item.sizes || []).map((yd) => (
-                    <button
-                      key={`${item.id}-yards-${yd}`}
-                      onClick={() => onUpdateYards(item.id, String(yd))}
-                      className={`h-10 min-w-10 rounded-xl border-2 px-3 text-sm font-medium transition-all duration-300 sm:h-12 sm:min-w-12 ${
-                        (item.yards ?? item.size) === String(yd)
-                          ? 'border-blue-500 bg-blue-500 text-white shadow-lg'
-                          : 'border-gray-200 dark:border-gray-600 hover:border-blue-300 dark:hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-gray-700'
-                      }`}
-                      aria-label={`${yd} yards`}
-                      aria-pressed={(item.yards ?? item.size) === String(yd)}
-                    >
-                      {yd}
-                    </button>
-                  ))}
-                </div>
-                {!(item.yards ?? item.size) && (
-                  <p className="text-xs text-amber-600 font-medium" role="alert">
-                    Please select your yards
-                  </p>
-                )}
+            {/* Yards selection — even numbers only (2, 4, 6, 8, 10, 12, …).
+                Kente is pre-designed: buyers never choose a colour or a size. */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-gray-600 dark:text-gray-300">Yards</label>
+              <div className="flex flex-wrap gap-2" role="group" aria-label="Yards selection">
+                {yardOptionsFor(item).map((yd) => (
+                  <button
+                    key={`${item.id}-yards-${yd}`}
+                    onClick={() => onUpdateYards(item.id, String(yd))}
+                    className={`h-10 min-w-10 rounded-xl border-2 px-3 text-sm font-medium transition-all duration-300 sm:h-12 sm:min-w-12 ${
+                      (item.yards ?? item.size) === String(yd)
+                        ? 'border-blue-500 bg-blue-500 text-white shadow-lg'
+                        : 'border-gray-200 dark:border-gray-600 hover:border-blue-300 dark:hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-gray-700'
+                    }`}
+                    aria-label={`${yd} yards`}
+                    aria-pressed={(item.yards ?? item.size) === String(yd)}
+                  >
+                    {yd}
+                  </button>
+                ))}
               </div>
-            )}
-
-            {/* Color selection */}
-            {item.colorsAvailable && item.colorsAvailable.length > 0 && (
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-600 dark:text-gray-300">Color</label>
-                <div className="flex flex-wrap gap-3" role="group" aria-label="Color selection">
-                  {item.colorsAvailable.map((color) => {
-                    const isSelected = item.colors?.[0] === color;
-                    return (
-                      <button
-                        key={`${item.id}-color-${color}`}
-                        onClick={() => onUpdateColors(item.id, [color])}
-                        className={`relative h-10 w-10 rounded-full border-4 transition-all duration-300 hover:scale-110 sm:h-12 sm:w-12 ${
-                          isSelected ? 'border-blue-500 shadow-lg' : 'border-gray-200 dark:border-gray-600'
-                        }`}
-                        style={{ backgroundColor: COLOR_MAP[color] || color.toLowerCase() }}
-                        title={color}
-                        aria-label={`Color ${color}`}
-                        aria-pressed={isSelected}
-                      >
-                        {isSelected && (
-                          <FaCheck className="w-4 h-4 text-white absolute inset-0 m-auto drop-shadow-sm" />
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-                {(!item.colors || item.colors.length === 0) && (
-                  <p className="text-xs text-amber-600 font-medium" role="alert">
-                    Please select a color
-                  </p>
-                )}
-              </div>
-            )}
+              {!(item.yards ?? item.size) && (
+                <p className="text-xs text-amber-600 font-medium" role="alert">
+                  Please select your yards
+                </p>
+              )}
+            </div>
           </div>
         </div>
 
@@ -198,7 +150,6 @@ const CartPage = () => {
     removeItem,
     updateItemQuantity,
     updateItemYards,
-    updateItemColors,
     getTotalPrice,
   } = useCart();
 
@@ -267,15 +218,13 @@ const CartPage = () => {
       return;
     }
 
-    // Validation - check for incomplete selections
+    // Validation - yardage is the only variant, and every line must have it
+    // (the yard ladder always renders, so there's always something to pick).
     const orderItems = cartItems as CartLine[];
-    const hasIncompleteItems = orderItems.some(item => 
-      ((item.yardsAvailable || (item.sizes && item.sizes.length > 0)) && !(item.yards ?? item.size)) ||
-      (item.colorsAvailable && item.colorsAvailable.length > 0 && (!item.colors || item.colors.length === 0))
-    );
+    const hasIncompleteItems = orderItems.some(item => !(item.yards ?? item.size));
 
     if (hasIncompleteItems) {
-      toast.error("Please select yards and color for all items before proceeding!");
+      toast.error("Please select yards for all items before proceeding!");
       return;
     }
 
@@ -379,7 +328,6 @@ const CartPage = () => {
                   onRemove={openRemoveModal}
                   onUpdateQuantity={updateItemQuantity}
                   onUpdateYards={updateItemYards}
-                  onUpdateColors={updateItemColors}
                   isRemoving={removingItems.has(item.id)}
                 />
               ))}

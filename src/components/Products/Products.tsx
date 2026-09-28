@@ -7,6 +7,7 @@ import { useGetTrendingProductsQuery } from "../../slices/productsApiSlice";
 import { useWishlistAction } from "../../hooks/useWishlistAction";
 import { ProductGridSkeleton } from "../loader/Skeleton";
 import { resolveImageUrl } from "../../utils/imageUrl";
+import { yardOptionsFor } from "../../utils/yards";
 import type { Product } from "../../types/domain";
 
 interface TrendProduct extends Product {
@@ -43,19 +44,17 @@ const TrendingProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void 
   const loading = isLoading;
 
   const handleAddToCart = (product: TrendProduct) => {
+    // Kente is pre-designed: no colour/size choice — yardage only (even numbers).
+    const yardsOptions = yardOptionsFor(product);
     const cartItem = {
       id: product.id,
       title: product.title,
       price: product.price,
       basePrice: (product.basePrice || product.base_price || product.price) as number | string,
       image: product.image || product.img,
-      color: product.color,
-      size: product.sizes ? product.sizes[0] : "M",
-      yards: String((product.yardsAvailable as string[] | undefined)?.[0] ?? product.sizes?.[0] ?? product.size ?? "2"),
-      yardsAvailable: (product.yardsAvailable as string[] | undefined) || product.sizes || [],
+      yards: yardsOptions[0],
+      yardsAvailable: yardsOptions,
       quantity: 1,
-      colorsAvailable: (product.colors_available || product.colorsAvailable || product.colors || [product.color?.toLowerCase()]) as string[],
-      colors: (product.colors_available || product.colorsAvailable || product.colors || (product.color ? [product.color] : [])) as string[],
       fabricType: product.fabric_type || product.fabricType || product.material,
       productionTime: (product.production_time || product.productionTime || 3) as string,
       rating: Number(product.rating) || 0

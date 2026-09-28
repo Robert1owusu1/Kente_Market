@@ -10,6 +10,7 @@ import Seo from "../../components/Seo/Seo";
 import { useSelector } from "react-redux";
 import type { RootState } from "../../store";
 import AskModal from "../../components/Messages/AskModal";
+import { yardOptionsFor } from "../../utils/yards";
 
 const ProductDetails = () => {
   const { id: productId } = useParams();
@@ -21,17 +22,15 @@ const ProductDetails = () => {
   const apiError = error as { data?: { message?: string }; error?: string } | undefined;
 
   // ✅ Local states (sync with product once it loads)
-  const [selectedColor, setSelectedColor] = useState("");
+  // Kente is pre-designed: buyers pick YARDS ONLY — never a colour or size
+  // (colour choices belong to the customize flow, gated by the vendor).
   const [selectedYards, setSelectedYards] = useState("");
   const [quantity, setQuantity] = useState(1);
   const [showAsk, setShowAsk] = useState(false);
 
   useEffect(() => {
     if (product) {
-      const colors = product.colors || product.colorsAvailable || [];
-      const yardsOptions = (product.yardsAvailable as string[] | undefined) || product.sizes || [];
-      setSelectedColor(colors[0] || "default");
-      setSelectedYards(yardsOptions[0] || "2");
+      setSelectedYards(yardOptionsFor(product)[0]);
       setQuantity(1);
     }
   }, [product]);
@@ -58,9 +57,12 @@ const ProductDetails = () => {
   const handleAddToCart = () => {
     addToCart({
       ...product,
-      selectedColor,
+      // Strip variant choices: the buyer's only decision is the yardage.
+      colors: [],
+      colorsAvailable: [],
+      sizes: [],
       yards: selectedYards,
-      yardsAvailable: (product.yardsAvailable as string[] | undefined) || product.sizes || [],
+      yardsAvailable: yardsOptions,
       threadTypes: product.threadTypes,
       dominantThread: product.dominantThread,
       quantity,
@@ -69,7 +71,7 @@ const ProductDetails = () => {
   };
 
   const colors = product.colors || product.colorsAvailable || [];
-  const yardsOptions = (product.yardsAvailable as string[] | undefined) || product.sizes || [];
+  const yardsOptions = yardOptionsFor(product);
 
   // Honest stock signal: 0 => sold out, low threshold => "almost gone".
   const stockRaw = product.in_stock ?? product.stock;
@@ -205,25 +207,11 @@ const ProductDetails = () => {
             <SocialShare url={window.location.href} title={product.title} />
           </div>
 
-          {/* Color selector */}
+          {/* Colours of the design (display only — buyers never pick a colour) */}
           {colors.length > 0 && (
             <div className="mb-4">
-              <label className="block text-sm font-medium mb-2">Color:</label>
-              <div className="flex flex-wrap gap-3" role="group" aria-label="Color selection">
-                {colors.map((color, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => setSelectedColor(color)}
-                    className={`relative w-10 h-10 rounded-full border-4 transition-all duration-200 hover:scale-110 ${
-                      selectedColor === color ? "border-primary shadow-lg" : "border-gray-200 dark:border-gray-600"
-                    }`}
-                    style={{ backgroundColor: color.toLowerCase() }}
-                    title={color}
-                    aria-label={`Color ${color}`}
-                    aria-pressed={selectedColor === color}
-                  />
-                ))}
-              </div>
+              <span className="block text-sm font-medium mb-1">Colours in this design:</span>
+              <p className="text-sm text-gray-600 dark:text-gray-300">{colors.join(", ")}</p>
             </div>
           )}
 

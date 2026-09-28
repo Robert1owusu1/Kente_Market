@@ -1,6 +1,10 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
+// Dev proxy target — override with API_PROXY_TARGET when the local API can't
+// run on 5000 (e.g. another dev project already owns the port).
+const apiTarget = process.env.API_PROXY_TARGET || 'http://localhost:5000'
+
 export default defineConfig({
   plugins: [react()],
   build: {
@@ -30,16 +34,16 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'http://localhost:5000',
+        target: apiTarget,
         changeOrigin: true,
         secure: false,
       },
       '/uploads': {
-        target: 'http://localhost:5000',
+        target: apiTarget,
         changeOrigin: true,
       },
       '/images': {
-        target: 'http://localhost:5000',
+        target: apiTarget,
         changeOrigin: true,
       }
     },
