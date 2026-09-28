@@ -94,6 +94,10 @@ export const createRequest = async (req, res) => {
     if (isNaN(yardNum) || yardNum <= 0) {
       return res.status(400).json({ message: "Please state how many yards you need" });
     }
+    // Kente is woven in even yards only (2, 4, 6, 8, 10, 12, …).
+    if (!Number.isInteger(yardNum) || yardNum % 2 !== 0) {
+      return res.status(400).json({ message: "Kente is woven in even yards — choose 2, 4, 6, 8, 10, 12 …" });
+    }
     if (!neededForDate) {
       return res.status(400).json({ message: "Please state the date you need it by" });
     }
@@ -105,10 +109,21 @@ export const createRequest = async (req, res) => {
     let resolvedBaseProductId = null;
     if (refProductId && !isNaN(refProductId)) {
       const [[product]] = await pool.execute(
-        "SELECT id, title, vendorId FROM product WHERE id = ?",
+        "SELECT id, title, vendorId, isCustomizable FROM product WHERE id = ?",
         [parseInt(refProductId)]
       );
-      resolvedBaseProductId = product ? product.id : null;
+      if (!product) {
+        return res.status(400).json({ message: "Base product not found" });
+      }
+      // Customisation is opt-in per cloth: the vendor must flag the product.
+      if (!product.isCustomizable) {
+        return res.status(400).json({ message: "This piece isn't open for customisation" });
+      }
+      // The request must go to the product's own vendor, never one the client claims.
+      if (parseInt(vendorId, 10) !== product.vendorId) {
+        return res.status(400).json({ message: "This product belongs to a different vendor" });
+      }
+      resolvedBaseProductId = product.id;
     }
 
     const request = await CustomRequest.create({

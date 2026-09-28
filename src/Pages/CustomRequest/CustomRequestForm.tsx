@@ -7,6 +7,7 @@ import { useCreateCustomRequestMutation } from "../../slices/customRequestsApiSl
 import { useUploadReferenceImageMutation } from "../../slices/uploadApiSlice";
 import { resolveImageUrl } from "../../utils/imageUrl";
 import Seo from "../../components/Seo/Seo";
+import { DEFAULT_EVEN_YARDS } from "../../utils/yards";
 
 const toList = (v: unknown): string[] =>
   Array.isArray(v) ? v.map((x) => String(x)).filter(Boolean)
@@ -14,6 +15,9 @@ const toList = (v: unknown): string[] =>
     : [];
 
 const DEFAULT_THREADS = ["silver", "silk", "cotton"];
+// Traditional kente stamps — always on offer so the palette is never empty,
+// even when the base product carries no colours of its own.
+const DEFAULT_COLOURS = ["Gold", "Black", "Red", "Green", "Blue"];
 
 export default function CustomRequestForm() {
   const { id } = useParams();
@@ -28,6 +32,11 @@ export default function CustomRequestForm() {
   const productColours = useMemo(() => toList(product?.colors || product?.colorsAvailable), [product]);
   const productThreads = useMemo(() => toList(product?.threadTypes), [product]);
   const threads = productThreads.length > 0 ? productThreads : DEFAULT_THREADS;
+  // Base design colours first, then the traditional stamps (deduped).
+  const colours = useMemo(
+    () => [...new Set([...productColours, ...DEFAULT_COLOURS])],
+    [productColours]
+  );
 
   const [yards, setYards] = useState("");
   const [selectedColours, setSelectedColours] = useState<string[]>([]);
@@ -50,6 +59,28 @@ export default function CustomRequestForm() {
         <button onClick={() => navigate("/products")} className="px-6 py-3 bg-primary text-white rounded-xl">
           Browse Kente
         </button>
+      </div>
+    );
+  }
+
+  // Customisation is opt-in per cloth: the vendor must flag the product as
+  // customisable before this form unlocks (direct URL visits included).
+  if (!product.isCustomizable) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4 px-6 text-center">
+        <p className="text-2xl font-semibold">This piece isn&apos;t open for customisation</p>
+        <p className="max-w-md text-gray-500">
+          The weaver hasn&apos;t marked &ldquo;{product.title}&rdquo; as customisable. You can order it as it is,
+          or browse other pieces that can be customised.
+        </p>
+        <div className="flex flex-wrap justify-center gap-3">
+          <button onClick={() => navigate(`/product/${product.id}`)} className="px-6 py-3 bg-primary text-white rounded-xl">
+            Back to the piece
+          </button>
+          <button onClick={() => navigate("/products")} className="px-6 py-3 border-2 border-primary text-primary rounded-xl">
+            Browse Kente
+          </button>
+        </div>
       </div>
     );
   }
@@ -98,6 +129,8 @@ export default function CustomRequestForm() {
     const errors: Record<string, string> = {};
     const yardNum = parseFloat(yards);
     if (!yardNum || yardNum <= 0) errors.yards = "How many yards do you need?";
+    else if (!Number.isInteger(yardNum) || yardNum % 2 !== 0)
+      errors.yards = "Kente is woven in even yards — pick 2, 4, 6, 8, 10, 12 …";
     if (selectedColours.length === 0) errors.colours = "Pick at least one colour stamp";
     if (!dominantColour) errors.dominantColour = "Which colour should dominate?";
     if (selectedThreads.length === 0) errors.threads = "Pick the thread types to use";
@@ -172,14 +205,35 @@ export default function CustomRequestForm() {
               </div>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-5">
+            {/* noValidate: keep min/step as spinner hints but let OUR
+                validation run — native step validation silently swallows the
+                submit for odd yardage before handleSubmit can show the
+                kente-specific "even yards" message. */}
+            <form onSubmit={handleSubmit} noValidate className="space-y-5">
               {/* Yards */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Yards needed (even numbers are standard for kente)</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Yards needed (kente is woven in even yards)</label>
+                <div className="flex flex-wrap gap-2 mb-2" role="group" aria-label="Standard yard options">
+                  {DEFAULT_EVEN_YARDS.map((yd) => (
+                    <button
+                      key={yd}
+                      type="button"
+                      onClick={() => setYards(yd)}
+                      aria-pressed={yards === yd}
+                      className={`px-3 py-1.5 rounded-lg border-2 text-sm font-medium transition ${
+                        yards === yd
+                          ? "border-primary bg-primary text-white"
+                          : "border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300"
+                      }`}
+                    >
+                      {yd} yd
+                    </button>
+                  ))}
+                </div>
                 <input
                   type="number"
-                  min="1"
-                  step="1"
+                  min="2"
+                  step="2"
                   value={yards}
                   onChange={(e) => setYards(e.target.value)}
                   placeholder="e.g. 6"
@@ -194,7 +248,7 @@ export default function CustomRequestForm() {
                   <FaPalette /> Colour stamps (tap to choose)
                 </label>
                 <div className="flex flex-wrap gap-2">
-                  {productColours.map((c) => {
+                  {colours.map((c) => {
                     const active = selectedColours.includes(c);
                     return (
                       <button

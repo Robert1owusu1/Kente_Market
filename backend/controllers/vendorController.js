@@ -6,6 +6,7 @@ import paystackServices from '../Services/paystackservices.js';
 import { getWallet } from '../Services/walletService.js';
 import { getAvailableAllocationsForVendor, payoutAllocation } from '../Services/escrowService.js';
 import { PLATFORM_FEE_RATE } from '../config/businessConfig.js';
+import { hasInvalidYards, INVALID_YARDS_MESSAGE } from '../utils/yards.js';
 
 // Create a URL-safe slug from a business name (Ghanaian accents transliterated
 // to ASCII; everything else stripped).
@@ -289,6 +290,12 @@ export const createVendorProduct = async (req, res) => {
       return res.status(400).json({ message: 'Title, image, price and category are required' });
     }
 
+    // Kente is sold by the yard in even lengths only — reject odd/non-numeric
+    // sizes (or legacy clothing sizes) even if the frontend check is bypassed.
+    if (hasInvalidYards(sizes)) {
+      return res.status(400).json({ message: INVALID_YARDS_MESSAGE });
+    }
+
     // Vendor-created products enter the moderation queue (pending) unless the
     // platform admin is creating/inviting on behalf of the vendor.
     const isAdmin = req.user.role === 'admin';
@@ -370,6 +377,11 @@ export const updateVendorProduct = async (req, res) => {
     if (!existing) return res.status(404).json({ message: 'Product not found' });
     if (existing.vendorId !== req.user.id && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Not authorized to update this product' });
+    }
+
+    // Same even-yard rule as create: old odd/size values can't creep back in.
+    if (hasInvalidYards(req.body.sizes)) {
+      return res.status(400).json({ message: INVALID_YARDS_MESSAGE });
     }
 
     const allowedFields = [

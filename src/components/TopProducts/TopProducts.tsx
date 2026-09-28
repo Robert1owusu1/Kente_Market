@@ -10,6 +10,7 @@ import {
 } from "../../slices/productsApiSlice";
 import { ProductGridSkeleton } from "../loader/Skeleton";
 import { resolveImageUrl } from "../../utils/imageUrl";
+import { yardOptionsFor } from "../../utils/yards";
 import type { Product } from "../../types/domain";
 
 interface TopProduct extends Product {
@@ -50,6 +51,8 @@ const TopProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
     ProductsData && ProductsData.length > 0 ? ProductsData : trendingProducts;
 
   const handleAddToCart = (product: TopProduct) => {
+    // Kente is pre-designed: no colour/size choice — yardage only (even numbers).
+    const yardsOptions = yardOptionsFor(product);
     const cartItem = {
       id: product.id,
       title: product.title,
@@ -57,11 +60,8 @@ const TopProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
       basePrice: Number(product.base_price) || Number(product.basePrice) || Number(product.price) || 0,
       image: product.image || product.img,
       img: product.image || product.img,
-      colorsAvailable: product.colors_available || product.colorsAvailable || product.colors || [],
-      colors: product.colors || product.colors_available || product.colorsAvailable || [],
-      sizes: product.sizes || ['M'],
-      yards: (product.yardsAvailable as string[] | undefined)?.[0] ?? product.sizes?.[0] ?? '2',
-      yardsAvailable: (product.yardsAvailable as string[] | undefined) || product.sizes || ['2'],
+      yards: yardsOptions[0],
+      yardsAvailable: yardsOptions,
       threadTypes: product.threadTypes,
       dominantThread: product.dominantThread,
       fabricType: product.fabric_type || product.fabricType || product.material || 'Cotton',
@@ -72,9 +72,7 @@ const TopProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
       rating: product.rating || 0,
       reviews: product.reviews || 0,
       isCustomizable: product.is_customizable || product.isCustomizable || false,
-      quantity: 1,
-      selectedColor: (product.colors_available || product.colorsAvailable || product.colors || [])[0] || 'default',
-      selectedSize: (product.sizes || ['M'])[0]
+      quantity: 1
     };
 
     addToCart(cartItem);

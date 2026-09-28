@@ -6,6 +6,7 @@ import { useCart } from '../../Context/CartContext';
 import { useGetMyWishlistQuery, useRemoveFromWishlistMutation } from '../../slices/wishlistApiSlice';
 import { ProductGridSkeleton } from '../../components/loader/Skeleton';
 import { resolveImageUrl } from '../../utils/imageUrl';
+import { yardOptionsFor } from '../../utils/yards';
 
 interface WishlistView {
   id?: number | string;
@@ -43,8 +44,8 @@ const WishlistPage = () => {
   const wishlistError = error as { data?: { message?: string }; message?: string; error?: string } | undefined;
 
   const handleAddToCart = (product: WishlistView) => {
-    const productColors = product.colorsAvailable || product.colors || [];
-    const productSizes = product.sizes || ['One Size'];
+    // Kente is pre-designed: yardage only — no colour/size choice.
+    const yardsOptions = yardOptionsFor(product);
 
     const cartItem = {
       id: product.productId || product.id!,
@@ -53,11 +54,8 @@ const WishlistPage = () => {
       basePrice: Number(product.price) || 0,
       image: product.img,
       img: product.img,
-      colorsAvailable: productColors,
-      colors: productColors,
-      sizes: productSizes,
-      yards: (product.yardsAvailable as string[] | undefined)?.[0] ?? productSizes[0],
-      yardsAvailable: (product.yardsAvailable as string[] | undefined) || productSizes,
+      yards: yardsOptions[0],
+      yardsAvailable: yardsOptions,
       threadTypes: product.threadTypes as string[] | undefined,
       dominantThread: product.dominantThread as string | undefined,
       fabricType: product.fabricType || product.material || 'Cotton',

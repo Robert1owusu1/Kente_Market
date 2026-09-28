@@ -8,6 +8,7 @@ import { useWishlistAction } from '../../hooks/useWishlistAction';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ProductGridSkeleton } from '../../components/loader/Skeleton';
 import { resolveImageUrl } from '../../utils/imageUrl';
+import { yardOptionsFor, evenYardsFrom } from '../../utils/yards';
 import Seo from '../../components/Seo/Seo';
 import type { Product } from '../../types/domain';
 
@@ -93,7 +94,9 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
   const getUniqueSizes = () => {
     if (!products || products.length === 0) return [];
     const sizes = products.flatMap(p => p.sizes || []).filter(Boolean);
-    return [...new Set(sizes)];
+    // The sidebar groups these under "Yards" — keep only even yardage so
+    // legacy clothing sizes ("S", "M", "L") never appear as yard values.
+    return evenYardsFrom(sizes);
   };
 
   const getUniquePrintTypes = () => {
@@ -119,9 +122,10 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
 
   // Enhanced cart handler
   const addToCartHandler = (product: ProductCardType) => {
-    const productColors = product.colors || product.colorsAvailable || [];
-    const productSizes = (product.yardsAvailable as string[] | undefined) || product.sizes || ['2', '4', '6', '8'];
-    
+    // Kente is pre-designed: yardage (even numbers) is the only variant —
+    // buyers never pick a colour or a clothing size here.
+    const yardsOptions = yardOptionsFor(product);
+
     const cartItem = {
       id: product.id,
       title: product.title,
@@ -129,11 +133,8 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
       basePrice: Number(product.price) || 0,
       image: product.img,
       img: product.img,
-      colorsAvailable: productColors,
-      colors: productColors,
-      sizes: productSizes,
-      yards: productSizes[0],
-      yardsAvailable: productSizes,
+      yards: yardsOptions[0],
+      yardsAvailable: yardsOptions,
       threadTypes: product.threadTypes,
       dominantThread: product.dominantThread,
       fabricType: product.fabricType || product.material || 'Cotton',
@@ -145,9 +146,7 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
       rating: product.rating || 0,
       reviews: product.reviews || 0,
       isCustomizable: product.isCustomizable || false,
-      quantity: 1,
-      selectedColor: productColors[0] || 'default',
-      selectedSize: productSizes[0] || 'M'
+      quantity: 1
     };
     
     addToCart(cartItem);

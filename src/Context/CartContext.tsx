@@ -168,11 +168,18 @@ const cartReducer = (state: CartState, action: CartAction): CartState => {
       const selectedSize =
         newItem.selectedSize || (selectedYards === null ? null : String(selectedYards));
 
+      // Dedupe keys must be symmetric with what's STORED: kente payloads no
+      // longer send `selectedColor` (pre-designed cloth — yardage only), so an
+      // incoming `undefined` has to match the `null` a stored line carries, or
+      // every re-add spawns a duplicate row. "default" is a legacy placeholder
+      // color from old card payloads — never treat it as a real variant.
+      const normColor = (v?: string | null) => (v && v !== "default" ? v : null);
       const existingIndex = state.cartItems.findIndex(
         (item) =>
           item.id === newItem.id &&
-          item.selectedColor === newItem.selectedColor &&
-          (item.yards ?? item.selectedSize) === selectedYards
+          normColor(item.selectedColor) === normColor(newItem.selectedColor) &&
+          String(item.yards ?? item.selectedSize ?? "") ===
+            String(selectedYards ?? "")
       );
 
       if (existingIndex !== -1) {
