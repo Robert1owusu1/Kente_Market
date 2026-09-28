@@ -366,15 +366,12 @@ const CartPage = () => {
                       <span>Tax (VAT {(TAX_RATE * 100).toFixed(1)}%)</span>
                       <span className="font-semibold">GH₵ {taxPrice.toFixed(2)}</span>
                     </div>
-                    
-                    {/* Discount if any */}
-                    {shippingPrice === 0 && subtotal >= FREE_SHIPPING_THRESHOLD && (
-                      <div className="flex justify-between text-green-600">
-                        <span>Shipping Discount</span>
-                        <span className="font-semibold">-GH₵ {STANDARD_SHIPPING_COST.toFixed(2)}</span>
-                      </div>
-                    )}
-                    
+
+                    {/* No "Shipping Discount -X" row here: Shipping already
+                        renders as Free (0), so a negative line would make the
+                        rows sum to less than the Total. The free-shipping
+                        saving is communicated by the banner below instead. */}
+
                     <hr className="border-gray-200 my-4 dark:border-gray-700" />
                     
                     {/* Total */}
