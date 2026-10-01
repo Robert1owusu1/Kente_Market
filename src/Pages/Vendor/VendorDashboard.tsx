@@ -19,6 +19,7 @@ import VendorMessages from './VendorMessages';
 import VendorStaff from './VendorStaff';
 import VendorCustomRequests from './VendorCustomRequests';
 import VendorInsights from './VendorInsights';
+import Footer from '../../components/Footer/Footer';
 
 const menuItems = [
   { id: 'overview', name: 'Overview', icon: FaHome },
@@ -119,7 +120,7 @@ const VendorDashboard = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col">
       {/* Header */}
       <header className="bg-white dark:bg-gray-800 shadow-sm sticky top-0 z-40">
         <div className="container mx-auto px-4 py-4 flex justify-between items-center">
@@ -136,7 +137,7 @@ const VendorDashboard = () => {
         </div>
       </header>
 
-      <div className="container mx-auto px-4 py-8 flex flex-col lg:flex-row gap-8">
+      <div className="container mx-auto px-4 py-8 flex flex-col lg:flex-row gap-8 flex-1">
         {/* Mobile menu toggle */}
         <div className="lg:hidden">
           <button
@@ -201,6 +202,8 @@ const VendorDashboard = () => {
 
         <main className="lg:w-3/4">{renderContent()}</main>
       </div>
+
+      <Footer />
     </div>
   );
 };

@@ -1,38 +1,39 @@
-import React from 'react';
-import { Link } from 'react-router-dom';
+import React from "react";
+import { Link } from "react-router-dom";
+import { FaCompass } from "react-icons/fa";
+import Footer from "../Footer/Footer";
 
+// Rendered by the catch-all route, so it sits outside Layout and brings its
+// own chrome. The footer gives a dead-end page somewhere to navigate to.
 const NotFound = () => {
   return (
-    <div style={{
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'center',
-      minHeight: '100vh',
-      textAlign: 'center',
-      padding: '2rem',
-      fontFamily: 'system-ui, sans-serif',
-      backgroundColor: '#0f172a',
-      color: '#f9fafb',
-    }}>
-      <h1 style={{ fontSize: '6rem', margin: 0, color: '#f59e0b', fontWeight: 800 }}>404</h1>
-      <h2 style={{ fontSize: '1.5rem', margin: '0.5rem 0' }}>Page Not Found</h2>
-      <p style={{ fontSize: '1.1rem', margin: '1rem 0 2rem', color: '#9ca3af' }}>
-        The page you're looking for doesn't exist or has been moved.
-      </p>
-      <Link
-        to="/"
-        style={{
-          padding: '0.75rem 2rem',
-          backgroundColor: '#f59e0b',
-          color: '#fff',
-          borderRadius: '8px',
-          textDecoration: 'none',
-          fontWeight: 600,
-        }}
-      >
-        Go Home
-      </Link>
+    <div className="min-h-screen w-full flex flex-col bg-gradient-to-br from-slate-900 via-[#431407] to-slate-800">
+      <div className="flex-1 w-full flex items-center justify-center px-4 py-16 text-center">
+        <div className="max-w-md">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-primary/20 mb-6">
+            <FaCompass className="text-3xl text-primary" aria-hidden="true" />
+          </div>
+
+          <h1 className="text-6xl sm:text-7xl font-extrabold text-primary leading-none">
+            404
+          </h1>
+          <h2 className="text-2xl font-semibold text-white mt-4">
+            Page Not Found
+          </h2>
+          <p className="text-white/70 mt-3">
+            The page you&apos;re looking for doesn&apos;t exist or has been moved.
+          </p>
+
+          <Link
+            to="/"
+            className="inline-block mt-8 px-8 py-3 rounded-lg bg-primary text-[#431407] font-semibold transition-opacity duration-200 hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          >
+            Go Home
+          </Link>
+        </div>
+      </div>
+
+      <Footer />
     </div>
   );
 };

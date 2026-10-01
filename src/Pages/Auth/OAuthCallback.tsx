@@ -8,6 +8,7 @@ import { BiLoaderAlt } from 'react-icons/bi';
 import { TiShoppingBag } from 'react-icons/ti';
 import { FaCheckCircle, FaTimesCircle } from 'react-icons/fa';
 import logoImg from "../../assets/logo.png";
+import Footer from "../../components/Footer/Footer";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:5000' : '');
 
@@ -115,48 +116,52 @@ const OAuthCallback = () => {
   }, [success, error, navigate, dispatch]);
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-gradient-to-br from-slate-900 via-[#431407] to-slate-800">
-      <div className="bg-white/10 backdrop-blur-xl rounded-3xl p-10 max-w-md w-full mx-4 text-center border border-white/20">
-        {/* Logo */}
-        <div className="flex justify-center gap-x-2 items-center mb-8">
-          <div className="p-2 bg-amber-400/20 rounded-xl backdrop-blur-md">
-            <img src={logoImg} alt="Bonwire Kente" className="h-8 w-8 object-contain" width={32} height={32} />
+    <div className="min-h-screen w-full flex flex-col bg-gradient-to-br from-slate-900 via-[#431407] to-slate-800">
+      <div className="flex-1 w-full flex items-center justify-center px-4">
+        <div className="bg-white/10 backdrop-blur-xl rounded-3xl p-10 max-w-md w-full mx-4 text-center border border-white/20">
+          {/* Logo */}
+          <div className="flex justify-center gap-x-2 items-center mb-8">
+            <div className="p-2 bg-amber-400/20 rounded-xl backdrop-blur-md">
+              <img src={logoImg} alt="Bonwire Kente" className="h-8 w-8 object-contain" width={32} height={32} />
+            </div>
+            <span className="text-white font-bold text-xl">Bonwire Kente</span>
           </div>
-          <span className="text-white font-bold text-xl">Bonwire Kente</span>
+
+          {/* Status Icon */}
+          <div className="mb-6">
+            {status === 'processing' && (
+              <BiLoaderAlt className="w-16 h-16 text-amber-400 animate-spin mx-auto" />
+            )}
+            {status === 'success' && (
+              <FaCheckCircle className="w-16 h-16 text-green-400 mx-auto animate-bounce" />
+            )}
+            {status === 'error' && (
+              <FaTimesCircle className="w-16 h-16 text-red-400 mx-auto" />
+            )}
+          </div>
+
+          {/* Message */}
+          <h2 className={`text-xl font-semibold mb-2 ${
+            status === 'success' ? 'text-green-400' :
+            status === 'error' ? 'text-red-400' :
+            'text-white'
+          }`}>
+            {status === 'processing' && 'Processing...'}
+            {status === 'success' && 'Success!'}
+            {status === 'error' && 'Oops!'}
+          </h2>
+          <p className="text-white/70">{message}</p>
+
+          {/* Redirect notice */}
+          {status !== 'processing' && (
+            <p className="text-white/50 text-sm mt-4">
+              Redirecting automatically...
+            </p>
+          )}
         </div>
-
-        {/* Status Icon */}
-        <div className="mb-6">
-          {status === 'processing' && (
-            <BiLoaderAlt className="w-16 h-16 text-amber-400 animate-spin mx-auto" />
-          )}
-          {status === 'success' && (
-            <FaCheckCircle className="w-16 h-16 text-green-400 mx-auto animate-bounce" />
-          )}
-          {status === 'error' && (
-            <FaTimesCircle className="w-16 h-16 text-red-400 mx-auto" />
-          )}
-        </div>
-
-        {/* Message */}
-        <h2 className={`text-xl font-semibold mb-2 ${
-          status === 'success' ? 'text-green-400' :
-          status === 'error' ? 'text-red-400' :
-          'text-white'
-        }`}>
-          {status === 'processing' && 'Processing...'}
-          {status === 'success' && 'Success!'}
-          {status === 'error' && 'Oops!'}
-        </h2>
-        <p className="text-white/70">{message}</p>
-
-        {/* Redirect notice */}
-        {status !== 'processing' && (
-          <p className="text-white/50 text-sm mt-4">
-            Redirecting automatically...
-          </p>
-        )}
       </div>
+
+      <Footer />
     </div>
   );
 };

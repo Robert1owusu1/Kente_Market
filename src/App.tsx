@@ -45,7 +45,6 @@ const TopProducts = lazy(() => import("./components/TopProducts/TopProducts"));
 const Banner = lazy(() => import('./components/Banner/Banner'));
 const Subscribe = lazy(() => import('./components/Subscribe/Subscribe'));
 const Testimonials = lazy(() => import('./components/Testimonials/Testimonials'));
-const Footer = lazy(() => import('./components/Footer/Footer'));
 const Login = lazy(() => import("./components/login/Login"));
 const Register = lazy(() => import('./components/login/Register'));
 const AllProducts = lazy(() => import('./Pages/AllProducts/AllProducts'));
@@ -123,7 +122,6 @@ const App = () => {
                   <Subscribe />
                   <TopProducts />
                   <Testimonials />
-                  <Footer />
                 </>
               } />
 
