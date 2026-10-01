@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { FaStar, FaHeart, FaEye, FaShoppingCart, FaFilter, FaTh, FaList, FaChevronDown, FaTimes, FaPalette, FaPlus, FaStore, FaCheckCircle } from 'react-icons/fa';
+import { FaStar, FaHeart, FaEye, FaShoppingCart, FaFilter, FaTh, FaList, FaChevronDown, FaTimes, FaPalette, FaPlus, FaStore, FaCheckCircle } from "react-icons/fa";
 import { useCart } from "../../Context/CartContext";
 import Brands from "../../Pages/AllProducts/Brands";
 import { useGetProductsQuery } from '../../slices/productsApiSlice';
@@ -31,7 +31,7 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
   const [searchParams, setSearchParams] = useSearchParams();
   const urlSearchQuery = searchParams.get('search') || '';
 
-  // ✅ Pass search parameter to the query
+ // Pass search parameter to the query
   const { data: productsData, isLoading, error, refetch } = useGetProductsQuery(
     urlSearchQuery ? { search: urlSearchQuery } : {}
   );
@@ -43,7 +43,7 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
   const apiError = error as { data?: { message?: string }; error?: string } | undefined;
   const { data: platformCategories = [] } = useGetCategoriesQuery();
 
-  console.log('📦 Products received from API:', products.length, products);
+ console.log(' Products received from API:', products.length, products);
   
   const { addToCart } = useCart();
   const saveToFavorites = useWishlistAction();
@@ -60,13 +60,13 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
   const [viewMode, setViewMode] = useState('grid');
   const [showFilters, setShowFilters] = useState(false);
 
-  // ✅ Sync URL search param with local state
+ // Sync URL search param with local state
   useEffect(() => {
     const urlSearch = searchParams.get('search');
     if (urlSearch) {
       setSearchQuery(urlSearch);
       setShowFilters(true);
-      console.log('🔍 Search query updated from URL:', urlSearch);
+ console.log(' Search query updated from URL:', urlSearch);
     }
   }, [searchParams]);
 
@@ -156,9 +156,9 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
     }
   };
 
-  // ✅ Enhanced filter logic - Backend handles search, frontend handles other filters
+ // Enhanced filter logic - Backend handles search, frontend handles other filters
   const filteredProducts = useMemo(() => {
-    console.log('🔍 Filtering products. Total from backend:', products?.length || 0);
+ console.log(' Filtering products. Total from backend:', products?.length || 0);
     
     if (!products || products.length === 0) {
       return [];
@@ -166,7 +166,7 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
 
     let filtered = [...products];
 
-    // ⚠️ NOTE: Search is already handled by backend via query params
+ // NOTE: Search is already handled by backend via query params
     // We only apply additional client-side filters here
 
     if (selectedCategory !== 'All') {
@@ -226,11 +226,11 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
       }
     });
 
-    console.log('✅ Filtered products:', filtered.length);
+ console.log(' Filtered products:', filtered.length);
     return filtered;
   }, [products, selectedCategory, selectedColors, selectedSizes, selectedPrintType, selectedMaterial, priceRange, sortBy]);
 
-  // ✅ Clear all filters including search
+ // Clear all filters including search
   const clearAllFilters = () => {
     setSearchQuery('');
     setSelectedCategory('All');
@@ -305,7 +305,7 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
                   </span>
                 )}
                 {product.isRentable && (
-                  <span className="text-[10px] font-semibold text-purple-700 dark:text-purple-300 bg-purple-100 dark:bg-purple-900/70 px-2 py-0.5 rounded-full">
+                  <span className="text-[10px] font-semibold text-[#7c2d12] dark:text-[#f2c169] bg-[#fbeacb] dark:bg-[#431407]/70 px-2 py-0.5 rounded-full">
                     Rentable
                   </span>
                 )}
@@ -479,7 +479,7 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
         <div data-aos="fade-up" className="text-center">
           <Link to="/ai-tryon" className="inline-block">
             <div className="inline-flex items-center gap-4 bg-gradient-to-r from-primary to-secondary text-white rounded-2xl p-6 shadow-xl hover:shadow-2xl hover:scale-105 transition-all duration-300 max-w-xl cursor-pointer">
-              <span className="text-4xl">✨</span>
+ <FaPalette className="text-4xl" />
               <div className="text-left">
                 <h3 className="text-xl font-bold mb-1">Try It On Before You Buy</h3>
                 <p className="text-sm text-white/80">
@@ -566,7 +566,7 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
 
         {showFilters && (
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 mb-8">
-            {/* ✅ Search input in filters */}
+ {/* Search input in filters */}
             <div className="mb-6">
               <h3 className="font-semibold text-gray-800 dark:text-white mb-3">Search</h3>
               <div className="relative">

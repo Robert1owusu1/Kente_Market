@@ -73,9 +73,9 @@ try {
         `ALTER TABLE escrow_allocations ADD COLUMN reason VARCHAR(255) NULL
          COMMENT 'Why the allocation is failed/voided (clawback, no payout, ...)'`
       );
-      console.log('✅ Added escrow_allocations.reason (clawback/void bookkeeping)');
+ console.log(' Added escrow_allocations.reason (clawback/void bookkeeping)');
     } else {
-      console.log('ℹ️  escrow_allocations.reason already exists — skipping');
+ console.log('escrow_allocations.reason already exists — skipping');
     }
   }
 
@@ -92,9 +92,9 @@ try {
     if (currentType && currentType.indexOf('clawback') === -1) {
       const newType = currentType.replace(/\)$/, `,'clawback')`);
       await connection.query(`ALTER TABLE wallet_transactions MODIFY type ${newType}`);
-      console.log('✅ Extended wallet_transactions.type with clawback');
+ console.log(' Extended wallet_transactions.type with clawback');
     } else {
-      console.log('ℹ️  wallet_transactions.type already knows clawback — skipping');
+ console.log('wallet_transactions.type already knows clawback — skipping');
     }
   }
 
@@ -127,20 +127,20 @@ try {
             [d.paymentReference, d.keepId]
           );
         }
-        console.log(`⚠️  Disambiguated ${dupes.length} duplicated payment reference(s) (kept lowest id)`);
+ console.log(`Disambiguated ${dupes.length} duplicated payment reference(s) (kept lowest id)`);
       }
       await connection.query(
         `ALTER TABLE orders ADD UNIQUE KEY uq_orders_paymentReference (paymentReference)`
       );
-      console.log('✅ Added UNIQUE KEY uq_orders_paymentReference (one charge → one order)');
+ console.log(' Added UNIQUE KEY uq_orders_paymentReference (one charge → one order)');
     } else {
-      console.log('ℹ️  uq_orders_paymentReference already exists — skipping');
+ console.log('uq_orders_paymentReference already exists — skipping');
     }
   }
 
-  console.log('✅ Payment hardening migration complete');
+ console.log(' Payment hardening migration complete');
 } catch (err) {
-  console.error('❌ Payment hardening migration failed:', err.message);
+ console.error(' Payment hardening migration failed:', err.message);
   process.exitCode = 1;
 } finally {
   await connection.end();

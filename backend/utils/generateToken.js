@@ -45,7 +45,7 @@ const generateToken = (res, userOrId, rememberMe = false) => {
   // X-CSRF-Token). Issued with every new session cookie.
   setCsrfCookie(res);
 
-  console.log(`✅ Token generated for user ${userId} (Remember Me: ${rememberMe}, Expires: ${rememberMe ? '30 days' : '7 days'}, tv: ${tv})`);
+ console.log(` Token generated for user ${userId} (Remember Me: ${rememberMe}, Expires: ${rememberMe ? '30 days' : '7 days'}, tv: ${tv})`);
   
   return token;
 };

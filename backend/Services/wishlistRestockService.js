@@ -63,7 +63,7 @@ export const processRestockForProduct = async (productId) => {
       );
       notified += 1;
     } catch (err) {
-      console.warn(`⚠️ Restock alert failed for user ${row.userId}: ${err.message}`);
+ console.warn(` Restock alert failed for user ${row.userId}: ${err.message}`);
     }
   }
   return notified;
@@ -91,7 +91,7 @@ export const scanWishlistRestocks = async () => {
     total += await processRestockForProduct(row.productId);
   }
   if (total > 0) {
-    console.log(`🔔 Wishlist restock sweep notified ${total} user(s)`);
+ console.log(` Wishlist restock sweep notified ${total} user(s)`);
   }
   return total;
 };

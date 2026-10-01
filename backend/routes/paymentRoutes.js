@@ -164,7 +164,7 @@ router.post('/verify-paystack', protect, async (req, res) => {
         const flipped = flipResult.affectedRows > 0;
         if (flipped) {
           const heldCount = await holdEscrowForOrder(orderId);
-          console.log(`✅ verify-paystack fallback: order ${orderId} marked paid (${heldCount} allocations held)`);
+ console.log(` verify-paystack fallback: order ${orderId} marked paid (${heldCount} allocations held)`);
           // Decrement in-stock inventory for the confirmed order.
           try {
             const [[paidOrderRow]] = await pool.execute(
@@ -181,7 +181,7 @@ router.post('/verify-paystack', protect, async (req, res) => {
               }
             }
           } catch (stockErr) {
-            console.warn(`⚠️ Could not decrement stock for order ${orderId}: ${stockErr.message}`);
+ console.warn(` Could not decrement stock for order ${orderId}: ${stockErr.message}`);
           }
           // Consume deferred coupon usage
           if (order.couponId) {
@@ -204,14 +204,14 @@ router.post('/verify-paystack', protect, async (req, res) => {
               }
             }
           } catch (compErr) {
-            console.warn(`⚠️ Could not seed expected completion date: ${compErr.message}`);
+ console.warn(` Could not seed expected completion date: ${compErr.message}`);
           }
           // Receipt email — only when THIS call flipped the order, so a webhook
           // that already handled payment never sends a duplicate.
           try {
             await sendOrderConfirmationEmail(orderId);
           } catch (emailErr) {
-            console.warn(`⚠️ Could not send order confirmation email: ${emailErr.message}`);
+ console.warn(` Could not send order confirmation email: ${emailErr.message}`);
           }
           orderMarkedPaid = true;
           // Immutable audit event (dedupe per reference; no-op if the webhook
@@ -304,7 +304,7 @@ router.post('/paystack-webhook', webhookLimiter, async (req, res) => {
             [event.event, reference]
           );
           if (claim.affectedRows !== 1) {
-            console.log(`⏸️ Webhook already being processed/processed: ${event.event} ${reference}`);
+ console.log(`⏸ Webhook already being processed/processed: ${event.event} ${reference}`);
             return res.status(200).send('Duplicate ignored');
           }
           claimedWebhook = { event: event.event, reference };
@@ -381,7 +381,7 @@ router.post('/paystack-webhook', webhookLimiter, async (req, res) => {
 
                   // Hold escrow allocations (pending → held)
                   const heldCount = await holdEscrowForOrder(orderId);
-                  console.log(`✅ Webhook: order ${orderId} marked paid for reference ${reference} (${heldCount} allocations held)`);
+ console.log(` Webhook: order ${orderId} marked paid for reference ${reference} (${heldCount} allocations held)`);
 
                   // Track platform-owned product revenue
                   let items = orderRows[0].items;
@@ -395,7 +395,7 @@ router.post('/paystack-webhook', webhookLimiter, async (req, res) => {
                   // Decrement in-stock inventory now that payment is confirmed.
                   if (Array.isArray(items) && items.length > 0) {
                     await decrementStockForOrder(items, orderId);
-                    console.log(`📦 Stock decremented for order ${orderId}`);
+ console.log(` Stock decremented for order ${orderId}`);
                   }
 
                   // For customised (custom-woven) orders, seed the expected
@@ -417,7 +417,7 @@ router.post('/paystack-webhook', webhookLimiter, async (req, res) => {
                       }
                     }
                   } catch (compErr) {
-                    console.warn(`⚠️ Could not seed expected completion date: ${compErr.message}`);
+ console.warn(` Could not seed expected completion date: ${compErr.message}`);
                   }
 
                   // Consume the deferred coupon usage now that payment is confirmed.
@@ -425,9 +425,9 @@ router.post('/paystack-webhook', webhookLimiter, async (req, res) => {
                     try {
                       const { default: Coupon } = await import('../models/couponModel.js');
                       await Coupon.incrementUses(orderRows[0].couponId);
-                      console.log(`🎟️ Coupon ${orderRows[0].couponId} consumed on confirmed payment for order ${orderId}`);
+ console.log(` Coupon ${orderRows[0].couponId} consumed on confirmed payment for order ${orderId}`);
                     } catch (couponErr) {
-                      console.warn(`⚠️ Could not increment coupon on payment: ${couponErr.message}`);
+ console.warn(` Could not increment coupon on payment: ${couponErr.message}`);
                     }
                   }
                 }
@@ -458,7 +458,7 @@ router.post('/paystack-webhook', webhookLimiter, async (req, res) => {
 
 if (!orderFound) {
             if (validationError) {
-              console.error(`❌ ${validationError}`);
+ console.error(` ${validationError}`);
               await pool.execute(
                 `UPDATE webhook_events SET processing_status = 'failed', last_error = ?
                  WHERE event = ? AND reference = ?`,
@@ -467,7 +467,7 @@ if (!orderFound) {
               // 400 permanently rejects the charge so it is never replayed.
               return res.status(400).send('Payment does not match the order');
             }
-            console.warn(`⚠️ Webhook: no order found for reference ${reference} after ${MAX_RETRIES} retries`);
+ console.warn(` Webhook: no order found for reference ${reference} after ${MAX_RETRIES} retries`);
             await pool.execute(
               `UPDATE webhook_events SET processing_status = 'failed', last_error = ?
                WHERE event = ? AND reference = ?`,
@@ -483,7 +483,7 @@ if (!orderFound) {
             try {
               await sendOrderConfirmationEmail(orderId);
             } catch (emailErr) {
-              console.warn(`⚠️ Could not send order confirmation email: ${emailErr.message}`);
+ console.warn(` Could not send order confirmation email: ${emailErr.message}`);
             }
           }
           await pool.execute(
@@ -504,7 +504,7 @@ case 'transfer.success': {
         const transferRef = event.data?.reference;
         if (transferRef) {
           if (!(await claimWebhook(event.event, transferRef, JSON.stringify(event.data || null)))) {
-            console.log(`⏸️ Duplicate/in-flight webhook ignored: ${event.event} ${transferRef}`);
+ console.log(`⏸ Duplicate/in-flight webhook ignored: ${event.event} ${transferRef}`);
             return res.status(200).send('Duplicate ignored');
           }
           try {
@@ -513,7 +513,7 @@ case 'transfer.success': {
               console.warn(`Transfer success has no payout attempt: ${transferRef}`);
             }
             await completeWebhook(event.event, transferRef);
-            if (outcome !== 'unknown') console.log(`✅ Transfer success: ${transferRef} (${outcome})`);
+ if (outcome !== 'unknown') console.log(` Transfer success: ${transferRef} (${outcome})`);
           } catch (error) {
             await failWebhook(event.event, transferRef, error);
             throw error; // → 500 so Paystack redelivers
@@ -526,7 +526,7 @@ case 'transfer.success': {
         const transferRef = event.data?.reference;
         if (transferRef) {
           if (!(await claimWebhook(event.event, transferRef, JSON.stringify(event.data || null)))) {
-            console.log(`⏸️ Duplicate/in-flight webhook ignored: ${event.event} ${transferRef}`);
+ console.log(`⏸ Duplicate/in-flight webhook ignored: ${event.event} ${transferRef}`);
             return res.status(200).send('Duplicate ignored');
           }
           try {
@@ -535,7 +535,7 @@ case 'transfer.success': {
               console.warn(`Transfer failed has no payout attempt: ${transferRef}`);
             }
             await completeWebhook(event.event, transferRef);
-            if (outcome !== 'unknown') console.log(`❌ Transfer failed settled: ${transferRef} (${outcome})`);
+ if (outcome !== 'unknown') console.log(` Transfer failed settled: ${transferRef} (${outcome})`);
           } catch (error) {
             await failWebhook(event.event, transferRef, error);
             throw error; // → 500 so Paystack redelivers
@@ -548,7 +548,7 @@ case 'transfer.success': {
         const reversedRef = event.data?.reference;
         if (reversedRef) {
           if (!(await claimWebhook(event.event, reversedRef, JSON.stringify(event.data || null)))) {
-            console.log(`⏸️ Duplicate/in-flight webhook ignored: ${event.event} ${reversedRef}`);
+ console.log(`⏸ Duplicate/in-flight webhook ignored: ${event.event} ${reversedRef}`);
             return res.status(200).send('Duplicate ignored');
           }
           try {
@@ -557,7 +557,7 @@ case 'transfer.success': {
               console.warn(`Transfer reversed has no payout attempt: ${reversedRef}`);
             }
             await completeWebhook(event.event, reversedRef);
-            if (outcome !== 'unknown') console.log(`🔄 Transfer reversed settled: ${reversedRef} (${outcome})`);
+ if (outcome !== 'unknown') console.log(` Transfer reversed settled: ${reversedRef} (${outcome})`);
           } catch (error) {
             await failWebhook(event.event, reversedRef, error);
             throw error; // → 500 so Paystack redelivers

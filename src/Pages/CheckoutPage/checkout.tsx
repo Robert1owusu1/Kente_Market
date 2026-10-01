@@ -112,7 +112,7 @@ export default function CheckoutPage() {
   const [appliedCoupon, setAppliedCoupon] = useState<AppliedCoupon | null>(null);
   const [couponLoading, setCouponLoading] = useState(false);
 
-  // ✅ Secure environment variable handling
+ // Secure environment variable handling
   const paystackPublicKey = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY;
 
   // Check if Paystack is loaded
@@ -131,7 +131,7 @@ export default function CheckoutPage() {
   // Validate Paystack key
   useEffect(() => {
     if (!paystackPublicKey || paystackPublicKey.includes('xxxx') || paystackPublicKey.length < 20) {
-      console.error('❌ Invalid Paystack public key');
+ console.error(' Invalid Paystack public key');
       toast.error('Payment system not configured. Please contact support.');
     }
   }, [paystackPublicKey]);
@@ -171,7 +171,7 @@ export default function CheckoutPage() {
     }
   }, [cartItems, navigate]);
 
-  // ⚡ Memoized calculations for performance
+ // Memoized calculations for performance
   const orderTotals = useMemo(() => {
     // Use the shared pricing helper so checkout totals always match what the
     // cart page persisted when it created the order (VAT from shared/pricing.js, GH₵15 ship).
@@ -194,7 +194,7 @@ export default function CheckoutPage() {
 
   const { subtotal, shipping, tax, discount, total } = orderTotals;
 
-  // ✅ Charge the SERVER's total, not localStorage cart prices. The pre-created
+ // Charge the SERVER's total, not localStorage cart prices. The pre-created
   // order already carries the API's own tax/shipping/discount math, so its
   // totalAmount is what Paystack must be initialized with. The localStorage
   // computation (orderTotals above) is only the fallback while the order has
@@ -238,10 +238,10 @@ export default function CheckoutPage() {
   };
 
   const momoProviders = useMemo(() => [
-    { id: 'mtn', name: 'MTN Mobile Money', logo: 'MTN', color: 'bg-yellow-500', prefix: ['024', '025', '053', '054', '055', '059'] },
-    { id: 'vodafone', name: 'Vodafone Cash', logo: '🔴', color: 'bg-red-500', prefix: ['020', '050'] },
-    { id: 'airteltigo', name: 'AirtelTigo Money', logo: '🟢', color: 'bg-green-500', prefix: ['027', '026', '056', '057'] },
-    { id: 'telecel', name: 'Telecel Cash', logo: '🔵', color: 'bg-blue-500', prefix: ['023', '028'] }
+    { id: 'mtn', name: 'MTN Mobile Money', short: 'MTN', color: 'bg-yellow-500', prefix: ['024', '025', '053', '054', '055', '059'] },
+    { id: 'vodafone', name: 'Vodafone Cash', short: 'VF', color: 'bg-red-600', prefix: ['020', '050'] },
+    { id: 'airteltigo', name: 'AirtelTigo Money', short: 'AT', color: 'bg-green-600', prefix: ['027', '026', '056', '057'] },
+    { id: 'telecel', name: 'Telecel Cash', short: 'TC', color: 'bg-blue-600', prefix: ['023', '028'] }
   ], []);
 
   const ghanaRegions = useMemo(() => [
@@ -256,7 +256,7 @@ export default function CheckoutPage() {
     { id: 3, name: 'Review', icon: FaCheck }
   ];
 
-  // 🔒 Validate Ghana phone number
+ // Validate Ghana phone number
   const validateGhanaPhone = (phone: string) => {
     const cleaned = phone.replace(/\s/g, '');
     if (cleaned.startsWith('+233')) {
@@ -267,7 +267,7 @@ export default function CheckoutPage() {
     return false;
   };
 
-  // 🎯 Auto-detect mobile money provider
+ // Auto-detect mobile money provider
   const detectMomoProvider = useCallback((phoneNumber: string) => {
     const cleaned = phoneNumber.replace(/\s/g, '');
     const prefix = cleaned.substring(0, 3);
@@ -276,7 +276,7 @@ export default function CheckoutPage() {
     return provider?.id || null;
   }, [momoProviders]);
 
-  // 📱 Format phone number for display
+ // Format phone number for display
   const formatPhoneNumber = (value: string) => {
     const cleaned = value.replace(/\D/g, '');
     const match = cleaned.match(/^(\d{3})(\d{3})(\d{4})$/);
@@ -287,7 +287,7 @@ export default function CheckoutPage() {
     return value;
   };
 
-  // ✅ Field validation with error tracking
+ // Field validation with error tracking
   const validateField = (field: keyof typeof shippingAddress, value: string) => {
     const errors = { ...fieldErrors };
     
@@ -431,7 +431,7 @@ export default function CheckoutPage() {
     }
   };
 
-  // 💳 Improved Paystack payment handler
+ // Improved Paystack payment handler
   const payWithPaystack = () => {
     // Validate Paystack is loaded
     if (!hasPaystack()) {
@@ -495,11 +495,11 @@ export default function CheckoutPage() {
           ]
         },
         onSuccess: (transaction: PaystackResponse) => {
-          console.log("✅ Payment success:", transaction);
+ console.log(" Payment success:", transaction);
           handlePaystackSuccess(transaction);
         },
         onCancel: () => {
-          console.log("❌ Payment cancelled");
+ console.log(" Payment cancelled");
           handlePaystackClose();
         },
       };
@@ -512,7 +512,7 @@ export default function CheckoutPage() {
     }
   };
 
-  // ✅ Improved success handler with better error handling
+ // Improved success handler with better error handling
   const handlePaystackSuccess = async (response: PaystackResponse) => {
     setIsProcessing(true);
 
@@ -525,7 +525,7 @@ export default function CheckoutPage() {
       return;
     }
 
-    // ✅ The charge SUCCEEDED — persist the reference IMMEDIATELY (in-memory
+ // The charge SUCCEEDED — persist the reference IMMEDIATELY (in-memory
     // ref + sessionStorage keyed by order id). If the follow-up PUT/verify
     // throws, the catch below retries with this SAME reference instead of
     // discarding it (a discarded reference is what invites a double charge).
@@ -602,7 +602,7 @@ export default function CheckoutPage() {
         pendingPaymentRef.current = null;
         clearPendingPaymentRef(preOrderId);
 
-        toast.success('🎉 Payment successful! Order created.');
+ toast.success(' Payment successful! Order created.');
         clearCart();
         
         // Navigate to order page
@@ -630,7 +630,7 @@ export default function CheckoutPage() {
             pendingPaymentRef.current = null;
             clearPendingPaymentRef(preOrderId);
 
-            toast.success('🎉 Payment successful! Order confirmed.');
+ toast.success(' Payment successful! Order confirmed.');
             clearCart();
             navigate(orderId ? `/order/${orderId}` : '/orders');
             return;
@@ -985,7 +985,7 @@ export default function CheckoutPage() {
     <div className="space-y-6">
       <div className="bg-white dark:bg-gray-800 dark:border dark:border-gray-700 rounded-xl p-6 shadow-sm border">
         <h3 className="text-xl font-semibold mb-6 flex items-center">
-          <FaShieldAlt className="mr-3 text-purple-600" /> Payment Method
+          <FaShieldAlt className="mr-3 text-[#92400e]" /> Payment Method
         </h3>
         
         <div className="space-y-4">
@@ -1044,7 +1044,7 @@ export default function CheckoutPage() {
                   >
                     <div className="flex items-center gap-2">
                       <div className={`w-8 h-8 rounded-full ${provider.color} flex items-center justify-center text-white text-xs font-bold`}>
-                        {provider.logo}
+                        {provider.short}
                       </div>
                       <div>
                         <p className="text-sm font-medium">{provider.name}</p>
@@ -1186,7 +1186,7 @@ export default function CheckoutPage() {
   // Show loading if processing payment
   if (isProcessing) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 flex items-center justify-center dark:from-gray-950 dark:via-gray-900 dark:to-gray-800">
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-[#fbeacb] flex items-center justify-center dark:from-gray-950 dark:via-gray-900 dark:to-gray-800">
         <div className="text-center bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-xl">
           <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
           <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Processing Your Payment</h3>
@@ -1202,7 +1202,7 @@ export default function CheckoutPage() {
 
   if (cartItems.length === 0) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 flex items-center justify-center dark:from-gray-950 dark:via-gray-900 dark:to-gray-800">
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-[#fbeacb] flex items-center justify-center dark:from-gray-950 dark:via-gray-900 dark:to-gray-800">
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
           <p className="text-gray-600 dark:text-gray-300">Loading...</p>
@@ -1212,7 +1212,7 @@ export default function CheckoutPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 p-4 dark:from-gray-950 dark:via-gray-900 dark:to-gray-800">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-[#fbeacb] p-4 dark:from-gray-950 dark:via-gray-900 dark:to-gray-800">
       <div className="max-w-6xl mx-auto">
         <div className="flex items-center gap-4 mb-8">
           <button 
@@ -1281,7 +1281,7 @@ export default function CheckoutPage() {
                 <button
                   onClick={handleContinue}
                   disabled={isProcessing}
-                  className="px-8 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg font-medium hover:from-blue-700 hover:to-purple-700 transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-8 py-3 bg-gradient-to-r from-blue-600 to-[#92400e] text-white rounded-lg font-medium hover:from-blue-700 hover:to-[#7c2d12] transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Continue
                 </button>
@@ -1376,7 +1376,7 @@ export default function CheckoutPage() {
                     Encrypted
                   </div>
                   <div className="flex items-center">
-                    <FaCheck className="w-4 h-4 mr-1 text-purple-500" />
+                    <FaCheck className="w-4 h-4 mr-1 text-[#b45309]" />
                     Verified
                   </div>
                 </div>

@@ -99,7 +99,7 @@ export const setupSecurity = (app) => {
     next();
   });
 
-  console.log('✅ Security middleware initialized (Helmet, HPP, CORS)');
+ console.log(' Security middleware initialized (Helmet, HPP, CORS)');
 };
 
 /**

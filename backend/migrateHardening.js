@@ -76,9 +76,9 @@ try {
         INDEX idx_fe_allocation (allocationId),
         INDEX idx_fe_event (eventType)
       ) ENGINE=InnoDB`);
-    console.log('✅ Created financial_events journal');
+ console.log(' Created financial_events journal');
   } else {
-    console.log('ℹ️  financial_events already exists — skipping');
+ console.log('financial_events already exists — skipping');
   }
 
   // ============================================================
@@ -95,7 +95,7 @@ try {
     if (currentType && currentType.indexOf('reversal') === -1) {
       const newType = currentType.replace(/\)$/, ',\'reversal\')');
       await connection.query(`ALTER TABLE wallet_transactions MODIFY type ${newType}`);
-      console.log('✅ Extended wallet_transactions.type with reversal');
+ console.log(' Extended wallet_transactions.type with reversal');
     }
 
     if (!(await indexExists('wallet_transactions', 'uq_wallet_withdrawal_reference'))) {
@@ -107,7 +107,7 @@ try {
         `ALTER TABLE wallet_transactions
          ADD UNIQUE KEY uq_wallet_withdrawal_reference (type, reference)`
       );
-      console.log('✅ Added wallet_transactions withdrawal idempotency key');
+ console.log(' Added wallet_transactions withdrawal idempotency key');
     }
   }
 
@@ -120,13 +120,13 @@ try {
         `ALTER TABLE payout_attempts
          ADD INDEX idx_payout_reconcile (status, created_at)`
       );
-      console.log('✅ Added payout_attempts reconciliation index');
+ console.log(' Added payout_attempts reconciliation index');
     }
   }
 
-  console.log('✅ Hardening migration complete');
+ console.log(' Hardening migration complete');
 } catch (err) {
-  console.error('❌ Hardening migration failed:', err.message);
+ console.error(' Hardening migration failed:', err.message);
   process.exitCode = 1;
 } finally {
   await connection.end();

@@ -191,7 +191,7 @@ const LegalDocument = ({
   }
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-gradient-to-br from-slate-900 via-purple-900 to-slate-800 px-4 py-10">
+    <div className="min-h-screen w-full flex items-center justify-center bg-gradient-to-br from-slate-900 via-[#431407] to-slate-800 px-4 py-10">
       <div className="w-full max-w-3xl flex flex-col bg-white/5 backdrop-blur-md border border-white/10 rounded-3xl shadow-2xl overflow-hidden">
         {/* Header */}
         <div className="px-6 sm:px-8 py-6 border-b border-white/10 bg-slate-800/40">

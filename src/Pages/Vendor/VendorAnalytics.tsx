@@ -5,7 +5,7 @@ import { formatCurrency } from '../../utils/formatCurrency';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
 import Loader from '../../components/loader/Loader';
 
-const COLORS = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
+const COLORS = ['#92400e', '#10b981', '#f59e0b', '#ef4444', '#b45309'];
 
 const VendorAnalytics = () => {
   const { data: analytics, isLoading } = useGetVendorAnalyticsQuery();
@@ -23,7 +23,7 @@ const VendorAnalytics = () => {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-md">
           <h3 className="text-sm text-gray-600 dark:text-gray-400 mb-2">Total Revenue</h3>
-          <p className="text-3xl font-bold text-indigo-600">{formatCurrency(totalRevenue || 0, 'GHS')}</p>
+          <p className="text-3xl font-bold text-[#92400e]">{formatCurrency(totalRevenue || 0, 'GHS')}</p>
           <p className="text-sm text-gray-500 mt-2">From {totalOrders} orders</p>
         </div>
         <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-md">
@@ -51,7 +51,7 @@ const VendorAnalytics = () => {
                 contentStyle={{ backgroundColor: '#1f2937', border: 'none', borderRadius: '8px', color: '#f9fafb' }}
                 formatter={(value) => formatCurrency(Number(value) || 0, 'GHS')}
               />
-              <Line type="monotone" dataKey="sales" stroke="#4f46e5" strokeWidth={2} dot={{ fill: '#4f46e5', r: 4 }} activeDot={{ r: 6 }} />
+              <Line type="monotone" dataKey="sales" stroke="#92400e" strokeWidth={2} dot={{ fill: '#92400e', r: 4 }} activeDot={{ r: 6 }} />
             </LineChart>
           </ResponsiveContainer>
         </div>

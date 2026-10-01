@@ -49,7 +49,7 @@ const levelMeta = {
   pending: { label: 'Pending', cls: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300' },
   verified: { label: 'Verified', cls: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' },
   trusted_artisan: { label: 'Trusted Artisan', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' },
-  master_weaver: { label: 'Master Weaver', cls: 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300' },
+  master_weaver: { label: 'Master Weaver', cls: 'bg-[#fbeacb] text-[#7c2d12] dark:bg-[#431407]/40 dark:text-[#f2c169]' },
 } as const;
 
 const badgeLabels = {
@@ -304,7 +304,7 @@ const VendorStorefront = () => {
                       </span>
                     )}
                     {p.isRentable && (
-                      <span className="absolute top-2 left-2 text-[10px] font-semibold text-purple-700 dark:text-purple-300 bg-purple-100 dark:bg-purple-900/70 px-2 py-0.5 rounded-full">
+                      <span className="absolute top-2 left-2 text-[10px] font-semibold text-[#7c2d12] dark:text-[#f2c169] bg-[#fbeacb] dark:bg-[#431407]/70 px-2 py-0.5 rounded-full">
                         Rentable
                       </span>
                     )}

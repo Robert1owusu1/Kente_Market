@@ -5,7 +5,7 @@ import type { Review } from "../types/domain";
 
 export const miscApiSlice = apiSlice.injectEndpoints({
   endpoints: (builder) => ({
-    // 🗒 Contact
+ // Contact
     submitContact: builder.mutation<{ message?: string }, Record<string, unknown>>({
       query: (data) => ({
         url: CONTACT_URL,
@@ -14,7 +14,7 @@ export const miscApiSlice = apiSlice.injectEndpoints({
       }),
     }),
 
-    // 🗒 Contact admin
+ // Contact admin
     listContacts: builder.query<Record<string, unknown>[], void>({
       query: () => CONTACT_URL,
       providesTags: ["Contact"],
@@ -27,7 +27,7 @@ export const miscApiSlice = apiSlice.injectEndpoints({
       invalidatesTags: ["Contact"],
     }),
 
-    // 📬 Newsletter
+ // Newsletter
     subscribeNewsletter: builder.mutation<{ message?: string }, Record<string, unknown>>({
       query: (data) => ({
         url: SUBSCRIBE_URL,
@@ -36,7 +36,7 @@ export const miscApiSlice = apiSlice.injectEndpoints({
       }),
     }),
 
-    // ⭐ Reviews
+ // Reviews
     createReview: builder.mutation<Review, Record<string, unknown>>({
       query: (data) => ({
         url: REVIEWS_URL,
@@ -58,7 +58,7 @@ export const miscApiSlice = apiSlice.injectEndpoints({
       providesTags: ["Review"],
     }),
 
-    // ⭐ Verified purchase review (after delivery) — product + vendor rating
+ // Verified purchase review (after delivery) — product + vendor rating
     addOrderReview: builder.mutation<Review, Record<string, unknown>>({
       query: (data) => ({
         url: `${REVIEWS_URL}/order`,
@@ -68,7 +68,7 @@ export const miscApiSlice = apiSlice.injectEndpoints({
       invalidatesTags: ["Product", "Review"],
     }),
 
-    // ⭐ Admin analytics: ratings, verified count, weaver satisfaction
+ // Admin analytics: ratings, verified count, weaver satisfaction
     getReviewAnalytics: builder.query<Record<string, unknown>, void>({
       query: () => ({
         url: `${REVIEWS_URL}/analytics`,
@@ -76,7 +76,7 @@ export const miscApiSlice = apiSlice.injectEndpoints({
       providesTags: ["Review"],
     }),
 
-    // 👥 Subscriber Admin
+ // Subscriber Admin
     getSubscriberCount: builder.query<{ count?: number }, void>({
       query: () => ({
         url: `${SUBSCRIBE_URL}/count`,

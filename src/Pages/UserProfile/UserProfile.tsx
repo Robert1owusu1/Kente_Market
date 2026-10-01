@@ -507,7 +507,7 @@ const CustomerProfile = () => {
                   <div className="flex gap-2">
                     {order.paymentStatus === 'paid' && (
                       <span className="inline-block px-3 py-1 bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 rounded-full text-xs font-medium">
-                        ✓ Paid
+ ✓ Paid
                       </span>
                     )}
                     {order.paymentStatus !== 'paid' && (
@@ -517,7 +517,7 @@ const CustomerProfile = () => {
                     )}
                     {order.orderStatus === 'delivered' && (
                       <span className="inline-block px-3 py-1 bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 rounded-full text-xs font-medium">
-                        ✓ Delivered
+ ✓ Delivered
                       </span>
                     )}
                     {order.orderStatus === 'processing' && (
@@ -581,7 +581,7 @@ const CustomerProfile = () => {
                 {userInfo.role === 'vendor' && (
                   <Link
                     to="/vendor"
-                    className="inline-flex items-center gap-1 text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:underline"
+                    className="inline-flex items-center gap-1 text-xs font-medium text-[#92400e] dark:text-[#dfa43c] hover:underline"
                   >
                     <FaStore /> Seller Dashboard
                   </Link>

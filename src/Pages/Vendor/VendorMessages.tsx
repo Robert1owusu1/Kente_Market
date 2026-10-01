@@ -103,7 +103,7 @@ const MessageCard = ({ m }: { m: MessageRow }) => {
           {m.profile_picture ? (
             <img src={m.profile_picture} alt={customerName} className="w-9 h-9 rounded-full object-cover" />
           ) : (
-            <div className="w-9 h-9 rounded-full bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center text-indigo-600 dark:text-indigo-300 font-bold">
+            <div className="w-9 h-9 rounded-full bg-[#fbeacb] dark:bg-[#431407]/40 flex items-center justify-center text-[#92400e] dark:text-[#f2c169] font-bold">
               {(customerName || 'C')[0]}
             </div>
           )}
@@ -132,7 +132,7 @@ const MessageCard = ({ m }: { m: MessageRow }) => {
             <div className={`max-w-[80%] rounded-lg px-3 py-2 text-sm whitespace-pre-line ${
               b.sender === 'vendor'
                 ? 'bg-green-100 dark:bg-green-900/40 text-green-900 dark:text-green-100'
-                : 'bg-indigo-50 dark:bg-indigo-900/30 text-gray-700 dark:text-gray-200'
+                : 'bg-[#fdf8ef] dark:bg-[#431407]/30 text-gray-700 dark:text-gray-200'
             }`}>
               <p className="text-[10px] font-semibold mb-1 opacity-70">
                 {b.sender === 'vendor' ? 'You' : customerName}
@@ -157,7 +157,7 @@ const MessageCard = ({ m }: { m: MessageRow }) => {
             <button
               onClick={handleReply}
               disabled={replying}
-              className="px-4 py-2 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 disabled:opacity-60 inline-flex items-center gap-2 text-sm"
+              className="px-4 py-2 bg-[#92400e] text-white rounded-lg font-semibold hover:bg-[#7c2d12] disabled:opacity-60 inline-flex items-center gap-2 text-sm"
             >
               {replying ? <FaSpinner className="animate-spin" /> : <FaReply />} Reply
             </button>
@@ -186,7 +186,7 @@ const VendorMessages = () => {
   if (isLoading) {
     return (
       <div className="p-8 text-center">
-        <FaSpinner className="animate-spin h-10 w-10 text-indigo-600 mx-auto" />
+        <FaSpinner className="animate-spin h-10 w-10 text-[#92400e] mx-auto" />
         <p className="mt-4 text-gray-600 dark:text-gray-400">Loading messages...</p>
       </div>
     );

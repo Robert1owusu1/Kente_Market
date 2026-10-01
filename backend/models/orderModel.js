@@ -36,7 +36,7 @@ class Order {
     this.email = orderData.email;
   }
 
-  // ✅ Utility: safely parse JSON
+ // Utility: safely parse JSON
   static safeParse(data, fallback) {
     if (!data) return fallback;
     if (typeof data === "string") {
@@ -49,7 +49,7 @@ class Order {
     return data;
   }
 
-  // ✅ Validate order data
+ // Validate order data
   static validateOrder(orderData) {
     const errors = [];
 
@@ -66,7 +66,7 @@ class Order {
     return errors;
   }
 
-  // ✅ Create new order with validation
+ // Create new order with validation
   static async create(orderData) {
     const validation = Order.validateOrder(orderData);
     if (validation.length > 0) {
@@ -108,8 +108,8 @@ class Order {
     }
   }
 
-  // ✅ Find all orders with pagination and filters
-  // ✅ Find all orders with pagination and filters - FIXED VERSION
+ // Find all orders with pagination and filters
+ // Find all orders with pagination and filters - FIXED VERSION
 static async findAll(options = {}) {
   let connection;
   try {
@@ -201,7 +201,7 @@ static async findAll(options = {}) {
   }
 }
 
-  // ✅ Find order by ID
+ // Find order by ID
   static async findById(id) {
     const connection = await pool.getConnection();
     try {
@@ -221,7 +221,7 @@ static async findAll(options = {}) {
     }
   }
 
-  // ✅ Find orders by userId
+ // Find orders by userId
   static async findByUserId(userId) {
     const connection = await pool.getConnection();
     try {
@@ -241,7 +241,7 @@ static async findAll(options = {}) {
     }
   }
 
-  // ✅ Update order with field whitelisting
+ // Update order with field whitelisting
   static async update(id, updateData) {
     const connection = await pool.getConnection();
     try {
@@ -290,7 +290,7 @@ static async findAll(options = {}) {
     }
   }
 
-  // ✅ Delete order (with financial-history guard)
+ // Delete order (with financial-history guard)
   static async delete(id) {
     const connection = await pool.getConnection();
     try {
@@ -324,7 +324,7 @@ static async findAll(options = {}) {
     }
   }
 
-  // ✅ Get order statistics
+ // Get order statistics
   static async getStatistics() {
     const connection = await pool.getConnection();
     try {

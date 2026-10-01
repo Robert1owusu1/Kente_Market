@@ -7,6 +7,7 @@ import { toast } from 'react-toastify';
 import { BiLoaderAlt } from 'react-icons/bi';
 import { TiShoppingBag } from 'react-icons/ti';
 import { FaCheckCircle, FaTimesCircle } from 'react-icons/fa';
+import logoImg from "../../assets/logo.png";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:5000' : '');
 
@@ -114,12 +115,12 @@ const OAuthCallback = () => {
   }, [success, error, navigate, dispatch]);
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-gradient-to-br from-slate-900 via-purple-900 to-slate-800">
+    <div className="min-h-screen w-full flex items-center justify-center bg-gradient-to-br from-slate-900 via-[#431407] to-slate-800">
       <div className="bg-white/10 backdrop-blur-xl rounded-3xl p-10 max-w-md w-full mx-4 text-center border border-white/20">
         {/* Logo */}
         <div className="flex justify-center gap-x-2 items-center mb-8">
           <div className="p-2 bg-amber-400/20 rounded-xl backdrop-blur-md">
-            <TiShoppingBag className="text-amber-400 text-2xl" />
+            <img src={logoImg} alt="Bonwire Kente" className="h-8 w-8 object-contain" width={32} height={32} />
           </div>
           <span className="text-white font-bold text-xl">Bonwire Kente</span>
         </div>

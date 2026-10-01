@@ -31,7 +31,7 @@ const UnsubscribePage = () => {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center p-4">
       <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg max-w-md w-full p-8 text-center">
-        <div className="text-5xl mb-4">✉️</div>
+ <FaCheckCircle className="text-5xl mb-4 text-gray-400 mx-auto" />
         <h1 className="text-2xl font-bold text-gray-800 dark:text-white mb-2">Unsubscribe</h1>
 
         {success ? (

@@ -48,7 +48,7 @@ const toArray = (value) => {
   return [String(value)];
 };
 
-// ✅ Get the logged-in user's vendor row id (null if not a vendor).
+// Get the logged-in user's vendor row id (null if not a vendor).
 const getVendorUserId = async (userId) => {
   const [[row]] = await pool.execute(
     "SELECT userId FROM vendors WHERE userId = ?",
@@ -61,7 +61,7 @@ const getVendorUserId = async (userId) => {
 // CUSTOMER SLICE
 // ============================================
 
-// ✅ POST /api/custom-requests — create (customer)
+// POST /api/custom-requests — create (customer)
 export const createRequest = async (req, res) => {
   try {
     const {
@@ -159,23 +159,23 @@ export const createRequest = async (req, res) => {
       request,
     });
   } catch (error) {
-    console.error("❌ createRequest error:", error.message);
+ console.error(" createRequest error:", error.message);
     res.status(500).json({ message: "Failed to create customization request" });
   }
 };
 
-// ✅ GET /api/custom-requests/my — customer's own requests
+// GET /api/custom-requests/my — customer's own requests
 export const getMyRequests = async (req, res) => {
   try {
     const requests = await CustomRequest.findByCustomer(req.user.id, { limit: req.query.limit });
     res.json(requests);
   } catch (error) {
-    console.error("❌ getMyRequests error:", error.message);
+ console.error(" getMyRequests error:", error.message);
     res.status(500).json({ message: "Failed to fetch your customization requests" });
   }
 };
 
-// ✅ POST /api/custom-requests/:id/accept — customer accepts the vendor quote
+// POST /api/custom-requests/:id/accept — customer accepts the vendor quote
 export const acceptRequest = async (req, res) => {
   try {
     const request = await CustomRequest.findById(parseInt(req.params.id));
@@ -200,12 +200,12 @@ export const acceptRequest = async (req, res) => {
     }
     res.json({ message: "Quote accepted — proceed to payment.", request: updated });
   } catch (error) {
-    console.error("❌ acceptRequest error:", error.message);
+ console.error(" acceptRequest error:", error.message);
     res.status(500).json({ message: "Failed to accept request" });
   }
 };
 
-// ✅ POST /api/custom-requests/:id/cancel — customer cancels with a reason
+// POST /api/custom-requests/:id/cancel — customer cancels with a reason
 export const cancelRequest = async (req, res) => {
   try {
     const { customerCancelReason } = req.body || {};
@@ -234,12 +234,12 @@ export const cancelRequest = async (req, res) => {
     }
     res.json({ message: "Request cancelled. Your reason helps us improve.", request: updated });
   } catch (error) {
-    console.error("❌ cancelRequest error:", error.message);
+ console.error(" cancelRequest error:", error.message);
     res.status(500).json({ message: "Failed to cancel request" });
   }
 };
 
-// ✅ POST /api/custom-requests/:id/checkout — customer pays (Paystack) and the
+// POST /api/custom-requests/:id/checkout — customer pays (Paystack) and the
 //    custom order is created + escrow held.
 export const checkoutRequest = async (req, res) => {
   try {
@@ -354,10 +354,10 @@ export const checkoutRequest = async (req, res) => {
         }
       }
       if (advancesReleased > 0) {
-        console.log(`💰 Released ${advancesReleased} advance allocation(s) for custom order ${order.id}`);
+ console.log(` Released ${advancesReleased} advance allocation(s) for custom order ${order.id}`);
       }
     } catch (escrowErr) {
-      console.warn(`⚠️ Advance escrow for order ${order.id} not released: ${escrowErr.message}`);
+ console.warn(` Advance escrow for order ${order.id} not released: ${escrowErr.message}`);
     }
 
     // Paid custom orders get their authenticity certificate automatically.
@@ -368,7 +368,7 @@ export const checkoutRequest = async (req, res) => {
           issuedTo: `${req.user.firstName || ''} ${req.user.lastName || ''}`.trim() || 'Verified Customer',
         });
       } catch (certErr) {
-        console.warn(`⚠️ Auto-certificate for order ${order.id} skipped: ${certErr.message}`);
+ console.warn(` Auto-certificate for order ${order.id} skipped: ${certErr.message}`);
       }
     }
 
@@ -395,7 +395,7 @@ export const checkoutRequest = async (req, res) => {
       request: updated,
     });
   } catch (error) {
-    console.error("❌ checkoutRequest error:", error.message);
+ console.error(" checkoutRequest error:", error.message);
     res.status(500).json({ message: "Failed to complete custom order payment" });
   }
 };
@@ -404,7 +404,7 @@ export const checkoutRequest = async (req, res) => {
 // VENDOR SLICE
 // ============================================
 
-// ✅ GET /api/custom-requests/vendor — requests received by the vendor
+// GET /api/custom-requests/vendor — requests received by the vendor
 export const listVendorRequests = async (req, res) => {
   try {
     const vendorId = await getVendorUserId(req.user.id);
@@ -414,12 +414,12 @@ export const listVendorRequests = async (req, res) => {
     const requests = await CustomRequest.findByVendor(vendorId, { status: req.query.status });
     res.json(requests);
   } catch (error) {
-    console.error("❌ listVendorRequests error:", error.message);
+ console.error(" listVendorRequests error:", error.message);
     res.status(500).json({ message: "Failed to fetch custom requests" });
   }
 };
 
-// ✅ POST /api/custom-requests/:id/quote — vendor quotes & commits to timeline
+// POST /api/custom-requests/:id/quote — vendor quotes & commits to timeline
 export const quoteRequest = async (req, res) => {
   try {
     const { vendorQuotePrice, price, vendorCanMeet, canMeet, vendorMessage } = req.body || {};
@@ -461,12 +461,12 @@ export const quoteRequest = async (req, res) => {
       /* non-fatal */
     }
   } catch (error) {
-    console.error("❌ quoteRequest error:", error.message);
+ console.error(" quoteRequest error:", error.message);
     res.status(500).json({ message: "Failed to submit quote" });
   }
 };
 
-// ✅ POST /api/custom-requests/:id/decline — vendor cannot take the order
+// POST /api/custom-requests/:id/decline — vendor cannot take the order
 export const declineRequest = async (req, res) => {
   try {
     const { vendorMessage } = req.body || {};
@@ -495,12 +495,12 @@ export const declineRequest = async (req, res) => {
     }
     res.json({ message: "Request declined. The customer has been notified.", request: updated });
   } catch (error) {
-    console.error("❌ declineRequest error:", error.message);
+ console.error(" declineRequest error:", error.message);
     res.status(500).json({ message: "Failed to decline request" });
   }
 };
 
-// ✅ POST /api/custom-requests/:id/in-progress — vendor starts weaving (paid)
+// POST /api/custom-requests/:id/in-progress — vendor starts weaving (paid)
 export const startRequest = async (req, res) => {
   try {
     const request = await CustomRequest.findById(parseInt(req.params.id));
@@ -525,7 +525,7 @@ export const startRequest = async (req, res) => {
     }
     res.json({ message: "Marked as in progress.", request: updated });
   } catch (error) {
-    console.error("❌ startRequest error:", error.message);
+ console.error(" startRequest error:", error.message);
     res.status(500).json({ message: "Failed to update request" });
   }
 };
@@ -534,29 +534,29 @@ export const startRequest = async (req, res) => {
 // ADMIN SLICE
 // ============================================
 
-// ✅ GET /api/custom-requests/admin — all requests
+// GET /api/custom-requests/admin — all requests
 export const listAllRequests = async (req, res) => {
   try {
     const requests = await CustomRequest.findAllAdmin({ status: req.query.status });
     res.json(requests);
   } catch (error) {
-    console.error("❌ listAllRequests error:", error.message);
+ console.error(" listAllRequests error:", error.message);
     res.status(500).json({ message: "Failed to fetch custom requests" });
   }
 };
 
-// ✅ GET /api/custom-requests/admin/stats — stats for analysis/prediction
+// GET /api/custom-requests/admin/stats — stats for analysis/prediction
 export const getAdminStats = async (req, res) => {
   try {
     const stats = await CustomRequest.adminStats();
     res.json(stats);
   } catch (error) {
-    console.error("❌ getAdminStats error:", error.message);
+ console.error(" getAdminStats error:", error.message);
     res.status(500).json({ message: "Failed to fetch custom request stats" });
   }
 };
 
-// ✅ POST /api/custom-requests/:id/reviewed — mark conversation as complete
+// POST /api/custom-requests/:id/reviewed — mark conversation as complete
 //    so customer support can call the customer.
 export const markReviewed = async (req, res) => {
   try {
@@ -565,7 +565,7 @@ export const markReviewed = async (req, res) => {
     const updated = await CustomRequest.update(request.id, { adminReviewed: 1 });
     res.json({ message: "Marked as reviewed.", request: updated });
   } catch (error) {
-    console.error("❌ markReviewed error:", error.message);
+ console.error(" markReviewed error:", error.message);
     res.status(500).json({ message: "Failed to update request" });
   }
 };

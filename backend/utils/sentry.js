@@ -18,7 +18,7 @@ export const initSentry = () => {
     sendDefaultPii: false,
   });
   initialized = true;
-  console.log('✅ Sentry error tracking initialized');
+ console.log(' Sentry error tracking initialized');
   return true;
 };
 

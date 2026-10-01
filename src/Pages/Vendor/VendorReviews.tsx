@@ -56,7 +56,7 @@ const VendorReviews = () => {
         </div>
         <div className="bg-white dark:bg-gray-800 rounded-lg p-5 shadow-md text-center">
           <p className="text-3xl font-bold text-green-600">{reviews.filter((r) => r.rating >= 4).length}</p>
-          <p className="text-sm text-gray-500 mt-1">Positive (4-5★)</p>
+ <p className="text-sm text-gray-500 mt-1">Positive (4-5★)</p>
         </div>
       </div>
 

@@ -645,12 +645,12 @@ class User {
         [hashedToken, expireTime, userId]
       );
 
-      console.log(`✅ Password reset token created for user ${userId}`);
+ console.log(` Password reset token created for user ${userId}`);
       
       // Return plain text token (to be sent in email)
       return resetToken;
     } catch (error) {
-      console.error('❌ Error creating reset token:', error);
+ console.error(' Error creating reset token:', error);
       throw new Error('Failed to create password reset token');
     } finally {
       if (connection) connection.release();
@@ -687,7 +687,7 @@ class User {
 
       return new User(rows[0]);
     } catch (error) {
-      console.error('❌ Error finding user by reset token:', error);
+ console.error(' Error finding user by reset token:', error);
       throw new Error('Invalid or expired reset token');
     } finally {
       if (connection) connection.release();
@@ -726,10 +726,10 @@ class User {
         throw new Error('User not found');
       }
 
-      console.log(`✅ Password reset successful for user ${userId}`);
+ console.log(` Password reset successful for user ${userId}`);
       return true;
     } catch (error) {
-      console.error('❌ Error resetting password:', error);
+ console.error(' Error resetting password:', error);
       throw error;
     } finally {
       if (connection) connection.release();
@@ -754,9 +754,9 @@ class User {
         [userId]
       );
 
-      console.log(`✅ Reset token cleared for user ${userId}`);
+ console.log(` Reset token cleared for user ${userId}`);
     } catch (error) {
-      console.error('❌ Error clearing reset token:', error);
+ console.error(' Error clearing reset token:', error);
       throw error;
     } finally {
       if (connection) connection.release();
@@ -831,7 +831,7 @@ class User {
         throw new Error('User not found');
       }
 
-      console.log(`✅ Profile picture updated for user ${userId}`);
+ console.log(` Profile picture updated for user ${userId}`);
       
       const updatedUser = await this.findById(userId);
       return updatedUser;

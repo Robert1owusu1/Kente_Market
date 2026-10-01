@@ -132,7 +132,7 @@ export const updateReturnStatus = async (req, res) => {
       try {
         await voidEscrowForOrder(existing.orderId);
       } catch (err) {
-        console.warn(`⚠️ Could not void escrow for return ${req.params.id}: ${err.message}`);
+ console.warn(` Could not void escrow for return ${req.params.id}: ${err.message}`);
       }
 
       // Money integrity: voiding escrow returns funds to the platform, but the
@@ -147,9 +147,9 @@ export const updateReturnStatus = async (req, res) => {
             `Return ${req.params.id} approved`
           );
           if (!refund?.status) {
-            console.warn(`⚠️ Return ${req.params.id}: Paystack refund rejected (${refund?.message || 'unknown'}) — manual refund required`);
+ console.warn(` Return ${req.params.id}: Paystack refund rejected (${refund?.message || 'unknown'}) — manual refund required`);
           } else {
-            console.log(`✅ Return ${req.params.id}: customer refunded via Paystack`);
+ console.log(` Return ${req.params.id}: customer refunded via Paystack`);
             // Flip the order to 'refunded' the moment the money actually
             // moved. This is what makes the refund RETRIABLE (an admin cancel
             // only refunds when paymentStatus is still 'paid', so a failed
@@ -160,7 +160,7 @@ export const updateReturnStatus = async (req, res) => {
               `UPDATE orders SET paymentStatus = 'refunded', updated_at = CURRENT_TIMESTAMP
                WHERE id = ? AND paymentStatus = 'paid'`,
               [existing.orderId]
-            ).catch((e) => console.warn(`⚠️ Could not mark order ${existing.orderId} refunded: ${e.message}`));
+ ).catch((e) => console.warn(` Could not mark order ${existing.orderId} refunded: ${e.message}`));
             // Immutable journal entry for the refund (deduped per return+order).
             await recordFinancialEvent({
               eventType: 'refund',
@@ -175,7 +175,7 @@ export const updateReturnStatus = async (req, res) => {
           }
         }
       } catch (refundErr) {
-        console.warn(`⚠️ Return ${req.params.id}: refund error (${refundErr.message}) — manual refund required`);
+ console.warn(` Return ${req.params.id}: refund error (${refundErr.message}) — manual refund required`);
       }
     }
 

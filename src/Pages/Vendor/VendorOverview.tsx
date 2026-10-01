@@ -6,7 +6,7 @@ import { useGetVendorAnalyticsQuery } from '../../slices/vendorsApiSlice';
 import { formatCurrency } from '../../utils/formatCurrency';
 import Loader from '../../components/loader/Loader';
 
-const COLORS = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
+const COLORS = ['#92400e', '#10b981', '#f59e0b', '#ef4444', '#b45309'];
 
 const VendorOverview = () => {
   const { data: analytics, isLoading } = useGetVendorAnalyticsQuery();
@@ -33,9 +33,9 @@ const VendorOverview = () => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-600 dark:text-gray-400">Total Revenue</p>
-              <p className="text-2xl font-bold text-indigo-600">{formatCurrency(totalRevenue || 0, 'GHS')}</p>
+              <p className="text-2xl font-bold text-[#92400e]">{formatCurrency(totalRevenue || 0, 'GHS')}</p>
             </div>
-            <FaChartLine className="text-3xl text-indigo-600/70" />
+            <FaChartLine className="text-3xl text-[#92400e]/70" />
           </div>
         </div>
         <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-md hover:shadow-lg transition-shadow">
@@ -95,8 +95,8 @@ const VendorOverview = () => {
             <AreaChart data={salesChartData}>
               <defs>
                 <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.8}/>
-                  <stop offset="95%" stopColor="#4f46e5" stopOpacity={0}/>
+                  <stop offset="5%" stopColor="#92400e" stopOpacity={0.8}/>
+                  <stop offset="95%" stopColor="#92400e" stopOpacity={0}/>
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
@@ -106,7 +106,7 @@ const VendorOverview = () => {
                 contentStyle={{ backgroundColor: '#1f2937', border: 'none', borderRadius: '8px', color: '#f9fafb' }}
                 formatter={(value) => formatCurrency(Number(value) || 0, 'GHS')}
               />
-              <Area type="monotone" dataKey="sales" stroke="#4f46e5" fillOpacity={1} fill="url(#colorSales)" />
+              <Area type="monotone" dataKey="sales" stroke="#92400e" fillOpacity={1} fill="url(#colorSales)" />
             </AreaChart>
           </ResponsiveContainer>
         </div>

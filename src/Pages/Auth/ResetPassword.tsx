@@ -7,6 +7,7 @@ import { BiLoaderAlt } from 'react-icons/bi';
 import { FaEye, FaEyeSlash, FaCheckCircle } from 'react-icons/fa';
 import { toast } from 'react-toastify';
 import type { FormErrors } from "../../types/domain";
+import logoImg from "../../assets/logo.png";
 
 
 function PasswordInput({ children, placeholder, value, onChange, error, disabled }: {
@@ -176,7 +177,7 @@ const ResetPassword = () => {
 
   if (isValidating) {
     return (
-      <div className="min-h-screen w-full flex items-center justify-center bg-gradient-to-br from-slate-900 via-purple-900 to-slate-800">
+      <div className="min-h-screen w-full flex items-center justify-center bg-gradient-to-br from-slate-900 via-[#431407] to-slate-800">
         <div className="text-center">
           <BiLoaderAlt className="w-12 h-12 animate-spin text-amber-400 mx-auto mb-4" />
           <p className="text-white/70">Validating reset link...</p>
@@ -187,10 +188,10 @@ const ResetPassword = () => {
 
   if (!isTokenValid) {
     return (
-      <div className="min-h-screen w-full flex items-center justify-center bg-gradient-to-br from-slate-900 via-purple-900 to-slate-800 px-4">
+      <div className="min-h-screen w-full flex items-center justify-center bg-gradient-to-br from-slate-900 via-[#431407] to-slate-800 px-4">
         <div className="text-center">
           <div className="p-4 bg-red-500/20 rounded-full inline-block mb-4">
-            <span className="text-red-400 text-5xl">⚠️</span>
+ <RiLockPasswordFill className="text-red-400 text-5xl" />
           </div>
           <h2 className="text-2xl font-bold text-white mb-3">Invalid Reset Link</h2>
           <p className="text-white/70 mb-6">This password reset link is invalid or has expired.</p>
@@ -206,14 +207,14 @@ const ResetPassword = () => {
   }
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-gradient-to-br from-slate-900 via-purple-900 to-slate-800 bg-[length:400%_400%] animate-gradient-cycle px-4">
+    <div className="min-h-screen w-full flex items-center justify-center bg-gradient-to-br from-slate-900 via-[#431407] to-slate-800 bg-[length:400%_400%] animate-gradient-cycle px-4">
       <div className="w-full max-w-md">
         <div className="bg-gradient-to-br from-slate-800/90 to-slate-700/90 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/10 p-8">
           
           {/* Logo */}
-          <div className="flex justify-center gap-x-2 items-center mb-8">
+          <div className="flex justify-center gap-x-3 items-center mb-8">
             <div className="p-2 bg-amber-400/20 rounded-xl backdrop-blur-md">
-              <TiShoppingBag className="text-amber-400 text-2xl" />
+              <img src={logoImg} alt="Bonwire Kente" className="h-8 w-8 object-contain" width={32} height={32} />
             </div>
             <span className="text-white font-bold text-xl">Bonwire Kente</span>
           </div>
@@ -266,10 +267,10 @@ const ResetPassword = () => {
                 <div className="bg-white/5 border border-white/10 rounded-xl p-4">
                   <p className="text-white/80 text-sm font-medium mb-2">Password must contain:</p>
                   <ul className="space-y-1 text-white/60 text-xs">
-                    <li>✓ At least 8 characters</li>
-                    <li>✓ One uppercase letter</li>
-                    <li>✓ One lowercase letter</li>
-                    <li>✓ One number</li>
+ <li>✓ At least 8 characters</li>
+ <li>✓ One uppercase letter</li>
+ <li>✓ One lowercase letter</li>
+ <li>✓ One number</li>
                   </ul>
                 </div>
 

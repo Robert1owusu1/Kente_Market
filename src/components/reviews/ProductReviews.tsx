@@ -231,7 +231,7 @@ const ProductReviews = ({ productId }: { productId?: number | string }) => {
                       <>
                         <button
                           onClick={() => setEditingReview(review)}
-                          className="text-xs text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
+                          className="text-xs text-[#92400e] hover:text-[#5a2109] flex items-center gap-1"
                         >
                           <FaEdit /> Edit
                         </button>

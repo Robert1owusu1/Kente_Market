@@ -87,7 +87,7 @@ const CreateRuleModal = ({ onClose }: { onClose: () => void }) => {
               className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" />
           </div>
           <button type="submit" disabled={isLoading}
-            className="w-full px-4 py-2.5 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 disabled:opacity-60 flex items-center justify-center gap-2">
+            className="w-full px-4 py-2.5 bg-[#92400e] text-white rounded-lg font-semibold hover:bg-[#7c2d12] disabled:opacity-60 flex items-center justify-center gap-2">
             {isLoading ? <FaSpinner className="animate-spin" /> : <FaPlus />} Create rule
           </button>
         </form>
@@ -123,14 +123,14 @@ const CommissionsPage = () => {
         </div>
         <button
           onClick={() => setShowCreate(true)}
-          className="px-4 py-2 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 inline-flex items-center gap-2 text-sm"
+          className="px-4 py-2 bg-[#92400e] text-white rounded-lg font-semibold hover:bg-[#7c2d12] inline-flex items-center gap-2 text-sm"
         >
           <FaPlus /> New rule
         </button>
       </div>
 
       {isLoading ? (
-        <div className="p-8 text-center"><FaSpinner className="animate-spin h-10 w-10 text-indigo-600 mx-auto" /></div>
+        <div className="p-8 text-center"><FaSpinner className="animate-spin h-10 w-10 text-[#92400e] mx-auto" /></div>
       ) : isError ? (
         <div className="p-8 text-center bg-red-50 dark:bg-red-900/20 rounded-lg">
           <p className="text-red-600 dark:text-red-400 font-medium">Failed to load commission rules.</p>
@@ -157,7 +157,7 @@ const CommissionsPage = () => {
                 {rules.map((r) => (
                   <tr key={r.id} className="border-t dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50">
                     <td className="p-4">
-                      <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300">
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-[#fbeacb] text-[#7c2d12] dark:bg-[#431407]/40 dark:text-[#f2c169]">
                         {scopeLabel(r.scope)}
                       </span>
                     </td>

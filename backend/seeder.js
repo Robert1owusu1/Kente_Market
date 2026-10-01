@@ -18,7 +18,7 @@ dotenv.config();
 const refuseIfProduction = (what) => {
   if (process.env.NODE_ENV === 'production' && process.env.ALLOW_DESTRUCTIVE_DB !== '1') {
     console.error(
-      `❌ Refusing to ${what}: NODE_ENV=production. ` +
+` Refusing to ${what}: NODE_ENV=production. ` +
       `If this is truly intended, re-run with ALLOW_DESTRUCTIVE_DB=1.`
     );
     process.exit(1);
@@ -45,7 +45,7 @@ const clearAllTables = async () => {
     await connection.execute("TRUNCATE TABLE users");
     await connection.execute("TRUNCATE TABLE settings");
     await connection.execute("SET FOREIGN_KEY_CHECKS = 1");
-    console.log("🗑️ Tables cleared!");
+ console.log(" Tables cleared!");
   } finally {
     await connection.end();
   }
@@ -57,7 +57,7 @@ const importData = async () => {
     // repo (the old hardcoded credential was a standing default-account risk).
     if (!users.some((u) => u.password)) {
       console.error(
-        "❌ SEED_ADMIN_PASSWORD is not set.\n" +
+" SEED_ADMIN_PASSWORD is not set.\n" +
         "   Run with e.g.  SEED_ADMIN_PASSWORD=<strong-password> node seeder.js -i\n" +
         "   or create the first admin interactively with:  npm run setup-admin"
       );
@@ -81,10 +81,10 @@ const importData = async () => {
       await Product.create({ ...p, userId: adminUser });
     }
 
-    console.log("✅ Data Imported!");
+ console.log(" Data Imported!");
     process.exit();
   } catch (error) {
-    console.error(`❌ Import Error: ${error.message}`);
+ console.error(` Import Error: ${error.message}`);
     process.exit(1);
   }
 };
@@ -93,10 +93,10 @@ const destroyData = async () => {
   try {
     await connectDB();
     await clearAllTables();
-    console.log("🗑️ Data Destroyed!");
+ console.log(" Data Destroyed!");
     process.exit();
   } catch (error) {
-    console.error(`❌ Destroy Error: ${error.message}`);
+ console.error(` Destroy Error: ${error.message}`);
     process.exit(1);
   }
 };

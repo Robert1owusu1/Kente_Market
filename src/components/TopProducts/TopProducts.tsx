@@ -1,6 +1,6 @@
 // FILE: frontend/src/components/TopProducts/TopProducts.jsx
 import React from "react";
-import { FaStar, FaTshirt, FaClock, FaHeart, FaEye, FaShoppingCart, FaTags, FaFire } from "react-icons/fa";
+import { FaStar, FaTshirt, FaClock, FaHeart, FaEye, FaShoppingCart, FaTags, FaFire, FaExclamationTriangle } from "react-icons/fa";
 import { useCart } from "../../Context/CartContext";
 import { Link, useNavigate } from "react-router-dom";
 import { useWishlistAction } from "../../hooks/useWishlistAction";
@@ -31,7 +31,7 @@ const TopProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
   const navigate = useNavigate();
   const saveToFavorites = useWishlistAction();
 
-  // ⭐ RTK Query hook - cached in the Redux store, no duplicate network calls
+ // RTK Query hook - cached in the Redux store, no duplicate network calls
   // when navigating between pages.
   const {
     data: ProductsData,
@@ -108,7 +108,7 @@ const TopProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
       <div className="py-16 bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center bg-red-50 dark:bg-red-900/20 rounded-2xl p-8">
-            <div className="text-red-500 dark:text-red-400 text-5xl mb-4">⚠️</div>
+ <FaExclamationTriangle className="text-red-500 dark:text-red-400 text-5xl mb-4" />
             <h3 className="text-xl font-bold text-red-800 dark:text-red-300 mb-2">
               Oops! Something went wrong
             </h3>
@@ -131,7 +131,7 @@ const TopProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
       <div className="py-16 bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center">
-            <div className="text-6xl mb-4">📦</div>
+ <FaTags className="text-6xl mb-4" />
             <h3 className="text-2xl font-bold text-gray-800 dark:text-white mb-2">
               No Featured Products Yet
             </h3>

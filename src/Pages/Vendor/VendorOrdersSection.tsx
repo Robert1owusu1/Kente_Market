@@ -1,7 +1,7 @@
 // Pages/Vendor/VendorOrdersSection.jsx
 // Integrated order management with filters, status tracking, export
 import { useState } from 'react';
-import { FaTruck, FaMapMarkerAlt, FaBoxOpen, FaCheckCircle, FaClock, FaStickyNote, FaCalendarAlt, FaSpinner, FaSearch, FaDownload } from 'react-icons/fa';
+import { FaTruck, FaMapMarkerAlt, FaBoxOpen, FaCheckCircle, FaClock, FaStickyNote, FaCalendarAlt, FaSpinner, FaSearch, FaDownload } from "react-icons/fa";
 import { toast } from 'react-toastify';
 import {
   useGetVendorOrdersQuery,
@@ -28,8 +28,8 @@ const statusBadge: Record<string, string> = {
   pending: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
   processing: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
   packaging: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-400',
-  shipped: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400',
-  arrived: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-400',
+  shipped: 'bg-[#fbeacb] text-[#5a2109] dark:bg-[#431407]/30 dark:text-[#dfa43c]',
+  arrived: 'bg-[#fbeacb] text-[#5a2109] dark:bg-[#431407]/30 dark:text-[#dfa43c]',
   delivered: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
   cancelled: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
 };
@@ -164,7 +164,7 @@ const VendorOrdersSection = () => {
 
       {filteredOrders.length === 0 ? (
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-8 text-center">
-          <div className="text-5xl mb-3">📦</div>
+ <FaBoxOpen className="text-5xl mb-3 text-gray-400" />
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">No orders found</h3>
           <p className="text-sm text-gray-600 dark:text-gray-400">
             {orders.length === 0 ? 'Customer orders containing your products will appear here.' : 'No orders match your filters.'}
@@ -307,7 +307,7 @@ const VendorOrdersSection = () => {
                     <button
                       onClick={() => handleStatus(order, step.status)}
                       disabled={updating && busyOrderId === order.id}
-                      className="inline-flex items-center gap-2 px-4 py-2 text-sm bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:opacity-90 disabled:opacity-60 font-medium"
+                      className="inline-flex items-center gap-2 px-4 py-2 text-sm bg-gradient-to-r from-blue-600 to-[#92400e] text-white rounded-lg hover:opacity-90 disabled:opacity-60 font-medium"
                     >
                       {updating && busyOrderId === order.id ? <FaSpinner className="animate-spin" /> : <step.Icon />}
                       {step.label}

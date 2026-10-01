@@ -33,8 +33,8 @@ export default {
         },
         // Deep accent used sparingly across the brand
         royal: {
-          DEFAULT: "#4c1d95",
-          dark: "#3b1678",
+          DEFAULT: "#1f2937",
+          dark: "#111827",
         },
       },
       container: {

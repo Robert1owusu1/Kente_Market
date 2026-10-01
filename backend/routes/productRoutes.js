@@ -1,5 +1,5 @@
 // FILE: backend/routes/productRoutes.js
-// ⭐ GUARANTEED WORKING VERSION - Use individual .get(), .post(), etc.
+// GUARANTEED WORKING VERSION - Use individual .get(), .post(), etc.
 
 import express from "express";
 const router = express.Router();
@@ -22,7 +22,7 @@ import {
 // PUBLIC GET ROUTES (cached - read-heavy)
 // ========================================
 
-// ⭐ CRITICAL: Order matters! Specific routes MUST come BEFORE parameterized routes
+// CRITICAL: Order matters! Specific routes MUST come BEFORE parameterized routes
 
 // 1. Root route - Get all products (cached 60s)
 router.get('/', cacheMiddleware(60), getProducts);
@@ -69,14 +69,14 @@ Express matches routes top-to-bottom. When it sees a request like:
 It checks routes in order:
   1. '/' - No match (looking for /featured)
   2. '/categories/list' - No match
-  3. '/featured' - ✅ MATCH! Calls getFeaturedProducts()
+ 3. '/featured' - MATCH! Calls getFeaturedProducts()
   4. ... (never reaches here)
 
 If you put '/:id' BEFORE '/featured':
   GET /api/products/featured
   
   1. '/' - No match
-  2. '/:id' - ✅ MATCH! Calls getProductById('featured') ❌ WRONG!
+ 2. '/:id' - MATCH! Calls getProductById('featured') WRONG!
   3. '/featured' - Never reached
 
 So ALWAYS put specific routes before parameterized routes!

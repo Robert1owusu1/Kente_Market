@@ -1,10 +1,9 @@
 // src/data/products.js - Bonwire Kente Authentic Kente Cloth Products
-import img1 from "../assets/images/decoration.webp"
-import img2 from "../assets/images/decoration1.webp"
+import img1 from "../assets/images/image2.jpeg"
+import img2 from "../assets/images/image4.jpeg"
 import img3 from "../assets/images/image1.webp"
-import img4 from "../assets/images/image2.webp"
-import img5 from "../assets/images/illustrate.webp"
-
+import img4 from "../assets/images/image6.jpeg"
+import img5 from "../assets/images/image7.jpeg"
 export const SAMPLE_PRODUCTS = [
   {
     id: 1,

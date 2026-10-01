@@ -84,7 +84,7 @@ export interface CartItem {
   size?: string;
 }
 
-// ⭐ Custom kente request lifecycle:
+// Custom kente request lifecycle:
 //   pending -> quoted -> accepted -> paid -> in_progress -> completed
 //   quoted/cancelled & declined are dead-ends; admin marks adminReviewed=1
 //   once they've followed up with the customer by phone.

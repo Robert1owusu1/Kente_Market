@@ -93,7 +93,7 @@ export const settleTransferSuccess = async (transferRef) => {
     if (!debited) {
       // The wallet debit already exists for this reference (redelivery race) —
       // the attempt claim we just won still owns this event, so settle cleanly.
-      console.warn(`⚠️ Transfer ${transferRef}: wallet already debited (idempotent) — continuing`);
+ console.warn(` Transfer ${transferRef}: wallet already debited (idempotent) — continuing`);
     }
     await recordFinancialEvent({
       connection,
@@ -278,7 +278,7 @@ export const settleTransferReversed = async (transferRef) => {
         note: `Transfer reversed for order ${attempt.orderId}`,
       });
       if (!credited) {
-        console.warn(`⚠️ Transfer ${transferRef} reversal: wallet credit already recorded (idempotent)`);
+ console.warn(` Transfer ${transferRef} reversal: wallet credit already recorded (idempotent)`);
       }
     }
 
@@ -313,6 +313,6 @@ export const settleTransferReversed = async (transferRef) => {
  * @param {string} transferRef
  */
 export const settleUnknownTransfer = async (transferRef) => {
-  console.warn(`ℹ️  Transfer ${transferRef} has no local payout attempt — manual reconciliation required`);
+ console.warn(`Transfer ${transferRef} has no local payout attempt — manual reconciliation required`);
   return 'unknown';
 };

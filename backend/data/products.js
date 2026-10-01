@@ -2,7 +2,7 @@
 export const products = [
   {
     id: 1,
-    img: "/images/decoration.webp",
+    img: "/images/image2.jpeg",
     title: "Adweneasa Royal Kente Wrap",
     rating: 5.0,
     price: 1800,
@@ -24,7 +24,7 @@ export const products = [
   },
   {
     id: 2,
-    img: "/images/decoration1.webp",
+    img: "/images/image4.jpeg",
     title: "Bonwire Heritage Stole",
     rating: 4.9,
     price: 950,
@@ -67,7 +67,7 @@ export const products = [
   },
   {
     id: 4,
-    img: "/images/image2.webp",
+    img: "/images/image6.jpeg",
     title: "Oyokoman Kente Scarf",
     rating: 4.7,
     price: 380,
@@ -87,7 +87,7 @@ export const products = [
   },
   {
     id: 5,
-    img: "/images/illustrate.webp",
+    img: "/images/image7.jpeg",
     title: "Ceremonial Royal Kente",
     rating: 4.9,
     price: 2500,
@@ -109,7 +109,7 @@ export const products = [
   },
   {
     id: 6,
-    img: "/images/decoration.webp",
+    img: "/images/image2.jpeg",
     title: "Ewe Weave Kente Scarf",
     rating: 4.8,
     price: 420,
@@ -129,7 +129,7 @@ export const products = [
   },
   {
     id: 7,
-    img: "/images/decoration1.webp",
+    img: "/images/image4.jpeg",
     title: "Kente Table Runner",
     rating: 4.8,
     price: 650,
@@ -173,7 +173,7 @@ export const products = [
   },
   {
     id: 9,
-    img: "/images/image2.webp",
+    img: "/images/image6.jpeg",
     title: "Kente Baby Carrier",
     rating: 4.5,
     price: 800,
@@ -195,7 +195,7 @@ export const products = [
   },
   {
     id: 10,
-    img: "/images/illustrate.webp",
+    img: "/images/image7.jpeg",
     title: "Kente Ceremonial Stole",
     rating: 4.7,
     price: 1100,
@@ -217,7 +217,7 @@ export const products = [
   },
   {
     id: 11,
-    img: "/images/decoration.webp",
+    img: "/images/image2.jpeg",
     title: "Akosombo Kente Print Wrap",
     rating: 4.5,
     price: 320,
@@ -239,7 +239,7 @@ export const products = [
   },
   {
     id: 12,
-    img: "/images/decoration1.webp",
+    img: "/images/image4.jpeg",
     title: "Bonwire Inspiration Kente Band",
     rating: 4.5,
     price: 280,

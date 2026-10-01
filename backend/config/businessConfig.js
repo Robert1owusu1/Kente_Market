@@ -18,7 +18,7 @@ const asNumber = (raw, label, { min, max, def }) => {
   if (Number.isFinite(n) && n >= min && n <= max) {
     return n;
   }
-  console.warn(`⚠️ Invalid ${label}=${raw}; using default ${def}`);
+ console.warn(` Invalid ${label}=${raw}; using default ${def}`);
   return def;
 };
 

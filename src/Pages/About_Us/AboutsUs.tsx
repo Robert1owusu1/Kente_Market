@@ -1,6 +1,6 @@
 import React from "react";
-import Team1 from "../../assets/images/decoration.webp";
-import Team2 from "../../assets/images/decoration1.webp";
+import Team1 from "../../assets/images/heropage1.jpg"
+import Team2 from "../../assets/images/heropage3.jpeg"
 import Team3 from "../../assets/images/image1.webp";
 import Seo from "../../components/Seo/Seo";
 

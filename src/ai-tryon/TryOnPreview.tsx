@@ -57,7 +57,7 @@ const TryOnPreview = ({ originalImage, resultImage, product, onReset }: TryOnPre
       {/* Header */}
       <div className="bg-gradient-to-r from-primary to-secondary text-white p-4 flex items-center justify-between">
         <div>
-          <h3 className="font-bold text-lg">✨ Your Kente Try-On Result</h3>
+ <h3 className="font-bold text-lg"> Your Kente Try-On Result</h3>
           <p className="text-sm text-white/80">
             {product?.title || "Kente"} — {product?.category || ""}
           </p>
@@ -139,7 +139,7 @@ const TryOnPreview = ({ originalImage, resultImage, product, onReset }: TryOnPre
       {/* Info Footer */}
       <div className="p-4 border-t dark:border-gray-700 text-sm text-gray-500 dark:text-gray-400">
         <p>
-          💡 Tip: Use the slider to compare your original photo with the Kente
+ Tip: Use the slider to compare your original photo with the Kente
           try-on. For the best results, take a front-facing photo in good
           lighting.
         </p>

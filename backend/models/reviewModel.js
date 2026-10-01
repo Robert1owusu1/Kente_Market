@@ -3,7 +3,7 @@
 import pool from "../config/db.js";
 
 class Review {
-  // ✅ Create a review (one review per user per product; verified order
+ // Create a review (one review per user per product; verified order
   //    reviews are keyed on orderId so a buyer can review after each order).
   static async create({ userId, productId, rating, comment, userName,
     orderId = null, vendorId = null, vendorRating = null,
@@ -86,7 +86,7 @@ class Review {
     }
   }
 
-  // ✅ Reviews for a product
+ // Reviews for a product
   static async findByProduct(productId, limit = 50) {
     let connection;
     try {
@@ -110,7 +110,7 @@ class Review {
     }
   }
 
-  // ✅ A user's review for a specific product (for the review form)
+ // A user's review for a specific product (for the review form)
   static async findOneByUserAndProduct(userId, productId) {
     let connection;
     try {
@@ -128,7 +128,7 @@ class Review {
     }
   }
 
-  // ✅ All reviews across the site (for the /reviews page)
+ // All reviews across the site (for the /reviews page)
   static async findAll(limit = 100) {
     let connection;
     try {
@@ -152,7 +152,7 @@ class Review {
     }
   }
 
-  // ✅ Recompute the product's average rating and review count
+ // Recompute the product's average rating and review count
   static async recalculateProductStats(connection, productId) {
     const [agg] = await connection.execute(
       `SELECT COALESCE(AVG(rating), 0) AS avgRating, COUNT(*) AS count
@@ -165,7 +165,7 @@ class Review {
     );
   }
 
-  // ✅ Find review by id
+ // Find review by id
   static async findById(id) {
     let connection;
     try {
@@ -179,7 +179,7 @@ class Review {
     }
   }
 
-  // ✅ Update a review
+ // Update a review
   static async update(id, fields) {
     let connection;
     try {
@@ -211,7 +211,7 @@ class Review {
     }
   }
 
-  // ✅ Delete a review
+ // Delete a review
   static async delete(id) {
     let connection;
     try {
@@ -226,7 +226,7 @@ class Review {
     }
   }
 
-  // ✅ Update review status (admin moderation)
+ // Update review status (admin moderation)
   static async updateStatus(id, status) {
     let connection;
     try {

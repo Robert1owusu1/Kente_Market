@@ -219,13 +219,13 @@ const InboxPage = () => {
           onChange={(e) => setReplyText(e.target.value)}
           placeholder="Type your reply..."
           rows={3}
-          className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-[#b45309]"
         />
         <div className="flex gap-2 mt-2">
           <button
             onClick={onSend}
             disabled={busyId === String(item.id) || !replyText.trim()}
-            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+            className="flex items-center gap-2 px-4 py-2 bg-[#92400e] text-white rounded-lg hover:bg-[#7c2d12] disabled:opacity-50"
           >
             <FaReply /> {busyId === String(item.id) ? 'Sending...' : 'Send'}
           </button>
@@ -246,14 +246,14 @@ const InboxPage = () => {
       onClick={() => setTab(id)}
       className={`px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition ${
         tab === id
-          ? 'bg-indigo-600 text-white'
+          ? 'bg-[#92400e] text-white'
           : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
       }`}
     >
       {icon}
       {label}
       {count > 0 && (
-        <span className={`px-2 py-0.5 rounded-full text-xs ${tab === id ? 'bg-white/20' : 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-200'}`}>
+        <span className={`px-2 py-0.5 rounded-full text-xs ${tab === id ? 'bg-white/20' : 'bg-[#fbeacb] text-[#7c2d12] dark:bg-[#431407] dark:text-[#f7d89a]'}`}>
           {count}
         </span>
       )}
@@ -264,7 +264,7 @@ const InboxPage = () => {
     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden">
       {loading ? (
         <div className="p-8 text-center">
-          <FaSpinner className="animate-spin h-8 w-8 text-indigo-600 mx-auto" />
+          <FaSpinner className="animate-spin h-8 w-8 text-[#92400e] mx-auto" />
           <p className="mt-4 text-gray-600 dark:text-gray-400">Loading...</p>
         </div>
       ) : body === null ? (
@@ -361,7 +361,7 @@ const InboxPage = () => {
               </td>
               <td className="px-4 py-3 text-sm text-gray-900 dark:text-white max-w-[160px]">
                 <p className="truncate">{t.subject || 'No subject'}</p>
-                {t.category && <span className="text-xs text-indigo-600 dark:text-indigo-400">{String(t.category)}</span>}
+                {t.category && <span className="text-xs text-[#92400e] dark:text-[#dfa43c]">{String(t.category)}</span>}
               </td>
               <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300 max-w-xs">
                 <p className="whitespace-pre-wrap line-clamp-3">{String(t.message || '')}</p>
@@ -378,7 +378,7 @@ const InboxPage = () => {
                   {t.status !== 'closed' && (
                     <button
                       onClick={() => { setOpenReplyId(openReplyId === String(t.id) ? null : String(t.id)); setReplyText(''); }}
-                      className="p-2 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900 rounded"
+                      className="p-2 text-[#92400e] hover:bg-[#fdf8ef] dark:hover:bg-[#431407] rounded"
                       title="Reply"
                     >
                       <FaReply />
@@ -437,7 +437,7 @@ const InboxPage = () => {
               <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">{m.businessName || `Vendor #${m.vendorId}`}</td>
               <td className="px-4 py-3 text-sm text-gray-900 dark:text-white max-w-[140px]">
                 <p className="truncate">{m.subject || 'No subject'}</p>
-                {m.productTitle && <p className="text-xs text-indigo-600 dark:text-indigo-400 truncate">{m.productTitle}</p>}
+                {m.productTitle && <p className="text-xs text-[#92400e] dark:text-[#dfa43c] truncate">{m.productTitle}</p>}
               </td>
               <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300 max-w-xs">
                 <p className="whitespace-pre-wrap line-clamp-3">{String(m.body || '')}</p>
@@ -454,7 +454,7 @@ const InboxPage = () => {
                   {m.status !== 'closed' && (
                     <button
                       onClick={() => { setOpenReplyId(openReplyId === String(m.id) ? null : String(m.id)); setReplyText(''); }}
-                      className="p-2 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900 rounded"
+                      className="p-2 text-[#92400e] hover:bg-[#fdf8ef] dark:hover:bg-[#431407] rounded"
                       title="Reply"
                     >
                       <FaReply />

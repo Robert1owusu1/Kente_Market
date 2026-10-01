@@ -17,10 +17,10 @@ const createTransporter = () => {
 
   try {
     const transporter = nodemailer.createTransport(config);
-    console.log('✅ Transporter created successfully');
+ console.log(' Transporter created successfully');
     return transporter;
   } catch (error) {
-    console.error('❌ Failed to create transporter:', error);
+ console.error(' Failed to create transporter:', error);
     throw error;
   }
 };
@@ -46,7 +46,7 @@ export const emailEnabled = () => {
 export const sendEmailSafely = async (email, subject, html) => {
   if (!email || !subject || !html) return false;
   if (!emailEnabled()) {
-    console.warn(`⏭️  Email disabled/skipped for "${subject}" -> ${email} (set EMAIL_USER/EMAIL_PASSWORD)`);
+ console.warn(`⏭ Email disabled/skipped for "${subject}" -> ${email} (set EMAIL_USER/EMAIL_PASSWORD)`);
     return false;
   }
   const transporter = createTransporter();
@@ -57,10 +57,10 @@ export const sendEmailSafely = async (email, subject, html) => {
       subject,
       html,
     });
-    console.log(`📧 Sent "${subject}" to ${email}: ${info.messageId}`);
+ console.log(` Sent "${subject}" to ${email}: ${info.messageId}`);
     return true;
   } catch (error) {
-    console.error(`❌ Email failed for "${subject}" -> ${email}:`, error.message);
+ console.error(` Email failed for "${subject}" -> ${email}:`, error.message);
     return false;
   }
 };
@@ -109,7 +109,7 @@ export const sendOTPEmail = async (email, firstName, otp) => {
       <body>
         <div class="container">
           <div class="header">
-            <h1>🛍️ Bonwire Kente</h1>
+ <h1> Bonwire Kente</h1>
             <p>Email Verification</p>
           </div>
           <div class="content">
@@ -122,7 +122,7 @@ export const sendOTPEmail = async (email, firstName, otp) => {
               <p style="margin: 10px 0 0 0; color: #666; font-size: 12px;">Valid for ${process.env.OTP_EXPIRY_MINUTES || 10} minutes</p>
             </div>
             
-            <p><strong>⚠️ Important:</strong></p>
+ <p><strong> Important:</strong></p>
             <ul>
               <li>Do not share this OTP with anyone</li>
               <li>Our team will never ask for your OTP</li>
@@ -132,7 +132,7 @@ export const sendOTPEmail = async (email, firstName, otp) => {
             <p>If you didn't request this verification, please ignore this email.</p>
           </div>
           <div class="footer">
-            <p>© ${new Date().getFullYear()} Bonwire Kente. All rights reserved.</p>
+ <p>© ${new Date().getFullYear()} Bonwire Kente. All rights reserved.</p>
             <p>This is an automated email. Please do not reply.</p>
           </div>
         </div>
@@ -142,12 +142,12 @@ export const sendOTPEmail = async (email, firstName, otp) => {
   };
 
   try {
-    console.log(`📧 Sending OTP email to ${email}...`);
+ console.log(` Sending OTP email to ${email}...`);
     const info = await transporter.sendMail(mailOptions);
-    console.log(`✅ OTP email sent: ${info.messageId}`);
+ console.log(` OTP email sent: ${info.messageId}`);
     return true;
   } catch (error) {
-    console.error('❌ Error sending OTP email:', error);
+ console.error(' Error sending OTP email:', error);
     throw new Error(`Failed to send verification email: ${error.message}`);
   }
 };
@@ -161,7 +161,7 @@ export const sendWelcomeEmail = async (email, firstName) => {
   const mailOptions = {
     from: process.env.EMAIL_FROM || 'Bonwire Kente <noreply@bonwirekente.com>',
     to: email,
-    subject: 'Welcome to Bonwire Kente! 🎉',
+ subject: 'Welcome to Bonwire Kente! ',
     html: `
       <!DOCTYPE html>
       <html>
@@ -178,17 +178,17 @@ export const sendWelcomeEmail = async (email, firstName) => {
       <body>
         <div class="container">
           <div class="header">
-            <h1>🎉 Welcome to Bonwire Kente!</h1>
+ <h1> Welcome to Bonwire Kente!</h1>
           </div>
           <div class="content">
             <h2>Hi ${firstName}!</h2>
             <p>Your email has been successfully verified. Welcome to the Bonwire Kente family!</p>
             <p>You can now enjoy:</p>
             <ul>
-              <li>✅ Browse our exclusive collection</li>
-              <li>✅ Fast and secure checkout</li>
-              <li>✅ Order tracking</li>
-              <li>✅ Special offers and discounts</li>
+ <li> Browse our exclusive collection</li>
+ <li> Fast and secure checkout</li>
+ <li> Order tracking</li>
+ <li> Special offers and discounts</li>
             </ul>
             <div style="text-align: center; margin: 30px 0;">
               <a href="${process.env.FRONTEND_URL || 'http://localhost:5173'}" class="button">Start Shopping</a>
@@ -196,7 +196,7 @@ export const sendWelcomeEmail = async (email, firstName) => {
             <p>If you have any questions, feel free to contact our support team.</p>
           </div>
           <div class="footer">
-            <p>© ${new Date().getFullYear()} Bonwire Kente. All rights reserved.</p>
+ <p>© ${new Date().getFullYear()} Bonwire Kente. All rights reserved.</p>
             <p>This is an automated email. Please do not reply.</p>
           </div>
         </div>
@@ -206,11 +206,11 @@ export const sendWelcomeEmail = async (email, firstName) => {
   };
 
   try {
-    console.log(`📧 Sending welcome email to ${email}...`);
+ console.log(` Sending welcome email to ${email}...`);
     const info = await transporter.sendMail(mailOptions);
-    console.log(`✅ Welcome email sent: ${info.messageId}`);
+ console.log(` Welcome email sent: ${info.messageId}`);
   } catch (error) {
-    console.error('❌ Error sending welcome email:', error);
+ console.error(' Error sending welcome email:', error);
     // Don't throw error - welcome email is not critical
   }
 };
@@ -250,7 +250,7 @@ export const sendPasswordResetEmail = async (email, firstName, resetToken) => {
       <body>
         <div class="container">
           <div class="header">
-            <h1>🔐 Password Reset Request</h1>
+ <h1> Password Reset Request</h1>
           </div>
           <div class="content">
             <h2>Hello ${firstName},</h2>
@@ -268,7 +268,7 @@ export const sendPasswordResetEmail = async (email, firstName, resetToken) => {
             </p>
             
             <div class="warning-box">
-              <p style="margin: 0;"><strong>⚠️ Security Notice:</strong></p>
+ <p style="margin: 0;"><strong> Security Notice:</strong></p>
               <ul style="margin: 10px 0 0 0; padding-left: 20px;">
                 <li>This link will expire in <strong>1 hour</strong></li>
                 <li>If you didn't request this, please ignore this email</li>
@@ -282,7 +282,7 @@ export const sendPasswordResetEmail = async (email, firstName, resetToken) => {
             <p style="color: #666; font-size: 14px;">Best regards,<br>The Bonwire Kente Team</p>
           </div>
           <div class="footer">
-            <p>© ${new Date().getFullYear()} Bonwire Kente. All rights reserved.</p>
+ <p>© ${new Date().getFullYear()} Bonwire Kente. All rights reserved.</p>
             <p>This is an automated email. Please do not reply.</p>
           </div>
         </div>
@@ -292,13 +292,13 @@ export const sendPasswordResetEmail = async (email, firstName, resetToken) => {
   };
 
   try {
-    console.log(`📧 Sending password reset email to ${email}...`);
-    console.log(`🔗 Reset URL: ${resetUrl}`);
+ console.log(` Sending password reset email to ${email}...`);
+ console.log(` Reset URL: ${resetUrl}`);
     const info = await transporter.sendMail(mailOptions);
-    console.log(`✅ Password reset email sent: ${info.messageId}`);
+ console.log(` Password reset email sent: ${info.messageId}`);
     return true;
   } catch (error) {
-    console.error('❌ Error sending password reset email:', error);
+ console.error(' Error sending password reset email:', error);
     console.error('Error details:', {
       code: error.code,
       command: error.command,
@@ -335,7 +335,7 @@ export const sendPasswordResetConfirmation = async (email, firstName) => {
       <body>
         <div class="container">
           <div class="header">
-            <div class="success-icon">✅</div>
+ <div class="success-icon"></div>
             <h1>Password Changed Successfully</h1>
           </div>
           <div class="content">
@@ -348,7 +348,7 @@ export const sendPasswordResetConfirmation = async (email, firstName) => {
               <li>Account: ${email}</li>
             </ul>
             
-            <p><strong>⚠️ Didn't make this change?</strong></p>
+ <p><strong> Didn't make this change?</strong></p>
             <p>If you didn't reset your password, please contact our support team immediately to secure your account.</p>
             
             <div style="text-align: center; margin: 30px 0;">
@@ -358,7 +358,7 @@ export const sendPasswordResetConfirmation = async (email, firstName) => {
             <p style="color: #666; font-size: 14px;">Best regards,<br>The Bonwire Kente Team</p>
           </div>
           <div class="footer">
-            <p>© ${new Date().getFullYear()} Bonwire Kente. All rights reserved.</p>
+ <p>© ${new Date().getFullYear()} Bonwire Kente. All rights reserved.</p>
             <p>This is an automated email. Please do not reply.</p>
           </div>
         </div>
@@ -368,11 +368,11 @@ export const sendPasswordResetConfirmation = async (email, firstName) => {
   };
 
   try {
-    console.log(`📧 Sending password reset confirmation to ${email}...`);
+ console.log(` Sending password reset confirmation to ${email}...`);
     const info = await transporter.sendMail(mailOptions);
-    console.log(`✅ Password reset confirmation sent: ${info.messageId}`);
+ console.log(` Password reset confirmation sent: ${info.messageId}`);
   } catch (error) {
-    console.error('❌ Error sending confirmation email:', error);
+ console.error(' Error sending confirmation email:', error);
     // Don't throw - confirmation email is not critical
   }
 };
@@ -400,17 +400,17 @@ export const sendContactConfirmation = async (email, name) => {
           <p style="color:#666; font-size:14px;">Best regards,<br>The Bonwire Kente Team</p>
         </div>
         <div style="text-align:center; margin-top:20px; color:#666; font-size:12px;">
-          <p>© ${new Date().getFullYear()} Bonwire Kente. All rights reserved.</p>
+ <p>© ${new Date().getFullYear()} Bonwire Kente. All rights reserved.</p>
         </div>
       </div>
     `,
   };
   try {
-    console.log(`📧 Sending contact confirmation to ${email}...`);
+ console.log(` Sending contact confirmation to ${email}...`);
     const info = await transporter.sendMail(mailOptions);
-    console.log(`✅ Contact confirmation sent: ${info.messageId}`);
+ console.log(` Contact confirmation sent: ${info.messageId}`);
   } catch (error) {
-    console.error('❌ Error sending contact confirmation email:', error);
+ console.error(' Error sending contact confirmation email:', error);
   }
 };
 
@@ -426,23 +426,23 @@ export const sendSubscribeConfirmation = async (email) => {
     html: `
       <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
         <div style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
-          <h1>Welcome to Bonwire Kente 🎉</h1>
+ <h1>Welcome to Bonwire Kente </h1>
         </div>
         <div style="background: #f9fafb; padding: 30px; border-radius: 0 0 10px 10px;">
           <p>You're now subscribed! You'll be the first to know about new Kente collections, exclusive offers, and cultural stories from Bonwire.</p>
           <p style="color:#666; font-size:14px;">Best regards,<br>The Bonwire Kente Team</p>
         </div>
         <div style="text-align:center; margin-top:20px; color:#666; font-size:12px;">
-          <p>© ${new Date().getFullYear()} Bonwire Kente. All rights reserved.</p>
+ <p>© ${new Date().getFullYear()} Bonwire Kente. All rights reserved.</p>
         </div>
       </div>
     `,
   };
   try {
-    console.log(`📧 Sending subscribe confirmation to ${email}...`);
+ console.log(` Sending subscribe confirmation to ${email}...`);
     const info = await transporter.sendMail(mailOptions);
-    console.log(`✅ Subscribe confirmation sent: ${info.messageId}`);
+ console.log(` Subscribe confirmation sent: ${info.messageId}`);
   } catch (error) {
-    console.error('❌ Error sending subscribe confirmation email:', error);
+ console.error(' Error sending subscribe confirmation email:', error);
   }
 };

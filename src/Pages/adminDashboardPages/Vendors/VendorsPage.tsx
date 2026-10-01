@@ -141,7 +141,7 @@ const VendorsPage = () => {
   if (isLoading) {
     return (
       <div className="p-8 text-center">
-        <FaSpinner className="animate-spin h-12 w-12 text-indigo-600 mx-auto" />
+        <FaSpinner className="animate-spin h-12 w-12 text-[#92400e] mx-auto" />
         <p className="mt-4 text-gray-600 dark:text-gray-400">Loading vendors...</p>
       </div>
     );
@@ -171,7 +171,7 @@ const VendorsPage = () => {
             placeholder="Search by business name, contact, or email..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-600 text-gray-800 dark:text-white"
+            className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-[#92400e] text-gray-800 dark:text-white"
           />
           <FaSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
         </div>
@@ -249,7 +249,7 @@ const VendorsPage = () => {
                                 <FaAward /> On time {s.onTimeRate == null ? '—' : `${Math.round(Number(s.onTimeRate))}%`}
                               </span>
                               <p className="text-gray-500 dark:text-gray-400">
-                                {responseLabel(s.avgResponseHours) ? `Replies within ${responseLabel(s.avgResponseHours)}` : 'No SLA data'} · {s.verifiedOrders ?? 0} verified · {Number(s.reviewRating ?? 0).toFixed(1)}★
+ {responseLabel(s.avgResponseHours) ? `Replies within ${responseLabel(s.avgResponseHours)}` : 'No SLA data'} · {s.verifiedOrders ?? 0} verified · {Number(s.reviewRating ?? 0).toFixed(1)}★
                               </p>
                             </div>
                           );
@@ -294,7 +294,7 @@ const VendorsPage = () => {
                           {vr.status === 'approved' && (
                             <button
                               onClick={() => openEditor(vr)}
-                              className="p-2 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900 rounded"
+                              className="p-2 text-[#92400e] hover:bg-[#fdf8ef] dark:hover:bg-[#431407] rounded"
                               title="Manage verification level & badges"
                             >
                               <FaAward />
@@ -344,7 +344,7 @@ const VendorsPage = () => {
                         type="checkbox"
                         checked={editor.badges.includes(b)}
                         onChange={() => toggleBadge(b)}
-                        className="w-4 h-4 accent-indigo-600"
+                        className="w-4 h-4 accent-[#92400e]"
                       />
                       {b.replace(/_/g, ' ')}
                     </label>
@@ -361,7 +361,7 @@ const VendorsPage = () => {
                 <button
                   onClick={saveVerification}
                   disabled={savingVerification}
-                  className="px-4 py-2 bg-indigo-600 text-white rounded-lg font-semibold text-sm hover:bg-indigo-700 disabled:opacity-60 inline-flex items-center gap-2"
+                  className="px-4 py-2 bg-[#92400e] text-white rounded-lg font-semibold text-sm hover:bg-[#7c2d12] disabled:opacity-60 inline-flex items-center gap-2"
                 >
                   {savingVerification ? <FaSpinner className="animate-spin" /> : <FaCheck />} Save
                 </button>

@@ -15,6 +15,7 @@ import LegalConsentBox from "../legal/LegalConsentBox";
 import LegalConsentModal from "../legal/LegalConsentModal";
 import { useLegalConsent } from "../../hooks/useLegalConsent";
 import type { FormErrors } from "../../types/domain";
+import logoImg from "../../assets/logo.png";
 
 
 
@@ -342,7 +343,7 @@ const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
 
     dispatch(setCredentials(res));
 
-    // ⭐ Show appropriate success message based on verification status
+ // Show appropriate success message based on verification status
     if (res.isEmailVerified) {
       toast.success("Account created successfully! Welcome to Bonwire Kente!");
       navigate("/");
@@ -442,7 +443,7 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'htt
 
   return (
     <>
-      <div className="min-h-screen w-full flex items-center justify-center bg-gradient-to-br from-slate-900 via-purple-900 to-slate-800 bg-[length:400%_400%] animate-gradient-cycle px-4">
+      <div className="min-h-screen w-full flex items-center justify-center bg-gradient-to-br from-slate-900 via-[#431407] to-slate-800 bg-[length:400%_400%] animate-gradient-cycle px-4">
         <div className="form-container flex flex-col w-full max-w-md mx-auto shadow-2xl overflow-hidden rounded-3xl backdrop-blur-sm bg-white/5 border border-white/10">
           
           {/* Form Section */}
@@ -451,7 +452,7 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'htt
             {/* Logo */}
             <div className="logo-wrap flex justify-center gap-x-2 items-center mb-8">
               <div className="p-2 bg-amber-400/20 rounded-xl backdrop-blur-md">
-                <TiShoppingBag className="text-amber-400 text-2xl" />
+                <img src={logoImg} alt="Bonwire Kente" className="h-8 w-8 object-contain" width={32} height={32} />
               </div>
               <span className="text-white font-bold text-xl">Bonwire Kente</span>
             </div>

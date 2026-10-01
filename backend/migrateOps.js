@@ -61,9 +61,9 @@ try {
         expiresAt DATETIME NULL COMMENT 'deadline; expired locks are stealable catch-up',
         updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       ) ENGINE=InnoDB`);
-    console.log('✅ Created scheduler_locks table');
+ console.log(' Created scheduler_locks table');
   } else {
-    console.log('ℹ️  scheduler_locks already exists — skipping');
+ console.log('scheduler_locks already exists — skipping');
   }
 
   // ============================================================
@@ -81,9 +81,9 @@ try {
         lastFailureAlertAt DATETIME NULL COMMENT 'throttles admin alert emails to 1/day/job',
         updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       ) ENGINE=InnoDB`);
-    console.log('✅ Created scheduler_job_status table');
+ console.log(' Created scheduler_job_status table');
   } else {
-    console.log('ℹ️  scheduler_job_status already exists — skipping');
+ console.log('scheduler_job_status already exists — skipping');
   }
 
   // ============================================================
@@ -109,9 +109,9 @@ try {
         INDEX idx_audit_created (created_at),
         INDEX idx_audit_action (action)
       ) ENGINE=InnoDB`);
-    console.log('✅ Created admin_audit_log table');
+ console.log(' Created admin_audit_log table');
   } else {
-    console.log('ℹ️  admin_audit_log already exists — skipping');
+ console.log('admin_audit_log already exists — skipping');
   }
 
   // ============================================================
@@ -123,15 +123,15 @@ try {
         `ALTER TABLE users ADD COLUMN tokenVersion INT NOT NULL DEFAULT 0
          COMMENT 'bumped on password reset / credential change; JWTs must match'`
       );
-      console.log('✅ Added users.tokenVersion');
+ console.log(' Added users.tokenVersion');
     } else {
-      console.log('ℹ️  users.tokenVersion already exists — skipping');
+ console.log('users.tokenVersion already exists — skipping');
     }
   }
 
-  console.log('✅ Ops migration complete');
+ console.log(' Ops migration complete');
 } catch (err) {
-  console.error('❌ Ops migration failed:', err.message);
+ console.error(' Ops migration failed:', err.message);
   process.exitCode = 1;
 } finally {
   await connection.end();

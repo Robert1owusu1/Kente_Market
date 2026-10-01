@@ -34,7 +34,7 @@ try {
       WHERE orderStatus = 'delivered'
         AND deliveredAt IS NULL`
   );
-  console.log(`✅ Backfilled deliveredAt on ${result.affectedRows} delivered order(s)`);
+ console.log(` Backfilled deliveredAt on ${result.affectedRows} delivered order(s)`);
 } finally {
   await connection.end();
 }

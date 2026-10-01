@@ -27,7 +27,7 @@ import { useGetAllOrdersQuery } from '../slices/ordersApiSlice';
 import { useGetSettingsQuery, useUpdateSettingsMutation } from '../slices/settingsApiSlice';
 import { formatCurrency } from '../utils/formatCurrency';
 
-const COLORS = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
+const COLORS = ['#92400e', '#10b981', '#f59e0b', '#ef4444', '#b45309'];
 
 interface SettingsBag {
   siteName?: string;
@@ -194,7 +194,7 @@ const AdminDashboard = () => {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-md">
           <h3 className="text-sm text-gray-600 dark:text-gray-400 mb-2">Total Revenue</h3>
-          <p className="text-3xl font-bold text-indigo-600">{formatCurrency(stats.totalSales, 'GHS')}</p>
+          <p className="text-3xl font-bold text-[#92400e]">{formatCurrency(stats.totalSales, 'GHS')}</p>
           <p className="text-sm text-gray-500 mt-2">From {stats.paidOrders} paid orders</p>
         </div>
         <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-md">
@@ -218,8 +218,8 @@ const AdminDashboard = () => {
             <AreaChart data={salesChartData}>
               <defs>
                 <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.8}/>
-                  <stop offset="95%" stopColor="#4f46e5" stopOpacity={0}/>
+                  <stop offset="5%" stopColor="#92400e" stopOpacity={0.8}/>
+                  <stop offset="95%" stopColor="#92400e" stopOpacity={0}/>
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
@@ -237,7 +237,7 @@ const AdminDashboard = () => {
               <Area 
                 type="monotone" 
                 dataKey="sales" 
-                stroke="#4f46e5" 
+                stroke="#92400e" 
                 fillOpacity={1} 
                 fill="url(#colorSales)" 
               />
@@ -413,7 +413,7 @@ const AdminDashboard = () => {
                 onChange={(e) => setSettings({...settings, notifications: e.target.checked})}
                 className="sr-only peer"
               />
-              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 dark:peer-focus:ring-indigo-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-indigo-600"></div>
+              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-[#f2c169] dark:peer-focus:ring-[#5a2109] rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-[#92400e]"></div>
             </label>
           </div>
           <div className="flex items-center justify-between">
@@ -428,7 +428,7 @@ const AdminDashboard = () => {
                 onChange={(e) => setSettings({...settings, emailNotifications: e.target.checked})}
                 className="sr-only peer"
               />
-              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 dark:peer-focus:ring-indigo-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-indigo-600"></div>
+              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-[#f2c169] dark:peer-focus:ring-[#5a2109] rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-[#92400e]"></div>
             </label>
           </div>
           <div className="flex items-center justify-between">
@@ -443,7 +443,7 @@ const AdminDashboard = () => {
                 onChange={(e) => setSettings({...settings, orderAlerts: e.target.checked})}
                 className="sr-only peer"
               />
-              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 dark:peer-focus:ring-indigo-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-indigo-600"></div>
+              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-[#f2c169] dark:peer-focus:ring-[#5a2109] rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-[#92400e]"></div>
             </label>
           </div>
           <div>
@@ -463,7 +463,7 @@ const AdminDashboard = () => {
       <div className="flex justify-end">
         <button
           onClick={handleSaveSettings}
-          className="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+          className="px-6 py-3 bg-[#92400e] text-white rounded-lg hover:bg-[#7c2d12] transition-colors"
         >
           Save Settings
         </button>
@@ -481,9 +481,9 @@ const AdminDashboard = () => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-600 dark:text-gray-400">Total Sales</p>
-              <p className="text-2xl font-bold text-indigo-600">{formatCurrency(stats.totalSales, 'GHS')}</p>
+              <p className="text-2xl font-bold text-[#92400e]">{formatCurrency(stats.totalSales, 'GHS')}</p>
             </div>
-            <FaChartLine className="text-3xl text-indigo-600/70" />
+            <FaChartLine className="text-3xl text-[#92400e]/70" />
           </div>
         </div>
         <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-md hover:shadow-lg transition-shadow">
@@ -536,9 +536,9 @@ const AdminDashboard = () => {
               <Line 
                 type="monotone" 
                 dataKey="sales" 
-                stroke="#4f46e5" 
+                stroke="#92400e" 
                 strokeWidth={2} 
-                dot={{ fill: '#4f46e5', r: 4 }} 
+                dot={{ fill: '#92400e', r: 4 }} 
                 activeDot={{ r: 6 }} 
               />
             </LineChart>
@@ -551,7 +551,7 @@ const AdminDashboard = () => {
           onClick={() => setActiveSection('products')}
           className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-md hover:shadow-lg transition-shadow text-left"
         >
-          <FaBox className="text-3xl text-indigo-600 mb-3" />
+          <FaBox className="text-3xl text-[#92400e] mb-3" />
           <h3 className="text-lg font-semibold text-gray-800 dark:text-white mb-2">Manage Products</h3>
           <p className="text-sm text-gray-600 dark:text-gray-400">Add, edit, or remove products from your inventory</p>
         </button>
@@ -639,7 +639,7 @@ const AdminDashboard = () => {
           <h1 className="text-xl font-bold text-gray-800 dark:text-white">E-commerce Admin</h1>
           <div className="flex items-center gap-4">
             <span className="text-gray-800 dark:text-gray-200 hidden sm:inline">Admin</span>
-            <div className="w-8 h-8 bg-indigo-600 rounded-full flex items-center justify-center text-white font-bold">
+            <div className="w-8 h-8 bg-[#92400e] rounded-full flex items-center justify-center text-white font-bold">
               A
             </div>
           </div>
@@ -667,7 +667,7 @@ const AdminDashboard = () => {
                     onClick={() => { setActiveSection(item.id); setMobileMenuOpen(false); }}
                     className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors text-left ${
                       activeSection === item.id
-                        ? 'bg-indigo-600 text-white'
+                        ? 'bg-[#92400e] text-white'
                         : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
                     }`}
                   >
@@ -683,7 +683,7 @@ const AdminDashboard = () => {
         {/* Desktop sidebar */}
         <aside className="hidden lg:block lg:w-1/4">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden sticky top-24">
-            <div className="p-6 bg-indigo-600 text-white">
+            <div className="p-6 bg-[#92400e] text-white">
               <h2 className="text-xl font-bold">Admin Dashboard</h2>
             </div>
             <nav className="p-2">
@@ -695,7 +695,7 @@ const AdminDashboard = () => {
                     onClick={() => setActiveSection(item.id)}
                     className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors text-left ${
                       activeSection === item.id
-                        ? 'bg-indigo-600 text-white'
+                        ? 'bg-[#92400e] text-white'
                         : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
                     }`}
                   >

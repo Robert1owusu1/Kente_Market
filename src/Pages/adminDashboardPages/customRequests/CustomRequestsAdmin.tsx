@@ -11,7 +11,7 @@ import type { CustomRequest } from "../../../types/domain";
 const PILL: Record<string, string> = {
   pending: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
   quoted: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
-  accepted: "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300",
+  accepted: "bg-[#fbeacb] text-[#7c2d12] dark:bg-[#431407]/40 dark:text-[#f2c169]",
   paid: "bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300",
   in_progress: "bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300",
   completed: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",

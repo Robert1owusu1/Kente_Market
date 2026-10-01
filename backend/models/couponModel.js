@@ -228,7 +228,7 @@ class Coupon {
         [parseInt(id)]
       );
       if (result.affectedRows === 0) {
-        console.warn(`⚠️ Coupon ${id}: usage not consumed — limit reached at payment time`);
+ console.warn(` Coupon ${id}: usage not consumed — limit reached at payment time`);
       }
       return await Coupon.findById(id);
     } catch (err) {

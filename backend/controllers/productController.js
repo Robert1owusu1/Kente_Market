@@ -63,7 +63,7 @@ const getProducts = asyncHandler(async (req, res) => {
       res.json(publicProducts);
     }
   } catch (error) {
-    console.error('❌ Error in getProducts:', error.message);
+ console.error(' Error in getProducts:', error.message);
     console.error('Stack:', error.stack);
     
     res.status(500);
@@ -91,7 +91,7 @@ const getProductById = asyncHandler(async (req, res) => {
       throw new Error("Product not found");
     }
   } catch (error) {
-    console.error('❌ Error in getProductById:', error.message);
+ console.error(' Error in getProductById:', error.message);
     
     if (res.statusCode === 404) {
       throw error;
@@ -116,7 +116,7 @@ const getProductsByCategory = asyncHandler(async (req, res) => {
 
     res.json(products.map((p) => p.toPublic()));
   } catch (error) {
-    console.error('❌ Error in getProductsByCategory:', error.message);
+ console.error(' Error in getProductsByCategory:', error.message);
     
     res.status(500);
     throw new Error(`Failed to fetch products by category: ${error.message}`);
@@ -137,14 +137,14 @@ const getFeaturedProducts = asyncHandler(async (req, res) => {
 
     res.json(products.map((p) => p.toPublic()));
   } catch (error) {
-    console.error('❌ Error in getFeaturedProducts:', error.message);
+ console.error(' Error in getFeaturedProducts:', error.message);
     
     res.status(500);
     throw new Error(`Failed to fetch featured products: ${error.message}`);
   }
 });
 
-// ⭐ NEW FUNCTION - Get trending products
+// NEW FUNCTION - Get trending products
 // @desc    Get trending products (high ratings, recent, popular)
 // @route   GET /api/products/trending
 // @access  Public
@@ -159,7 +159,7 @@ const getTrendingProducts = asyncHandler(async (req, res) => {
 
     res.json(products.map((p) => p.toPublic()));
   } catch (error) {
-    console.error('❌ Error in getTrendingProducts:', error.message);
+ console.error(' Error in getTrendingProducts:', error.message);
     
     res.status(500);
     throw new Error(`Failed to fetch trending products: ${error.message}`);
@@ -180,7 +180,7 @@ const createProduct = asyncHandler(async (req, res) => {
     clearCache('products');
     res.status(201).json(product);
   } catch (error) {
-    console.error('❌ Error in createProduct:', error.message);
+ console.error(' Error in createProduct:', error.message);
 
     // A 4xx status set deliberately inside the try (invalid yardage, …)
     // must pass through verbatim — don't wrap it as a generic 500.
@@ -222,7 +222,7 @@ const updateProduct = asyncHandler(async (req, res) => {
       const { processRestockForProduct } = await import('../Services/wishlistRestockService.js');
       await processRestockForProduct(req.params.id);
     } catch (alertErr) {
-      console.warn(`⚠️ Restock alert skipped: ${alertErr.message}`);
+ console.warn(` Restock alert skipped: ${alertErr.message}`);
     }
 
     // Fast path for price-drop alerts (safety-net sweep also runs hourly).
@@ -230,13 +230,13 @@ const updateProduct = asyncHandler(async (req, res) => {
       const { processPriceDropsForProduct } = await import('../Services/wishlistPriceDropService.js');
       await processPriceDropsForProduct(req.params.id);
     } catch (alertErr) {
-      console.warn(`⚠️ Price-drop alert skipped: ${alertErr.message}`);
+ console.warn(` Price-drop alert skipped: ${alertErr.message}`);
     }
 
     clearCache('products');
     res.json(updatedProduct);
   } catch (error) {
-    console.error('❌ Error in updateProduct:', error.message);
+ console.error(' Error in updateProduct:', error.message);
 
     // 4xx set deliberately inside the try (invalid yardage, …) passes
     // through verbatim instead of being re-wrapped as a 500.
@@ -270,7 +270,7 @@ const deleteProduct = asyncHandler(async (req, res) => {
     clearCache('products');
     res.json({ message: "Product removed successfully" });
   } catch (error) {
-    console.error('❌ Error in deleteProduct:', error.message);
+ console.error(' Error in deleteProduct:', error.message);
     
     if (res.statusCode === 404) {
       throw error;
@@ -290,20 +290,20 @@ const getCategories = asyncHandler(async (req, res) => {
 
     res.json(categories);
   } catch (error) {
-    console.error('❌ Error in getCategories:', error.message);
+ console.error(' Error in getCategories:', error.message);
     
     res.status(500);
     throw new Error(`Failed to fetch categories: ${error.message}`);
   }
 });
 
-// ⭐ EXPORT ALL FUNCTIONS
+// EXPORT ALL FUNCTIONS
 export {
   getProducts,
   getProductById,
   getProductsByCategory,
   getFeaturedProducts,
-  getTrendingProducts, // ⭐ NEW
+ getTrendingProducts, // NEW
   getMuseumPieces,
   createProduct,
   updateProduct,

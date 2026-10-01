@@ -17,10 +17,10 @@ export const getRedisClient = () => {
 
   _client = createClient({ url: process.env.REDIS_URL });
   _client.on('error', (err) => {
-    console.error('❌ Redis error:', err.message);
+ console.error(' Redis error:', err.message);
   });
   _client.connect().catch((err) => {
-    console.error('❌ Redis connect failed:', err.message);
+ console.error(' Redis connect failed:', err.message);
   });
   return _client;
 };
@@ -46,7 +46,7 @@ export const createRateLimitStore = (prefix) => {
     const now = Date.now();
     if (now - warnedAt > 5 * 60 * 1000) {
       warnedAt = now;
-      console.warn('⚠️  Redis not ready — rate-limit enforcement DEGRADED (fail-open) for this instance');
+ console.warn('Redis not ready — rate-limit enforcement DEGRADED (fail-open) for this instance');
       try {
         const Sentry = await import('@sentry/node');
         Sentry.captureMessage('Redis unavailable: rate limiting degraded (fail-open)', 'warning');
@@ -71,7 +71,7 @@ export const consumeOnce = async (key, ttlSeconds) => {
   try {
     return await client.setNx(key, '1', { EX: ttlSeconds });
   } catch (err) {
-    console.error('❌ Redis consumeOnce error:', err.message);
+ console.error(' Redis consumeOnce error:', err.message);
     return null;
   }
 };

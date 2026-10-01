@@ -3,7 +3,7 @@
 import Subscriber from "../models/subscriberModel.js";
 import { sendSubscribeConfirmation } from "../utils/emailService.js";
 
-// ✅ POST /api/subscribe - subscribe an email (public)
+// POST /api/subscribe - subscribe an email (public)
 export const subscribe = async (req, res) => {
   try {
     const email = (req.body?.email || "").trim();
@@ -42,18 +42,18 @@ export const unsubscribe = async (req, res) => {
   }
 };
 
-// ✅ GET /api/subscribe - list subscribers (admin only)
+// GET /api/subscribe - list subscribers (admin only)
 export const listSubscribers = async (req, res) => {
   try {
     const subscribers = await Subscriber.findAll(req.query.limit);
     res.json(subscribers);
   } catch (error) {
-    console.error("❌ listSubscribers error:", error.message);
+ console.error(" listSubscribers error:", error.message);
     res.status(500).json({ message: "Failed to fetch subscribers" });
   }
 };
 
-// ✅ GET /api/subscribe/count - subscriber count (admin only)
+// GET /api/subscribe/count - subscriber count (admin only)
 export const getSubscriberCount = async (req, res) => {
   try {
     const subscribers = await Subscriber.findAll(10000);
@@ -65,7 +65,7 @@ export const getSubscriberCount = async (req, res) => {
   }
 };
 
-// ✅ GET /api/subscribe/export - export subscribers as CSV (admin only)
+// GET /api/subscribe/export - export subscribers as CSV (admin only)
 export const exportSubscribers = async (req, res) => {
   try {
     const subscribers = await Subscriber.findAll(10000);

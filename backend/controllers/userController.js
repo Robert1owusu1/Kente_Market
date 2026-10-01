@@ -227,7 +227,7 @@ const forgotPassword = asyncHandler(async (req, res) => {
       message: 'Password reset link has been sent to your email address.'
     });
   } catch (error) {
-    console.error('❌ Error in forgot password:', error);
+ console.error(' Error in forgot password:', error);
     
     // Clear any created tokens
     await User.clearResetToken(user.id);
@@ -287,7 +287,7 @@ const resetPassword = asyncHandler(async (req, res) => {
       message: 'Password has been reset successfully. You can now login with your new password.'
     });
   } catch (error) {
-    console.error('❌ Error resetting password:', error);
+ console.error(' Error resetting password:', error);
     res.status(500);
     throw new Error('Failed to reset password. Please try again.');
   }
