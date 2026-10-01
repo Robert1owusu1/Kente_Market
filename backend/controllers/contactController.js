@@ -3,7 +3,7 @@
 import Contact from "../models/contactModel.js";
 import { sendContactConfirmation } from "../utils/emailService.js";
 
-// ✅ POST /api/contact - submit a contact message (public)
+// POST /api/contact - submit a contact message (public)
 export const submitContact = async (req, res) => {
   try {
     const { name, email, phone, subject, message } = req.body || {};
@@ -38,23 +38,23 @@ export const submitContact = async (req, res) => {
       contact,
     });
   } catch (error) {
-    console.error("❌ submitContact error:", error.message);
+ console.error(" submitContact error:", error.message);
     res.status(500).json({ message: "Failed to send message" });
   }
 };
 
-// ✅ GET /api/contact - list messages (admin only)
+// GET /api/contact - list messages (admin only)
 export const listContacts = async (req, res) => {
   try {
     const contacts = await Contact.findAll(req.query.limit);
     res.json(contacts);
   } catch (error) {
-    console.error("❌ listContacts error:", error.message);
+ console.error(" listContacts error:", error.message);
     res.status(500).json({ message: "Failed to fetch messages" });
   }
 };
 
-// ✅ DELETE /api/contact/:id - remove a message (admin only)
+// DELETE /api/contact/:id - remove a message (admin only)
 export const deleteContact = async (req, res) => {
   try {
     const id = parseInt(req.params.id);
@@ -67,7 +67,7 @@ export const deleteContact = async (req, res) => {
     }
     res.json({ message: "Message deleted" });
   } catch (error) {
-    console.error("❌ deleteContact error:", error.message);
+ console.error(" deleteContact error:", error.message);
     res.status(500).json({ message: "Failed to delete message" });
   }
 };

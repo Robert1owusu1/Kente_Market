@@ -1,5 +1,5 @@
 import React from 'react';
-import { FaHeart, FaTrash, FaShoppingCart, FaStar, FaTags } from 'react-icons/fa';
+import { FaHeart, FaTrash, FaShoppingCart, FaStar, FaTags, FaExclamationTriangle } from "react-icons/fa";
 import { Link } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { useCart } from '../../Context/CartContext';
@@ -98,7 +98,7 @@ const WishlistPage = () => {
       <div className="min-h-screen py-10">
         <div className="container">
           <div className="text-center bg-red-50 dark:bg-red-900/20 rounded-2xl p-8 max-w-2xl mx-auto">
-            <div className="text-red-500 dark:text-red-400 text-5xl mb-4">⚠️</div>
+ <FaExclamationTriangle className="text-red-500 dark:text-red-400 text-5xl mb-4" />
             <h3 className="text-xl font-bold text-red-800 dark:text-red-300 mb-2">
               Oops! Something went wrong
             </h3>

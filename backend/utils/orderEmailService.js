@@ -83,7 +83,7 @@ const layout = (headline, bodyHtml) => `<!DOCTYPE html>
     <div class="content">${bodyHtml}</div>
     <div class="footer">
       <p>Bonwire • Ashanti Region • Ghana</p>
-      <p>© ${new Date().getFullYear()} Bonwire Kente. All rights reserved.</p>
+ <p>© ${new Date().getFullYear()} Bonwire Kente. All rights reserved.</p>
       <p class="muted">This is an automated message. Please do not reply directly to this email.</p>
     </div>
   </div>
@@ -175,7 +175,7 @@ export const sendOrderStatusEmail = async (orderId, { statusLabel = 'updated', n
   const orderUrl = `${frontendUrl()}/order/${order.id}`;
   const firstName = customer.firstName || customer.email;
   const friendly = statusLabel === 'shipped'
-    ? 'your order is on its way 🎉'
+ ? 'your order is on its way '
     : `your order is now ${statusLabel}`;
 
   const html = layout(`Order Update: ${statusLabel}`, `

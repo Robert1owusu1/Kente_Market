@@ -20,7 +20,7 @@ interface AdminScorecard {
 
 export const vendorsApiSlice = apiSlice.injectEndpoints({
   endpoints: (builder) => ({
-    // ✅ Apply / update vendor application (own account)
+ // Apply / update vendor application (own account)
     applyVendor: builder.mutation<Vendor, Record<string, unknown>>({
       query: (data) => ({
         url: `${VENDORS_URL}/apply`,
@@ -30,7 +30,7 @@ export const vendorsApiSlice = apiSlice.injectEndpoints({
       invalidatesTags: ["Vendor"],
     }),
 
-    // ✅ Own vendor profile + escrow summary + payout history
+ // Own vendor profile + escrow summary + payout history
     getMyVendorProfile: builder.query<Vendor, void>({
       query: () => ({
         url: `${VENDORS_URL}/me`,
@@ -40,7 +40,7 @@ export const vendorsApiSlice = apiSlice.injectEndpoints({
       keepUnusedDataFor: 5,
     }),
 
-    // ✅ Vendor's own products (detailed)
+ // Vendor's own products (detailed)
     getMyVendorProducts: builder.query<Product[], void>({
       query: () => ({
         url: `${VENDORS_URL}/myproducts`,
@@ -50,7 +50,7 @@ export const vendorsApiSlice = apiSlice.injectEndpoints({
       keepUnusedDataFor: 5,
     }),
 
-    // ✅ Create a product as vendor
+ // Create a product as vendor
     createVendorProduct: builder.mutation<Product, Record<string, unknown>>({
       query: (data) => ({
         url: `${VENDORS_URL}/products`,
@@ -60,7 +60,7 @@ export const vendorsApiSlice = apiSlice.injectEndpoints({
       invalidatesTags: ["VendorProduct", "VendorAnalytics"],
     }),
 
-    // ✅ Update vendor's own product
+ // Update vendor's own product
     updateVendorProduct: builder.mutation<Product, { id: number | string; [key: string]: unknown }>({
       query: ({ id, ...data }) => ({
         url: `${VENDORS_URL}/products/${id}`,
@@ -70,7 +70,7 @@ export const vendorsApiSlice = apiSlice.injectEndpoints({
       invalidatesTags: ["VendorProduct", "VendorAnalytics"],
     }),
 
-    // ✅ Delete vendor's own product
+ // Delete vendor's own product
     deleteVendorProduct: builder.mutation<{ message?: string }, number | string>({
       query: (id) => ({
         url: `${VENDORS_URL}/products/${id}`,
@@ -79,7 +79,7 @@ export const vendorsApiSlice = apiSlice.injectEndpoints({
       invalidatesTags: ["VendorProduct", "VendorAnalytics"],
     }),
 
-    // ✅ Vendor analytics
+ // Vendor analytics
     getVendorAnalytics: builder.query<VendorAnalytics, void>({
       query: () => ({
         url: `${VENDORS_URL}/analytics`,
@@ -89,7 +89,7 @@ export const vendorsApiSlice = apiSlice.injectEndpoints({
       keepUnusedDataFor: 5,
     }),
 
-    // ✅ Reviews on vendor's products
+ // Reviews on vendor's products
     getVendorReviews: builder.query<Review[], void>({
       query: () => ({
         url: `${VENDORS_URL}/reviews`,
@@ -99,7 +99,7 @@ export const vendorsApiSlice = apiSlice.injectEndpoints({
       keepUnusedDataFor: 5,
     }),
 
-    // ✅ Returns for vendor's products
+ // Returns for vendor's products
     getVendorReturns: builder.query<ReturnRequest[], void>({
       query: () => ({
         url: `${VENDORS_URL}/returns`,
@@ -109,7 +109,7 @@ export const vendorsApiSlice = apiSlice.injectEndpoints({
       keepUnusedDataFor: 5,
     }),
 
-    // ✅ Vendor's coupons
+ // Vendor's coupons
     getVendorCoupons: builder.query<Coupon[], void>({
       query: () => ({
         url: `${VENDORS_URL}/coupons`,
@@ -119,7 +119,7 @@ export const vendorsApiSlice = apiSlice.injectEndpoints({
       keepUnusedDataFor: 5,
     }),
 
-    // ✅ Create vendor coupon
+ // Create vendor coupon
     createVendorCoupon: builder.mutation<Coupon, Record<string, unknown>>({
       query: (data) => ({
         url: `${VENDORS_URL}/coupons`,
@@ -129,7 +129,7 @@ export const vendorsApiSlice = apiSlice.injectEndpoints({
       invalidatesTags: ["VendorCoupon"],
     }),
 
-    // ✅ Update vendor coupon
+ // Update vendor coupon
     updateVendorCoupon: builder.mutation<Coupon, { id: number | string; [key: string]: unknown }>({
       query: ({ id, ...data }) => ({
         url: `${VENDORS_URL}/coupons/${id}`,
@@ -139,7 +139,7 @@ export const vendorsApiSlice = apiSlice.injectEndpoints({
       invalidatesTags: ["VendorCoupon"],
     }),
 
-    // ✅ Delete vendor coupon
+ // Delete vendor coupon
     deleteVendorCoupon: builder.mutation<{ message?: string }, number | string>({
       query: (id) => ({
         url: `${VENDORS_URL}/coupons/${id}`,
@@ -148,7 +148,7 @@ export const vendorsApiSlice = apiSlice.injectEndpoints({
       invalidatesTags: ["VendorCoupon"],
     }),
 
-    // ✅ Update vendor business profile
+ // Update vendor business profile
     updateVendorProfile: builder.mutation<Vendor, Record<string, unknown>>({
       query: (data) => ({
         url: `${VENDORS_URL}/profile`,
@@ -158,7 +158,7 @@ export const vendorsApiSlice = apiSlice.injectEndpoints({
       invalidatesTags: ["Vendor"],
     }),
 
-    // ✅ Orders that contain this vendor's products (fulfilment list)
+ // Orders that contain this vendor's products (fulfilment list)
     getVendorOrders: builder.query<Order[], void>({
       query: () => ({
         url: `${VENDORS_URL}/orders`,
@@ -168,7 +168,7 @@ export const vendorsApiSlice = apiSlice.injectEndpoints({
       keepUnusedDataFor: 5,
     }),
 
-    // ✅ Vendor advances fulfilment status of their order (+ customised note/date)
+ // Vendor advances fulfilment status of their order (+ customised note/date)
     updateVendorOrderStatus: builder.mutation<
       Order,
       { orderId: number | string; orderStatus?: string; productionNote?: string; expectedCompletionDate?: string }
@@ -181,7 +181,7 @@ export const vendorsApiSlice = apiSlice.injectEndpoints({
       invalidatesTags: ["VendorOrder", "VendorAnalytics"],
     }),
 
-    // ✅ Vendor withdraws from available wallet balance
+ // Vendor withdraws from available wallet balance
     withdrawVendor: builder.mutation<{ message?: string; [key: string]: unknown }, Record<string, unknown>>({
       query: (data) => ({
         url: `${VENDORS_URL}/withdraw`,
@@ -191,7 +191,7 @@ export const vendorsApiSlice = apiSlice.injectEndpoints({
       invalidatesTags: ["Vendor"],
     }),
 
-    // ✅ Admin: list all vendors
+ // Admin: list all vendors
     getAllVendors: builder.query<Vendor[], { status?: string; search?: string } | undefined>({
       query: ({ status, search } = {}) => {
         const params = new URLSearchParams();
@@ -203,7 +203,7 @@ export const vendorsApiSlice = apiSlice.injectEndpoints({
       keepUnusedDataFor: 5,
     }),
 
-    // ✅ Admin: change vendor status
+ // Admin: change vendor status
     updateVendorStatus: builder.mutation<Vendor, { id: number | string; status: string }>({
       query: ({ id, status }) => ({
         url: `${VENDORS_URL}/${id}/status`,
@@ -213,7 +213,7 @@ export const vendorsApiSlice = apiSlice.injectEndpoints({
       invalidatesTags: ["Vendor"],
     }),
 
-    // ✅ Public fulfilment scorecard — on-time delivery record for a store.
+ // Public fulfilment scorecard — on-time delivery record for a store.
     getVendorFulfilment: builder.query<
       { fulfilled: number; withDeadline: number; onTime: number; onTimeRate: number; avgDaysEarly: number },
       number | string
@@ -225,7 +225,7 @@ export const vendorsApiSlice = apiSlice.injectEndpoints({
       keepUnusedDataFor: 300,
     }),
 
-    // ✅ Admin: per-vendor performance scorecard (on-time %, response hours,
+ // Admin: per-vendor performance scorecard (on-time %, response hours,
     //    review rating, verified order count).
     getAdminScorecard: builder.query<
       Record<string | number, AdminScorecard>,
@@ -247,7 +247,7 @@ export const vendorsApiSlice = apiSlice.injectEndpoints({
       keepUnusedDataFor: 60,
     }),
 
-    // ✅ Demand insights for the vendor dashboard (weekly digest + on request).
+ // Demand insights for the vendor dashboard (weekly digest + on request).
     getVendorInsights: builder.query<
       {
         demand: { totalRevenue: number; totalQty: number; topTypes: { category: string; quantity: number; revenue: number; productCount: number; share: number }[]; topProducts: { productId: string; name: string; category: string; patternName?: string | null; quantity: number; revenue: number; share?: number }[] };

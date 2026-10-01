@@ -1,6 +1,6 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import React, { useState, useEffect } from "react";
-import loginilu from "../../assets/images/illustrate.webp"
+import loginilu from "../../assets/images/heropage2.jpeg"
 import { TiShoppingBag } from "react-icons/ti";
 import { FcGoogle } from "react-icons/fc";
 import { FaEye, FaEyeSlash } from "react-icons/fa";
@@ -16,6 +16,7 @@ import LegalConsentBox from "../legal/LegalConsentBox";
 import LegalConsentModal from "../legal/LegalConsentModal";
 import { useLegalConsent } from "../../hooks/useLegalConsent";
 import type { FormErrors } from "../../types/domain";
+import logoImg from "../../assets/logo.png";
 
 // Only allow in-app navigation targets. Blocks open-redirect attempts like
 // /login?redirect=https://evil.com or //evil.com (scheme-relative).
@@ -167,10 +168,10 @@ const Login = () => {
 
   const legal = useLegalConsent();
 
-  // ✅ FIXED: Single useEffect for redirect logic with replace to prevent history issues
+ // FIXED: Single useEffect for redirect logic with replace to prevent history issues
   useEffect(() => {
     if (userInfo) {
-      // ⭐ Check if email is verified
+ // Check if email is verified
       if (!userInfo.isEmailVerified) {
         navigate('/verify-email', { replace: true });
         return;
@@ -268,7 +269,7 @@ const Login = () => {
 
   return (
     <>
-      <div className="min-h-screen w-full flex items-center justify-center bg-gradient-to-br from-slate-900 via-purple-900 to-slate-800 bg-[length:400%_400%] animate-gradient-cycle px-4"> 
+      <div className="min-h-screen w-full flex items-center justify-center bg-gradient-to-br from-slate-900 via-[#431407] to-slate-800 bg-[length:400%_400%] animate-gradient-cycle px-4"> 
         <div className="form-container flex flex-col-reverse lg:flex-row w-full max-w-6xl mx-auto shadow-2xl overflow-hidden rounded-3xl backdrop-blur-sm bg-white/5 border border-white/10">
           
           {/* Form Section */}
@@ -277,7 +278,7 @@ const Login = () => {
             {/* Logo */}
             <div className="logo-wrap flex justify-center lg:justify-start gap-x-2 items-center mb-8">
               <div className="p-2 bg-amber-400/20 rounded-xl backdrop-blur-md">
-                <TiShoppingBag className="text-amber-400 text-2xl" />
+                <img src={logoImg} alt="Bonwire Kente" className="h-8 w-8 object-contain" width={32} height={32} />
               </div>
               <span className="text-white font-bold text-xl">Bonwire Kente</span>
             </div>

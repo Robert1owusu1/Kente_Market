@@ -18,7 +18,7 @@ const __dirname = path.dirname(__filename);
 const profilesDir = path.join(__dirname, '..', 'uploads', 'profiles');
 if (!fs.existsSync(profilesDir)) {
   fs.mkdirSync(profilesDir, { recursive: true });
-  console.log('✅ Created profiles directory:', profilesDir);
+ console.log(' Created profiles directory:', profilesDir);
 }
 
 // Belt-and-braces: users.profile_picture is only ever written by this route,
@@ -96,7 +96,7 @@ router.post('/upload', protect, uploadLimiter, upload.single('profilePicture'), 
       const oldPicturePath = resolveProfilePath(user.profile_picture);
       if (oldPicturePath && fs.existsSync(oldPicturePath)) {
         fs.unlinkSync(oldPicturePath);
-        console.log('🗑️ Deleted old profile picture:', oldPicturePath);
+ console.log(' Deleted old profile picture:', oldPicturePath);
       }
     }
 
@@ -105,7 +105,7 @@ router.post('/upload', protect, uploadLimiter, upload.single('profilePicture'), 
     
     await User.updateProfilePicture(userId, profilePicturePath);
 
-    console.log(`✅ Profile picture uploaded for user ${userId}:`, profilePicturePath);
+ console.log(` Profile picture uploaded for user ${userId}:`, profilePicturePath);
 
     res.json({
       message: 'Profile picture uploaded successfully',
@@ -114,7 +114,7 @@ router.post('/upload', protect, uploadLimiter, upload.single('profilePicture'), 
       size: req.file.size,
     });
   } catch (error) {
-    console.error('❌ Error uploading profile picture:', error);
+ console.error(' Error uploading profile picture:', error);
     
     // Delete uploaded file if error occurs
     if (req.file && fs.existsSync(req.file.path)) {
@@ -148,7 +148,7 @@ router.delete('/picture', protect, async (req, res) => {
     const picturePath = resolveProfilePath(user.profile_picture);
     if (picturePath && fs.existsSync(picturePath)) {
       fs.unlinkSync(picturePath);
-      console.log('🗑️ Deleted profile picture:', picturePath);
+ console.log(' Deleted profile picture:', picturePath);
     }
 
     // Update database
@@ -156,7 +156,7 @@ router.delete('/picture', protect, async (req, res) => {
 
     res.json({ message: 'Profile picture deleted successfully' });
   } catch (error) {
-    console.error('❌ Error deleting profile picture:', error);
+ console.error(' Error deleting profile picture:', error);
     res.status(500).json({ 
       message: 'Failed to delete profile picture',
       error: error.message 

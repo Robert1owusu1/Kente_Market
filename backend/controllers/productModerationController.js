@@ -89,7 +89,7 @@ export const moderateProduct = async (req, res) => {
           link: `/vendor/products`,
         });
       } catch (notifyErr) {
-        console.warn('⚠️ Could not notify vendor of moderation:', notifyErr.message);
+ console.warn(' Could not notify vendor of moderation:', notifyErr.message);
       }
     }
 

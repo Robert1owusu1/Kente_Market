@@ -96,7 +96,7 @@ const CreateStaffModal = ({ onClose }: { onClose: () => void }) => {
                     type="checkbox"
                     checked={permissions.includes(p)}
                     onChange={() => toggle(p)}
-                    className="w-4 h-4 accent-indigo-600"
+                    className="w-4 h-4 accent-[#92400e]"
                   />
                   {permLabels[p] || p}
                 </label>
@@ -106,7 +106,7 @@ const CreateStaffModal = ({ onClose }: { onClose: () => void }) => {
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full px-4 py-2.5 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 disabled:opacity-60 flex items-center justify-center gap-2"
+            className="w-full px-4 py-2.5 bg-[#92400e] text-white rounded-lg font-semibold hover:bg-[#7c2d12] disabled:opacity-60 flex items-center justify-center gap-2"
           >
             {isLoading ? <FaSpinner className="animate-spin" /> : <FaPlus />} Add staff
           </button>
@@ -142,7 +142,7 @@ const VendorStaff = () => {
         <h2 className="text-2xl font-bold text-gray-800 dark:text-white">Team & Staff</h2>
         <button
           onClick={() => setShowCreate(true)}
-          className="px-4 py-2 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 inline-flex items-center gap-2 text-sm"
+          className="px-4 py-2 bg-[#92400e] text-white rounded-lg font-semibold hover:bg-[#7c2d12] inline-flex items-center gap-2 text-sm"
         >
           <FaPlus /> Add staff
         </button>
@@ -150,7 +150,7 @@ const VendorStaff = () => {
 
       {isLoading ? (
         <div className="p-8 text-center">
-          <FaSpinner className="animate-spin h-10 w-10 text-indigo-600 mx-auto" />
+          <FaSpinner className="animate-spin h-10 w-10 text-[#92400e] mx-auto" />
         </div>
       ) : isError ? (
         <div className="p-8 text-center bg-red-50 dark:bg-red-900/20 rounded-lg">
@@ -167,7 +167,7 @@ const VendorStaff = () => {
             <div key={s.id} className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-5">
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center text-indigo-600 dark:text-indigo-300 font-bold">
+                  <div className="w-10 h-10 rounded-full bg-[#fbeacb] dark:bg-[#431407]/40 flex items-center justify-center text-[#92400e] dark:text-[#f2c169] font-bold">
                     {s.name![0].toUpperCase()}
                   </div>
                   <div>
@@ -191,7 +191,7 @@ const VendorStaff = () => {
               </div>
               <div className="mt-3 flex flex-wrap gap-1.5">
                 {(s.permissions || []).map((p) => (
-                  <span key={p} className="px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300">
+                  <span key={p} className="px-2 py-0.5 rounded-full text-xs font-medium bg-[#fdf8ef] text-[#7c2d12] dark:bg-[#431407]/40 dark:text-[#f2c169]">
                     {permLabels[p] || p}
                   </span>
                 ))}

@@ -179,7 +179,7 @@ export const sendWeeklyVendorDigest = async () => {
       await Notification.create({
         userId: vendor.userId,
         type: 'system',
-        title: 'Weekly demand digest 📈',
+ title: 'Weekly demand digest ',
         message: `Here's what buyers are asking for this week:\n${topLine}\n\nPrepare stock for the hot patterns while lead times are calm.`,
         link: '/vendor/insights',
       });
@@ -196,7 +196,7 @@ export const sendWeeklyVendorDigest = async () => {
       }
       notified += 1;
     } catch (err) {
-      console.warn(`⚠️ Vendor digest failed for ${vendor.userId}: ${err.message}`);
+ console.warn(` Vendor digest failed for ${vendor.userId}: ${err.message}`);
     }
   }
 
@@ -206,10 +206,10 @@ export const sendWeeklyVendorDigest = async () => {
      ON DUPLICATE KEY UPDATE settingValue = VALUES(settingValue)`,
     [String(isoWeek)]
   );
-  if (notified > 0) console.log(`📈 Weekly vendor demand digest sent to ${notified} vendor(s)`);
+ if (notified > 0) console.log(` Weekly vendor demand digest sent to ${notified} vendor(s)`);
   return notified;
   } catch (err) {
-    console.error('⚠️ Weekly vendor digest job failed:', err.message);
+ console.error(' Weekly vendor digest job failed:', err.message);
     return 0;
   }
 };

@@ -194,7 +194,7 @@ const AiTryOn = () => {
               <div className="max-w-2xl mx-auto">
                 <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 mb-6">
                   <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">
-                    📸 Step 1: Upload a clear photo of yourself
+ Step 1: Upload a clear photo of yourself
                   </h2>
 
                   {/* Upload method toggle */}
@@ -243,7 +243,7 @@ const AiTryOn = () => {
                 </div>
 
                 <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4 text-sm text-amber-800 dark:text-amber-200">
-                  <p className="font-medium mb-1">💡 Tips for best results:</p>
+ <p className="font-medium mb-1"> Tips for best results:</p>
                   <ul className="list-disc list-inside space-y-1">
                     <li>Face the camera directly with good lighting</li>
                     <li>Avoid busy backgrounds — plain is best</li>
@@ -259,7 +259,7 @@ const AiTryOn = () => {
               <div className="max-w-4xl mx-auto">
                 <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6">
                   <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-2">
-                    🪡 Step 2: Choose your Kente cloth
+ Step 2: Choose your Kente cloth
                   </h2>
                   <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
                     Select which Bonwire Kente piece you'd like to try on. The
@@ -284,8 +284,8 @@ const AiTryOn = () => {
                       className="aitryon-btn-primary"
                     >
                       {isProcessing
-                        ? `✨ ${processingMessage || "Processing..."}`
-                        : "✨ Generate My Try-On"}
+ ? ` ${processingMessage || "Processing..."}`
+ : " Generate My Try-On"}
                     </button>
                   </div>
                 </div>
@@ -325,7 +325,7 @@ const AiTryOn = () => {
         {/* Feature cards */}
         <div className="grid sm:grid-cols-3 gap-6 mt-16 max-w-4xl mx-auto">
           <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-lg text-center">
-            <div className="text-4xl mb-3">🪞</div>
+ <FaUserEdit className="text-4xl mb-3 mx-auto text-primary" />
             <h3 className="font-semibold text-gray-800 dark:text-white mb-2">
               Photorealistic Wear Try-On
             </h3>
@@ -335,7 +335,7 @@ const AiTryOn = () => {
             </p>
           </div>
           <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-lg text-center">
-            <div className="text-4xl mb-3">🏠</div>
+ <FaChair className="text-4xl mb-3 mx-auto text-primary" />
             <h3 className="font-semibold text-gray-800 dark:text-white mb-2">
               Decorate Your Home
             </h3>
@@ -345,7 +345,7 @@ const AiTryOn = () => {
             </p>
           </div>
           <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-lg text-center">
-            <div className="text-4xl mb-3">🛡️</div>
+ <FaCheckCircle className="text-4xl mb-3 mx-auto text-primary" />
             <h3 className="font-semibold text-gray-800 dark:text-white mb-2">
               100% Authentic & GI-Certified
             </h3>

@@ -90,7 +90,7 @@ const StockRow = ({ item }: { item: InventoryRow }) => {
         <button
           onClick={handleSave}
           disabled={!dirty || isLoading}
-          className="px-3 py-1.5 rounded-lg text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white inline-flex items-center gap-1"
+          className="px-3 py-1.5 rounded-lg text-sm font-semibold bg-[#92400e] hover:bg-[#7c2d12] disabled:opacity-40 text-white inline-flex items-center gap-1"
         >
           {isLoading ? <FaSpinner className="animate-spin" /> : dirty ? <FaPlus /> : <FaCheck />}
           {dirty ? 'Save' : 'Saved'}
@@ -110,7 +110,7 @@ const VendorInventory = () => {
   if (isLoading) {
     return (
       <div className="p-8 text-center">
-        <FaSpinner className="animate-spin h-10 w-10 text-indigo-600 mx-auto" />
+        <FaSpinner className="animate-spin h-10 w-10 text-[#92400e] mx-auto" />
         <p className="mt-4 text-gray-600 dark:text-gray-400">Loading inventory...</p>
       </div>
     );

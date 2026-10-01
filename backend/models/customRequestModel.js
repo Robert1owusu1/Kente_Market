@@ -30,7 +30,7 @@ class CustomRequest {
     };
   }
 
-  // ✅ Create a new customization request (customer)
+ // Create a new customization request (customer)
   static async create(data) {
     const connection = await pool.getConnection();
     try {
@@ -181,7 +181,7 @@ class CustomRequest {
     }
   }
 
-  // ✅ Whitelisted field updates (mirrors product model pattern)
+ // Whitelisted field updates (mirrors product model pattern)
   static async update(id, updateData) {
     const connection = await pool.getConnection();
     try {

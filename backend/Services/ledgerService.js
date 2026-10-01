@@ -79,12 +79,12 @@ export const recordFinancialEvent = async ({
     return true;
   } catch (error) {
     if (error.code === 'ER_NO_SUCH_TABLE') {
-      console.warn('⚠️  financial_events table missing — run `node migrateHardening.js` (release gate). Skipping journal event.');
+ console.warn('financial_events table missing — run `node migrateHardening.js` (release gate). Skipping journal event.');
     } else if (error.code === 'ER_DUP_ENTRY') {
       // Already recorded (retry/re-delivery) — this is the point of dedupeKey.
       return true;
     } else {
-      console.error('❌ Could not record financial event:', error.message);
+ console.error(' Could not record financial event:', error.message);
     }
     return false;
   }

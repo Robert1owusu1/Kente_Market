@@ -208,7 +208,7 @@ const s3Backend = {
 const selectBackend = () => {
   if (BACKEND === 'local') return localBackend;
   if (BACKEND === 's3') return s3Backend;
-  console.error(`❌ STORAGE_BACKEND=${BACKEND} is not implemented. Use 'local' or 's3'. See .deploy/UPLOADS_OBJECT_STORAGE.md.`);
+ console.error(` STORAGE_BACKEND=${BACKEND} is not implemented. Use 'local' or 's3'. See .deploy/UPLOADS_OBJECT_STORAGE.md.`);
   process.exit(1);
 };
 

@@ -130,7 +130,7 @@ const CouponsPage = () => {
         </div>
         <button
           onClick={openCreate}
-          className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-semibold"
+          className="flex items-center gap-2 px-5 py-2.5 bg-[#92400e] text-white rounded-lg hover:bg-[#7c2d12] transition font-semibold"
         >
           <FaPlus /> Add Coupon
         </button>
@@ -140,7 +140,7 @@ const CouponsPage = () => {
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden">
         {isLoading ? (
           <div className="p-8 text-center">
-            <FaSpinner className="animate-spin h-8 w-8 text-indigo-600 mx-auto" />
+            <FaSpinner className="animate-spin h-8 w-8 text-[#92400e] mx-auto" />
             <p className="mt-4 text-gray-600 dark:text-gray-400">Loading coupons...</p>
           </div>
         ) : coupons.length === 0 ? (
@@ -149,7 +149,7 @@ const CouponsPage = () => {
             <p>No coupons yet</p>
             <button
               onClick={openCreate}
-              className="mt-4 px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+              className="mt-4 px-6 py-2 bg-[#92400e] text-white rounded-lg hover:bg-[#7c2d12]"
             >
               Create Your First Coupon
             </button>
@@ -256,7 +256,7 @@ const CouponsPage = () => {
                   value={form.code}
                   onChange={(e) => setForm({ ...form, code: e.target.value })}
                   required
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#92400e]"
                   placeholder="e.g. SUMMER20"
                 />
               </div>
@@ -269,7 +269,7 @@ const CouponsPage = () => {
                   <select
                     value={form.discountType}
                     onChange={(e) => setForm({ ...form, discountType: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#92400e]"
                   >
                     <option value="percentage">Percentage</option>
                     <option value="fixed">Fixed Amount</option>
@@ -287,7 +287,7 @@ const CouponsPage = () => {
                     required
                     step="0.01"
                     min="0"
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#92400e]"
                     placeholder={form.discountType === 'percentage' ? 'e.g. 20' : 'e.g. 5.00'}
                   />
                 </div>
@@ -304,7 +304,7 @@ const CouponsPage = () => {
                     onChange={(e) => setForm({ ...form, minPurchase: e.target.value })}
                     step="0.01"
                     min="0"
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#92400e]"
                     placeholder="0.00"
                   />
                 </div>
@@ -318,7 +318,7 @@ const CouponsPage = () => {
                     value={form.maxUses}
                     onChange={(e) => setForm({ ...form, maxUses: e.target.value })}
                     min="1"
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#92400e]"
                     placeholder="Unlimited"
                   />
                 </div>
@@ -332,7 +332,7 @@ const CouponsPage = () => {
                   type="datetime-local"
                   value={form.expiresAt}
                   onChange={(e) => setForm({ ...form, expiresAt: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#92400e]"
                 />
               </div>
 
@@ -341,7 +341,7 @@ const CouponsPage = () => {
                   type="checkbox"
                   checked={form.isActive}
                   onChange={(e) => setForm({ ...form, isActive: e.target.checked })}
-                  className="w-5 h-5 text-indigo-600 rounded focus:ring-2 focus:ring-indigo-600"
+                  className="w-5 h-5 text-[#92400e] rounded focus:ring-2 focus:ring-[#92400e]"
                 />
                 <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
                   Active
@@ -358,7 +358,7 @@ const CouponsPage = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center gap-2 font-medium"
+                  className="px-6 py-2 bg-[#92400e] text-white rounded-lg hover:bg-[#7c2d12] flex items-center gap-2 font-medium"
                 >
                   {editing ? 'Update Coupon' : 'Create Coupon'}
                 </button>

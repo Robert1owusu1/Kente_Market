@@ -27,11 +27,11 @@ export const cacheMiddleware = (duration = 300) => {
     const cachedResponse = cache.get(key);
 
     if (cachedResponse) {
-      console.log(`✅ Cache hit: ${key}`);
+ console.log(` Cache hit: ${key}`);
       return res.json(cachedResponse);
     }
 
-    console.log(`⚠️ Cache miss: ${key}`);
+ console.log(` Cache miss: ${key}`);
     
     // Override res.json to cache the response
     const originalJson = res.json.bind(res);
@@ -60,7 +60,7 @@ export const clearCache = (pattern) => {
     }
   });
   
-  console.log(`🗑️ Cleared ${cleared} cache entries matching: ${pattern}`);
+ console.log(` Cleared ${cleared} cache entries matching: ${pattern}`);
   return cleared;
 };
 
@@ -69,7 +69,7 @@ export const clearCache = (pattern) => {
  */
 export const clearAllCache = () => {
   cache.flushAll();
-  console.log('🗑️ All cache cleared');
+ console.log(' All cache cleared');
 };
 
 /**

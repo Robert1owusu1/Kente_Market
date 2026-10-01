@@ -4,7 +4,7 @@ import './index.css'
 import App from './App'
 
 import { CartProvider } from './Context/CartContext'
-// 🔹 import Provider and store
+// import Provider and store
 import { Provider } from 'react-redux'
 import store from './store'
 // Point raw axios calls (e.g. "/api/orders/...") at the API origin when the

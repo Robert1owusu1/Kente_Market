@@ -23,12 +23,12 @@ export const mysqlTls = () => {
         );
       }
       console.warn(
-        `⚠️  DB_SSL_CA could not be read (${process.env.DB_SSL_CA}): ${err.message} — falling back to unverified TLS (dev only)`
+`DB_SSL_CA could not be read (${process.env.DB_SSL_CA}): ${err.message} — falling back to unverified TLS (dev only)`
       );
     }
   } else if (process.env.NODE_ENV === 'production') {
     console.warn(
-      '⚠️  DB_SSL=1 without DB_SSL_CA: TLS is enabled but certificates are NOT verified. Set DB_SSL_CA for production.'
+'DB_SSL=1 without DB_SSL_CA: TLS is enabled but certificates are NOT verified. Set DB_SSL_CA for production.'
     );
   }
   return { rejectUnauthorized: false };

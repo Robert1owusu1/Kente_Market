@@ -92,7 +92,7 @@ const ReturnsPage = () => {
             onClick={() => setStatusFilter(tab)}
             className={`px-4 py-1.5 rounded-full text-sm font-medium capitalize transition ${
               statusFilter === tab
-                ? 'bg-indigo-600 text-white'
+                ? 'bg-[#92400e] text-white'
                 : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
             }`}
           >
@@ -105,7 +105,7 @@ const ReturnsPage = () => {
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden">
         {isLoading ? (
           <div className="p-8 text-center">
-            <FaSpinner className="animate-spin h-8 w-8 text-indigo-600 mx-auto" />
+            <FaSpinner className="animate-spin h-8 w-8 text-[#92400e] mx-auto" />
             <p className="mt-4 text-gray-600 dark:text-gray-400">Loading returns...</p>
           </div>
         ) : filtered.length === 0 ? (
@@ -154,7 +154,7 @@ const ReturnsPage = () => {
                             onChange={(e) => setNotes((prev) => ({ ...prev, [ret.id as string]: e.target.value }))}
                             placeholder="Admin notes (optional)"
                             rows={2}
-                            className="w-full px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-600 resize-none"
+                            className="w-full px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-[#92400e] resize-none"
                           />
                           <div className="flex gap-2">
                             <button

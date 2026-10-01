@@ -31,7 +31,7 @@ const recordJobStatus = async (jobName, status, { error, affected, durationMs } 
       [jobName, status, durationMs ?? null, affectedCount, error ? String(error).slice(0, 2000) : null]
     );
   } catch (err) {
-    console.warn(`⚠️  Could not record status for "${jobName}":`, err.message);
+ console.warn(`Could not record status for "${jobName}":`, err.message);
   }
 };
 
@@ -60,7 +60,7 @@ const maybeAlertAdmins = async (jobName, errorMessage) => {
     for (const admin of adminUsers) {
       await sendEmailSafely(
         admin.email,
-        `⚠️ Scheduled job failed: ${jobName}`,
+` Scheduled job failed: ${jobName}`,
         `<p>A production scheduled job failed:</p><pre>${String(errorMessage).slice(0, 2000)}</pre><p>Check backend logs and the scheduler status table.</p>`
       );
     }
@@ -74,7 +74,7 @@ const maybeAlertAdmins = async (jobName, errorMessage) => {
       });
     } catch { /* best-effort */ }
   } catch (err) {
-    console.warn(`⚠️  Admin failure alert could not be sent for "${jobName}":`, err.message);
+ console.warn(`Admin failure alert could not be sent for "${jobName}":`, err.message);
   }
 };
 
@@ -97,19 +97,19 @@ export const runScheduledJob = async (jobName, jobFn, opts = {}) => {
         const affected = await jobFn();
         await recordJobStatus(jobName, 'ok', { affected, durationMs: Date.now() - started });
       } catch (error) {
-        console.error(`❌ Scheduled job "${jobName}" failed:`, error.message);
+ console.error(` Scheduled job "${jobName}" failed:`, error.message);
         await recordJobStatus(jobName, 'failed', { error: error.message, durationMs: Date.now() - started });
         await maybeAlertAdmins(jobName, error.message);
       }
     }, { ttlMs: opts.ttlMs });
   } catch (error) {
     // e.g. lock infra unavailable → fail-open by running directly.
-    console.warn(`⚠️  Lock unavailable for "${jobName}" — running unlocked:`, error.message);
+ console.warn(`Lock unavailable for "${jobName}" — running unlocked:`, error.message);
     try {
       await jobFn();
       executed = true;
     } catch (runError) {
-      console.error(`❌ Scheduled job "${jobName}" failed (unlocked):`, runError.message);
+ console.error(` Scheduled job "${jobName}" failed (unlocked):`, runError.message);
       await recordJobStatus(jobName, 'failed', { error: runError.message });
       await maybeAlertAdmins(jobName, runError.message);
     }

@@ -69,7 +69,7 @@ export const processPriceDropsForProduct = async (productId) => {
       );
       notified += 1;
     } catch (err) {
-      console.warn(`⚠️ Price-drop alert failed for user ${row.userId}: ${err.message}`);
+ console.warn(` Price-drop alert failed for user ${row.userId}: ${err.message}`);
     }
   }
   return notified;
@@ -98,7 +98,7 @@ export const scanWishlistPriceDrops = async () => {
     total += await processPriceDropsForProduct(row.productId);
   }
   if (total > 0) {
-    console.log(`💰 Wishlist price-drop sweep alerted ${total} user(s)`);
+ console.log(` Wishlist price-drop sweep alerted ${total} user(s)`);
   }
   return total;
 };

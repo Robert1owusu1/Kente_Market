@@ -154,8 +154,8 @@ const ImageUpload = ({ currentImage, onImageChange, isLoading }: {
           onClick={() => fileInputRef.current?.click()}
           className={`border-2 border-dashed rounded-lg p-12 text-center cursor-pointer transition-all duration-300 ${
             isDragging
-              ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-900/20 scale-105'
-              : 'border-gray-300 dark:border-gray-600 hover:border-indigo-400 hover:bg-gray-50 dark:hover:bg-gray-700/50'
+              ? 'border-[#92400e] bg-[#fdf8ef] dark:bg-[#431407]/20 scale-105'
+              : 'border-gray-300 dark:border-gray-600 hover:border-[#dfa43c] hover:bg-gray-50 dark:hover:bg-gray-700/50'
           }`}
         >
           <FaImage className="mx-auto text-5xl text-gray-400 mb-4" />
@@ -181,7 +181,7 @@ const ImageUpload = ({ currentImage, onImageChange, isLoading }: {
       />
 
       {uploading && (
-        <div className="flex items-center justify-center gap-2 text-indigo-600 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg p-3">
+        <div className="flex items-center justify-center gap-2 text-[#92400e] bg-[#fdf8ef] dark:bg-[#431407]/20 rounded-lg p-3">
           <FaSpinner className="animate-spin text-lg" />
           <span className="font-medium">Uploading image...</span>
         </div>

@@ -1,5 +1,5 @@
 import React from 'react'
-import BannerImg from '../../assets/images/decoration1.webp'
+import BannerImg from "../../assets/images/heropage4.webp"
 import { GrSecure } from 'react-icons/gr'
 import { IoCardSharp, IoGift } from 'react-icons/io5'
 import { GiFoodTruck } from 'react-icons/gi'
@@ -42,7 +42,7 @@ const Banner = () => {
             {/* Features List */}
             <div className="flex flex-col gap-4">
               <div data-aos="fade-up" className="flex items-center gap-4">
-                <FaHistory className="text-4xl h-12 w-12 shadow-sm p-4 rounded-full bg-violet-100 dark:bg-violet-900/30 dark:text-violet-300" />
+                <FaHistory className="text-4xl h-12 w-12 shadow-sm p-4 rounded-full bg-[#fbeacb] dark:bg-[#431407]/30 dark:text-[#f2c169]" />
                 <p>Authentic Handwoven Kente</p>
               </div>
               <div data-aos="fade-up" className="flex items-center gap-4">

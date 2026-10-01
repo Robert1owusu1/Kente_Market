@@ -162,7 +162,7 @@ export default function CustomRequestCheckout() {
       return;
     }
 
-    // ✅ The charge already SUCCEEDED: persist the reference right away
+ // The charge already SUCCEEDED: persist the reference right away
     // (in-memory ref + sessionStorage keyed by the request id) so a failure in
     // the checkout call below can be retried with the SAME reference instead
     // of discarding it and inviting a second charge.

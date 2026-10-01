@@ -112,8 +112,8 @@ const CartDrawer = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6">
             {cartItems.length === 0 ? (
               <div className="flex h-full min-h-[60vh] flex-col items-center justify-center rounded-3xl border border-dashed border-gray-200 bg-gray-50 px-6 py-10 text-center dark:border-gray-700 dark:bg-gray-800/40">
-                <div className="mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-primary/10 text-4xl">
-                  🛒
+                <div className="mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-primary/10 text-primary">
+                  <FaShoppingCart className="h-9 w-9" aria-hidden="true" />
                 </div>
                 <h3 className="text-xl font-semibold text-gray-900 dark:text-white">
                   Your cart is empty

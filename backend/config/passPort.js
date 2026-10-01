@@ -100,7 +100,7 @@ const findOrCreateOAuthUser = async (provider, profile, opts = {}) => {
     return newUser[0];
     
   } catch (error) {
-    console.error(`❌ OAuth ${provider} error:`, error);
+ console.error(` OAuth ${provider} error:`, error);
     throw error;
   } finally {
     if (connection) connection.release();
@@ -140,9 +140,9 @@ export const configurePassport = () => {
         return done(error, null);
       }
     }));
-    console.log('✅ Google OAuth configured');
+ console.log(' Google OAuth configured');
   } else {
-    console.log('⚠️ Google OAuth not configured (missing credentials)');
+ console.log(' Google OAuth not configured (missing credentials)');
   }
 
   // ============================================
@@ -162,9 +162,9 @@ export const configurePassport = () => {
         return done(error, null);
       }
     }));
-    console.log('✅ Facebook OAuth configured');
+ console.log(' Facebook OAuth configured');
   } else {
-    console.log('⚠️ Facebook OAuth not configured (missing credentials)');
+ console.log(' Facebook OAuth not configured (missing credentials)');
   }
 
   // Serialize/Deserialize (for session-based auth, optional)

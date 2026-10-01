@@ -2,11 +2,12 @@
 // DESCRIPTION: Secure, production-ready Navbar with real backend search
 
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { IoMdSearch } from "react-icons/io";
 import { FaCaretDown, FaUser, FaShoppingBag, FaPalette, FaHeart, FaCog, FaSignOutAlt, FaTimes, FaStore, FaEnvelope, FaCertificate } from 'react-icons/fa';
 import { FaCartShopping } from "react-icons/fa6";
 import { resolveImageUrl } from "../../utils/imageUrl";
+import logoImg from "../../assets/logo.png";
 import { HiMenuAlt3 } from 'react-icons/hi';
 import { useCart } from "../../Context/CartContext";
 import CartDrawer from "../../components/CartDrawer/CartDrawer";
@@ -19,7 +20,7 @@ import { useAppSelector, useAppDispatch } from "../../store";
 import type { Product } from "../../types/domain";
 import TestingModeNotice from "../TestingModeNotice/TestingModeNotice";
 
-// 📋 Menu Configuration
+// Menu Configuration
 const Menu = [
   { id: 1, name: "Home", link: "/" },
   { id: 2, name: "All Products", link: "/products" },
@@ -49,7 +50,7 @@ const ProfileMenuItems = [
   { id: 7, name: "Sign Out", link: "/logout", icon: FaSignOutAlt, divider: true },
 ];
 
-// 🎨 Dark Mode Component
+// Dark Mode Component
 const DarkMode = React.memo(function DarkMode() {
   const [theme, setTheme] = useState(localStorage.getItem("theme") || "light");
   const element = document.documentElement;
@@ -73,20 +74,18 @@ const DarkMode = React.memo(function DarkMode() {
         aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`}
       >
         <div
-          className="w-4 h-4 rounded-full shadow-md transform transition-transform duration-300 flex items-center justify-center text-xs"
+          className="w-4 h-4 rounded-full shadow-md transform transition-transform duration-300 flex items-center justify-center"
           style={{
             backgroundColor: theme === "dark" ? "#fbbf24" : "#ffffff",
             transform: theme === "dark" ? "translateX(24px)" : "translateX(0px)"
           }}
-        >
-          {theme === "dark" ? "🌙" : "☀️"}
-        </div>
+        />
       </button>
     </div>
   );
 });
 
-// 🧭 Main Navbar Component
+// Main Navbar Component
 const Navbar = () => {
   const searchRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
@@ -95,7 +94,7 @@ const Navbar = () => {
   const dispatch = useAppDispatch();
   const [logoutApiCall] = useLogoutMutation();
 
-  // 📊 State Management
+ // State Management
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const profileCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -124,12 +123,12 @@ const Navbar = () => {
 
   const cartCount = cartItems.reduce((total, item) => total + (Number(item.quantity) || 0), 0);
 
-  // 🎭 Effects
+ // Effects
   useEffect(() => {
     setTimeout(() => setNavVisible(true), 100);
   }, []);
 
-  // 🔍 Real-time search from backend (with debouncing) via RTK Query
+ // Real-time search from backend (with debouncing) via RTK Query
   useEffect(() => {
     const searchProducts = async () => {
       const trimmedQuery = searchQuery.trim();
@@ -153,7 +152,7 @@ const Navbar = () => {
         setSearchResults(Array.isArray(result) ? result : []);
         setShowSearchResults(true);
       } catch (error) {
-        console.error('❌ Search error:', error);
+ console.error(' Search error:', error);
         if ((error as { code?: string }).code === 'ECONNABORTED') {
           toast.error('Search timeout. Please try again.');
         }
@@ -168,7 +167,7 @@ const Navbar = () => {
     return () => clearTimeout(timeoutId);
   }, [searchQuery, triggerSearch]);
 
-  // 🔒 Click outside to close search results
+ // Click outside to close search results
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
@@ -190,7 +189,7 @@ const Navbar = () => {
     return () => document.removeEventListener('keydown', onKey);
   }, [mobileMenuOpen]);
 
-  // 🎯 Event Handlers
+ // Event Handlers
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     // Security: Limit search query length
@@ -255,7 +254,7 @@ const Navbar = () => {
     }
   };
 
-  // 🖼️ Helper Functions
+ // Helper Functions
   const getProfilePictureUrl = () => {
     if (!userInfo?.profilePicture) return null;
     return resolveImageUrl(userInfo.profilePicture) || null;
@@ -282,25 +281,35 @@ const Navbar = () => {
     <>
       <nav className={`shadow-md bg-white dark:bg-gray-900 dark:text-white duration-200 sticky top-0 z-50 backdrop-blur-md ${navVisible ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-0'} transition-all ease-in-out`}>
         
-        {/* 🧪 Testing Mode Notice */}
+ {/* Testing Mode Notice */}
         <TestingModeNotice />
 
-        {/* 🎨 Top Bar */}
+ {/* Top Bar */}
         <div className='bg-primary/40 py-2'>
           <div className='container flex justify-between items-center gap-2'>
             
             {/* Logo */}
             <div>
-              <a href="/" className='font-bold text-xl sm:text-2xl md:text-3xl flex gap-2 items-center'>
-                <div className="w-9 h-9 sm:w-10 sm:h-10 bg-primary rounded"></div>
+              <Link
+                to="/"
+                className='font-bold text-xl sm:text-2xl md:text-3xl flex gap-2 items-center'
+                aria-label="Bonwire Kente - home"
+              >
+                <img
+                  src={logoImg}
+                  alt="Bonwire Kente"
+                  width={40}
+                  height={40}
+                  className="w-9 h-9 sm:w-10 sm:h-10 object-contain rounded"
+                />
                 <span className="whitespace-nowrap">Bonwire Kente</span>
-              </a>
+              </Link>
             </div>
             
             {/* Right Side Actions */}
             <div className='flex justify-between items-center gap-2 sm:gap-4'>
               
-              {/* 🔍 Desktop Search */}
+ {/* Desktop Search */}
               <div className='relative group hidden sm:block' ref={searchRef}>
                 <div className="relative">
                   <input 
@@ -340,7 +349,7 @@ const Navbar = () => {
                   </button>
                 </div>
 
-                {/* 🎯 Search Results Dropdown */}
+ {/* Search Results Dropdown */}
                 {showSearchResults && (
                   <div className="absolute top-full mt-2 left-0 right-0 bg-white dark:bg-gray-800 rounded-lg shadow-xl border dark:border-gray-700 max-h-96 overflow-y-auto z-50">
                     {isSearching ? (
@@ -412,7 +421,7 @@ const Navbar = () => {
                 )}
               </div>
 
-              {/* 🛒 Cart Button */}
+ {/* Cart Button */}
               <button
                 onClick={() => setIsCartOpen(true)}
                 className='bg-gradient-to-r from-primary to-secondary transition-all duration-200 text-white py-1 px-2 sm:px-4 rounded-full flex items-center gap-2 sm:gap-3 group relative'
@@ -429,12 +438,12 @@ const Navbar = () => {
                 </div>
               </button>
 
-              {/* 🔔 Notification Bell */}
+ {/* Notification Bell */}
               {userInfo && (
                 <NotificationBell />
               )}
 
-              {/* 👤 Desktop Profile Menu */}
+ {/* Desktop Profile Menu */}
               {userInfo && (
                 <div className="group relative hidden sm:block">
                   <div
@@ -513,7 +522,7 @@ const Navbar = () => {
                 </div>
               )}
 
-              {/* 🔐 Sign In Button (if not logged in) */}
+ {/* Sign In Button (if not logged in) */}
               {!userInfo && (
                 <>
                   <a 
@@ -526,10 +535,10 @@ const Navbar = () => {
                 </>
               )}
 
-              {/* 🌓 Dark Mode Toggle */}
+ {/* Dark Mode Toggle */}
               <div><DarkMode /></div>
 
-              {/* 📱 Mobile Menu Button */}
+ {/* Mobile Menu Button */}
               <button 
                 className="sm:hidden block text-3xl focus:outline-none" 
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -541,7 +550,7 @@ const Navbar = () => {
           </div>
         </div>
 
-        {/* 🔍 Mobile Search Bar */}
+ {/* Mobile Search Bar */}
         <div className="sm:hidden px-4 py-2 bg-white dark:bg-gray-900">
           <div className="relative w-full" ref={searchRef}>
             <div className="flex items-center gap-2 bg-gray-100 dark:bg-gray-800 rounded-full px-4 py-2">
@@ -570,7 +579,7 @@ const Navbar = () => {
               </button>
             </div>
 
-            {/* 🎯 Mobile Search Results Dropdown */}
+ {/* Mobile Search Results Dropdown */}
             {showSearchResults && (
               <div className="absolute top-full mt-2 left-0 right-0 bg-white dark:bg-gray-800 rounded-lg shadow-xl border dark:border-gray-700 max-h-96 overflow-y-auto z-[100]">
                 {isSearching ? (
@@ -625,7 +634,7 @@ const Navbar = () => {
           </div>
         </div>
 
-        {/* 🧭 Desktop Navigation Menu */}
+ {/* Desktop Navigation Menu */}
         <div className="flex justify-center">
           <ul className="sm:flex hidden items-center gap-4">
             {Menu.map((data) => (
@@ -661,7 +670,7 @@ const Navbar = () => {
           </ul>
         </div>
         
-        {/* 📱 Mobile Menu */}
+ {/* Mobile Menu */}
         {mobileMenuOpen && (
           <div
             className="sm:hidden bg-white dark:bg-gray-900 border-t border-gray-100 dark:border-gray-800 max-h-[calc(100dvh-112px)] overflow-y-auto overscroll-contain shadow-md pb-[max(1rem,env(safe-area-inset-bottom))]"
@@ -817,7 +826,7 @@ const Navbar = () => {
         )}
       </nav>
       
-      {/* 🛒 Cart Drawer */}
+ {/* Cart Drawer */}
       <CartDrawer isOpen={isCartOpen} onClose={() => setIsCartOpen(false)} />
     </>
   );

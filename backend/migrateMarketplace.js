@@ -64,14 +64,14 @@ const indexExists = async (table, indexName) => {
 const addColumn = async (table, column, definition, log = true) => {
   if (!(await colExists(table, column))) {
     await connection.query(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
-    if (log) console.log(`✅ Added ${table}.${column}`);
+ if (log) console.log(` Added ${table}.${column}`);
   }
 };
 
 const addTable = async (name, sql, log = true) => {
   if (!(await tableExists(name))) {
     await connection.query(sql);
-    if (log) console.log(`✅ Created table ${name}`);
+ if (log) console.log(` Created table ${name}`);
   }
 };
 
@@ -95,7 +95,7 @@ try {
     await connection.query(
       `ALTER TABLE vendors ADD COLUMN slug VARCHAR(200) NULL UNIQUE`
     );
-    console.log('✅ Added vendors.slug');
+ console.log(' Added vendors.slug');
   }
   // Optional per-vendor commission override handled by commission_rules below.
 
@@ -126,7 +126,7 @@ try {
     .query(
       `ALTER TABLE vendor_staff MODIFY status ENUM('active','inactive','deactivated') DEFAULT 'active' NOT NULL`
     )
-    .catch((err) => console.warn('⚠️ vendor_staff enum already widened:', err.message));
+ .catch((err) => console.warn(' vendor_staff enum already widened:', err.message));
 
   // ============================================================
   // KENTE-SPECIFIC PRODUCT FIELDS
@@ -256,7 +256,7 @@ try {
       await connection.query(
         `ALTER TABLE campaigns MODIFY COLUMN status ENUM('draft','scheduled','active','ended') NOT NULL DEFAULT 'draft'`
       );
-      console.log('✅ Widened campaigns.status enum to include "scheduled"');
+ console.log(' Widened campaigns.status enum to include "scheduled"');
     }
   }
 
@@ -347,7 +347,7 @@ try {
       await connection.query(
         `ALTER TABLE reviews ADD UNIQUE KEY uq_review_user_order_product (orderId, userId, productId)`
       );
-      console.log('✅ Added reviews unique key (orderId, userId, productId)');
+ console.log(' Added reviews unique key (orderId, userId, productId)');
     }
   }
 
@@ -391,17 +391,17 @@ try {
     await connection.query(
       `ALTER TABLE escrow_allocations ADD INDEX idx_escrow_orderId (orderId)`
     );
-    console.log('✅ Added escrow_allocations idx_escrow_orderId');
+ console.log(' Added escrow_allocations idx_escrow_orderId');
   }
   if (await indexExists('escrow_allocations', 'uq_escrow_order_vendor')) {
     await connection.query(`ALTER TABLE escrow_allocations DROP INDEX uq_escrow_order_vendor`);
-    console.log('✅ Dropped escrow_allocations uq_escrow_order_vendor (replaced by explicit guard)');
+ console.log(' Dropped escrow_allocations uq_escrow_order_vendor (replaced by explicit guard)');
   }
   if (!(await indexExists('escrow_allocations', 'idx_escrow_order_vendor'))) {
     await connection.query(
       `ALTER TABLE escrow_allocations ADD INDEX idx_escrow_order_vendor (orderId, vendorId)`
     );
-    console.log('✅ Added escrow_allocations idx_escrow_order_vendor');
+ console.log(' Added escrow_allocations idx_escrow_order_vendor');
   }
   if (!(await indexExists('escrow_allocations', 'uq_escrow_order_vendor_type'))) {
     // Dirty-data-safe: if legacy rows already violate the key, the unique index
@@ -416,7 +416,7 @@ try {
              HAVING COUNT(*) > 1) t`
     );
     if (dupes.c > 0) {
-      console.warn(`⚠️ escrow_allocations has ${dupes.c} duplicate (orderId, vendorId, allocationType) groups — purging older duplicates`);
+ console.warn(` escrow_allocations has ${dupes.c} duplicate (orderId, vendorId, allocationType) groups — purging older duplicates`);
       await connection.query(
         `DELETE ea FROM escrow_allocations ea
          JOIN escrow_allocations keeper
@@ -430,7 +430,7 @@ try {
       `ALTER TABLE escrow_allocations
        ADD UNIQUE KEY uq_escrow_order_vendor_type (orderId, vendorId, allocationType)`
     );
-    console.log('✅ Added escrow allocation idempotency key');
+ console.log(' Added escrow allocation idempotency key');
   }
 
   // Credit entries are the durable idempotency record for releasing escrow to
@@ -447,7 +447,7 @@ try {
              HAVING COUNT(*) > 1) t`
     );
     if (dupes.c > 0) {
-      console.warn(`⚠️ wallet_transactions has ${dupes.c} duplicate credit groups — purging older duplicates`);
+ console.warn(` wallet_transactions has ${dupes.c} duplicate credit groups — purging older duplicates`);
       await connection.query(
         `DELETE wt FROM wallet_transactions wt
          JOIN wallet_transactions keeper
@@ -461,7 +461,7 @@ try {
       `ALTER TABLE wallet_transactions
        ADD UNIQUE KEY uq_wallet_credit_allocation (vendorId, allocationId, type)`
     );
-    console.log('✅ Added wallet credit idempotency key');
+ console.log(' Added wallet credit idempotency key');
   }
 
   // Each provider call has a locally generated, unique reference written
@@ -542,7 +542,7 @@ try {
   await addColumn('product', 'rentPricePerDay', `DECIMAL(10,2) NULL`);
   if (!(await indexExists('product', 'idx_product_is_rentable'))) {
     await connection.query(`ALTER TABLE product ADD INDEX idx_product_is_rentable (isRentable)`);
-    console.log('✅ Added product idx_product_is_rentable');
+ console.log(' Added product idx_product_is_rentable');
   }
 
   // ============================================================
@@ -578,7 +578,7 @@ try {
         UNIQUE KEY uq_carts_guestId (guestId),
         CONSTRAINT fk_carts_user FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
       ) ENGINE=InnoDB`);
-    console.log('✅ Created carts table');
+ console.log(' Created carts table');
   }
 
   // ============================================================
@@ -593,7 +593,7 @@ try {
       `INSERT INTO commission_rules (scope, targetId, rate, priority, isActive)
        VALUES ('global', NULL, 0.1000, 0, true)`
     );
-    console.log('✅ Seeded default global commission rule (10%)');
+ console.log(' Seeded default global commission rule (10%)');
   }
 
   // ============================================================
@@ -624,16 +624,16 @@ try {
     if (!(await indexExists(table, name))) {
       try {
         await connection.query(`ALTER TABLE ${table} ADD INDEX ${name} ${cols}`);
-        console.log(`✅ Added ${table} ${name}`);
+ console.log(` Added ${table} ${name}`);
       } catch (err) {
-        console.warn(`⚠️ Could not add ${table} ${name}: ${err.message}`);
+ console.warn(` Could not add ${table} ${name}: ${err.message}`);
       }
     }
   }
 
-  console.log('✅ Marketplace migration complete');
+ console.log(' Marketplace migration complete');
 } catch (err) {
-  console.error('❌ Marketplace migration failed:', err.message);
+ console.error(' Marketplace migration failed:', err.message);
   process.exitCode = 1;
 } finally {
   await connection.end();

@@ -29,7 +29,7 @@ export const cleanupUnverifiedUsers = async () => {
     );
 
     if (result.affectedRows > 0) {
-      console.log(`🧹 Cleaned up ${result.affectedRows} unverified users (no financial footprint)`);
+ console.log(` Cleaned up ${result.affectedRows} unverified users (no financial footprint)`);
     }
 
     const [deactivated] = await pool.execute(
@@ -40,10 +40,10 @@ export const cleanupUnverifiedUsers = async () => {
          AND created_at < DATE_SUB(NOW(), INTERVAL 7 DAY)`
     );
     if (deactivated.affectedRows > 0) {
-      console.log(`🚫 Soft-deactivated ${deactivated.affectedRows} stale unverified users with financial data`);
+ console.log(` Soft-deactivated ${deactivated.affectedRows} stale unverified users with financial data`);
     }
   } catch (error) {
-    console.error('❌ Cleanup job failed:', error);
+ console.error(' Cleanup job failed:', error);
   }
 };
 
@@ -115,14 +115,14 @@ export const escalateStaleCustomRequests = async () => {
           [row.id]
         );
       } catch (notifyErr) {
-        console.warn(`⚠️ SLA escalation failed for request ${row.id}: ${notifyErr.message}`);
+ console.warn(` SLA escalation failed for request ${row.id}: ${notifyErr.message}`);
       }
     }
     if (rows.length > 0) {
       console.log(`⏰ Escalated ${rows.length} stale custom request(s) (>48h pending)`);
     }
   } catch (err) {
-    console.error('⚠️ SLA escalation job failed:', err.message);
+ console.error(' SLA escalation job failed:', err.message);
   }
 };
 
@@ -172,7 +172,7 @@ export const sendAbandonedCartEmails = async () => {
         const cartUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/cart`;
         const ok = await sendEmailSafely(
           row.email,
-          `You left something beautiful in your cart, ${row.firstName || 'friend'} 🧶`,
+`You left something beautiful in your cart, ${row.firstName || 'friend'} `,
           `<p>Hi ${row.firstName || 'there'},</p>
            <p>You still have these pieces waiting in your Bonwire Kente cart:</p>
            <p style="background:#f9fafb;border:1px solid #eee;border-radius:8px;padding:16px;">${list}</p>
@@ -188,14 +188,14 @@ export const sendAbandonedCartEmails = async () => {
           sent += 1;
         }
       } catch (rowErr) {
-        console.warn(`⚠️ Abandoned-cart email failed for cart ${row.cartId}: ${rowErr.message}`);
+ console.warn(` Abandoned-cart email failed for cart ${row.cartId}: ${rowErr.message}`);
       }
     }
     if (sent > 0) {
-      console.log(`📧 Sent ${sent} abandoned-cart recovery email(s)`);
+ console.log(` Sent ${sent} abandoned-cart recovery email(s)`);
     }
   } catch (err) {
-    console.error('⚠️ Abandoned-cart job failed:', err.message);
+ console.error(' Abandoned-cart job failed:', err.message);
   }
 };
 
@@ -232,13 +232,13 @@ const scheduleJobs = () => {
   setTimeout(() => runScheduledJob('sendWeeklyVendorDigest', sendWeeklyVendorDigest).catch(() => {}), 7 * DAY);
   setInterval(() => runScheduledJob('sendWeeklyVendorDigest', sendWeeklyVendorDigest).catch(() => {}), 7 * DAY);
 
-  console.log('✅ Cleanup scheduler started (users 24h, escrow 2h, stuck orders 30m, reservations 30m, SLA 1h, restock 1h, price-drop 1h, abandoned-cart 1h, transfers 30m, webhook reclaim 15m, digest weekly) — distributed lock + job status + failure alerts active');
+ console.log(' Cleanup scheduler started (users 24h, escrow 2h, stuck orders 30m, reservations 30m, SLA 1h, restock 1h, price-drop 1h, abandoned-cart 1h, transfers 30m, webhook reclaim 15m, digest weekly) — distributed lock + job status + failure alerts active');
 };
 
 export const startCleanupSchedule = () => {
   try {
     scheduleJobs();
   } catch (error) {
-    console.error('❌ Failed to start scheduler:', error.message);
+ console.error(' Failed to start scheduler:', error.message);
   }
 };

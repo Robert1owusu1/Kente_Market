@@ -99,7 +99,7 @@ class Product {
     return safe;
   }
 
-  // ✅ Get all products with proper LIMIT/OFFSET handling
+ // Get all products with proper LIMIT/OFFSET handling
   static async findAll(options = {}) {
     let connection;
     try {
@@ -196,7 +196,7 @@ class Product {
     }
   }
 
-  // ✅ Get product by ID
+ // Get product by ID
   static async findById(id) {
     let connection;
     try {
@@ -242,7 +242,7 @@ class Product {
     return await Product.findAll({ ...options, featured: true });
   }
 
-  // ⭐ NEW: Get trending products (sorted by rating and reviews)
+ // NEW: Get trending products (sorted by rating and reviews)
   static async findTrending(options = {}) {
     let connection;
     try {
@@ -292,7 +292,7 @@ class Product {
     }
   }
 
-  // ✅ Create new product
+ // Create new product
   static async create(productData) {
     let connection;
     try {
@@ -387,7 +387,7 @@ class Product {
     }
   }
 
-  // ✅ Update product
+ // Update product
   static async update(id, updateData) {
     let connection;
     try {
@@ -470,7 +470,7 @@ class Product {
     }
   }
 
-  // ✅ Delete product
+ // Delete product
   static async delete(id) {
     let connection;
     try {
@@ -496,7 +496,7 @@ class Product {
     }
   }
 
-  // ✅ Get product count
+ // Get product count
   static async count(options = {}) {
     let connection;
     try {
@@ -546,7 +546,7 @@ class Product {
     }
   }
 
-  // ✅ Get unique categories
+ // Get unique categories
   static async getCategories() {
     let connection;
     try {

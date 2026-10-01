@@ -18,7 +18,7 @@ interface ProductQueryParams {
 export const productsApiSlice = apiSlice.injectEndpoints({
   endpoints: (builder) => ({
     getProducts: builder.query<Paginated<Product>, ProductQueryParams>({
-      // ✅ FIXED: Properly handle query params
+ // FIXED: Properly handle query params
       query: (params = {}) => {
         // Build the query string manually for better control
         const queryParams = new URLSearchParams();

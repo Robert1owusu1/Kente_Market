@@ -42,9 +42,9 @@ export const recordAdminAction = async ({ actor, action, entityType, entityId, b
     );
   } catch (error) {
     if (error.code === 'ER_NO_SUCH_TABLE') {
-      console.warn('⚠️  admin_audit_log table missing — run `node migrateOps.js`. Skipping audit entry.');
+ console.warn('admin_audit_log table missing — run `node migrateOps.js`. Skipping audit entry.');
     } else {
-      console.warn(`⚠️  Could not write admin audit log: ${error.message}`);
+ console.warn(`Could not write admin audit log: ${error.message}`);
     }
   }
 };

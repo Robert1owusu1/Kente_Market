@@ -21,7 +21,7 @@ const ProductDetails = () => {
   const { data: product, isLoading, error } = useGetProductsDetailsQuery(Number(productId!));
   const apiError = error as { data?: { message?: string }; error?: string } | undefined;
 
-  // ✅ Local states (sync with product once it loads)
+ // Local states (sync with product once it loads)
   // Kente is pre-designed: buyers pick YARDS ONLY — never a colour or size
   // (colour choices belong to the customize flow, gated by the vendor).
   const [selectedYards, setSelectedYards] = useState("");
@@ -158,7 +158,7 @@ const ProductDetails = () => {
                   </span>
                 )}
                 {product.isRentable && (
-                  <span className="inline-flex items-center gap-1 text-xs font-semibold text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-900/20 rounded-full px-3 py-1">
+                  <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#7c2d12] dark:text-[#f2c169] bg-[#fdf8ef] dark:bg-[#431407]/20 rounded-full px-3 py-1">
                     <FaTags /> Rentable
                     {product.rentPricePerDay ? ` — from GH₵${product.rentPricePerDay}/day` : ''}
                   </span>
@@ -293,7 +293,7 @@ const ProductDetails = () => {
               onClick={() => navigate(`/ai-tryon?product=${product.id}`)}
               className="flex-1 px-6 py-3 bg-gradient-to-r from-primary to-secondary text-white rounded-xl shadow-md hover:shadow-lg transition font-semibold"
             >
-              ✨ Try It On
+ Try It On
             </button>
             <button
               onClick={handleAddToCart}

@@ -64,7 +64,15 @@ const Footer = () => {
           {/* company details */}
           <div className="py-8 px-4">
             <h2 className="sm:text-3xl text-xl font-bold sm:text-left text-justify mb-3 flex items-center gap-3">
-              <img src={footerLogo} alt="Bonwire Kente logo" width={50} height={50} className="max-w-[50px]" />
+              <img
+                src={footerLogo}
+                alt="Bonwire Kente logo"
+                width={50}
+                height={50}
+                loading="lazy"
+                decoding="async"
+                className="w-12 h-12 object-contain shrink-0 rounded"
+              />
               Bonwire Kente
             </h2>
             <p className="text-gray-200 text-sm sm:text-base leading-relaxed">

@@ -129,8 +129,8 @@ const ImageUpload = ({ currentImage, onImageChange, isLoading }: ImageUploadProp
           onClick={() => fileInputRef.current?.click()}
           className={`border-2 border-dashed rounded-lg p-12 text-center cursor-pointer transition-all duration-300 ${
             isDragging
-              ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-900/20 scale-105'
-              : 'border-gray-300 dark:border-gray-600 hover:border-indigo-400 hover:bg-gray-50 dark:hover:bg-gray-700/50'
+              ? 'border-[#92400e] bg-[#fdf8ef] dark:bg-[#431407]/20 scale-105'
+              : 'border-gray-300 dark:border-gray-600 hover:border-[#dfa43c] hover:bg-gray-50 dark:hover:bg-gray-700/50'
           }`}
         >
           <FaImage className="mx-auto text-5xl text-gray-400 mb-4" />
@@ -156,7 +156,7 @@ const ImageUpload = ({ currentImage, onImageChange, isLoading }: ImageUploadProp
       />
 
       {uploading && (
-        <div className="flex items-center justify-center gap-2 text-indigo-600 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg p-3">
+        <div className="flex items-center justify-center gap-2 text-[#92400e] bg-[#fdf8ef] dark:bg-[#431407]/20 rounded-lg p-3">
           <FaSpinner className="animate-spin text-lg" />
           <span className="font-medium">Uploading image...</span>
         </div>
@@ -334,7 +334,7 @@ const ProductFormModal = ({ product, onClose, onSubmit, isLoading }: ProductForm
                   value={formData.title}
                   onChange={handleChange}
                   required
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#92400e]"
                   placeholder="e.g., Custom Printed T-Shirt"
                 />
               </div>
@@ -348,7 +348,7 @@ const ProductFormModal = ({ product, onClose, onSubmit, isLoading }: ProductForm
                   value={formData.category}
                   onChange={handleChange}
                   required
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#92400e]"
                 >
                   <option value="">Select category</option>
                   {categories.map(cat => (
@@ -366,7 +366,7 @@ const ProductFormModal = ({ product, onClose, onSubmit, isLoading }: ProductForm
                   name="tag"
                   value={formData.tag}
                   onChange={handleChange}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#92400e]"
                   placeholder="e.g., Best Seller, New Arrival"
                 />
               </div>
@@ -383,7 +383,7 @@ const ProductFormModal = ({ product, onClose, onSubmit, isLoading }: ProductForm
                   required
                   step="0.01"
                   min="0"
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#92400e]"
                   placeholder="0.00"
                 />
               </div>
@@ -399,7 +399,7 @@ const ProductFormModal = ({ product, onClose, onSubmit, isLoading }: ProductForm
                   onChange={handleChange}
                   step="0.01"
                   min="0"
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#92400e]"
                   placeholder="0.00"
                 />
               </div>
@@ -414,7 +414,7 @@ const ProductFormModal = ({ product, onClose, onSubmit, isLoading }: ProductForm
                   value={formData.productionTime}
                   onChange={handleChange}
                   min="0"
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#92400e]"
                   placeholder="3-5 days"
                 />
               </div>
@@ -427,7 +427,7 @@ const ProductFormModal = ({ product, onClose, onSubmit, isLoading }: ProductForm
                   name="vendorId"
                   value={formData.vendorId}
                   onChange={handleChange}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#92400e]"
                 >
                   <option value="">Platform (no vendor)</option>
                   {approvedVendors.map(v => (
@@ -458,7 +458,7 @@ const ProductFormModal = ({ product, onClose, onSubmit, isLoading }: ProductForm
                   name="colors"
                   value={formData.colors}
                   onChange={handleChange}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#92400e]"
                   placeholder="Red, Blue, Green, Black, White"
                 />
               </div>
@@ -472,7 +472,7 @@ const ProductFormModal = ({ product, onClose, onSubmit, isLoading }: ProductForm
                   name="sizes"
                   value={formData.sizes}
                   onChange={handleChange}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#92400e]"
                   placeholder="2, 4, 6, 8, 10, 12"
                 />
               </div>
@@ -486,7 +486,7 @@ const ProductFormModal = ({ product, onClose, onSubmit, isLoading }: ProductForm
                   name="threadTypes"
                   value={formData.threadTypes}
                   onChange={handleChange}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#92400e]"
                   placeholder="Cotton, Rayon, Silk"
                 />
               </div>
@@ -500,7 +500,7 @@ const ProductFormModal = ({ product, onClose, onSubmit, isLoading }: ProductForm
                   name="dominantThread"
                   value={formData.dominantThread}
                   onChange={handleChange}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#92400e]"
                   placeholder="e.g., Cotton"
                 />
               </div>
@@ -514,7 +514,7 @@ const ProductFormModal = ({ product, onClose, onSubmit, isLoading }: ProductForm
                   name="material"
                   value={formData.material}
                   onChange={handleChange}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#92400e]"
                   placeholder="e.g., 100% Cotton, Ceramic, Plastic"
                 />
               </div>
@@ -528,7 +528,7 @@ const ProductFormModal = ({ product, onClose, onSubmit, isLoading }: ProductForm
                   name="printType"
                   value={formData.printType}
                   onChange={handleChange}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#92400e]"
                   placeholder="e.g., Screen Print, DTG, Embroidery, Sublimation"
                 />
               </div>
@@ -547,7 +547,7 @@ const ProductFormModal = ({ product, onClose, onSubmit, isLoading }: ProductForm
                   name="isCustomizable"
                   checked={formData.isCustomizable}
                   onChange={handleChange}
-                  className="w-5 h-5 text-indigo-600 rounded focus:ring-2 focus:ring-indigo-600"
+                  className="w-5 h-5 text-[#92400e] rounded focus:ring-2 focus:ring-[#92400e]"
                 />
                 <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
                   Custom Design Available
@@ -560,7 +560,7 @@ const ProductFormModal = ({ product, onClose, onSubmit, isLoading }: ProductForm
                   name="featured"
                   checked={formData.featured}
                   onChange={handleChange}
-                  className="w-5 h-5 text-indigo-600 rounded focus:ring-2 focus:ring-indigo-600"
+                  className="w-5 h-5 text-[#92400e] rounded focus:ring-2 focus:ring-[#92400e]"
                 />
                 <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
                   Featured Product
@@ -582,7 +582,7 @@ const ProductFormModal = ({ product, onClose, onSubmit, isLoading }: ProductForm
             <button
               type="submit"
               disabled={isLoading}
-              className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2 font-medium"
+              className="px-6 py-2 bg-[#92400e] text-white rounded-lg hover:bg-[#7c2d12] disabled:opacity-50 flex items-center gap-2 font-medium"
             >
               {isLoading ? (
                 <>

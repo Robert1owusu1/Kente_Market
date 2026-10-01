@@ -18,7 +18,7 @@ type OrderListResponse = Order[] | { orders?: Order[]; pagination?: unknown; [ke
 
 export const ordersApiSlice = apiSlice.injectEndpoints({
   endpoints: (builder) => ({
-    // ✅ Create new order
+ // Create new order
     createOrder: builder.mutation<Order, Record<string, unknown>>({
       query: (orderData) => ({
         url: ORDERS_URL,
@@ -28,7 +28,7 @@ export const ordersApiSlice = apiSlice.injectEndpoints({
       invalidatesTags: ["Order"],
     }),
 
-    // ✅ Get all orders (Admin only) - with customer names included
+ // Get all orders (Admin only) - with customer names included
     getAllOrders: builder.query<Order[], GetAllOrdersArgs>({
       query: ({ page = 1, limit = 100, status, paymentStatus, search, sortBy, sortOrder } = {}) => {
         const params = new URLSearchParams();
@@ -58,7 +58,7 @@ export const ordersApiSlice = apiSlice.injectEndpoints({
       },
     }),
 
-    // ✅ Get logged-in user's orders
+ // Get logged-in user's orders
     getMyOrders: builder.query<Order[], void>({
       query: () => ({
         url: `${ORDERS_URL}/myorders`,
@@ -68,7 +68,7 @@ export const ordersApiSlice = apiSlice.injectEndpoints({
       keepUnusedDataFor: 5,
     }),
 
-    // ✅ Get order by ID - includes customer information
+ // Get order by ID - includes customer information
     getOrderById: builder.query<Order, number | string>({
       query: (orderId) => ({
         url: `${ORDERS_URL}/${orderId}`,
@@ -77,7 +77,7 @@ export const ordersApiSlice = apiSlice.injectEndpoints({
       providesTags: (_result, _error, orderId) => [{ type: "Order", id: orderId }] as const,
     }),
 
-    // ✅ Update order status/details
+ // Update order status/details
     updateOrder: builder.mutation<Order, { orderId: number | string; [key: string]: unknown }>({
       query: ({ orderId, ...updateData }) => ({
         url: `${ORDERS_URL}/${orderId}`,
@@ -90,7 +90,7 @@ export const ordersApiSlice = apiSlice.injectEndpoints({
       ] as const,
     }),
 
-    // ✅ Mark order as paid
+ // Mark order as paid
     updateOrderToPaid: builder.mutation<Order, number | string>({
       query: (orderId) => ({
         url: `${ORDERS_URL}/${orderId}/pay`,
@@ -102,7 +102,7 @@ export const ordersApiSlice = apiSlice.injectEndpoints({
       ] as const,
     }),
 
-    // ✅ Mark order as delivered (Admin only)
+ // Mark order as delivered (Admin only)
     updateOrderToDelivered: builder.mutation<Order, number | string>({
       query: (orderId) => ({
         url: `${ORDERS_URL}/${orderId}/deliver`,
@@ -114,7 +114,7 @@ export const ordersApiSlice = apiSlice.injectEndpoints({
       ] as const,
     }),
 
-    // ✅ Customer confirms receipt → release escrow to vendors
+ // Customer confirms receipt → release escrow to vendors
     confirmOrderReceived: builder.mutation<Order, number | string>({
       query: (orderId) => ({
         url: `${ORDERS_URL}/${orderId}/confirm-received`,
@@ -126,7 +126,7 @@ export const ordersApiSlice = apiSlice.injectEndpoints({
       ] as const,
     }),
 
-    // ✅ Cancel order and void escrow (Admin only)
+ // Cancel order and void escrow (Admin only)
     cancelOrder: builder.mutation<Order, number | string>({
       query: (orderId) => ({
         url: `${ORDERS_URL}/${orderId}/cancel`,
@@ -138,7 +138,7 @@ export const ordersApiSlice = apiSlice.injectEndpoints({
       ] as const,
     }),
 
-    // ✅ Retry failed escrow payouts (Admin only)
+ // Retry failed escrow payouts (Admin only)
     retryEscrowPayouts: builder.mutation<Order, number | string>({
       query: (orderId) => ({
         url: `${ORDERS_URL}/${orderId}/retry-escrow`,
@@ -150,7 +150,7 @@ export const ordersApiSlice = apiSlice.injectEndpoints({
       ] as const,
     }),
 
-    // ✅ Delete order (Admin only)
+ // Delete order (Admin only)
     deleteOrder: builder.mutation<{ message?: string }, number | string>({
       query: (orderId) => ({
         url: `${ORDERS_URL}/${orderId}`,
@@ -159,7 +159,7 @@ export const ordersApiSlice = apiSlice.injectEndpoints({
       invalidatesTags: ["Order"],
     }),
 
-    // ✅ Get order statistics (Admin only)
+ // Get order statistics (Admin only)
     getOrderStatistics: builder.query<OrderStatistics, void>({
       query: () => ({
         url: `${ORDERS_URL}/statistics`,
@@ -169,7 +169,7 @@ export const ordersApiSlice = apiSlice.injectEndpoints({
       keepUnusedDataFor: 30, // Cache for 30 seconds
     }),
 
-    // 🧵 Get top selling product types/categories (Admin only) — prediction signal
+ // Get top selling product types/categories (Admin only) — prediction signal
     getTopProductTypes: builder.query<Record<string, unknown>, void>({
       query: () => ({
         url: `${ORDERS_URL}/top-product-types`,

@@ -66,7 +66,7 @@ export const applyVendor = async (req, res) => {
         recipientType = 'nuban';
       }
     } catch (e) {
-      console.error(`❌ Recipient creation failed for vendor ${req.user.id}: ${e.message}`);
+ console.error(` Recipient creation failed for vendor ${req.user.id}: ${e.message}`);
       return res.status(400).json({
         message: `Could not create a payout recipient with your ${type === 'momo' ? 'mobile money' : 'bank'} details. Please verify the information and try again.`,
         detail: e.message,
@@ -75,7 +75,7 @@ export const applyVendor = async (req, res) => {
 
     // Paystack responded but did not return a recipient code — treat as failure.
     if (!recipientCode) {
-      console.error(`❌ Paystack returned no recipient_code for vendor ${req.user.id}`);
+ console.error(` Paystack returned no recipient_code for vendor ${req.user.id}`);
       return res.status(400).json({
         message: 'Payment provider did not confirm a payout recipient. Please try again later.',
       });
@@ -434,7 +434,7 @@ export const updateVendorProduct = async (req, res) => {
       const { processRestockForProduct } = await import('../Services/wishlistRestockService.js');
       await processRestockForProduct(productId);
     } catch (alertErr) {
-      console.warn(`⚠️ Restock alert skipped: ${alertErr.message}`);
+ console.warn(` Restock alert skipped: ${alertErr.message}`);
     }
 
     // Fast path for price-drop alerts — notify wishlisted buyers who see a
@@ -443,7 +443,7 @@ export const updateVendorProduct = async (req, res) => {
       const { processPriceDropsForProduct } = await import('../Services/wishlistPriceDropService.js');
       await processPriceDropsForProduct(productId);
     } catch (alertErr) {
-      console.warn(`⚠️ Price-drop alert skipped: ${alertErr.message}`);
+ console.warn(` Price-drop alert skipped: ${alertErr.message}`);
     }
 
     res.json({ message: 'Product updated', product: updated });
@@ -1074,7 +1074,7 @@ export const getAdminVendorScorecard = async (req, res) => {
           const f = await getVendorFulfilment(v.userId);
           onTimeRate = f && f.withDeadline > 0 ? f.onTimeRate : null;
         } catch (err) {
-          console.warn(`⚠️ Fulfilment scorecard failed for ${v.userId}: ${err.message}`);
+ console.warn(` Fulfilment scorecard failed for ${v.userId}: ${err.message}`);
         }
 
         const [[ratingRow]] = await pool.execute(

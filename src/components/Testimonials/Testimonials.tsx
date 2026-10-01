@@ -4,11 +4,10 @@ import React from "react";
 import Slider from "react-slick";
 import "slick-carousel/slick/slick.css";
 import "slick-carousel/slick/slick-theme.css";
-import Imag1 from "../../assets/images/decoration.webp"
-import Imag2 from "../../assets/images/decoration1.webp"
+import Imag1 from "../../assets/images/image1.jpeg"
+import Imag2 from "../../assets/images/heropage5.jpg"
 import Imag3 from "../../assets/images/image1.webp"
-import Imag4 from "../../assets/images/image2.webp"
-
+import Imag4 from "../../assets/images/image2.jpeg"
 const TestimonialData = [
   {
     id: 1,

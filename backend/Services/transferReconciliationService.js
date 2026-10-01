@@ -35,7 +35,7 @@ export const reconcileStuckTransfers = async ({
   const summary = { verified: 0, succeeded: 0, failed: 0, reversed: 0, pending: 0, errored: 0 };
 
   if (!PAYSTACK_SECRET_KEY) {
-    console.warn('⚠️  PAYSTACK_SECRET_KEY not set — transfer reconciliation disabled');
+ console.warn('PAYSTACK_SECRET_KEY not set — transfer reconciliation disabled');
     return summary;
   }
 
@@ -57,9 +57,9 @@ export const reconcileStuckTransfers = async ({
     );
   } catch (error) {
     if (error.code === 'ER_NO_SUCH_TABLE') {
-      console.warn('⚠️  payout_attempts table missing — run `node migrateHardening.js` / `db:migrate` (release gate). Reconciliation skipped.');
+ console.warn('payout_attempts table missing — run `node migrateHardening.js` / `db:migrate` (release gate). Reconciliation skipped.');
     } else {
-      console.error('❌ Transfer reconciliation query failed:', error.message);
+ console.error(' Transfer reconciliation query failed:', error.message);
     }
     return summary;
   }
@@ -115,20 +115,20 @@ export const reconcileStuckTransfers = async ({
         try {
           await settleTransferFailed(queryRef);
           summary.failed += 1;
-          console.log(`🔁 Released payout attempt ${attempt.reference}: no such transfer at Paystack (never reached provider)`);
+ console.log(` Released payout attempt ${attempt.reference}: no such transfer at Paystack (never reached provider)`);
         } catch (settleErr) {
           summary.errored += 1;
-          console.warn(`⚠️  Could not release payout attempt ${attempt.reference}: ${settleErr.message}`);
+ console.warn(`Could not release payout attempt ${attempt.reference}: ${settleErr.message}`);
         }
         continue;
       }
       summary.errored += 1;
-      console.warn(`⚠️  Transfer reconciliation failed for ${queryRef}: ${error.message}`);
+ console.warn(`Transfer reconciliation failed for ${queryRef}: ${error.message}`);
     }
   }
 
   if (rows.length > 0) {
-    console.log(`🔁 Reconciled ${summary.verified}/${rows.length} stuck transfer(s)`, summary);
+ console.log(` Reconciled ${summary.verified}/${rows.length} stuck transfer(s)`, summary);
   }
   return summary;
 };
@@ -151,14 +151,14 @@ export const reclaimStaleProcessingWebhooks = async ({ olderThanMinutes = 15 } =
       [String(Math.max(5, Number(olderThanMinutes) || 15))]
     );
     if (result.affectedRows > 0) {
-      console.log(`🔁 Reclaimed ${result.affectedRows} stale processing webhook event(s)`);
+ console.log(` Reclaimed ${result.affectedRows} stale processing webhook event(s)`);
     }
     return result.affectedRows;
   } catch (error) {
     if (error.code === 'ER_NO_SUCH_TABLE') {
-      console.warn('⚠️  webhook_events table missing — run `node migrateHardening.js` / `db:migrate` before enabling webhooks.');
+ console.warn('webhook_events table missing — run `node migrateHardening.js` / `db:migrate` before enabling webhooks.');
     } else {
-      console.error('❌ Webhook reclaim failed:', error.message);
+ console.error(' Webhook reclaim failed:', error.message);
     }
     return 0;
   }

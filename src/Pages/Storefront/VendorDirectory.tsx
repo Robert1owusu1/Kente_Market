@@ -23,7 +23,7 @@ const levelMeta = {
   pending: { label: 'Pending', cls: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300' },
   verified: { label: 'Verified', cls: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' },
   trusted_artisan: { label: 'Trusted Artisan', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' },
-  master_weaver: { label: 'Master Weaver', cls: 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300' },
+  master_weaver: { label: 'Master Weaver', cls: 'bg-[#fbeacb] text-[#7c2d12] dark:bg-[#431407]/40 dark:text-[#f2c169]' },
 } as const;
 
 const badgeLabels = {

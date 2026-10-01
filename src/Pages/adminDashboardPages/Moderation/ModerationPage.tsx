@@ -89,7 +89,7 @@ const ModerationPage = () => {
             onClick={() => setStatusFilter(s.value)}
             className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
               statusFilter === s.value
-                ? 'bg-indigo-600 text-white'
+                ? 'bg-[#92400e] text-white'
                 : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
             }`}
           >
@@ -99,7 +99,7 @@ const ModerationPage = () => {
       </div>
 
       {isLoading && (
-        <div className="p-8 text-center"><FaSpinner className="animate-spin h-10 w-10 text-indigo-600 mx-auto" /></div>
+        <div className="p-8 text-center"><FaSpinner className="animate-spin h-10 w-10 text-[#92400e] mx-auto" /></div>
       )}
 
       {isError && (

@@ -403,7 +403,7 @@ export const payoutAllocation = async (allocation, requestedAmount) => {
       `UPDATE payout_attempts SET lastError = ?, updated_at = CURRENT_TIMESTAMP WHERE reference = ? AND status = 'processing'`,
       [String(error.message || error).slice(0, 500), reference]
     );
-    console.error(`❌ Escrow payout failed for allocation ${allocation.id}:`, error.message);
+ console.error(` Escrow payout failed for allocation ${allocation.id}:`, error.message);
     updated.status = fullPayout ? 'releasing' : 'available';
     updated.reason = `Transfer outcome pending reconciliation: ${error.message}`;
   }
@@ -579,7 +579,7 @@ export const voidEscrowForOrder = async (orderId) => {
         `Escrow clawed back for order ${orderId} (refund/return approved)`
       );
       if (!debited) {
-        console.warn(`⚠️ Clawback no-op for allocation ${allocation.id}: already withdrawn (check balance manually)`);
+ console.warn(` Clawback no-op for allocation ${allocation.id}: already withdrawn (check balance manually)`);
       }
       // Idempotent journal per allocation — only recorded when THIS worker won
       // the claim above, so a redelivery can't double record.
@@ -597,7 +597,7 @@ export const voidEscrowForOrder = async (orderId) => {
     } catch (error) {
       // Balance was insufficient (funds already withdrawn elsewhere): leave the
       // allocation marked failed + reason below so reconciliation can find it.
-      console.error(`❌ Clawback debit failed for allocation ${allocation.id}: ${error.message}`);
+ console.error(` Clawback debit failed for allocation ${allocation.id}: ${error.message}`);
       await pool.execute(
         `UPDATE escrow_allocations SET reason = 'clawback failed: manual recovery needed' WHERE id = ?`,
         [allocation.id]
@@ -697,10 +697,10 @@ export const reconcileAvailableAllocations = async () => {
       if (applied) credited += 1;
     } catch (error) {
       errored += 1;
-      console.error(`❌ reconcileAvailableAllocations: allocation ${allocation.id} errored: ${error.message}`);
+ console.error(` reconcileAvailableAllocations: allocation ${allocation.id} errored: ${error.message}`);
     }
   }
-  if (credited > 0) console.log(`🔁 reconcileAvailableAllocations credited ${credited} previously uncredited allocation(s)`);
+ if (credited > 0) console.log(` reconcileAvailableAllocations credited ${credited} previously uncredited allocation(s)`);
   return { credited, errored };
 };
 
@@ -732,7 +732,7 @@ export const trackPlatformRevenue = async (orderId, items) => {
       [orderId, round2(total)]
     );
   } catch (err) {
-    console.warn(`⚠️ Could not track platform revenue for order ${orderId}: ${err.message}`);
+ console.warn(` Could not track platform revenue for order ${orderId}: ${err.message}`);
   }
 };
 
@@ -764,7 +764,7 @@ export const notifyVendorPayoutFailure = async (orderId, allocationIds) => {
         });
       }
     } catch (err) {
-      console.warn(`⚠️ Could not notify vendor for allocation ${allocId}: ${err.message}`);
+ console.warn(` Could not notify vendor for allocation ${allocId}: ${err.message}`);
     }
   }
 };
@@ -811,7 +811,7 @@ export const recoverStuckPendingOrders = async () => {
           paidKobo !== expectedKobo
         ) {
           console.warn(
-            `⚠️ Stuck order ${order.id}: payment mismatch — paid ${paidKobo} ${tx.currency}, ` +
+` Stuck order ${order.id}: payment mismatch — paid ${paidKobo} ${tx.currency}, ` +
             `expected ${expectedKobo} GHS (ref ${order.paymentReference}); NOT recovering`
           );
           continue;
@@ -843,14 +843,14 @@ export const recoverStuckPendingOrders = async () => {
             await decrementStockForOrder(items, order.id);
           }
         } catch (stockErr) {
-          console.warn(`⚠️ Could not decrement stock for recovered order ${order.id}: ${stockErr.message}`);
+ console.warn(` Could not decrement stock for recovered order ${order.id}: ${stockErr.message}`);
         }
 
-        console.log(`🔧 Recovered stuck order ${order.id} via Paystack verify`);
+ console.log(` Recovered stuck order ${order.id} via Paystack verify`);
         recovered += 1;
       }
     } catch (err) {
-      console.warn(`⚠️ Could not recover stuck order ${order.id}: ${err.message}`);
+ console.warn(` Could not recover stuck order ${order.id}: ${err.message}`);
     }
   }
   return recovered;

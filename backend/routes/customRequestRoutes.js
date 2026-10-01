@@ -55,7 +55,7 @@ router.route('/:id').get(protect, async (req, res, next) => {
     }
     res.json(request);
   } catch (error) {
-    console.error("❌ getRequest error:", error.message);
+ console.error(" getRequest error:", error.message);
     res.status(500).json({ message: "Failed to fetch request" });
   }
 });

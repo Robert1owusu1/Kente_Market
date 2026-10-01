@@ -80,7 +80,7 @@ export const createBuybackRequest = async (req, res) => {
 
     res.status(201).json({ message: 'Sell-back request sent. The marketplace will review it.', request });
   } catch (error) {
-    console.error('❌ createBuybackRequest error:', error.message);
+ console.error(' createBuybackRequest error:', error.message);
     res.status(500).json({ message: 'Failed to create sell-back request' });
   }
 };
@@ -93,7 +93,7 @@ export const getMyBuybackRequests = async (req, res) => {
     const requests = await BuybackRequest.findByCustomer(req.user.id);
     res.json({ requests });
   } catch (error) {
-    console.error('❌ getMyBuybackRequests error:', error.message);
+ console.error(' getMyBuybackRequests error:', error.message);
     res.status(500).json({ message: 'Failed to load sell-back requests' });
   }
 };
@@ -110,7 +110,7 @@ export const listBuybackRequests = async (req, res) => {
     });
     res.json({ requests });
   } catch (error) {
-    console.error('❌ listBuybackRequests error:', error.message);
+ console.error(' listBuybackRequests error:', error.message);
     res.status(500).json({ message: 'Failed to load sell-back requests' });
   }
 };
@@ -203,7 +203,7 @@ export const reviewBuybackRequest = async (req, res) => {
 
     res.status(400).json({ message: 'Decision must be "approved" or "declined"' });
   } catch (error) {
-    console.error('❌ reviewBuybackRequest error:', error.message);
+ console.error(' reviewBuybackRequest error:', error.message);
     res.status(500).json({ message: 'Failed to review sell-back request' });
   }
 };

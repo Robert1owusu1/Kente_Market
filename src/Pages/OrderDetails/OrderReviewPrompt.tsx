@@ -82,7 +82,7 @@ export default function OrderReviewPrompt({ orderId, items }: { orderId: number 
     return (
       <div className="mb-6 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-5 flex items-center justify-between gap-3">
         <p className="text-sm text-green-700 dark:text-green-300 font-medium">
-          ✓ Your verified review is live. Thanks for helping other buyers choose well!
+ ✓ Your verified review is live. Thanks for helping other buyers choose well!
         </p>
         <button onClick={() => navigate("/reviews")} className="text-sm text-primary hover:underline whitespace-nowrap">
           See reviews

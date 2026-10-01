@@ -120,7 +120,7 @@ const CampaignModal = ({ onClose }: { onClose: () => void }) => {
             </div>
           </div>
           <button type="submit" disabled={isLoading}
-            className="w-full px-4 py-2.5 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 disabled:opacity-60 flex items-center justify-center gap-2">
+            className="w-full px-4 py-2.5 bg-[#92400e] text-white rounded-lg font-semibold hover:bg-[#7c2d12] disabled:opacity-60 flex items-center justify-center gap-2">
             {isLoading ? <FaSpinner className="animate-spin" /> : <FaPlus />} Create campaign
           </button>
         </form>
@@ -159,7 +159,7 @@ const CampaignsPage = () => {
           </button>
           <button
             onClick={() => setShowCreate(true)}
-            className="px-4 py-2 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 inline-flex items-center gap-2 text-sm"
+            className="px-4 py-2 bg-[#92400e] text-white rounded-lg font-semibold hover:bg-[#7c2d12] inline-flex items-center gap-2 text-sm"
           >
             <FaPlus /> New campaign
           </button>
@@ -167,7 +167,7 @@ const CampaignsPage = () => {
       </div>
 
       {isLoading ? (
-        <div className="p-8 text-center"><FaSpinner className="animate-spin h-10 w-10 text-indigo-600 mx-auto" /></div>
+        <div className="p-8 text-center"><FaSpinner className="animate-spin h-10 w-10 text-[#92400e] mx-auto" /></div>
       ) : isError ? (
         <div className="p-8 text-center bg-red-50 dark:bg-red-900/20 rounded-lg">
           <p className="text-red-600 dark:text-red-400 font-medium">Failed to load campaigns.</p>

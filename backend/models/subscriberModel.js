@@ -3,7 +3,7 @@
 import pool from "../config/db.js";
 
 class Subscriber {
-  // ✅ Create/upsert a subscriber by email
+ // Create/upsert a subscriber by email
   static async create(email) {
     let connection;
     try {
@@ -34,7 +34,7 @@ class Subscriber {
     }
   }
 
-  // ✅ Unsubscribe
+ // Unsubscribe
   static async unsubscribe(email) {
     let connection;
     try {
@@ -53,7 +53,7 @@ class Subscriber {
     }
   }
 
-  // ✅ List subscribers (admin)
+ // List subscribers (admin)
   static async findAll(limit = 500) {
     let connection;
     try {

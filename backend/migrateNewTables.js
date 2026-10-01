@@ -266,7 +266,7 @@ try {
   // Add `description` to product if missing.
   if (!(await colExists('product', 'description'))) {
     await connection.query(`ALTER TABLE product ADD COLUMN description TEXT NULL`);
-    console.log('✅ Added product.description column');
+ console.log(' Added product.description column');
   }
 
   // Add `vendorId` to product if missing (owner vendor = the user id of the
@@ -281,9 +281,9 @@ try {
         `ALTER TABLE product
          ADD CONSTRAINT fk_product_vendor FOREIGN KEY (vendorId) REFERENCES users(id) ON DELETE SET NULL`
       );
-      console.log('✅ Added product.vendorId column + FK');
+ console.log(' Added product.vendorId column + FK');
     } catch (fkErr) {
-      console.warn(`⚠️  Could not add product.vendorId FK: ${fkErr.message}`);
+ console.warn(`Could not add product.vendorId FK: ${fkErr.message}`);
     }
   }
 
@@ -292,13 +292,13 @@ try {
     await connection.query(
       `ALTER TABLE users ADD COLUMN failed_login_attempts INT NOT NULL DEFAULT 0`
     );
-    console.log('✅ Added users.failed_login_attempts column');
+ console.log(' Added users.failed_login_attempts column');
   }
   if (!(await colExists('users', 'locked_until'))) {
     await connection.query(
       `ALTER TABLE users ADD COLUMN locked_until DATETIME NULL`
     );
-    console.log('✅ Added users.locked_until column');
+ console.log(' Added users.locked_until column');
   }
 
   // Vendor payout: allow choosing bank OR mobile money (momo).
@@ -307,25 +307,25 @@ try {
     await connection.query(
       `ALTER TABLE vendors ADD COLUMN payoutType ENUM('bank','momo') NOT NULL DEFAULT 'bank'`
     );
-    console.log('✅ Added vendors.payoutType column');
+ console.log(' Added vendors.payoutType column');
   }
   if (!(await colExists('vendors', 'momoProvider'))) {
     await connection.query(
       `ALTER TABLE vendors ADD COLUMN momoProvider VARCHAR(20) NULL COMMENT 'MTN, VOD, ATL, TGO'`
     );
-    console.log('✅ Added vendors.momoProvider column');
+ console.log(' Added vendors.momoProvider column');
   }
   if (!(await colExists('vendors', 'momoNumber'))) {
     await connection.query(
       `ALTER TABLE vendors ADD COLUMN momoNumber VARCHAR(20) NULL COMMENT 'Mobile money phone number'`
     );
-    console.log('✅ Added vendors.momoNumber column');
+ console.log(' Added vendors.momoNumber column');
   }
   if (!(await colExists('vendors', 'recipientType'))) {
     await connection.query(
       `ALTER TABLE vendors ADD COLUMN recipientType VARCHAR(20) NULL COMMENT 'nuban/bank or mobile_money'`
     );
-    console.log('✅ Added vendors.recipientType column');
+ console.log(' Added vendors.recipientType column');
   }
 
   // Relax the bank-only NOT NULL constraints so a momo-only vendor can exist.
@@ -337,7 +337,7 @@ try {
   // is only incremented when payment is confirmed (webhook / admin mark-paid).
   if (!(await colExists('orders', 'couponId'))) {
     await connection.query(`ALTER TABLE orders ADD COLUMN couponId INT NULL`);
-    console.log('✅ Added orders.couponId column');
+ console.log(' Added orders.couponId column');
   }
 
   // Vendor fulfilment tracking for customised (custom-woven) orders.
@@ -346,11 +346,11 @@ try {
   // post progress notes that get surfaced to the customer.
   if (!(await colExists('orders', 'expectedCompletionDate'))) {
     await connection.query(`ALTER TABLE orders ADD COLUMN expectedCompletionDate DATETIME NULL`);
-    console.log('✅ Added orders.expectedCompletionDate column');
+ console.log(' Added orders.expectedCompletionDate column');
   }
   if (!(await colExists('orders', 'productionNote'))) {
     await connection.query(`ALTER TABLE orders ADD COLUMN productionNote TEXT NULL COMMENT 'Vendor progress note (customised orders)'`);
-    console.log('✅ Added orders.productionNote column');
+ console.log(' Added orders.productionNote column');
   }
 
   // Extend the orderStatus enum with the vendor fulfilment steps: packaging and
@@ -365,7 +365,7 @@ try {
     await connection.query(
       `ALTER TABLE orders MODIFY orderStatus ENUM('pending','processing','packaging','shipped','arrived','delivered','cancelled') NOT NULL DEFAULT 'pending'`
     );
-    console.log('✅ Extended orders.orderStatus enum (added packaging, arrived)');
+ console.log(' Extended orders.orderStatus enum (added packaging, arrived)');
   }
 
   // Add `vendorId` to coupons table for vendor-specific coupons.
@@ -378,15 +378,15 @@ try {
         `ALTER TABLE coupons
          ADD CONSTRAINT fk_coupons_vendor FOREIGN KEY (vendorId) REFERENCES users(id) ON DELETE SET NULL`
       );
-      console.log('✅ Added coupons.vendorId column + FK');
+ console.log(' Added coupons.vendorId column + FK');
     } catch (fkErr) {
-      console.warn(`⚠️  Could not add coupons.vendorId FK: ${fkErr.message}`);
+ console.warn(`Could not add coupons.vendorId FK: ${fkErr.message}`);
     }
   }
 
-  console.log('✅ Tables created/verified: contacts, subscribers, reviews, webhook_events, ai_tryon_usage, promotions, coupons, wishlist, return_requests, notifications, review_reports, user_addresses, designs, payment_methods, support_tickets, platform_revenue, vendor momo payout columns');
+ console.log(' Tables created/verified: contacts, subscribers, reviews, webhook_events, ai_tryon_usage, promotions, coupons, wishlist, return_requests, notifications, review_reports, user_addresses, designs, payment_methods, support_tickets, platform_revenue, vendor momo payout columns');
 } catch (err) {
-  console.error('❌ Migration failed:', err.message);
+ console.error(' Migration failed:', err.message);
   process.exitCode = 1;
 } finally {
   await connection.end();

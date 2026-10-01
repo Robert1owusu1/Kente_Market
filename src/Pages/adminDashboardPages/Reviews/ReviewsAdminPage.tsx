@@ -182,7 +182,7 @@ const ReviewsAdminPage = () => {
             onClick={() => setStatusFilter(tab)}
             className={`px-4 py-1.5 rounded-full text-sm font-medium capitalize transition ${
               statusFilter === tab
-                ? 'bg-indigo-600 text-white'
+                ? 'bg-[#92400e] text-white'
                 : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
             }`}
           >
@@ -195,7 +195,7 @@ const ReviewsAdminPage = () => {
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden">
         {isLoading ? (
           <div className="p-8 text-center">
-            <FaSpinner className="animate-spin h-8 w-8 text-indigo-600 mx-auto" />
+            <FaSpinner className="animate-spin h-8 w-8 text-[#92400e] mx-auto" />
             <p className="mt-4 text-gray-600 dark:text-gray-400">Loading reviews...</p>
           </div>
         ) : filtered.length === 0 ? (

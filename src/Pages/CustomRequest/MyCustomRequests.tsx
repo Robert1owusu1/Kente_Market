@@ -12,7 +12,7 @@ import type { CustomRequest, CustomRequestStatus } from "../../types/domain";
 const STATUS_META: Record<CustomRequestStatus, { label: string; icon: React.ComponentType; color: string }> = {
   pending: { label: "Awaiting quote", icon: FaHourglassHalf, color: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300" },
   quoted: { label: "Quote received", icon: FaHandshake, color: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300" },
-  accepted: { label: "Approved — awaiting payment", icon: FaCreditCard, color: "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300" },
+  accepted: { label: "Approved — awaiting payment", icon: FaCreditCard, color: "bg-[#fbeacb] text-[#7c2d12] dark:bg-[#431407]/40 dark:text-[#f2c169]" },
   paid: { label: "Paid — on the loom", icon: FaHammer, color: "bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300" },
   in_progress: { label: "Cut & finished", icon: FaHammer, color: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300" },
   completed: { label: "Completed", icon: FaBoxOpen, color: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300" },

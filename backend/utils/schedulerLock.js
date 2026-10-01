@@ -24,7 +24,7 @@ export const generateLockToken = () => crypto.randomUUID();
 
 const checkLockInfra = (error) => {
   if (error && (error.code === 'ER_NO_SUCH_TABLE' || error.code === 'ER_BAD_FIELD_ERROR')) {
-    console.warn('⚠️  scheduler_locks table missing — run `node migrateOps.js`. Scheduler running WITHOUT the distributed lock.');
+ console.warn('scheduler_locks table missing — run `node migrateOps.js`. Scheduler running WITHOUT the distributed lock.');
     return false;
   }
   return true;
@@ -119,7 +119,7 @@ export const withLock = async (name, run, opts = {}) => {
   // Heartbeat while the job runs; unref'd so it never keeps the process alive.
   const heartbeat = setInterval(() => {
     renewLock(name, token, { ttlMs }).catch((err) => {
-      console.error(`❌ Lock heartbeat failed for "${name}":`, err.message);
+ console.error(` Lock heartbeat failed for "${name}":`, err.message);
     });
   }, Math.floor(ttlMs / 3));
   if (heartbeat.unref) heartbeat.unref();

@@ -172,7 +172,7 @@ const DecorateMode = ({ product, onProductChange }: DecorateModeProps) => {
                 </div>
               ) : (
                 <label className="cursor-pointer block">
-                  <span className="text-3xl mb-2 block">🏠</span>
+ <FaHome className="text-3xl mb-2 block mx-auto" />
                   <span className="text-sm text-gray-500 dark:text-gray-400">
                     Click to upload room photo
                   </span>

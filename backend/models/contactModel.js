@@ -3,7 +3,7 @@
 import pool from "../config/db.js";
 
 class Contact {
-  // ✅ Create a new contact message
+ // Create a new contact message
   static async create(data) {
     let connection;
     try {
@@ -34,7 +34,7 @@ class Contact {
     }
   }
 
-  // ✅ List messages (admin)
+ // List messages (admin)
   static async findAll(limit = 100) {
     let connection;
     try {
@@ -53,7 +53,7 @@ class Contact {
     }
   }
 
-  // ✅ Delete a contact message (admin)
+ // Delete a contact message (admin)
   static async delete(id) {
     let connection;
     try {

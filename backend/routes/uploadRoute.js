@@ -38,7 +38,7 @@ router.post('/', protect, adminOrVendor, uploadLimiter, (req, res) => {
   upload.single('image')(req, res, async (err) => {
     // Handle multer-specific errors
     if (err) {
-      console.error('❌ Multer error:', err);
+ console.error(' Multer error:', err);
 
       if (err.code === 'LIMIT_FILE_SIZE') {
         return res.status(413).json({
@@ -80,7 +80,7 @@ router.post('/', protect, adminOrVendor, uploadLimiter, (req, res) => {
       const key = `products/${req.user.id}-product-${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
       const publicUrl = await putObject({ key, sourcePath: stagedPath(req.file) });
 
-      console.log('✅ Image uploaded successfully:', {
+ console.log(' Image uploaded successfully:', {
         filename: path.basename(key),
         format: verdict.format,
         size: `${(req.file.size / 1024).toFixed(2)} KB`,
@@ -95,7 +95,7 @@ router.post('/', protect, adminOrVendor, uploadLimiter, (req, res) => {
         mimetype: req.file.mimetype,
       });
     } catch (error) {
-      console.error('❌ Upload processing error:', error);
+ console.error(' Upload processing error:', error);
       await cleanupStaged(req.file);
       res.status(500).json({ message: 'Image upload failed' });
     }
@@ -125,13 +125,13 @@ router.delete('/:filename', protect, adminOrVendor, async (req, res) => {
     if (!removed) {
       return res.status(404).json({ message: 'Image not found', filename: sanitizedFilename });
     }
-    console.log('✅ Image deleted:', sanitizedFilename);
+ console.log(' Image deleted:', sanitizedFilename);
     res.json({
       message: 'Image deleted successfully',
       filename: sanitizedFilename,
     });
   } catch (error) {
-    console.error('❌ Delete error:', error);
+ console.error(' Delete error:', error);
     res.status(500).json({
       message: 'Failed to delete image: ' + error.message
     });
@@ -144,7 +144,7 @@ router.delete('/:filename', protect, adminOrVendor, async (req, res) => {
 router.post('/reference', protect, uploadLimiter, (req, res) => {
   upload.single('image')(req, res, async (err) => {
     if (err) {
-      console.error('❌ Reference upload error:', err);
+ console.error(' Reference upload error:', err);
       if (err.code === 'LIMIT_FILE_SIZE') {
         return res.status(413).json({ message: 'File too large. Maximum size is 5MB.' });
       }

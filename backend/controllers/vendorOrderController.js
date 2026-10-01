@@ -244,7 +244,7 @@ export const updateVendorOrderStatus = async (req, res) => {
           }
         }
       } catch (escrowErr) {
-        console.warn(`⚠️ Could not arm escrow release deadline: ${escrowErr.message}`);
+ console.warn(` Could not arm escrow release deadline: ${escrowErr.message}`);
       }
     }
 
@@ -268,11 +268,11 @@ export const updateVendorOrderStatus = async (req, res) => {
           note: productionNote,
         });
       } catch (emailErr) {
-        console.warn(`⚠️ Could not email customer order update: ${emailErr.message}`);
+ console.warn(` Could not email customer order update: ${emailErr.message}`);
       }
     }
     } catch (notifyErr) {
-      console.warn(`⚠️ Could not notify customer: ${notifyErr.message}`);
+ console.warn(` Could not notify customer: ${notifyErr.message}`);
     }
 
     res.json({ message: "Order status updated", order: updated });

@@ -8,7 +8,7 @@ const getTypeIcon = (type?: string) => {
   switch (type) {
     case 'order':
     case 'shipping':
-      return <FaBox className="text-indigo-500" />;
+      return <FaBox className="text-[#b45309]" />;
     case 'cart':
       return <FaShoppingCart className="text-green-500" />;
     case 'promotion':
@@ -146,7 +146,7 @@ const NotificationBell = () => {
                   key={notification.id}
                   className={`flex gap-3 px-4 py-3 border-b dark:border-gray-700 last:border-0 ${
                     String(notification.is_read) === '0' || notification.is_read === 0
-                      ? 'bg-indigo-50 dark:bg-indigo-900/20'
+                      ? 'bg-[#fdf8ef] dark:bg-[#431407]/20'
                       : ''
                   }`}
                 >

@@ -16,12 +16,12 @@ const run = async () => {
       INDEX idx_suggestions_user (userId, created_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
   `);
-  console.log('✅ suggestions table ready');
+ console.log(' suggestions table ready');
 };
 
 run()
   .then(() => process.exit(0))
   .catch((err) => {
-    console.error('❌ Migration failed:', err.message);
+ console.error(' Migration failed:', err.message);
     process.exit(1);
   });

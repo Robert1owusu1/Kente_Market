@@ -121,13 +121,13 @@ export const releaseExpiredReservations = async (maxAgeMinutes = 45) => {
         );
         await connection.commit();
         released += 1;
-        console.log(`⏱️ Released expired stock reservation for order ${order.id}`);
+ console.log(`⏱ Released expired stock reservation for order ${order.id}`);
       } else {
         await connection.rollback();
       }
     } catch (err) {
       await connection.rollback();
-      console.warn(`⚠️ Could not release reservation for order ${order.id}: ${err.message}`);
+ console.warn(` Could not release reservation for order ${order.id}: ${err.message}`);
     } finally {
       connection.release();
     }

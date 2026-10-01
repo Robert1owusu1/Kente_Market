@@ -16,12 +16,12 @@ const dbName = process.env.DB_NAME;
 const sqlPath = path.resolve(__dirname, '..', 'branding_house.sql');
 
 if (!dbName || !process.env.DB_USER) {
-  console.error('❌ DB_NAME and DB_USER must be set in backend/.env');
+ console.error(' DB_NAME and DB_USER must be set in backend/.env');
   process.exit(1);
 }
 
 if (!fs.existsSync(sqlPath)) {
-  console.error(`❌ Schema file not found: ${sqlPath}`);
+ console.error(` Schema file not found: ${sqlPath}`);
   process.exit(1);
 }
 
@@ -30,7 +30,7 @@ if (!fs.existsSync(sqlPath)) {
 // wipe the live database).
 if (process.env.NODE_ENV === 'production' && process.env.ALLOW_DESTRUCTIVE_DB !== '1') {
   console.error(
-    '❌ Refusing to DROP DATABASE: NODE_ENV=production. ' +
+' Refusing to DROP DATABASE: NODE_ENV=production. ' +
     'If this is truly intended, re-run with ALLOW_DESTRUCTIVE_DB=1.'
   );
   process.exit(1);
@@ -50,13 +50,13 @@ try {
   await connection.query(
     `DROP DATABASE IF EXISTS \`${dbName}\``
   );
-  console.log(`🗑️ Dropped existing database ${dbName} (if any)`);
+ console.log(` Dropped existing database ${dbName} (if any)`);
 
   const schema = fs.readFileSync(sqlPath, 'utf8');
   await connection.query(schema);
-  console.log(`✅ Database ${dbName} created with schema from branding_house.sql`);
+ console.log(` Database ${dbName} created with schema from branding_house.sql`);
 } catch (err) {
-  console.error('❌ DB setup failed:', err.message);
+ console.error(' DB setup failed:', err.message);
   process.exit(1);
 } finally {
   await connection.end();

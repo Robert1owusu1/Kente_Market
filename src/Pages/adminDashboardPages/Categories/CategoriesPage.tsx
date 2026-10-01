@@ -160,7 +160,7 @@ const CategoriesPage = () => {
                     <div className="flex justify-end gap-2">
                       <button
                         onClick={() => openEdit(cat)}
-                        className="p-2 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-gray-700 rounded"
+                        className="p-2 text-[#92400e] hover:bg-[#fdf8ef] dark:hover:bg-gray-700 rounded"
                         title="Edit"
                       >
                         <FaEdit />

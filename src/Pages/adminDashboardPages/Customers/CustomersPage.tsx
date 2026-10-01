@@ -30,7 +30,7 @@ const formatDate = (dateString: string) => {
 // Loading spinner component
 const LoadingSpinner = ({ message = 'Loading...' }) => (
   <div className="p-8 text-center">
-    <FaSpinner className="animate-spin h-12 w-12 text-indigo-600 mx-auto" />
+    <FaSpinner className="animate-spin h-12 w-12 text-[#92400e] mx-auto" />
     <p className="mt-4 text-gray-600 dark:text-gray-400">{message}</p>
   </div>
 );
@@ -308,7 +308,7 @@ const CustomersPage = () => {
         <h2 className="text-2xl font-bold text-gray-800 dark:text-white">Customer Management</h2>
         <button 
           onClick={refetch} 
-          className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center gap-2"
+          className="px-4 py-2 bg-[#92400e] text-white rounded-lg hover:bg-[#7c2d12] flex items-center gap-2"
         >
           <FaSync className={isLoading ? 'animate-spin' : ''} />
           Refresh
@@ -319,7 +319,7 @@ const CustomersPage = () => {
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-md">
           <p className="text-sm text-gray-600 dark:text-gray-400">Total Customers</p>
-          <p className="text-2xl font-bold text-indigo-600">{stats.total}</p>
+          <p className="text-2xl font-bold text-[#92400e]">{stats.total}</p>
         </div>
         <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-md">
           <p className="text-sm text-gray-600 dark:text-gray-400">Active</p>
@@ -331,7 +331,7 @@ const CustomersPage = () => {
         </div>
         <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-md">
           <p className="text-sm text-gray-600 dark:text-gray-400">Admins</p>
-          <p className="text-2xl font-bold text-purple-600">{stats.admins}</p>
+          <p className="text-2xl font-bold text-[#92400e]">{stats.admins}</p>
         </div>
         <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-md">
           <p className="text-sm text-gray-600 dark:text-gray-400">Verified</p>
@@ -347,7 +347,7 @@ const CustomersPage = () => {
             placeholder="Search by name, email, or role..." 
             value={searchQuery} 
             onChange={(e) => setSearchQuery(e.target.value)} 
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-600 text-gray-800 dark:text-white" 
+            className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-[#92400e] text-gray-800 dark:text-white" 
           />
           <FaSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
         </div>
@@ -398,7 +398,7 @@ const CustomersPage = () => {
                     <td className="p-4">
                       <div>
                         <p className="font-medium text-gray-800 dark:text-white">{sanitizeString(customer.firstName)} {sanitizeString(customer.lastName)}</p>
-                        {customer.isEmailVerified && <span className="text-xs text-blue-600 dark:text-blue-400">✓ Verified</span>}
+ {customer.isEmailVerified && <span className="text-xs text-blue-600 dark:text-blue-400">✓ Verified</span>}
                       </div>
                     </td>
                     <td className="text-sm truncate max-w-xs text-gray-800 dark:text-white">{sanitizeString(customer.email)}</td>
@@ -406,7 +406,7 @@ const CustomersPage = () => {
                     <td>
                       <span className={`px-3 py-1 rounded-full text-xs font-medium ${
                         customer.role === 'admin' 
-                          ? 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200' 
+                          ? 'bg-[#fbeacb] text-[#5a2109] dark:bg-[#431407] dark:text-[#f7d89a]' 
                           : 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
                       }`}>
                         {customer.role}
@@ -428,7 +428,7 @@ const CustomersPage = () => {
                       <div className="flex gap-2">
                         <button 
                           onClick={() => { setSelectedCustomer(customer); setShowModal(true); }} 
-                          className="p-2 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900 rounded"
+                          className="p-2 text-[#92400e] hover:bg-[#fdf8ef] dark:hover:bg-[#431407] rounded"
                           title="View Details"
                         >
                           <FaEye />

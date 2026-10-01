@@ -441,7 +441,7 @@ const VendorProductsSection = ({ vendorStatus }: { vendorStatus?: string }) => {
                         {(p.isRentable || p.madeToOrder) && (
                           <span className="inline-flex gap-1 ml-1">
                             {p.isRentable && (
-                              <span className="text-[10px] font-semibold text-purple-700 dark:text-purple-300 bg-purple-100 dark:bg-purple-900/40 px-1.5 py-0.5 rounded-full">Rent</span>
+                              <span className="text-[10px] font-semibold text-[#7c2d12] dark:text-[#f2c169] bg-[#fbeacb] dark:bg-[#431407]/40 px-1.5 py-0.5 rounded-full">Rent</span>
                             )}
                             {p.madeToOrder && (
                               <span className="text-[10px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/40 px-1.5 py-0.5 rounded-full">Made to order</span>
@@ -457,7 +457,7 @@ const VendorProductsSection = ({ vendorStatus }: { vendorStatus?: string }) => {
                         <span className="block text-xs text-gray-500 dark:text-gray-400">or GH₵{parseFloat(String(p.rentPricePerDay)).toFixed(2)}/day rent</span>
                       )}
                     </td>
-                    <td className="px-6 py-4 text-gray-600 dark:text-gray-400">{p.rating ? `${p.rating} ⭐` : '-'}</td>
+ <td className="px-6 py-4 text-gray-600 dark:text-gray-400">{p.rating ? `${p.rating} ` : '-'}</td>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-2">
                         <button onClick={() => handleEdit(p)} className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg" title="Edit">

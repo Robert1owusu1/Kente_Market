@@ -1,7 +1,9 @@
 import React from "react";
-import Image1 from "../../assets/images/decoration.webp";
-import Image2 from "../../assets/images/decoration1.webp";
-import Image3 from "../../assets/images/illustrate.webp";
+import Hero1 from "../../assets/images/heropage1.jpg";
+import Hero2 from "../../assets/images/heropage2.jpeg";
+import Hero3 from "../../assets/images/heropage3.jpeg";
+import Hero4 from "../../assets/images/heropage4.webp";
+import Hero5 from "../../assets/images/heropage5.jpg";
 // react-slick ships without bundled TypeScript declarations.
 // @ts-expect-error -- no types available for react-slick
 import Slider from "react-slick";
@@ -24,7 +26,7 @@ interface HeroSlide {
 const defaultSlides: HeroSlide[] = [
   {
     id: "default-1",
-    img: Image1,
+    img: Hero1,
     title: "Authentic Handwoven Kente",
     description:
       "Discover the royal cloth of the Asante Kingdom - handwoven in the heritage village of Bonwire, Ghana by master weavers using centuries-old techniques.",
@@ -35,7 +37,7 @@ const defaultSlides: HeroSlide[] = [
   },
   {
     id: "default-2",
-    img: Image2,
+    img: Hero2,
     title: "Wear Your Heritage",
     description:
       "Each Kente pattern tells a story. Choose gold for royalty, black for spiritual energy, green for growth. Wear the wisdom of our ancestors.",
@@ -46,12 +48,34 @@ const defaultSlides: HeroSlide[] = [
   },
   {
     id: "default-3",
-    img: Image3,
-    title: "Try It On Before You Buy",
+    img: Hero3,
+    title: "Timeless Ghanaian Craftsmanship",
     description:
-      "Use our AI Virtual Try-On to see yourself wearing the Kente or preview how it decorates your home - before you order from Bonwire, Ghana.",
-    link: "/ai-tryon",
-    linkText: "Try It On",
+      "Celebrating generations of master weavers. Every strip is carefully handwoven with precision, passion, and pride.",
+    link: "/products",
+    linkText: "Shop Now",
+    bgColor: null,
+    textColor: null,
+  },
+  {
+    id: "default-4",
+    img: Hero4,
+    title: "Bold. Beautiful. Authentic.",
+    description:
+      "From traditional ceremonies to modern fashion - Kente brings unmatched elegance and cultural pride to every occasion.",
+    link: "/products",
+    linkText: "Browse Collection",
+    bgColor: null,
+    textColor: null,
+  },
+  {
+    id: "default-5",
+    img: Hero5,
+    title: "Own a Piece of History",
+    description:
+      "Support Ghanaian artisans directly. Each Kente cloth carries the soul of our heritage and the skill of our weavers.",
+    link: "/products",
+    linkText: "Shop Kente",
     bgColor: null,
     textColor: null,
   },
@@ -62,7 +86,7 @@ const Hero = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) => {
 
   const dynamicSlides: HeroSlide[] = adminBanners.map((b) => ({
     id: `promo-${b.id}`,
-    img: b.image || Image1,
+    img: b.image || Hero1,
     title: b.title!,
     description: b.description || "",
     link: b.link || "/products",
@@ -150,7 +174,7 @@ const Hero = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) => {
                       {data.link === "/ai-tryon" ? (
                         <Link to={data.link} className="w-full xs:w-auto">
                           <button className="w-full xs:w-auto bg-gradient-to-r from-primary to-secondary hover:scale-105 duration-200 text-white py-3 px-7 rounded-full whitespace-nowrap font-semibold shadow-lg shadow-primary/25">
-                            {data.linkText || "Try It On"} ✨
+                            {data.linkText || "Try It On"}
                           </button>
                         </Link>
                       ) : (
@@ -192,7 +216,7 @@ const Hero = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) => {
                         loading={index === 0 ? "eager" : "lazy"}
                         fetchPriority={index === 0 ? "high" : "auto"}
                         decoding="async"
-                        className="w-[260px] h-[260px] sm:h-[420px] sm:w-[420px] lg:h-[480px] lg:w-[480px] object-cover rounded-3xl shadow-2xl shadow-black/10 mx-auto"
+                        className="w-full max-w-[300px] aspect-[4/5] sm:max-w-[420px] lg:max-w-[480px] object-cover rounded-3xl shadow-2xl shadow-black/10 mx-auto border border-black/5 dark:border-white/10"
                       />
                     </div>
                   </div>

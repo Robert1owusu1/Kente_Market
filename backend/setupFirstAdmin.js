@@ -48,18 +48,18 @@ const validatePasswordStrength = (password) => {
 const setupAdmin = async () => {
   try {
     console.log('\n' + '='.repeat(60));
-    console.log('🔐 BRANDING HOUSE - First-Time Admin Setup');
+ console.log(' BRANDING HOUSE - First-Time Admin Setup');
     console.log('='.repeat(60) + '\n');
 
     // Check database connection
     await pool.getConnection();
-    console.log('✅ Database connected\n');
+ console.log(' Database connected\n');
 
     // Check if any admin exists
     const [admins] = await pool.query('SELECT id, email FROM users WHERE role = "admin"');
     
     if (admins.length > 0) {
-      console.log('❌ SECURITY: Admin user already exists!');
+ console.log(' SECURITY: Admin user already exists!');
       console.log(`   Email: ${admins[0].email}`);
       console.log('   This script can only run once for security reasons.\n');
       console.log('   If you need to create another admin, use the admin panel.');
@@ -67,7 +67,7 @@ const setupAdmin = async () => {
       process.exit(0);
     }
 
-    console.log('📝 Please provide admin account details:\n');
+ console.log(' Please provide admin account details:\n');
     
     // Get admin details
     const firstName = await question('First Name: ');
@@ -102,7 +102,7 @@ const setupAdmin = async () => {
     // Validate password
     const passwordValidation = validatePasswordStrength(password);
     if (!passwordValidation.isValid) {
-      console.log('\n❌ Password does not meet requirements:');
+ console.log('\n Password does not meet requirements:');
       passwordValidation.errors.forEach(err => console.log(`   • ${err}`));
       throw new Error('Invalid password');
     }
@@ -112,7 +112,7 @@ const setupAdmin = async () => {
       throw new Error('Passwords do not match');
     }
 
-    console.log('\n🔄 Creating admin account...\n');
+ console.log('\n Creating admin account...\n');
 
     // Create admin user with email verified
     const userData = {
@@ -137,22 +137,22 @@ const setupAdmin = async () => {
     );
 
     console.log('='.repeat(60));
-    console.log('✅ ADMIN ACCOUNT CREATED SUCCESSFULLY!');
+ console.log(' ADMIN ACCOUNT CREATED SUCCESSFULLY!');
     console.log('='.repeat(60));
-    console.log(`\n📧 Email: ${email}`);
-    console.log(`👤 Name: ${firstName} ${lastName}`);
-    console.log(`🔑 Role: Admin`);
-    console.log(`✉️  Email Verified: Yes`);
-    console.log(`\n🎉 You can now login to the admin panel!`);
-    console.log(`🌐 Admin URL: ${process.env.FRONTEND_URL || 'http://localhost:5173'}/login\n`);
-    console.log('🔒 SECURITY NOTE: This script will not run again.\n');
+ console.log(`\n Email: ${email}`);
+ console.log(` Name: ${firstName} ${lastName}`);
+ console.log(` Role: Admin`);
+ console.log(`Email Verified: Yes`);
+ console.log(`\n You can now login to the admin panel!`);
+ console.log(` Admin URL: ${process.env.FRONTEND_URL || 'http://localhost:5173'}/login\n`);
+ console.log(' SECURITY NOTE: This script will not run again.\n');
     console.log('='.repeat(60) + '\n');
 
     rl.close();
     process.exit(0);
 
   } catch (error) {
-    console.error('\n❌ ERROR:', error.message);
+ console.error('\n ERROR:', error.message);
     console.error('\nSetup failed. Please try again.\n');
     rl.close();
     process.exit(1);

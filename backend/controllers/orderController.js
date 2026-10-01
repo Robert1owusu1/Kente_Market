@@ -120,7 +120,7 @@ export const decrementStockForOrder = async (items, orderId = null) => {
     }
     return { decremented, shortfall, conflicts };
   } catch (err) {
-    console.warn(`⚠️ Stock decrement failed: ${err.message}`);
+ console.warn(` Stock decrement failed: ${err.message}`);
     return { decremented, shortfall: 0, conflicts };
   } finally {
     connection.release();
@@ -155,7 +155,7 @@ const flagStockShortfall = async (orderId, conflicts) => {
       [Math.max(Number(rows[0].currentShortfall) || 0, totalShortfall), JSON.stringify(allConflicts), orderId]
     );
   } catch (err) {
-    console.warn(`⚠️ Could not flag stock shortfall for order ${orderId}: ${err.message}`);
+ console.warn(` Could not flag stock shortfall for order ${orderId}: ${err.message}`);
   }
 
   try {
@@ -171,7 +171,7 @@ const flagStockShortfall = async (orderId, conflicts) => {
       });
     }
   } catch (err) {
-    console.warn(`⚠️ Could not notify admins of stock shortfall: ${err.message}`);
+ console.warn(` Could not notify admins of stock shortfall: ${err.message}`);
   }
 
   try {
@@ -186,7 +186,7 @@ const flagStockShortfall = async (orderId, conflicts) => {
       });
     }
   } catch (err) {
-    console.warn(`⚠️ Could not notify vendors of stock shortfall: ${err.message}`);
+ console.warn(` Could not notify vendors of stock shortfall: ${err.message}`);
   }
 
   try {
@@ -201,7 +201,7 @@ const flagStockShortfall = async (orderId, conflicts) => {
       });
     }
   } catch (err) {
-    console.warn(`⚠️ Could not notify customer of stock shortfall: ${err.message}`);
+ console.warn(` Could not notify customer of stock shortfall: ${err.message}`);
   }
 };
 
@@ -230,7 +230,7 @@ export const restoreStockForOrder = async (items, { skipProductIds = new Set() }
       );
     }
   } catch (err) {
-    console.warn(`⚠️ Stock restore failed: ${err.message}`);
+ console.warn(` Stock restore failed: ${err.message}`);
   } finally {
     connection.release();
   }
@@ -423,7 +423,7 @@ export const addOrderItems = async (req, res) => {
               [...reservedUnits].map(([productId, qty]) => ({ product: productId, qty }))
             );
           } catch (restoreErr) {
-            console.warn(`⚠️ Could not roll back reservation: ${restoreErr.message}`);
+ console.warn(` Could not roll back reservation: ${restoreErr.message}`);
           }
         }
         return res.status(400).json({ message: "This payment reference has already been used" });
@@ -453,7 +453,7 @@ export const addOrderItems = async (req, res) => {
           [...reservedUnits].map(([productId, qty]) => ({ product: productId, qty }))
         );
       } catch (restoreErr) {
-        console.warn(`⚠️ Could not roll back reservation: ${restoreErr.message}`);
+ console.warn(` Could not roll back reservation: ${restoreErr.message}`);
       }
     }
     res.status(500).json({ message: "Internal server error" });
@@ -729,7 +729,7 @@ export const updateOrderToPaid = async (req, res) => {
         try {
           await Coupon.incrementUses(freshOrder.couponId);
         } catch (e) {
-          console.warn(`⚠️ Could not increment coupon usage: ${e.message}`);
+ console.warn(` Could not increment coupon usage: ${e.message}`);
         }
       }
 
@@ -737,7 +737,7 @@ export const updateOrderToPaid = async (req, res) => {
       try {
         await sendOrderConfirmationEmail(req.params.id);
       } catch (emailErr) {
-        console.warn(`⚠️ Could not send order confirmation email: ${emailErr.message}`);
+ console.warn(` Could not send order confirmation email: ${emailErr.message}`);
       }
     }
 
@@ -820,7 +820,7 @@ export const updateOrderToDelivered = async (req, res) => {
       const { issueCertificateForOrder } = await import('../Services/certificateService.js');
       await issueCertificateForOrder(updatedOrder.id);
     } catch (certErr) {
-      console.warn(`⚠️ Delivery cert auto-issue skipped: ${certErr.message}`);
+ console.warn(` Delivery cert auto-issue skipped: ${certErr.message}`);
     }
   } catch (error) {
     console.error('Error marking order as delivered:', error);
@@ -872,7 +872,7 @@ export const confirmOrderReceived = async (req, res) => {
       try {
         await sendEscrowReleasedEmail(req.params.id);
       } catch (emailErr) {
-        console.warn(`⚠️ Could not send escrow released email: ${emailErr.message}`);
+ console.warn(` Could not send escrow released email: ${emailErr.message}`);
       }
     }
 
@@ -903,7 +903,7 @@ export const confirmOrderReceived = async (req, res) => {
       const { issueCertificateForOrder } = await import('../Services/certificateService.js');
       await issueCertificateForOrder(req.params.id);
     } catch (certErr) {
-      console.warn(`⚠️ Receipt cert auto-issue skipped: ${certErr.message}`);
+ console.warn(` Receipt cert auto-issue skipped: ${certErr.message}`);
     }
   } catch (error) {
     console.error('Error confirming order received:', error);
@@ -1005,7 +1005,7 @@ export const cancelOrder = async (req, res) => {
           [req.params.id]
         );
       } catch (restoreErr) {
-        console.warn(`⚠️ Could not restore stock for cancelled order ${req.params.id}: ${restoreErr.message}`);
+ console.warn(` Could not restore stock for cancelled order ${req.params.id}: ${restoreErr.message}`);
       }
     }
 

@@ -1,6 +1,6 @@
 // FILE: frontend/src/components/TrendingProducts/TrendingProducts.jsx
 import React from 'react';
-import { FaStar, FaHeart, FaEye, FaShoppingCart, FaFire, FaTags, FaStore, FaCheckCircle } from "react-icons/fa";
+import { FaStar, FaHeart, FaEye, FaShoppingCart, FaFire, FaTags, FaStore, FaCheckCircle, FaExclamationTriangle } from "react-icons/fa";
 import { Link, useNavigate } from 'react-router-dom';
 import { useCart } from "../../Context/CartContext";
 import { useGetTrendingProductsQuery } from "../../slices/productsApiSlice";
@@ -28,7 +28,7 @@ const TrendingProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void 
   const navigate = useNavigate();
   const saveToFavorites = useWishlistAction();
 
-  // ⭐ RTK Query hook - cached in the Redux store, no duplicate network calls
+ // RTK Query hook - cached in the Redux store, no duplicate network calls
   // when navigating between pages.
   const {
     data: trendingProductsData,
@@ -74,7 +74,7 @@ const TrendingProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void 
     return 0;
   };
 
-  // ⭐ Loading State with skeleton placeholders
+ // Loading State with skeleton placeholders
   if (loading) {
     return (
       <div className='mt-14 mb-12'>
@@ -97,13 +97,13 @@ const TrendingProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void 
     );
   }
 
-  // ⭐ Error State
+ // Error State
   if (error) {
     return (
       <div className='mt-14 mb-12'>
         <div className='container'>
           <div className='text-center bg-red-50 dark:bg-red-900/20 rounded-2xl p-8 max-w-2xl mx-auto'>
-            <div className="text-red-500 dark:text-red-400 text-5xl mb-4">⚠️</div>
+ <FaExclamationTriangle className="text-red-500 dark:text-red-400 text-5xl mb-4" />
             <h3 className="text-xl font-bold text-red-800 dark:text-red-300 mb-2">
               Oops! Something went wrong
             </h3>
@@ -120,13 +120,13 @@ const TrendingProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void 
     );
   }
 
-  // ⭐ Empty State
+ // Empty State
   if (!trendingProductsData || trendingProductsData.length === 0) {
     return (
       <div className='mt-14 mb-12'>
         <div className='container'>
           <div className='text-center py-20'>
-            <div className="text-6xl mb-4">📈</div>
+ <FaTags className="text-6xl mb-4" />
             <h3 className="text-2xl font-bold text-gray-800 dark:text-white mb-2">
               No Trending Products Yet
             </h3>

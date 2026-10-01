@@ -17,7 +17,7 @@ const run = async () => {
       INDEX idx_message_posts_message (messageId, created_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
   `);
-  console.log('✅ message_posts table ready');
+ console.log(' message_posts table ready');
 
   // Backfill legacy vendor replies (threads that have a reply but no vendor post yet).
   const [result] = await pool.execute(`
@@ -27,12 +27,12 @@ const run = async () => {
     WHERE m.reply IS NOT NULL AND TRIM(m.reply) <> ''
       AND NOT EXISTS (SELECT 1 FROM message_posts p WHERE p.messageId = m.id AND p.sender = 'vendor')
   `);
-  console.log(`✅ Backfilled ${result.affectedRows || 0} legacy vendor replies into message_posts`);
+ console.log(` Backfilled ${result.affectedRows || 0} legacy vendor replies into message_posts`);
 };
 
 run()
   .then(() => process.exit(0))
   .catch((err) => {
-    console.error('❌ Migration failed:', err.message);
+ console.error(' Migration failed:', err.message);
     process.exit(1);
   });

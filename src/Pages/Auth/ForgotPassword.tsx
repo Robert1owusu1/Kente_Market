@@ -5,6 +5,7 @@ import { TiShoppingBag } from 'react-icons/ti';
 import { BiLoaderAlt } from 'react-icons/bi';
 import { FaCheckCircle, FaArrowLeft } from 'react-icons/fa';
 import { toast } from 'react-toastify';
+import logoImg from "../../assets/logo.png";
 
 function IconInput({ children, placeholder, type, value, onChange, error, disabled }: {
   children: React.ReactNode;
@@ -103,14 +104,14 @@ const ForgotPassword = () => {
   };
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-gradient-to-br from-slate-900 via-purple-900 to-slate-800 bg-[length:400%_400%] animate-gradient-cycle px-4">
+    <div className="min-h-screen w-full flex items-center justify-center bg-gradient-to-br from-slate-900 via-[#431407] to-slate-800 bg-[length:400%_400%] animate-gradient-cycle px-4">
       <div className="w-full max-w-md">
         <div className="bg-gradient-to-br from-slate-800/90 to-slate-700/90 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/10 p-8">
           
           {/* Logo */}
-          <div className="flex justify-center gap-x-2 items-center mb-8">
+          <div className="flex justify-center gap-x-3 items-center mb-8">
             <div className="p-2 bg-amber-400/20 rounded-xl backdrop-blur-md">
-              <TiShoppingBag className="text-amber-400 text-2xl" />
+              <img src={logoImg} alt="Bonwire Kente" className="h-8 w-8 object-contain" width={32} height={32} />
             </div>
             <span className="text-white font-bold text-xl">Bonwire Kente</span>
           </div>
@@ -222,7 +223,7 @@ const ForgotPassword = () => {
         {/* Security Note */}
         <div className="mt-6 text-center">
           <p className="text-white/50 text-sm">
-            🔒 This is a secure password reset process
+ This is a secure password reset process
           </p>
         </div>
       </div>

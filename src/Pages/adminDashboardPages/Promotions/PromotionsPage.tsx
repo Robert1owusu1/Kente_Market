@@ -45,7 +45,7 @@ const emptyForm: PromotionForm = {
 
 const typeColors: Record<string, string> = {
   banner: 'bg-blue-100 text-blue-700',
-  popup: 'bg-purple-100 text-purple-700',
+  popup: 'bg-[#fbeacb] text-[#7c2d12]',
   event: 'bg-green-100 text-green-700',
   discount: 'bg-red-100 text-red-700',
   giveaway: 'bg-yellow-100 text-yellow-700',
@@ -172,7 +172,7 @@ const PromotionsPage = () => {
         </div>
         <button
           onClick={openCreate}
-          className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-semibold"
+          className="flex items-center gap-2 px-5 py-2.5 bg-[#92400e] text-white rounded-lg hover:bg-[#7c2d12] transition font-semibold"
         >
           <FaPlus /> New Promotion
         </button>
@@ -186,7 +186,7 @@ const PromotionsPage = () => {
             onClick={() => setFilter(f)}
             className={`px-4 py-1.5 rounded-full text-sm font-medium capitalize transition ${
               filter === f
-                ? 'bg-indigo-600 text-white'
+                ? 'bg-[#92400e] text-white'
                 : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
             }`}
           >
@@ -490,7 +490,7 @@ const PromotionsPage = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-6 py-2.5 rounded-lg bg-indigo-600 text-white font-semibold hover:bg-indigo-700 transition"
+                  className="px-6 py-2.5 rounded-lg bg-[#92400e] text-white font-semibold hover:bg-[#7c2d12] transition"
                 >
                   {editing ? 'Save Changes' : 'Create Promotion'}
                 </button>

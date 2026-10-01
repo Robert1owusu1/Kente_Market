@@ -4,7 +4,7 @@ import type { AuthUser } from "../types/domain";
 
 export const usersApiSlice = apiSlice.injectEndpoints({
   endpoints: (builder) => ({
-    // 🔹 Login
+ // Login
     login: builder.mutation<Record<string, unknown>, { email: string; password: string }>({
       query: (data) => ({
         url: `${USERS_URL}/auth`,
@@ -14,7 +14,7 @@ export const usersApiSlice = apiSlice.injectEndpoints({
       invalidatesTags: ["User"],
     }),
 
-    // 🔹 Register
+ // Register
     register: builder.mutation<Record<string, unknown>, Record<string, unknown>>({
       query: (data) => ({
         url: `${USERS_URL}`,
@@ -24,7 +24,7 @@ export const usersApiSlice = apiSlice.injectEndpoints({
       invalidatesTags: ["User"],
     }),
 
-    // 🔹 Logout
+ // Logout
     logout: builder.mutation<{ message?: string }, void>({
       query: () => ({
         url: `${USERS_URL}/logout`,
@@ -50,7 +50,7 @@ export const usersApiSlice = apiSlice.injectEndpoints({
       },
     }),
 
-    // ⭐ NEW: Verify Email
+ // NEW: Verify Email
     verifyEmail: builder.mutation<Record<string, unknown>, Record<string, unknown>>({
       query: (data) => ({
         url: `${USERS_URL}/verify-email`,
@@ -60,7 +60,7 @@ export const usersApiSlice = apiSlice.injectEndpoints({
       invalidatesTags: ["User"],
     }),
 
-    // ⭐ NEW: Resend OTP
+ // NEW: Resend OTP
     resendOTP: builder.mutation<{ message?: string }, void>({
       query: () => ({
         url: `${USERS_URL}/resend-otp`,
@@ -68,7 +68,7 @@ export const usersApiSlice = apiSlice.injectEndpoints({
       }),
     }),
 
-    // ⭐ NEW: Get Verification Status
+ // NEW: Get Verification Status
     getVerificationStatus: builder.query<{ verified?: boolean; [key: string]: unknown }, void>({
       query: () => ({
         url: `${USERS_URL}/verification-status`,
@@ -77,7 +77,7 @@ export const usersApiSlice = apiSlice.injectEndpoints({
       providesTags: ["User"],
     }),
 
-    // ✅ Get user profile (authenticated user)
+ // Get user profile (authenticated user)
     getProfile: builder.query<AuthUser, void>({
       query: () => ({
         url: `${USERS_URL}/profile`,
@@ -87,7 +87,7 @@ export const usersApiSlice = apiSlice.injectEndpoints({
       keepUnusedDataFor: 5,
     }),
 
-    // ✅ Update user profile (authenticated user)
+ // Update user profile (authenticated user)
     updateProfile: builder.mutation<AuthUser, Record<string, unknown>>({
       query: (data) => ({
         url: `${USERS_URL}/profile`,
@@ -104,7 +104,7 @@ export const usersApiSlice = apiSlice.injectEndpoints({
       },
     }),
 
-    // ✅ Get all users (admin only)
+ // Get all users (admin only)
     getUsers: builder.query<AuthUser[], void>({
       query: () => ({
         url: USERS_URL,
@@ -114,7 +114,7 @@ export const usersApiSlice = apiSlice.injectEndpoints({
       keepUnusedDataFor: 5,
     }),
 
-    // ✅ Delete user (admin only)
+ // Delete user (admin only)
     deleteUser: builder.mutation<{ message?: string }, number | string>({
       query: (userId) => ({
         url: `${USERS_URL}/${userId}`,
@@ -123,7 +123,7 @@ export const usersApiSlice = apiSlice.injectEndpoints({
       invalidatesTags: ["User"],
     }),
 
-    // ✅ Get user by ID (admin only)
+ // Get user by ID (admin only)
     getUserById: builder.query<AuthUser, number | string>({
       query: (userId) => ({
         url: `${USERS_URL}/${userId}`,
@@ -132,7 +132,7 @@ export const usersApiSlice = apiSlice.injectEndpoints({
       providesTags: (_result, _error, userId) => [{ type: "User", id: userId }] as const,
     }),
 
-    // ✅ Update user by ID (admin only)
+ // Update user by ID (admin only)
     updateUser: builder.mutation<AuthUser, { userId: number | string; [key: string]: unknown }>({
       query: ({ userId, ...data }) => ({
         url: `${USERS_URL}/${userId}`,
@@ -151,9 +151,9 @@ export const {
   useLoginMutation,
   useRegisterMutation,
   useLogoutMutation,
-  useVerifyEmailMutation,        // ⭐ NEW
-  useResendOTPMutation,          // ⭐ NEW
-  useGetVerificationStatusQuery, // ⭐ NEW
+ useVerifyEmailMutation, // NEW
+ useResendOTPMutation, // NEW
+ useGetVerificationStatusQuery, // NEW
   useGetProfileQuery,
   useUpdateProfileMutation,
   useGetUsersQuery,

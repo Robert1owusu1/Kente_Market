@@ -283,7 +283,7 @@ const CartPage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 pb-20 dark:from-gray-950 dark:via-gray-900 dark:to-gray-800 sm:pb-8">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-[#fbeacb] pb-20 dark:from-gray-950 dark:via-gray-900 dark:to-gray-800 sm:pb-8">
       <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-10 lg:px-8">
         {/* Modern Header */}
         <div className="mb-8 sm:mb-10">
@@ -424,7 +424,7 @@ const CartPage = () => {
                       <p className="text-sm text-green-600">You saved GH₵ {STANDARD_SHIPPING_COST.toFixed(2)} on shipping</p>
                     </div>
                   ) : (
-                    <div className="mt-6 p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl border border-blue-200">
+                    <div className="mt-6 p-4 bg-gradient-to-br from-blue-50 to-[#fdf8ef] rounded-2xl border border-blue-200">
                       <div className="flex items-center gap-2 mb-2">
                         <div className="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center">
                           <FaShoppingCart className="w-3 h-3 text-white" />
@@ -436,7 +436,7 @@ const CartPage = () => {
                       </p>
                       <div className="mt-2 w-full bg-gray-200 rounded-full h-2">
                         <div 
-                          className="bg-gradient-to-r from-blue-500 to-purple-500 h-2 rounded-full transition-all duration-500"
+                          className="bg-gradient-to-r from-blue-500 to-[#b45309] h-2 rounded-full transition-all duration-500"
                           style={{ width: `${Math.min((subtotal / FREE_SHIPPING_THRESHOLD) * 100, 100)}%` }}
                         ></div>
                       </div>

@@ -16,7 +16,7 @@ import ProductFormModal from './ProductFormModal';
 // Loading spinner component
 const LoadingSpinner = ({ message = 'Loading...' }: { message?: string }) => (
   <div className="p-8 text-center">
-    <div className="animate-spin h-12 w-12 text-indigo-600 mx-auto border-4 border-indigo-200 border-t-indigo-600 rounded-full"></div>
+    <div className="animate-spin h-12 w-12 text-[#92400e] mx-auto border-4 border-[#f7d89a] border-t-indigo-600 rounded-full"></div>
     <p className="mt-4 text-gray-600 dark:text-gray-400">{message}</p>
   </div>
 );
@@ -158,7 +158,7 @@ const ProductsPage = () => {
           </button>
           <button 
             onClick={handleAddProduct}
-            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center gap-2"
+            className="px-4 py-2 bg-[#92400e] text-white rounded-lg hover:bg-[#7c2d12] flex items-center gap-2"
           >
             <FaPlus />
             Add Product
@@ -170,7 +170,7 @@ const ProductsPage = () => {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-md">
           <p className="text-sm text-gray-600 dark:text-gray-400">Total Products</p>
-          <p className="text-2xl font-bold text-indigo-600">{stats.total}</p>
+          <p className="text-2xl font-bold text-[#92400e]">{stats.total}</p>
         </div>
         <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-md">
           <p className="text-sm text-gray-600 dark:text-gray-400">Featured</p>
@@ -182,7 +182,7 @@ const ProductsPage = () => {
         </div>
         <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-md">
           <p className="text-sm text-gray-600 dark:text-gray-400">Total Value</p>
-          <p className="text-2xl font-bold text-purple-600">{formatCurrency(stats.totalValue, undefined)}</p>
+          <p className="text-2xl font-bold text-[#92400e]">{formatCurrency(stats.totalValue, undefined)}</p>
         </div>
       </div>
 
@@ -194,14 +194,14 @@ const ProductsPage = () => {
             placeholder="Search by product name, category, or tag..." 
             value={searchQuery} 
             onChange={(e) => setSearchQuery(e.target.value)} 
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-600 text-gray-900 dark:text-white" 
+            className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-[#92400e] text-gray-900 dark:text-white" 
           />
           <FaSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
         </div>
         <select 
           value={categoryFilter} 
           onChange={(e) => setCategoryFilter(e.target.value)}
-          className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-600 text-gray-900 dark:text-white"
+          className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-[#92400e] text-gray-900 dark:text-white"
         >
           {categories.map(cat => (
             <option key={cat} value={cat}>
@@ -219,7 +219,7 @@ const ProductsPage = () => {
             <p>{searchQuery ? 'No products match your search' : 'No products found'}</p>
             <button 
               onClick={handleAddProduct}
-              className="mt-4 px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+              className="mt-4 px-6 py-2 bg-[#92400e] text-white rounded-lg hover:bg-[#7c2d12]"
             >
               Add Your First Product
             </button>
@@ -285,7 +285,7 @@ const ProductsPage = () => {
                       <div className="flex gap-2">
                         <button 
                           onClick={() => window.open(`/product/${product.id}`, '_blank')} 
-                          className="p-2 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900 rounded" 
+                          className="p-2 text-[#92400e] hover:bg-[#fdf8ef] dark:hover:bg-[#431407] rounded" 
                           title="View Product"
                         >
                           <FaEye />

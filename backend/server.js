@@ -16,11 +16,11 @@ import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import cookieParser from 'cookie-parser';
 import compression from 'compression';
-import session from 'express-session';          // ⭐ NEW
-import MySQLStoreFactory from 'express-mysql-session';  // ⭐ NEW
+import session from 'express-session'; // NEW
+import MySQLStoreFactory from 'express-mysql-session'; // NEW
 const MySQLStore = MySQLStoreFactory(session);
-import passport from 'passport';                 // ⭐ NEW
-import { configurePassport } from './config/passPort.js';  // ⭐ NEW
+import passport from 'passport'; // NEW
+import { configurePassport } from './config/passPort.js'; // NEW
 import { cookieSameSite } from './config/cookieConfig.js';
 
 // Database
@@ -47,33 +47,33 @@ import vendorRoutes from './routes/vendorRoutes.js';
 import uploadRoutes from './routes/uploadRoute.js';
 import settingRoutes from './routes/settingRoutes.js';
 import profileRoutes from './routes/profileRoutes.js';
-import authRoutes from './routes/authRoutes.js';  // ⭐ NEW - OAuth routes
-import tryOnRoutes from './routes/tryOnRoutes.js';  // ⭐ NEW - AI Try-On routes
-import contactRoutes from './routes/contactRoutes.js';  // ⭐ NEW - Contact & messages
-import cartRoutes from './routes/cartRoutes.js';  // ⭐ NEW - Server-side cart
-import subscriberRoutes from './routes/subscriberRoutes.js';  // ⭐ NEW - Newsletter
+import authRoutes from './routes/authRoutes.js'; // NEW - OAuth routes
+import tryOnRoutes from './routes/tryOnRoutes.js'; // NEW - AI Try-On routes
+import contactRoutes from './routes/contactRoutes.js'; // NEW - Contact & messages
+import cartRoutes from './routes/cartRoutes.js'; // NEW - Server-side cart
+import subscriberRoutes from './routes/subscriberRoutes.js'; // NEW - Newsletter
 import reviewRoutes from './routes/reviewRoutes.js';
-import promotionRoutes from './routes/promotionRoutes.js';  // ⭐ NEW - Product reviews
-import couponRoutes from './routes/couponRoutes.js';  // ⭐ NEW - Coupons/Discounts
-import wishlistRoutes from './routes/wishlistRoutes.js';  // ⭐ NEW - Wishlist/Favorites
-import returnRoutes from './routes/returnRoutes.js';  // ⭐ NEW - Return/Refund
-import notificationRoutes from './routes/notificationRoutes.js';  // ⭐ NEW - Notifications
-import reportRoutes from './routes/reportRoutes.js';  // ⭐ NEW - Review Reports
-import designRoutes from './routes/designRoutes.js';  // ⭐ NEW - Saved designs
-import addressRoutes from './routes/addressRoutes.js';  // ⭐ NEW - Address book
-import paymentMethodRoutes from './routes/paymentMethodRoutes.js';  // ⭐ NEW - Saved payment methods
-import supportRoutes from './routes/supportRoutes.js';  // ⭐ NEW - Help & support tickets
-import categoryRoutes from './routes/categoryRoutes.js';  // ⭐ NEW - Product categories
-import staffRoutes from './routes/staffRoutes.js';  // ⭐ NEW - Vendor staff
-import messageRoutes from './routes/messageRoutes.js';  // ⭐ NEW - Buyer-vendor messaging
-import campaignRoutes from './routes/campaignRoutes.js';  // ⭐ NEW - Marketing campaigns
-import certificateRoutes from './routes/certificateRoutes.js';  // ⭐ NEW - Authenticity certificates
-import commissionRoutes from './routes/commissionRoutes.js';  // ⭐ NEW - Commission engine
-import moderationRoutes from './routes/moderationRoutes.js';  // ⭐ NEW - Product moderation
-import adminOpsRoutes from './routes/adminOpsRoutes.js';  // 🛡️ Audit log + scheduler status
+import promotionRoutes from './routes/promotionRoutes.js'; // NEW - Product reviews
+import couponRoutes from './routes/couponRoutes.js'; // NEW - Coupons/Discounts
+import wishlistRoutes from './routes/wishlistRoutes.js'; // NEW - Wishlist/Favorites
+import returnRoutes from './routes/returnRoutes.js'; // NEW - Return/Refund
+import notificationRoutes from './routes/notificationRoutes.js'; // NEW - Notifications
+import reportRoutes from './routes/reportRoutes.js'; // NEW - Review Reports
+import designRoutes from './routes/designRoutes.js'; // NEW - Saved designs
+import addressRoutes from './routes/addressRoutes.js'; // NEW - Address book
+import paymentMethodRoutes from './routes/paymentMethodRoutes.js'; // NEW - Saved payment methods
+import supportRoutes from './routes/supportRoutes.js'; // NEW - Help & support tickets
+import categoryRoutes from './routes/categoryRoutes.js'; // NEW - Product categories
+import staffRoutes from './routes/staffRoutes.js'; // NEW - Vendor staff
+import messageRoutes from './routes/messageRoutes.js'; // NEW - Buyer-vendor messaging
+import campaignRoutes from './routes/campaignRoutes.js'; // NEW - Marketing campaigns
+import certificateRoutes from './routes/certificateRoutes.js'; // NEW - Authenticity certificates
+import commissionRoutes from './routes/commissionRoutes.js'; // NEW - Commission engine
+import moderationRoutes from './routes/moderationRoutes.js'; // NEW - Product moderation
+import adminOpsRoutes from './routes/adminOpsRoutes.js'; // Audit log + scheduler status
 import suggestionRoutes from './routes/suggestionRoutes.js';
-import customRequestRoutes from './routes/customRequestRoutes.js';  // 🆕 Custom orders  // ⭐ NEW - User suggestions
-import buybackRoutes from './routes/buybackRoutes.js';  // 🆕 Sell-back / borrow-back loop  // ⭐ NEW - User suggestions
+import customRequestRoutes from './routes/customRequestRoutes.js'; // Custom orders // NEW - User suggestions
+import buybackRoutes from './routes/buybackRoutes.js'; // Sell-back / borrow-back loop // NEW - User suggestions
 import { startCleanupSchedule } from './utils/cleanupJobs.js';
 
 // Setup __dirname for ES modules
@@ -87,11 +87,11 @@ const port = process.env.PORT || 5000;
 // ============================================
 pool.getConnection()
   .then((connection) => {
-    console.log('✅ MySQL Connection Established');
+ console.log(' MySQL Connection Established');
     connection.release();
   })
   .catch((err) => {
-    console.error('❌ MySQL Connection Failed:', err.message);
+ console.error(' MySQL Connection Failed:', err.message);
     process.exit(1);
   });
 
@@ -117,7 +117,7 @@ const trustProxySetting = process.env.TRUST_PROXY !== undefined
   ? Math.max(0, Math.min(parseInt(process.env.TRUST_PROXY, 10) || 0, 3))
   : (process.env.NODE_ENV === 'production' ? 0 : 1);
 if (trustProxySetting === 0 && process.env.NODE_ENV === 'production') {
-  console.log('ℹ️  TRUST_PROXY not set — assuming the server is directly exposed (req.ip = socket IP).');
+ console.log('TRUST_PROXY not set — assuming the server is directly exposed (req.ip = socket IP).');
   console.log('   If a reverse proxy (Nginx/Caddy) fronts this app, set TRUST_PROXY=1 in backend/.env.');
 }
 app.set('trust proxy', trustProxySetting);
@@ -135,17 +135,17 @@ setupSecurity(app);
 // 3. Cookie Parser - MUST be first for JWT authentication
 app.use(cookieParser());
 
-// ⭐ 4. Session middleware (required for OAuth flow)
+// 4. Session middleware (required for OAuth flow)
 // Security: never fall back to a hardcoded secret. Refuse to boot in production
 // without one; in development generate an ephemeral secret with a warning.
 let sessionSecret = process.env.SESSION_SECRET;
 if (!sessionSecret) {
   if (process.env.NODE_ENV === 'production') {
-    console.error('❌ SESSION_SECRET must be set in production');
+ console.error(' SESSION_SECRET must be set in production');
     process.exit(1);
   }
   sessionSecret = crypto.randomBytes(32).toString('hex');
-  console.warn('⚠️  SESSION_SECRET not set - using ephemeral secret (dev only, sessions will not persist across restarts)');
+ console.warn('SESSION_SECRET not set - using ephemeral secret (dev only, sessions will not persist across restarts)');
 }
 app.use(session({
   secret: sessionSecret,
@@ -164,17 +164,17 @@ app.use(session({
 // and warn about optional integrations so "I filled in the .env" is enough.
 if (process.env.NODE_ENV === 'production') {
   if (!process.env.JWT_SECRET) {
-    console.error('❌ JWT_SECRET must be set in production');
+ console.error(' JWT_SECRET must be set in production');
     process.exit(1);
   }
   // CORS is an explicit allow-list; without FRONTEND_URL the live SPA is blocked
   // silently. Fail fast at boot instead of shipping a quietly broken API.
   if (!process.env.FRONTEND_URL) {
-    console.error('❌ FRONTEND_URL must be set in production (CORS allow-list)');
+ console.error(' FRONTEND_URL must be set in production (CORS allow-list)');
     process.exit(1);
   }
   const warn = (name, msg) => {
-    if (!process.env[name]) console.log(`⚠️  ${name} not set — ${msg}`);
+ if (!process.env[name]) console.log(`${name} not set — ${msg}`);
   };
   warn('PAYSTACK_SECRET_KEY', 'payment verification / webhooks will fail');
   warn('EMAIL_USER', 'email delivery (OTP / password reset) will fail');
@@ -184,7 +184,7 @@ if (process.env.NODE_ENV === 'production') {
   warn('SENTRY_DSN', 'error tracking is disabled (recommended before launch)');
 }
 
-// ⭐ 5. Initialize Passport for OAuth
+// 5. Initialize Passport for OAuth
 app.use(passport.initialize());
 app.use(passport.session());
 configurePassport();
@@ -250,7 +250,7 @@ app.use(
   })
 );
 
-// ⭐ Serve Kente cloth static images (from the frontend assets)
+// Serve Kente cloth static images (from the frontend assets)
 // This lets the backend API return valid /images/*.jpg URLs for Kente products.
 app.use(
   '/images',
@@ -306,31 +306,31 @@ app.get('/', (req, res) => {
 // API Routes
 app.use('/api/products', productRoutes);
 app.use('/api/users', userRoutes);
-app.use('/api', buybackRoutes);  // 🆕 Sell-back loop (/api/orders/:id/buyback, /api/admin/buyback)
+app.use('/api', buybackRoutes); // Sell-back loop (/api/orders/:id/buyback, /api/admin/buyback)
 app.use('/api/orders', orderRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/vendors', vendorRoutes);
 app.use('/api/settings', settingRoutes);
 app.use('/api/profile', profileRoutes);
-app.use('/api/auth', authRoutes);  // ⭐ NEW - OAuth routes (Google, Facebook)
-app.use('/api/tryon', tryOnRoutes);  // ⭐ NEW - AI Try-On routes
-app.use('/api/contact', contactRoutes);  // ⭐ NEW - Contact & messages
-app.use('/api/cart', cartRoutes);  // ⭐ NEW - Server-side cart
-app.use('/api/subscribe', subscriberRoutes);  // ⭐ NEW - Newsletter
+app.use('/api/auth', authRoutes); // NEW - OAuth routes (Google, Facebook)
+app.use('/api/tryon', tryOnRoutes); // NEW - AI Try-On routes
+app.use('/api/contact', contactRoutes); // NEW - Contact & messages
+app.use('/api/cart', cartRoutes); // NEW - Server-side cart
+app.use('/api/subscribe', subscriberRoutes); // NEW - Newsletter
 app.use('/api/reviews', reviewRoutes);
-app.use('/api/promotions', promotionRoutes);  // ⭐ NEW - Product reviews
-app.use('/api/coupons', couponRoutes);  // ⭐ NEW - Coupons/Discounts
-app.use('/api/wishlist', wishlistRoutes);  // ⭐ NEW - Wishlist/Favorites
-app.use('/api/returns', returnRoutes);  // ⭐ NEW - Return/Refund
-app.use('/api/notifications', notificationRoutes);  // ⭐ NEW - Notifications
-app.use('/api/reports', reportRoutes);  // ⭐ NEW - Review Reports
-app.use('/api/designs', designRoutes);  // ⭐ NEW - Saved designs
-app.use('/api/addresses', addressRoutes);  // ⭐ NEW - Address book
-app.use('/api/payments/methods', paymentMethodRoutes);  // ⭐ NEW - Saved payment methods
-app.use('/api/support', supportRoutes);  // ⭐ NEW - Help & support tickets
-app.use('/api/categories', categoryRoutes);  // ⭐ NEW - Product categories
+app.use('/api/promotions', promotionRoutes); // NEW - Product reviews
+app.use('/api/coupons', couponRoutes); // NEW - Coupons/Discounts
+app.use('/api/wishlist', wishlistRoutes); // NEW - Wishlist/Favorites
+app.use('/api/returns', returnRoutes); // NEW - Return/Refund
+app.use('/api/notifications', notificationRoutes); // NEW - Notifications
+app.use('/api/reports', reportRoutes); // NEW - Review Reports
+app.use('/api/designs', designRoutes); // NEW - Saved designs
+app.use('/api/addresses', addressRoutes); // NEW - Address book
+app.use('/api/payments/methods', paymentMethodRoutes); // NEW - Saved payment methods
+app.use('/api/support', supportRoutes); // NEW - Help & support tickets
+app.use('/api/categories', categoryRoutes); // NEW - Product categories
 
-// ⭐ NEW — Marketplace upgrade routes
+// NEW — Marketplace upgrade routes
 app.use('/api/vendors/staff', staffRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/campaigns', campaignRoutes);
@@ -339,7 +339,7 @@ app.use('/api/admin/commissions', commissionRoutes);
 app.use('/api/admin/moderation', moderationRoutes);
 app.use('/api/admin/ops', adminOpsRoutes);
 app.use('/api/suggestions', suggestionRoutes);
-app.use('/api/custom-requests', customRequestRoutes);  // 🆕 Custom orders
+app.use('/api/custom-requests', customRequestRoutes); // Custom orders
 
 // ============================================
 // ERROR HANDLING - Must be LAST
@@ -356,24 +356,24 @@ app.use(errorHandeler);
 
 const server = app.listen(port, () => {
   console.log('='.repeat(50));
-  console.log(`✅ Server running in ${process.env.NODE_ENV || 'development'} mode`);
-  console.log(`🚀 Server listening on port ${port}`);
-  console.log(`🌐 API: http://localhost:${port}`);
-  console.log(`❤️  Health: http://localhost:${port}/health`);
+ console.log(` Server running in ${process.env.NODE_ENV || 'development'} mode`);
+ console.log(` Server listening on port ${port}`);
+ console.log(` API: http://localhost:${port}`);
+ console.log(`Health: http://localhost:${port}/health`);
   console.log('='.repeat(50));
-  console.log(`🗄️  Database: MySQL`);
-  console.log(`📁 Static files served from: ${path.join(__dirname, 'uploads')}`);
-  console.log(`🍪 Cookie parser enabled`);
-  console.log(`🔒 Security middleware active (Helmet, XSS, HPP)`);
-  console.log(`⚡ Compression enabled`);
-  console.log(`🚦 Rate limiting active`);
-  console.log(`📤 Upload route registered before body parser`);
-  console.log(`📦 Body parser limit: 1mb`);
-  console.log(`🖼️  Profile picture uploads enabled`);
-  console.log(`🔐 OAuth routes enabled (Google, Facebook)`);  // ⭐ NEW
+ console.log(`Database: MySQL`);
+ console.log(` Static files served from: ${path.join(__dirname, 'uploads')}`);
+ console.log(` Cookie parser enabled`);
+ console.log(` Security middleware active (Helmet, XSS, HPP)`);
+ console.log(` Compression enabled`);
+ console.log(` Rate limiting active`);
+ console.log(` Upload route registered before body parser`);
+ console.log(` Body parser limit: 1mb`);
+ console.log(`Profile picture uploads enabled`);
+ console.log(` OAuth routes enabled (Google, Facebook)`); // NEW
   console.log(process.env.SENTRY_DSN
-    ? '📈 Sentry error tracking enabled'
-    : '🚨 Error tracking: not configured (set SENTRY_DSN to enable)');
+ ? ' Sentry error tracking enabled'
+ : ' Error tracking: not configured (set SENTRY_DSN to enable)');
 });
 
 // ============================================
@@ -381,23 +381,23 @@ const server = app.listen(port, () => {
 // ============================================
 
 const shutdown = async (reason, exitCode = 0) => {
-  console.log(`👋 ${reason}`);
+ console.log(` ${reason}`);
   server.close(async () => {
     await flushSentry();
-    console.log('💤 Server closed');
+ console.log(' Server closed');
     process.exit(exitCode);
   });
 };
 
 process.on('unhandledRejection', (err) => {
-  console.error('🚨 Unhandled Promise Rejection:', err.message);
+ console.error(' Unhandled Promise Rejection:', err.message);
   console.error(err.stack);
   captureError(err);
   shutdown('Server closed due to unhandled rejection', 1);
 });
 
 process.on('uncaughtException', (err) => {
-  console.error('🚨 Uncaught Exception:', err.message);
+ console.error(' Uncaught Exception:', err.message);
   console.error(err.stack);
   captureError(err);
   shutdown('Server closed due to uncaught exception', 1);

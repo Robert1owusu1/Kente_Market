@@ -173,7 +173,7 @@ export default function ProductTypeInsights() {
                       {(rv.vendorRatings ?? []).map((v) => (
                         <div key={v.vendorName} className="flex justify-between py-1 text-sm">
                           <span className="text-gray-700 dark:text-gray-300">{v.vendorName}</span>
-                          <span className="text-gray-500 dark:text-gray-400">{Number(v.avgRating ?? 0).toFixed(1)} ★ · {v.reviews} review(s)</span>
+ <span className="text-gray-500 dark:text-gray-400">{Number(v.avgRating ?? 0).toFixed(1)} ★ · {v.reviews} review(s)</span>
                         </div>
                       ))}
                     </div>

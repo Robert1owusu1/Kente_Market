@@ -4,7 +4,7 @@
 import pool from "../config/db.js";
 import Review from "../models/reviewModel.js";
 
-// ✅ POST /api/reviews - create/update a review (authenticated user only)
+// POST /api/reviews - create/update a review (authenticated user only)
 export const createReview = async (req, res) => {
   try {
     const { productId, rating, comment } = req.body || {};
@@ -36,12 +36,12 @@ export const createReview = async (req, res) => {
       review,
     });
   } catch (error) {
-    console.error("❌ createReview error:", error.message);
+ console.error(" createReview error:", error.message);
     res.status(500).json({ message: "Failed to save review" });
   }
 };
 
-// ✅ GET /api/reviews/product/:productId - reviews for a product (public)
+// GET /api/reviews/product/:productId - reviews for a product (public)
 export const getProductReviews = async (req, res) => {
   try {
     const productId = parseInt(req.params.productId);
@@ -51,23 +51,23 @@ export const getProductReviews = async (req, res) => {
     const reviews = await Review.findByProduct(productId, req.query.limit);
     res.json(reviews);
   } catch (error) {
-    console.error("❌ getProductReviews error:", error.message);
+ console.error(" getProductReviews error:", error.message);
     res.status(500).json({ message: "Failed to fetch reviews" });
   }
 };
 
-// ✅ GET /api/reviews - all reviews (public)
+// GET /api/reviews - all reviews (public)
 export const getAllReviews = async (req, res) => {
   try {
     const reviews = await Review.findAll(req.query.limit);
     res.json(reviews);
   } catch (error) {
-    console.error("❌ getAllReviews error:", error.message);
+ console.error(" getAllReviews error:", error.message);
     res.status(500).json({ message: "Failed to fetch reviews" });
   }
 };
 
-// ✅ PUT /api/reviews/:id - edit own review
+// PUT /api/reviews/:id - edit own review
 export const updateReview = async (req, res) => {
   try {
     const id = parseInt(req.params.id);
@@ -91,12 +91,12 @@ export const updateReview = async (req, res) => {
     });
     res.json({ message: "Review updated", review: updated });
   } catch (error) {
-    console.error("❌ updateReview error:", error.message);
+ console.error(" updateReview error:", error.message);
     res.status(500).json({ message: "Failed to update review" });
   }
 };
 
-// ✅ DELETE /api/reviews/:id - delete review
+// DELETE /api/reviews/:id - delete review
 export const deleteReview = async (req, res) => {
   try {
     const id = parseInt(req.params.id);
@@ -111,12 +111,12 @@ export const deleteReview = async (req, res) => {
     await Review.delete(id);
     res.json({ message: "Review deleted" });
   } catch (error) {
-    console.error("❌ deleteReview error:", error.message);
+ console.error(" deleteReview error:", error.message);
     res.status(500).json({ message: "Failed to delete review" });
   }
 };
 
-// ✅ POST /api/reviews/order — verified purchase review (after delivery)
+// POST /api/reviews/order — verified purchase review (after delivery)
 export const addOrderReview = async (req, res) => {
   try {
     const { orderId, productId, rating, comment, vendorRating, platformSuggestion } = req.body || {};
@@ -190,12 +190,12 @@ export const addOrderReview = async (req, res) => {
       review,
     });
   } catch (error) {
-    console.error("❌ addOrderReview error:", error.message);
+ console.error(" addOrderReview error:", error.message);
     res.status(500).json({ message: "Failed to save review" });
   }
 };
 
-// ✅ GET /api/reviews/analytics — admin: review + vendor satisfaction stats
+// GET /api/reviews/analytics — admin: review + vendor satisfaction stats
 export const getReviewAnalytics = async (req, res) => {
   try {
     const [stats] = await pool.query(
@@ -242,12 +242,12 @@ export const getReviewAnalytics = async (req, res) => {
       vendorRatings: ratingMap,
     });
   } catch (error) {
-    console.error("❌ getReviewAnalytics error:", error.message);
+ console.error(" getReviewAnalytics error:", error.message);
     res.status(500).json({ message: "Failed to fetch analytics" });
   }
 };
 
-// ✅ PUT /api/reviews/:id/status - admin moderation
+// PUT /api/reviews/:id/status - admin moderation
 export const updateReviewStatus = async (req, res) => {
   try {
     const id = parseInt(req.params.id);
@@ -264,7 +264,7 @@ export const updateReviewStatus = async (req, res) => {
     await Review.updateStatus(id, status);
     res.json({ message: `Review ${status}` });
   } catch (error) {
-    console.error("❌ updateReviewStatus error:", error.message);
+ console.error(" updateReviewStatus error:", error.message);
     res.status(500).json({ message: "Failed to update review status" });
   }
 };

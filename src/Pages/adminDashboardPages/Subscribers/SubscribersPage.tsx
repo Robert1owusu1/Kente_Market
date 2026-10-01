@@ -55,7 +55,7 @@ const SubscribersPage = () => {
         <button
           onClick={handleExportCSV}
           disabled={subscribers.length === 0}
-          className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition font-semibold"
+          className="flex items-center gap-2 px-4 py-2 bg-[#92400e] text-white rounded-lg hover:bg-[#7c2d12] disabled:opacity-50 transition font-semibold"
         >
           <FaDownload /> Export CSV
         </button>
@@ -65,12 +65,12 @@ const SubscribersPage = () => {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
           <div className="flex items-center gap-3">
-            <div className="p-3 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg">
-              <FaEnvelope className="text-indigo-600 text-xl" />
+            <div className="p-3 bg-[#fbeacb] dark:bg-[#431407]/30 rounded-lg">
+              <FaEnvelope className="text-[#92400e] text-xl" />
             </div>
             <div>
               <p className="text-sm text-gray-600 dark:text-gray-400">Total Subscribers</p>
-              <p className="text-2xl font-bold text-indigo-600">
+              <p className="text-2xl font-bold text-[#92400e]">
                 {countLoading ? '...' : totalSubscribers}
               </p>
             </div>
@@ -108,7 +108,7 @@ const SubscribersPage = () => {
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden">
         {isLoading ? (
           <div className="p-8 text-center">
-            <FaSpinner className="animate-spin h-8 w-8 text-indigo-600 mx-auto" />
+            <FaSpinner className="animate-spin h-8 w-8 text-[#92400e] mx-auto" />
             <p className="mt-4 text-gray-600 dark:text-gray-400">Loading subscribers...</p>
           </div>
         ) : subscribers.length === 0 ? (
