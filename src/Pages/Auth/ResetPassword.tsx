@@ -8,6 +8,7 @@ import { FaEye, FaEyeSlash, FaCheckCircle } from 'react-icons/fa';
 import { toast } from 'react-toastify';
 import type { FormErrors } from "../../types/domain";
 import logoImg from "../../assets/logo.png";
+import Footer from "../../components/Footer/Footer";
 
 
 function PasswordInput({ children, placeholder, value, onChange, error, disabled }: {
@@ -207,128 +208,132 @@ const ResetPassword = () => {
   }
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-gradient-to-br from-slate-900 via-[#431407] to-slate-800 bg-[length:400%_400%] animate-gradient-cycle px-4">
-      <div className="w-full max-w-md">
-        <div className="bg-gradient-to-br from-slate-800/90 to-slate-700/90 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/10 p-8">
+    <div className="min-h-screen w-full flex flex-col bg-gradient-to-br from-slate-900 via-[#431407] to-slate-800 bg-[length:400%_400%] animate-gradient-cycle">
+      <div className="flex-1 w-full flex items-center justify-center px-4">
+        <div className="w-full max-w-md">
+          <div className="bg-gradient-to-br from-slate-800/90 to-slate-700/90 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/10 p-8">
           
-          {/* Logo */}
-          <div className="flex justify-center gap-x-3 items-center mb-8">
-            <div className="p-2 bg-amber-400/20 rounded-xl backdrop-blur-md">
-              <img src={logoImg} alt="Bonwire Kente" className="h-8 w-8 object-contain" width={32} height={32} />
+            {/* Logo */}
+            <div className="flex justify-center gap-x-3 items-center mb-8">
+              <div className="p-2 bg-amber-400/20 rounded-xl backdrop-blur-md">
+                <img src={logoImg} alt="Bonwire Kente" className="h-8 w-8 object-contain" width={32} height={32} />
+              </div>
+              <span className="text-white font-bold text-xl">Bonwire Kente</span>
             </div>
-            <span className="text-white font-bold text-xl">Bonwire Kente</span>
-          </div>
 
-          {!isSuccess ? (
-            <>
-              {/* Header */}
-              <div className="text-center mb-8">
-                <h1 className="text-3xl font-bold text-white mb-2">
-                  Reset Password
-                </h1>
-                <p className="text-white/70 text-base">
-                  Enter your new password below
-                </p>
-              </div>
-
-              {/* Form */}
-              <div className="space-y-6">
-                <div>
-                  <label className="block text-sm font-medium text-white/90 mb-2">
-                    New Password <span className="text-red-400">*</span>
-                  </label>
-                  <PasswordInput
-                    placeholder="Enter new password"
-                    value={formData.password}
-                    onChange={(e) => handleInputChange('password', e.target.value)}
-                    error={errors.password}
-                    disabled={isLoading}
-                  >
-                    <RiLockPasswordFill />
-                  </PasswordInput>
+            {!isSuccess ? (
+              <>
+                {/* Header */}
+                <div className="text-center mb-8">
+                  <h1 className="text-3xl font-bold text-white mb-2">
+                    Reset Password
+                  </h1>
+                  <p className="text-white/70 text-base">
+                    Enter your new password below
+                  </p>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-white/90 mb-2">
-                    Confirm Password <span className="text-red-400">*</span>
-                  </label>
-                  <PasswordInput
-                    placeholder="Confirm new password"
-                    value={formData.confirmPassword}
-                    onChange={(e) => handleInputChange('confirmPassword', e.target.value)}
-                    error={errors.confirmPassword}
-                    disabled={isLoading}
-                  >
-                    <RiLockPasswordFill />
-                  </PasswordInput>
-                </div>
-
-                {/* Password Requirements */}
-                <div className="bg-white/5 border border-white/10 rounded-xl p-4">
-                  <p className="text-white/80 text-sm font-medium mb-2">Password must contain:</p>
-                  <ul className="space-y-1 text-white/60 text-xs">
- <li>✓ At least 8 characters</li>
- <li>✓ One uppercase letter</li>
- <li>✓ One lowercase letter</li>
- <li>✓ One number</li>
-                  </ul>
-                </div>
-
-                {/* Submit Error */}
-                {errors.submit && (
-                  <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3">
-                    <p className="text-red-400 text-sm">{errors.submit}</p>
+                {/* Form */}
+                <div className="space-y-6">
+                  <div>
+                    <label className="block text-sm font-medium text-white/90 mb-2">
+                      New Password <span className="text-red-400">*</span>
+                    </label>
+                    <PasswordInput
+                      placeholder="Enter new password"
+                      value={formData.password}
+                      onChange={(e) => handleInputChange('password', e.target.value)}
+                      error={errors.password}
+                      disabled={isLoading}
+                    >
+                      <RiLockPasswordFill />
+                    </PasswordInput>
                   </div>
-                )}
 
-                {/* Submit Button */}
-                <button
-                  onClick={() => { void handleSubmit(); }}
-                  disabled={isLoading}
-                  className="w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-300 transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl flex items-center justify-center gap-2"
-                >
-                  {isLoading ? (
-                    <>
-                      <BiLoaderAlt className="w-5 h-5 animate-spin" />
-                      Resetting Password...
-                    </>
-                  ) : (
-                    'Reset Password'
+                  <div>
+                    <label className="block text-sm font-medium text-white/90 mb-2">
+                      Confirm Password <span className="text-red-400">*</span>
+                    </label>
+                    <PasswordInput
+                      placeholder="Confirm new password"
+                      value={formData.confirmPassword}
+                      onChange={(e) => handleInputChange('confirmPassword', e.target.value)}
+                      error={errors.confirmPassword}
+                      disabled={isLoading}
+                    >
+                      <RiLockPasswordFill />
+                    </PasswordInput>
+                  </div>
+
+                  {/* Password Requirements */}
+                  <div className="bg-white/5 border border-white/10 rounded-xl p-4">
+                    <p className="text-white/80 text-sm font-medium mb-2">Password must contain:</p>
+                    <ul className="space-y-1 text-white/60 text-xs">
+   <li>✓ At least 8 characters</li>
+   <li>✓ One uppercase letter</li>
+   <li>✓ One lowercase letter</li>
+   <li>✓ One number</li>
+                    </ul>
+                  </div>
+
+                  {/* Submit Error */}
+                  {errors.submit && (
+                    <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3">
+                      <p className="text-red-400 text-sm">{errors.submit}</p>
+                    </div>
                   )}
-                </button>
-              </div>
-            </>
-          ) : (
-            <>
-              {/* Success Message */}
-              <div className="text-center">
-                <div className="mb-6 flex justify-center">
-                  <div className="p-4 bg-green-500/20 rounded-full">
-                    <FaCheckCircle className="text-green-400 text-5xl" />
-                  </div>
-                </div>
-                
-                <h2 className="text-2xl font-bold text-white mb-3">
-                  Password Reset Successful!
-                </h2>
-                
-                <p className="text-white/80 mb-6">
-                  Your password has been changed successfully.
-                  <br />
-                  Redirecting to login...
-                </p>
 
-                <Link
-                  to="/login"
-                  className="inline-block bg-gradient-to-r from-amber-500 to-orange-500 text-white font-semibold py-3 px-6 rounded-xl hover:from-amber-600 hover:to-orange-600 transition-all"
-                >
-                  Go to Login
-                </Link>
-              </div>
-            </>
-          )}
+                  {/* Submit Button */}
+                  <button
+                    onClick={() => { void handleSubmit(); }}
+                    disabled={isLoading}
+                    className="w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-300 transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl flex items-center justify-center gap-2"
+                  >
+                    {isLoading ? (
+                      <>
+                        <BiLoaderAlt className="w-5 h-5 animate-spin" />
+                        Resetting Password...
+                      </>
+                    ) : (
+                      'Reset Password'
+                    )}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                {/* Success Message */}
+                <div className="text-center">
+                  <div className="mb-6 flex justify-center">
+                    <div className="p-4 bg-green-500/20 rounded-full">
+                      <FaCheckCircle className="text-green-400 text-5xl" />
+                    </div>
+                  </div>
+                
+                  <h2 className="text-2xl font-bold text-white mb-3">
+                    Password Reset Successful!
+                  </h2>
+                
+                  <p className="text-white/80 mb-6">
+                    Your password has been changed successfully.
+                    <br />
+                    Redirecting to login...
+                  </p>
+
+                  <Link
+                    to="/login"
+                    className="inline-block bg-gradient-to-r from-amber-500 to-orange-500 text-white font-semibold py-3 px-6 rounded-xl hover:from-amber-600 hover:to-orange-600 transition-all"
+                  >
+                    Go to Login
+                  </Link>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
+
+      <Footer />
     </div>
   );
 };

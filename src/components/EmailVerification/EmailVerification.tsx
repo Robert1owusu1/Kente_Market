@@ -11,6 +11,7 @@ import {
   useGetVerificationStatusQuery 
 } from '../../slices/usersApiSlice';
 import { setCredentials } from '../../slices/authSlice';
+import Footer from "../../components/Footer/Footer";
 
 const EmailVerification = () => {
   const navigate = useNavigate();
@@ -147,118 +148,122 @@ const EmailVerification = () => {
   };
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-gradient-to-br from-slate-900 via-[#431407] to-slate-800 px-4">
-      <div className="w-full max-w-md">
-        <div className="bg-white/10 backdrop-blur-xl rounded-3xl p-8 shadow-2xl border border-white/20">
-          {/* Icon */}
-          <div className="flex justify-center mb-6">
-            <div className="w-20 h-20 bg-amber-400/20 rounded-full flex items-center justify-center">
-              <MdEmail className="text-amber-400 text-4xl" />
-            </div>
-          </div>
-
-          {/* Header */}
-          <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold text-white mb-2">
-              Verify Your Email
-            </h1>
-            <p className="text-white/70">
-              We've sent a 6-digit code to
-            </p>
-            <p className="text-amber-400 font-semibold mt-1">
-              {userInfo?.email}
-            </p>
-          </div>
-
-          {/* OTP Input */}
-          <div className="mb-6">
-            <div className="flex justify-center gap-3 mb-4">
-              {otp.map((digit, index) => (
-                <input
-                  key={index}
-                  id={`otp-${index}`}
-                  type="text"
-                  maxLength={1}
-                  value={digit}
-                  onChange={(e) => handleOtpChange(index, e.target.value)}
-                  onKeyDown={(e) => handleKeyDown(index, e)}
-                  onPaste={index === 0 ? handlePaste : undefined}
-                  disabled={isVerifying}
-                  className="w-12 h-14 text-center text-2xl font-bold bg-white/10 border-2 border-white/20 rounded-xl text-white focus:border-amber-400 focus:bg-white/20 transition-all outline-none disabled:opacity-50"
-                />
-              ))}
-            </div>
-
-            {/* Verification Status */}
-            {verificationStatus && (
-              <div className="text-center text-sm text-white/60">
-                {verificationStatus.isEmailVerified ? (
-                  <span className="text-green-400">Email verified!</span>
-                ) : (
-                  <span>Attempts remaining: {(verificationStatus as { attemptsRemaining?: number }).attemptsRemaining ?? '—'}</span>
-                )}
+    <div className="min-h-screen w-full flex flex-col bg-gradient-to-br from-slate-900 via-[#431407] to-slate-800 bg-[length:400%_400%] animate-gradient-cycle">
+      <div className="flex-1 w-full flex items-center justify-center px-4">
+        <div className="w-full max-w-md">
+          <div className="bg-white/10 backdrop-blur-xl rounded-3xl p-8 shadow-2xl border border-white/20">
+            {/* Icon */}
+            <div className="flex justify-center mb-6">
+              <div className="w-20 h-20 bg-amber-400/20 rounded-full flex items-center justify-center">
+                <MdEmail className="text-amber-400 text-4xl" />
               </div>
-            )}
-          </div>
+            </div>
 
-          {/* Submit Button */}
-          <button
-            onClick={() => handleSubmit()}
-            disabled={isVerifying || otp.some(d => !d)}
-            className="w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-semibold py-3 rounded-xl transition-all duration-300 transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl flex items-center justify-center gap-2 mb-4"
-          >
-            {isVerifying ? (
-              <>
-                <BiLoaderAlt className="w-5 h-5 animate-spin" />
-                Verifying...
-              </>
-            ) : (
-              <>
-                <MdCheckCircle className="w-5 h-5" />
-                Verify Email
-              </>
-            )}
-          </button>
-
-          {/* Resend OTP */}
-          <div className="text-center">
-            <p className="text-white/70 text-sm mb-2">
-              Didn't receive the code?
-            </p>
-            
-            {timeLeft > 0 && !canResend ? (
-              <p className="text-amber-400 font-semibold">
-                Resend in {formatTime(timeLeft)}
+            {/* Header */}
+            <div className="text-center mb-8">
+              <h1 className="text-3xl font-bold text-white mb-2">
+                Verify Your Email
+              </h1>
+              <p className="text-white/70">
+                We've sent a 6-digit code to
               </p>
-            ) : (
-              <button
-                onClick={handleResendOTP}
-                disabled={isResending}
-                className="text-amber-400 hover:text-amber-300 font-semibold transition-colors disabled:opacity-50 flex items-center justify-center gap-2 mx-auto"
-              >
-                {isResending ? (
-                  <>
-                    <BiLoaderAlt className="w-4 h-4 animate-spin" />
-                    Sending...
-                  </>
-                ) : (
-                  'Resend OTP'
-                )}
-              </button>
-            )}
-          </div>
+              <p className="text-amber-400 font-semibold mt-1">
+                {userInfo?.email}
+              </p>
+            </div>
 
-          {/* Back to Login */}
-          <div className="text-center mt-6">
+            {/* OTP Input */}
+            <div className="mb-6">
+              <div className="flex justify-center gap-3 mb-4">
+                {otp.map((digit, index) => (
+                  <input
+                    key={index}
+                    id={`otp-${index}`}
+                    type="text"
+                    maxLength={1}
+                    value={digit}
+                    onChange={(e) => handleOtpChange(index, e.target.value)}
+                    onKeyDown={(e) => handleKeyDown(index, e)}
+                    onPaste={index === 0 ? handlePaste : undefined}
+                    disabled={isVerifying}
+                    className="w-12 h-14 text-center text-2xl font-bold bg-white/10 border-2 border-white/20 rounded-xl text-white focus:border-amber-400 focus:bg-white/20 transition-all outline-none disabled:opacity-50"
+                  />
+                ))}
+              </div>
+
+              {/* Verification Status */}
+              {verificationStatus && (
+                <div className="text-center text-sm text-white/60">
+                  {verificationStatus.isEmailVerified ? (
+                    <span className="text-green-400">Email verified!</span>
+                  ) : (
+                    <span>Attempts remaining: {(verificationStatus as { attemptsRemaining?: number }).attemptsRemaining ?? '—'}</span>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Submit Button */}
             <button
-              onClick={() => navigate('/login')}
-              className="text-white/60 hover:text-white text-sm transition-colors"
+              onClick={() => handleSubmit()}
+              disabled={isVerifying || otp.some(d => !d)}
+              className="w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-semibold py-3 rounded-xl transition-all duration-300 transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl flex items-center justify-center gap-2 mb-4"
             >
-              Back to Login
+              {isVerifying ? (
+                <>
+                  <BiLoaderAlt className="w-5 h-5 animate-spin" />
+                  Verifying...
+                </>
+              ) : (
+                <>
+                  <MdCheckCircle className="w-5 h-5" />
+                  Verify Email
+                </>
+              )}
             </button>
+
+            {/* Resend OTP */}
+            <div className="text-center">
+              <p className="text-white/70 text-sm mb-2">
+                Didn't receive the code?
+              </p>
+            
+              {timeLeft > 0 && !canResend ? (
+                <p className="text-amber-400 font-semibold">
+                  Resend in {formatTime(timeLeft)}
+                </p>
+              ) : (
+                <button
+                  onClick={handleResendOTP}
+                  disabled={isResending}
+                  className="text-amber-400 hover:text-amber-300 font-semibold transition-colors disabled:opacity-50 flex items-center justify-center gap-2 mx-auto"
+                >
+                  {isResending ? (
+                    <>
+                      <BiLoaderAlt className="w-4 h-4 animate-spin" />
+                      Sending...
+                    </>
+                  ) : (
+                    'Resend OTP'
+                  )}
+                </button>
+              )}
+            </div>
+
+            {/* Back to Login */}
+            <div className="text-center mt-6">
+              <button
+                onClick={() => navigate('/login')}
+                className="text-white/60 hover:text-white text-sm transition-colors"
+              >
+                Back to Login
+              </button>
+            </div>
           </div>
         </div>
       </div>
+
+      <Footer />
     </div>
   );
 };

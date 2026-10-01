@@ -6,6 +6,7 @@ import { BiLoaderAlt } from 'react-icons/bi';
 import { FaCheckCircle, FaArrowLeft } from 'react-icons/fa';
 import { toast } from 'react-toastify';
 import logoImg from "../../assets/logo.png";
+import Footer from "../../components/Footer/Footer";
 
 function IconInput({ children, placeholder, type, value, onChange, error, disabled }: {
   children: React.ReactNode;
@@ -104,129 +105,133 @@ const ForgotPassword = () => {
   };
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-gradient-to-br from-slate-900 via-[#431407] to-slate-800 bg-[length:400%_400%] animate-gradient-cycle px-4">
-      <div className="w-full max-w-md">
-        <div className="bg-gradient-to-br from-slate-800/90 to-slate-700/90 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/10 p-8">
+    <div className="min-h-screen w-full flex flex-col bg-gradient-to-br from-slate-900 via-[#431407] to-slate-800 bg-[length:400%_400%] animate-gradient-cycle">
+      <div className="flex-1 w-full flex items-center justify-center px-4">
+        <div className="w-full max-w-md">
+          <div className="bg-gradient-to-br from-slate-800/90 to-slate-700/90 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/10 p-8">
           
-          {/* Logo */}
-          <div className="flex justify-center gap-x-3 items-center mb-8">
-            <div className="p-2 bg-amber-400/20 rounded-xl backdrop-blur-md">
-              <img src={logoImg} alt="Bonwire Kente" className="h-8 w-8 object-contain" width={32} height={32} />
+            {/* Logo */}
+            <div className="flex justify-center gap-x-3 items-center mb-8">
+              <div className="p-2 bg-amber-400/20 rounded-xl backdrop-blur-md">
+                <img src={logoImg} alt="Bonwire Kente" className="h-8 w-8 object-contain" width={32} height={32} />
+              </div>
+              <span className="text-white font-bold text-xl">Bonwire Kente</span>
             </div>
-            <span className="text-white font-bold text-xl">Bonwire Kente</span>
-          </div>
 
-          {!isSuccess ? (
-            <>
-              {/* Header */}
-              <div className="text-center mb-8">
-                <h1 className="text-3xl font-bold text-white mb-2">
-                  Forgot Password?
-                </h1>
-                <p className="text-white/70 text-base">
-                  No worries! Enter your email and we'll send you reset instructions.
-                </p>
-              </div>
-
-              {/* Form */}
-              <form onSubmit={handleSubmit} className="space-y-6">
-                <IconInput
-                  placeholder="Enter your email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => {
-                    setEmail(e.target.value);
-                    setError('');
-                  }}
-                  error={error}
-                  disabled={isLoading}
-                >
-                  <MdOutlineMailOutline />
-                </IconInput>
-
-                {/* Submit Button */}
-                <button
-                  type="submit"
-                  disabled={isLoading}
-                  className="w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-300 transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl flex items-center justify-center gap-2"
-                >
-                  {isLoading ? (
-                    <>
-                      <BiLoaderAlt className="w-5 h-5 animate-spin" />
-                      Sending...
-                    </>
-                  ) : (
-                    'Send Reset Link'
-                  )}
-                </button>
-              </form>
-
-              {/* Back to Login */}
-              <div className="mt-6 text-center">
-                <Link
-                  to="/login"
-                  className="text-amber-400 hover:text-amber-300 font-medium transition-colors inline-flex items-center gap-2"
-                >
-                  <FaArrowLeft className="text-sm" />
-                  Back to Login
-                </Link>
-              </div>
-            </>
-          ) : (
-            <>
-              {/* Success Message */}
-              <div className="text-center">
-                <div className="mb-6 flex justify-center">
-                  <div className="p-4 bg-green-500/20 rounded-full">
-                    <FaCheckCircle className="text-green-400 text-5xl" />
-                  </div>
-                </div>
-                
-                <h2 className="text-2xl font-bold text-white mb-3">
-                  Check Your Email
-                </h2>
-                
-                <p className="text-white/80 mb-2">
-                  We've sent password reset instructions to:
-                </p>
-                
-                <p className="text-amber-400 font-semibold mb-6">
-                  {email}
-                </p>
-                
-                <div className="bg-white/5 border border-white/10 rounded-xl p-4 mb-6">
-                  <p className="text-white/70 text-sm">
-                    <strong className="text-white">Didn't receive the email?</strong>
-                    <br />
-                    Check your spam folder or{' '}
-                    <button
-                      onClick={() => setIsSuccess(false)}
-                      className="text-amber-400 hover:text-amber-300 font-medium"
-                    >
-                      try again
-                    </button>
+            {!isSuccess ? (
+              <>
+                {/* Header */}
+                <div className="text-center mb-8">
+                  <h1 className="text-3xl font-bold text-white mb-2">
+                    Forgot Password?
+                  </h1>
+                  <p className="text-white/70 text-base">
+                    No worries! Enter your email and we'll send you reset instructions.
                   </p>
                 </div>
 
-                <Link
-                  to="/login"
-                  className="inline-flex items-center gap-2 text-amber-400 hover:text-amber-300 font-medium transition-colors"
-                >
-                  <FaArrowLeft className="text-sm" />
-                  Back to Login
-                </Link>
-              </div>
-            </>
-          )}
-        </div>
+                {/* Form */}
+                <form onSubmit={handleSubmit} className="space-y-6">
+                  <IconInput
+                    placeholder="Enter your email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      setError('');
+                    }}
+                    error={error}
+                    disabled={isLoading}
+                  >
+                    <MdOutlineMailOutline />
+                  </IconInput>
 
-        {/* Security Note */}
-        <div className="mt-6 text-center">
-          <p className="text-white/50 text-sm">
- This is a secure password reset process
-          </p>
+                  {/* Submit Button */}
+                  <button
+                    type="submit"
+                    disabled={isLoading}
+                    className="w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-300 transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl flex items-center justify-center gap-2"
+                  >
+                    {isLoading ? (
+                      <>
+                        <BiLoaderAlt className="w-5 h-5 animate-spin" />
+                        Sending...
+                      </>
+                    ) : (
+                      'Send Reset Link'
+                    )}
+                  </button>
+                </form>
+
+                {/* Back to Login */}
+                <div className="mt-6 text-center">
+                  <Link
+                    to="/login"
+                    className="text-amber-400 hover:text-amber-300 font-medium transition-colors inline-flex items-center gap-2"
+                  >
+                    <FaArrowLeft className="text-sm" />
+                    Back to Login
+                  </Link>
+                </div>
+              </>
+            ) : (
+              <>
+                {/* Success Message */}
+                <div className="text-center">
+                  <div className="mb-6 flex justify-center">
+                    <div className="p-4 bg-green-500/20 rounded-full">
+                      <FaCheckCircle className="text-green-400 text-5xl" />
+                    </div>
+                  </div>
+                
+                  <h2 className="text-2xl font-bold text-white mb-3">
+                    Check Your Email
+                  </h2>
+                
+                  <p className="text-white/80 mb-2">
+                    We've sent password reset instructions to:
+                  </p>
+                
+                  <p className="text-amber-400 font-semibold mb-6">
+                    {email}
+                  </p>
+                
+                  <div className="bg-white/5 border border-white/10 rounded-xl p-4 mb-6">
+                    <p className="text-white/70 text-sm">
+                      <strong className="text-white">Didn't receive the email?</strong>
+                      <br />
+                      Check your spam folder or{' '}
+                      <button
+                        onClick={() => setIsSuccess(false)}
+                        className="text-amber-400 hover:text-amber-300 font-medium"
+                      >
+                        try again
+                      </button>
+                    </p>
+                  </div>
+
+                  <Link
+                    to="/login"
+                    className="inline-flex items-center gap-2 text-amber-400 hover:text-amber-300 font-medium transition-colors"
+                  >
+                    <FaArrowLeft className="text-sm" />
+                    Back to Login
+                  </Link>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Security Note */}
+          <div className="mt-6 text-center">
+            <p className="text-white/50 text-sm">
+   This is a secure password reset process
+            </p>
+          </div>
         </div>
       </div>
+
+      <Footer />
     </div>
   );
 };
