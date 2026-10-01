@@ -78,13 +78,15 @@ const FooterLinkList = ({
   links: { title: string; link: string }[];
 }) => (
   <nav aria-label={heading}>
-    <h3 className="text-white text-base font-semibold mb-4">{heading}</h3>
-    <ul className="flex flex-col gap-2.5">
+    <h3 className="text-white text-base font-semibold mb-2">{heading}</h3>
+    {/* Full-width rows with 44px touch targets on mobile (WCAG 2.5.8), tightened
+        back up on wider screens where the pointer is precise. */}
+    <ul className="flex flex-col">
       {links.map((link) => (
         <li key={link.link}>
           <Link
             to={link.link}
-            className="inline-block text-gray-300 text-sm hover:text-primary focus-visible:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded transition-colors duration-200"
+            className="block w-full py-3 sm:py-1.5 text-gray-300 text-sm hover:text-primary focus-visible:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded transition-colors duration-200"
           >
             {link.title}
           </Link>
@@ -183,7 +185,7 @@ const SocialTiles = () => (
               target="_blank"
               rel="noopener noreferrer"
               aria-label={`Bonwire Kente on ${label}`}
-              className="flex items-center justify-center w-9 h-9 rounded-full bg-white/10 text-gray-300 hover:bg-primary hover:text-white transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              className="flex items-center justify-center w-11 h-11 sm:w-9 sm:h-9 rounded-full bg-white/10 text-gray-300 hover:bg-primary hover:text-white transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
               {tile}
             </a>
@@ -191,7 +193,7 @@ const SocialTiles = () => (
             <span
               aria-label={`${label} (not configured)`}
               title={`${label} (not configured)`}
-              className="flex items-center justify-center w-9 h-9 rounded-full bg-white/5 text-gray-500 cursor-not-allowed"
+              className="flex items-center justify-center w-11 h-11 sm:w-9 sm:h-9 rounded-full bg-white/5 text-gray-500 cursor-not-allowed"
             >
               {tile}
             </span>
@@ -271,35 +273,37 @@ const Footer = ({ className = '' }: { className?: string }) => {
             <FooterNewsletter />
 
             <div>
-              <h3 className="text-white text-base font-semibold mb-4">Contact</h3>
-              <ul className="space-y-3 text-gray-300 text-sm">
+              <h3 className="text-white text-base font-semibold mb-2">Contact</h3>
+              <ul className="text-gray-300 text-sm">
                 <li className="flex items-start gap-2.5">
                   <FaLocationArrow
-                    className="text-primary mt-0.5 shrink-0"
+                    className="text-primary mt-3.5 shrink-0"
                     aria-hidden="true"
                   />
-                  <span>Bonwire, Ashanti Region, Ghana</span>
+                  <span className="inline-flex items-center min-h-[44px]">
+                    Bonwire, Ashanti Region, Ghana
+                  </span>
                 </li>
                 <li className="flex items-start gap-2.5">
                   <FaMobileAlt
-                    className="text-primary mt-0.5 shrink-0"
+                    className="text-primary mt-3.5 shrink-0"
                     aria-hidden="true"
                   />
                   <a
                     href="tel:+233200000000"
-                    className="hover:text-primary transition-colors duration-200"
+                    className="inline-flex items-center min-h-[44px] hover:text-primary transition-colors duration-200"
                   >
                     +233 20 000 0000
                   </a>
                 </li>
                 <li className="flex items-start gap-2.5">
                   <FaEnvelope
-                    className="text-primary mt-0.5 shrink-0"
+                    className="text-primary mt-3.5 shrink-0"
                     aria-hidden="true"
                   />
                   <a
                     href="mailto:hello@bonwirekente.com"
-                    className="hover:text-primary transition-colors duration-200 break-all"
+                    className="inline-flex items-center min-h-[44px] hover:text-primary transition-colors duration-200 break-all"
                   >
                     hello@bonwirekente.com
                   </a>
@@ -319,12 +323,12 @@ const Footer = ({ className = '' }: { className?: string }) => {
           <p className="text-gray-400 text-xs sm:text-sm">
             &copy; {year} Bonwire Kente. Handwoven in Ghana.
           </p>
-          <ul className="flex items-center gap-5 text-xs sm:text-sm">
+          <ul className="flex items-center gap-3 text-xs sm:text-sm">
             {LegalLinks.map((link) => (
               <li key={link.link}>
                 <Link
                   to={link.link}
-                  className="text-gray-400 hover:text-primary transition-colors duration-200"
+                  className="inline-flex items-center min-h-[44px] sm:min-h-[28px] px-1 sm:px-0 text-gray-400 hover:text-primary transition-colors duration-200"
                 >
                   {link.title}
                 </Link>
