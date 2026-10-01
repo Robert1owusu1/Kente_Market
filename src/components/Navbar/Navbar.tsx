@@ -309,8 +309,10 @@ const Navbar = () => {
             {/* Right Side Actions */}
             <div className='flex justify-between items-center gap-2 sm:gap-4'>
               
- {/* Desktop Search */}
-              <div className='relative group hidden sm:block' ref={searchRef}>
+ {/* Desktop Search. Paired with the full-width search bar below at lg, not
+             sm: at 640-1023px this input sat next to the logo and the account
+             actions and pushed the header row ~41px past the viewport. */}
+              <div className='relative group hidden lg:block' ref={searchRef}>
                 <div className="relative">
                   <input 
                     id='search' 
@@ -540,7 +542,7 @@ const Navbar = () => {
 
  {/* Mobile Menu Button */}
               <button 
-                className="sm:hidden block text-3xl focus:outline-none" 
+                className="lg:hidden block text-3xl focus:outline-none" 
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
                 aria-label="Toggle mobile menu"
               >
@@ -551,7 +553,7 @@ const Navbar = () => {
         </div>
 
  {/* Mobile Search Bar */}
-        <div className="sm:hidden px-4 py-2 bg-white dark:bg-gray-900">
+        <div className="lg:hidden px-4 py-2 bg-white dark:bg-gray-900">
           <div className="relative w-full" ref={searchRef}>
             <div className="flex items-center gap-2 bg-gray-100 dark:bg-gray-800 rounded-full px-4 py-2">
               <input 
@@ -634,9 +636,12 @@ const Navbar = () => {
           </div>
         </div>
 
- {/* Desktop Navigation Menu */}
+ {/* Desktop Navigation Menu. The link row is content-sized at roughly 870px
+          and flex items refuse to shrink below their content, so switching this
+          on at sm (640px) forced the whole page to scroll sideways anywhere
+          under ~940px. lg is the first breakpoint where it actually fits. */}
         <div className="flex justify-center">
-          <ul className="sm:flex hidden items-center gap-4">
+          <ul className="lg:flex hidden items-center gap-4">
             {Menu.map((data) => (
               <li key={data.id}>
                 <a 
@@ -673,7 +678,7 @@ const Navbar = () => {
  {/* Mobile Menu */}
         {mobileMenuOpen && (
           <div
-            className="sm:hidden bg-white dark:bg-gray-900 border-t border-gray-100 dark:border-gray-800 max-h-[calc(100dvh-112px)] overflow-y-auto overscroll-contain shadow-md pb-[max(1rem,env(safe-area-inset-bottom))]"
+            className="lg:hidden bg-white dark:bg-gray-900 border-t border-gray-100 dark:border-gray-800 max-h-[calc(100dvh-112px)] overflow-y-auto overscroll-contain shadow-md pb-[max(1rem,env(safe-area-inset-bottom))]"
             role="dialog"
             aria-label="Mobile navigation menu"
           >
