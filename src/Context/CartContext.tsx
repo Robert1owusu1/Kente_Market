@@ -96,7 +96,7 @@ interface CartContextValue {
 // pre-checkout validation and the order payload both read `item.colors`, but
 // some add-to-cart entry points only sent `colorsAvailable`/`selectedColor`.
 // Normalize on load so carts saved before that fix still pass validation.
-const normalizeColors = (item: CartItem): CartItem => {
+export const normalizeColors = (item: CartItem): CartItem => {
   if (Array.isArray(item.colors) && item.colors.length > 0) return item;
   // Prefer the confirmed selection; fall back to the first available option.
   // ("default" is a placeholder some card payloads pass when a product has no
@@ -114,7 +114,7 @@ const normalizeColors = (item: CartItem): CartItem => {
 // Remap them on load — without this a cart restored from the server has
 // `quantity: undefined`, so every count/total renders "NaN" and checkout
 // validation misreads the line.
-const remapServerLine = (item: CartItem): CartItem => {
+export const remapServerLine = (item: CartItem): CartItem => {
   const raw = item as unknown as Record<string, unknown>;
   // Already client-shaped (id + quantity present) — nothing to do.
   if (raw.id !== undefined && raw.quantity !== undefined) return item;
@@ -131,7 +131,7 @@ const remapServerLine = (item: CartItem): CartItem => {
   };
 };
 
-const migrateCartItem = (item: CartItem): CartItem => {
+export const migrateCartItem = (item: CartItem): CartItem => {
   let next = remapServerLine(item);
   if (next.yards === undefined && (next.selectedSize || next.size)) {
     next = { ...next, yards: next.selectedSize || next.size };

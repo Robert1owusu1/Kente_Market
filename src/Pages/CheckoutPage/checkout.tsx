@@ -17,6 +17,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { useCart } from '../../Context/CartContext';
 import { calcOrderTotals } from '../../utils/pricing';
+import { toPesewas, resolvePayableTotal } from '../../utils/payments';
 import { sanitizeInput } from '../../utils/sanitize';
 import {
   savePendingPaymentRef,
@@ -204,8 +205,8 @@ export default function CheckoutPage() {
   // not loaded yet (or if that request fails).
   const { data: serverOrder } = useGetOrderByIdQuery(preOrderId ?? 0, { skip: !preOrderId });
   const serverTotal = serverOrder ? Number(serverOrder.totalAmount) : NaN;
-  const payableTotal = Number.isFinite(serverTotal) && serverTotal > 0 ? serverTotal : total;
-  const payableAmountInPesewas = Math.round(payableTotal * 100);
+  const payableTotal = resolvePayableTotal(serverTotal, total);
+  const payableAmountInPesewas = toPesewas(payableTotal);
 
   // Validate total amount
   useEffect(() => {
