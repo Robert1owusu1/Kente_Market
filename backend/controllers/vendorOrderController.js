@@ -105,7 +105,7 @@ const PIPELINE = ['processing', 'packaging', 'shipped', 'arrived', 'delivered'];
 
 // All distinct vendor user-ids with lines on the order (P0-3 consensus set).
 // Inline item.vendorId wins; legacy lines resolve via the product row.
-const getOrderVendorIds = async (order) => {
+export const getOrderVendorIds = async (order) => {
   const items = Array.isArray(order.items) ? order.items : [];
   const ids = new Set(
     items.map((it) => parseInt(it?.vendorId, 10)).filter((v) => Number.isFinite(v))
