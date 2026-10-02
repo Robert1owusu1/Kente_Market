@@ -4,6 +4,9 @@ import ReturnRequest from "../models/returnModel.js";
 import Order from "../models/orderModel.js";
 import pool from "../config/db.js";
 import { voidEscrowForOrder } from "../Services/escrowService.js";
+import { voidVendorEscrow } from "../Services/escrowService.js";
+import { getOrderVendorIds } from "./vendorOrderController.js";
+import { round2 } from "../../shared/pricing.js";
 import paystackServices from "../Services/paystackservices.js";
 import { recordFinancialEvent } from "../Services/ledgerService.js";
 import Coupon from "../models/couponModel.js";
@@ -105,6 +108,62 @@ export const getAllReturns = async (req, res) => {
   }
 };
 
+/**
+ * Read-only partial-refund validation (P1). Verifies the vendor owns lines on
+ * the paid order and the amount equals their full lines subtotal (to the
+ * pesewa) within the remaining refundable total. No state changes.
+ * @param {any} orderId
+ * @param {number} vendorId
+ * @param {number} amount
+ * @returns {Promise<{ valid: boolean, message?: string, order?: any, ownLines?: any[], ownSubtotal?: number, amount?: number }>}
+ */
+const validatePartialRefund = async (orderId, vendorId, amount) => {
+  const order = await Order.findById(orderId);
+  if (!order) return { valid: false, message: 'Order not found' };
+  if (order.paymentStatus !== 'paid' || !order.paymentReference) {
+    return { valid: false, message: 'Partial refunds require a paid order with a payment reference' };
+  }
+  const vendorIds = await getOrderVendorIds(order);
+  if (!vendorIds.includes(vendorId)) {
+    return { valid: false, message: 'That vendor has no items on this order' };
+  }
+  const rawItems = Array.isArray(order.items) ? order.items : [];
+  const needLookup = rawItems.some((it) => it?.vendorId == null);
+  /** @type {Map<string, number>} */
+  const vendorByProduct = new Map();
+  if (needLookup) {
+    const pids = [...new Set(rawItems.map((it) => it?.product ?? it?.productId).filter((v) => v != null))];
+    if (pids.length > 0) {
+      const placeholders = pids.map(() => '?').join(', ');
+      const [prows] = await pool.execute(
+        `SELECT id, vendorId FROM product WHERE id IN (${placeholders})`,
+        pids
+      );
+      for (const pr of prows) vendorByProduct.set(String(pr.id), parseInt(pr.vendorId, 10));
+    }
+  }
+  const owns = (/** @type {any} */ it) => {
+    if (it?.vendorId != null && parseInt(it.vendorId, 10) === vendorId) return true;
+    return vendorByProduct.get(String(it?.product ?? it?.productId)) === vendorId;
+  };
+  const ownLines = rawItems.filter(owns);
+  if (ownLines.length === 0) {
+    return { valid: false, message: 'No refundable lines found for that vendor' };
+  }
+  const ownSubtotal = round2(ownLines.reduce((sum, it) => sum + (Number(it.price) || 0) * (parseInt(it.qty ?? it.quantity, 10) || 1), 0));
+  if (Math.abs(amount - ownSubtotal) >= 0.01) {
+    return {
+      valid: false,
+      message: `Partial refunds cover the vendor's full lines (GH₵${ownSubtotal.toFixed(2)}). Item-level slices are not supported.`,
+    };
+  }
+  const remaining = round2((Number(order.totalAmount) || 0) - (Number(order.refundedAmount) || 0));
+  if (amount - remaining > 0.005) {
+    return { valid: false, message: `Amount exceeds the remaining refundable total (GH₵${remaining.toFixed(2)})` };
+  }
+  return { valid: true, order, ownLines, ownSubtotal, amount };
+};
+
 export const updateReturnStatus = async (req, res) => {
   try {
     if (!isValidId(req.params.id)) {
@@ -121,11 +180,107 @@ export const updateReturnStatus = async (req, res) => {
       return res.status(404).json({ message: "Return request not found" });
     }
 
+    // P1 partial pre-validation (read-only): all 400s must fire BEFORE the
+    // one-way pending->approved flip below, or a rejected amount would leave
+    // the return approved with no money moved and no retry possible.
+    const partialVendorId = req.body?.vendorId != null ? parseInt(req.body.vendorId, 10) : null;
+    const partialAmountRaw = req.body?.amount != null ? Number(req.body.amount) : null;
+    const wantsPartial = status === 'approved' && partialVendorId != null;
+    /** @type {{ order: any, ownLines: any[], ownSubtotal: number, amount: number } | null} */
+    let partialCtx = null;
+    if (wantsPartial) {
+      if (existing.status !== 'pending' || !existing.orderId) {
+        return res.status(400).json({ message: 'Return is not approvable' });
+      }
+      if (!Number.isFinite(partialVendorId)) {
+        return res.status(400).json({ message: 'Valid vendorId is required for a partial refund' });
+      }
+      if (partialAmountRaw == null || !Number.isFinite(partialAmountRaw) || partialAmountRaw <= 0) {
+        return res.status(400).json({ message: 'A positive amount is required for a partial refund' });
+      }
+      partialCtx = await validatePartialRefund(existing.orderId, partialVendorId, round2(partialAmountRaw));
+      if (!partialCtx.valid) {
+        return res.status(400).json({ message: partialCtx.message });
+      }
+    }
+
     const returnRequest = await ReturnRequest.updateStatus(req.params.id, status, adminNotes);
 
     // Money effects below must fire exactly once. The model's state machine
     // makes pending -> approved a one-way door, but guard on the pre-update
     // status too so a retried request can never double-refund.
+    // P1 partial (per-vendor) refund: body { vendorId, amount }. Covers that
+    // vendor's FULL lines only (amount must equal their lines subtotal to the
+    // pesewa) — item-level slices are not supported in pilot. The innocent
+    // vendors' allocations, stock and payouts are untouched; the order stays
+    // paid with refundedAmount incremented. Coupon uses stay consumed.
+    if (partialCtx) {
+      const { order, ownLines, ownSubtotal, amount } = partialCtx;
+      // Re-check the mutable gate (paid-ness) after the flip; the structural
+      // checks above already passed pre-flip.
+      const fresh = await Order.findById(existing.orderId);
+      if (!fresh || fresh.paymentStatus !== 'paid' || !fresh.paymentReference) {
+        return res.status(400).json({ message: 'Partial refunds require a paid order with a payment reference' });
+      }
+      const refundMarker = `refund:${order.id}:${req.params.id}:partial:${partialVendorId}`;
+      await pool.execute(`UPDATE orders SET refundReference = ? WHERE id = ?`, [refundMarker, existing.orderId])
+        .catch(() => {});
+      let refund;
+      try {
+        refund = await paystackServices.refundTransaction(
+          order.paymentReference, amount, `Return ${req.params.id} partial (vendor ${partialVendorId})`
+        );
+      } catch (refundErr) {
+        // Unknown outcome: keep the marker so the reconciler alerts for
+        // dashboard verification instead of touching money.
+        return res.status(500).json({
+          message: `Refund could not be initiated (${refundErr.message}). Verify in Paystack before retrying.`,
+        });
+      }
+      if (!refund?.status) {
+        await pool.execute(`UPDATE orders SET refundReference = NULL WHERE id = ?`, [existing.orderId])
+          .catch(() => {});
+        return res.status(400).json({
+          message: `Refund failed (${refund?.message || 'unknown reason'}). No money moved.`,
+        });
+      }
+      // Money moved: void ONLY this vendor's escrow, restore ONLY their lines.
+      try {
+        await voidVendorEscrow(existing.orderId, partialVendorId);
+      } catch (err) {
+ console.warn(` Partial return ${req.params.id}: vendor escrow void failed (${err.message}) — reconciler will alert`);
+      }
+      try {
+        const skipProductIds = new Set();
+        const storedConflicts = order.stockConflicts;
+        const conflicts = Array.isArray(storedConflicts) ? storedConflicts : [];
+        for (const c of conflicts) {
+          if (c?.productId) skipProductIds.add(c.productId);
+        }
+        const ownForRestore = ownLines.filter((it) => !skipProductIds.has(parseInt(it.product ?? it.productId, 10)));
+        await restoreStockForOrder(ownForRestore);
+      } catch (restoreErr) {
+ console.warn(` Partial return ${req.params.id}: stock restore failed (${restoreErr.message})`);
+      }
+      await recordFinancialEvent({
+        eventType: 'refund',
+        direction: 'out',
+        amount,
+        vendorId: partialVendorId,
+        orderId: order.id,
+        reference: order.paymentReference,
+        providerReference: refund?.data?.failure_reference || order.paymentReference,
+        dedupeKey: `refund:${order.id}:${req.params.id}:partial:${partialVendorId}`,
+        payload: { reason: `Return ${req.params.id} partial (vendor ${partialVendorId})`, ownSubtotal },
+      }).catch(() => {});
+      await pool.execute(
+        `UPDATE orders SET refundedAmount = refundedAmount + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        [amount, existing.orderId]
+      ).catch((e) => console.warn(` Could not increment refundedAmount: ${e.message}`));
+      const updatedReturn = await ReturnRequest.findById(req.params.id);
+      return res.json({ message: 'Partial vendor refund issued', returnRequest: updatedReturn, refundedAmount: amount, vendorId: partialVendorId });
+    }
+
     if (status === 'approved' && existing.status === 'pending' && existing.orderId) {
       // Void escrow so funds are not paid to the vendor: held allocations are
       // voided and already-credited (advance) funds are clawed back from the
