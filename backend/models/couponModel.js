@@ -154,7 +154,16 @@ class Coupon {
     }
   }
 
-  static async validate(code, cartTotal) {
+  /**
+   * Validate a coupon code against the cart.
+   * Vendor coupons (coupon.vendorId != null) are valid ONLY when every cart
+   * line belongs to the issuing vendor (P0-4) — otherwise one vendor's promo
+   * discounts (and via pro-rata escrow, is part-funded by) another vendor's
+   * goods. Platform coupons (vendorId NULL) apply to any mix. Omitting
+   * vendorIds preserves the legacy base checks; order placement always passes
+   * them, so checkout is authoritative.
+   */
+  static async validate(code, cartTotal, { vendorIds } = {}) {
     let connection;
     try {
       connection = await pool.getConnection();
@@ -185,6 +194,23 @@ class Coupon {
         };
       }
 
+      // P0-4 vendor scope.
+      if (coupon.vendorId !== null && coupon.vendorId !== undefined) {
+        const scope = parseInt(coupon.vendorId, 10);
+        const ids = [...new Set(
+          (Array.isArray(vendorIds) ? vendorIds : [])
+            .map((v) => parseInt(v, 10))
+            .filter((v) => Number.isFinite(v))
+        )];
+        if (ids.length === 0 || !ids.every((v) => v === scope)) {
+          return {
+            valid: false,
+            coupon: Coupon.toPublic(coupon),
+            message: "This coupon is only valid for products from its issuing store",
+          };
+        }
+      }
+
       return { valid: true, coupon: Coupon.toPublic(coupon), message: "Coupon is valid" };
     } catch (err) {
       console.error("DB Error (Coupon.validate):", err.message);
@@ -211,6 +237,7 @@ class Coupon {
       maxUses: coupon.maxUses,
       expiresAt: coupon.expiresAt,
       isActive: coupon.isActive,
+      vendorId: coupon.vendorId ?? null,
     };
   }
 
@@ -227,13 +254,36 @@ class Coupon {
         "UPDATE coupons SET usesUsed = usesUsed + 1 WHERE id = ? AND (maxUses IS NULL OR usesUsed < maxUses)",
         [parseInt(id)]
       );
+      // P0-5: report the race loser instead of silently keeping the discount.
       if (result.affectedRows === 0) {
  console.warn(` Coupon ${id}: usage not consumed — limit reached at payment time`);
       }
-      return await Coupon.findById(id);
+      const consumed = result.affectedRows > 0;
+      return { consumed, coupon: await Coupon.findById(id) };
     } catch (err) {
       console.error("DB Error (Coupon.incrementUses):", err.message);
       throw new Error(`Error incrementing coupon uses: ${err.message}`);
+    } finally {
+      if (connection) connection.release();
+    }
+  }
+  /**
+   * Release one coupon use when a paid order is cancelled/refunded (P0-6).
+   * Only call when the order actually consumed a use (i.e. it was paid).
+   * Never drops below zero.
+   */
+  static async decrementUses(id) {
+    let connection;
+    try {
+      connection = await pool.getConnection();
+      await connection.execute(
+        "UPDATE coupons SET usesUsed = GREATEST(usesUsed - 1, 0) WHERE id = ?",
+        [parseInt(id)]
+      );
+      return await Coupon.findById(id);
+    } catch (err) {
+      console.error("DB Error (Coupon.decrementUses):", err.message);
+      throw new Error(`Error decrementing coupon uses: ${err.message}`);
     } finally {
       if (connection) connection.release();
     }

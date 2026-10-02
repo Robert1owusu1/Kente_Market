@@ -1,6 +1,7 @@
 // FILE LOCATION: backend/controllers/couponController.js
 // DESCRIPTION: Coupon CRUD and public validation
 import Coupon from "../models/couponModel.js";
+import pool from "../config/db.js";
 import isValidId from "../utils/isValidId.js";
 import { auditFromRequest } from "../utils/auditLog.js";
 
@@ -110,7 +111,7 @@ export const deleteCoupon = async (req, res) => {
 
 export const validateCoupon = async (req, res) => {
   try {
-    const { code, cartTotal } = req.body || {};
+    const { code, cartTotal, items } = req.body || {};
 
     if (!code || !code.trim()) {
       return res.status(400).json({ message: "Coupon code is required" });
@@ -119,7 +120,26 @@ export const validateCoupon = async (req, res) => {
       return res.status(400).json({ message: "A valid cart total is required" });
     }
 
-    const result = await Coupon.validate(code.trim(), parseFloat(cartTotal));
+    // P0-4: optional cart lines let the pre-checkout validator enforce vendor
+    // scope early (authoritative check still runs at order placement).
+    // Bounded + server-resolved: product ids come from the client but ownership
+    // always comes from DB rows.
+    let vendorIds;
+    if (Array.isArray(items) && items.length > 0) {
+      const pids = [...new Set(
+        items.slice(0, 50).map((it) => parseInt(it?.product ?? it?.productId ?? it?.id, 10)).filter((v) => Number.isFinite(v))
+      )];
+      if (pids.length > 0) {
+        const placeholders = pids.map(() => "?").join(", ");
+        const [rows] = await pool.execute(
+          `SELECT id, vendorId FROM product WHERE id IN (${placeholders})`,
+          pids
+        );
+        vendorIds = rows.map((r) => r.vendorId);
+      }
+    }
+
+    const result = await Coupon.validate(code.trim(), parseFloat(cartTotal), { vendorIds });
     const safeCoupon = Coupon.toPublic(result.coupon);
     if (!result.valid) {
       return res.status(400).json({ message: result.message, coupon: safeCoupon });

@@ -7,8 +7,8 @@ import { apiLimiter, webhookLimiter } from '../middleware/rateLimitMiddleware.js
 import {
   holdEscrowForOrder,
   trackPlatformRevenue,
+  consumeCouponForOrder,
 } from '../Services/escrowService.js';
-import Coupon from '../models/couponModel.js';
 import { computeExpectedCompletion } from '../utils/computeExpectedCompletion.js';
 import { decrementStockForOrder } from '../controllers/orderController.js';
 import { sendOrderConfirmationEmail } from '../utils/orderEmailService.js';
@@ -183,10 +183,10 @@ router.post('/verify-paystack', protect, async (req, res) => {
           } catch (stockErr) {
  console.warn(` Could not decrement stock for order ${orderId}: ${stockErr.message}`);
           }
-          // Consume deferred coupon usage
+          // Consume deferred coupon usage (P0-5: race losers journaled, not silent).
           if (order.couponId) {
             try {
-              await Coupon.incrementUses(order.couponId);
+              await consumeCouponForOrder(order.couponId, orderId);
             } catch (couponErr) {
               console.error(`Failed to increment coupon uses: ${couponErr.message}`);
             }
@@ -420,12 +420,14 @@ router.post('/paystack-webhook', webhookLimiter, async (req, res) => {
  console.warn(` Could not seed expected completion date: ${compErr.message}`);
                   }
 
-                  // Consume the deferred coupon usage now that payment is confirmed.
+                  // Consume the deferred coupon usage now that payment is confirmed
+                  // (P0-5: race losers are journaled + flagged for reconcile).
                   if (orderRows[0].couponId) {
                     try {
-                      const { default: Coupon } = await import('../models/couponModel.js');
-                      await Coupon.incrementUses(orderRows[0].couponId);
+                      const { consumed } = await consumeCouponForOrder(orderRows[0].couponId, orderId);
+                      if (consumed) {
  console.log(` Coupon ${orderRows[0].couponId} consumed on confirmed payment for order ${orderId}`);
+                      }
                     } catch (couponErr) {
  console.warn(` Could not increment coupon on payment: ${couponErr.message}`);
                     }

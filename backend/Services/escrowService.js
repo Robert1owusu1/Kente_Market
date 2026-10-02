@@ -10,6 +10,7 @@ import { recordFinancialEvent } from './ledgerService.js';
 import { PLATFORM_FEE_RATE, ESCROW_RELEASE_DAYS } from '../config/businessConfig.js';
 import { resolveCommissionRate } from './commissionService.js';
 import Notification from '../models/notificationModel.js';
+import Coupon from '../models/couponModel.js';
 import { round2, calcEscrowFees } from '../../shared/pricing.js';
 import crypto from 'crypto';
 
@@ -215,6 +216,58 @@ export const createEscrowAllocations = async (orderId, items, { advanceRatio = 0
     created += insert.affectedRows;
   }
   return created;
+};
+
+/**
+ * Re-allocate a still-unpaid order's escrow after its discount changed
+ * (P0-6: owner applies a coupon to the pre-created order). Only 'pending'
+ * allocations are replaced — anything already held/released is money in
+ * motion and must never be rewritten here. Safe to retry: delete + recreate
+ * converges to the same rows.
+ */
+export const reallocateOrderEscrow = async (orderId, items, { discount = 0 } = {}) => {
+  await pool.execute(
+    `DELETE FROM escrow_allocations WHERE orderId = ? AND status = 'pending'`,
+    [parseInt(orderId, 10)]
+  );
+  return createEscrowAllocations(orderId, items, { discount });
+};
+
+/**
+ * Consume one coupon use for a just-paid order (P0-5). When the usage cap was
+ * reached between validation and payment (race loser), the order already
+ * carries the discount and cannot be re-charged in-flow: journal a
+ * `coupon.exhausted` event (idempotent per order+coupon) and notify admins for
+ * manual reconcile instead of silently over-funding the coupon.
+ */
+export const consumeCouponForOrder = async (couponId, orderId) => {
+  if (!couponId) return { consumed: true, coupon: null };
+  const { consumed, coupon } = await Coupon.incrementUses(couponId);
+  if (!consumed) {
+    try {
+      await recordFinancialEvent({
+        eventType: 'coupon.exhausted',
+        direction: 'info',
+        amount: 0,
+        orderId,
+        dedupeKey: `coupon.exhausted:${orderId}:${couponId}`,
+        payload: { couponId, orderId },
+      });
+    } catch { /* journal is best-effort */ }
+    try {
+      const [admins] = await pool.execute(`SELECT id FROM users WHERE role = 'admin' LIMIT 5`);
+      for (const admin of admins) {
+        await Notification.create({
+          userId: admin.id,
+          type: 'system',
+          title: 'Coupon over-redeemed at payment',
+          message: `Order #${orderId} was paid with a coupon that hit its usage cap at payment time. The discount was honored; reconcile manually.`,
+          link: `/admin/orders`,
+        });
+      }
+    } catch { /* notify is best-effort */ }
+  }
+  return { consumed, coupon };
 };
 
 /**
@@ -828,6 +881,20 @@ export const recoverStuckPendingOrders = async () => {
         if (flipResult.affectedRows === 0) continue;
 
         await holdEscrowForOrder(order.id);
+
+        // P0-6: consume the coupon like every other paid path (previously
+        // skipped here, so recovered orders never burned a use).
+        try {
+          const [[couponRow]] = await pool.execute(
+            `SELECT couponId FROM orders WHERE id = ?`,
+            [order.id]
+          );
+          if (couponRow?.couponId) {
+            await consumeCouponForOrder(couponRow.couponId, order.id);
+          }
+        } catch (couponErr) {
+ console.warn(` Could not consume coupon for recovered order ${order.id}: ${couponErr.message}`);
+        }
 
         // This path acts like the webhook: decrement in-stock inventory now
         // that the order is confirmed paid (guarded so it runs once, and the
