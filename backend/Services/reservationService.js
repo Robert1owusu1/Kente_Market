@@ -13,6 +13,7 @@
 // payment lands precisely while a reservation is being released, stock can
 // never go negative or be double-credited.
 import pool from '../config/db.js';
+import { recordStockMove } from './stockMoves.js';
 
 const parseItems = (items) => {
   if (Array.isArray(items)) return items;
@@ -45,6 +46,7 @@ export const reserveStockForItems = async (requestedItems) => {
     if (res.affectedRows > 0) {
       reserved.set(r.productId, (reserved.get(r.productId) || 0) + r.quantity);
       r.reserved = r.quantity;
+      await recordStockMove({ productId: r.productId, delta: -r.quantity, reason: 'reserve' });
     } else {
       const [[cur]] = await pool.execute(`SELECT stock FROM product WHERE id = ?`, [r.productId]);
       failures.push({
@@ -121,6 +123,9 @@ export const releaseExpiredReservations = async (maxAgeMinutes = 45) => {
         );
         await connection.commit();
         released += 1;
+        for (const [productId, qty] of reservedByProduct) {
+          await recordStockMove({ productId, delta: qty, reason: 'expiry-release', orderId: order.id });
+        }
  console.log(`⏱ Released expired stock reservation for order ${order.id}`);
       } else {
         await connection.rollback();
