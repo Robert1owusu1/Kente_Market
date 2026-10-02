@@ -539,6 +539,19 @@ export const getOrderById = async (req, res) => {
     const allocations = await getOrderAllocations(req.params.id);
     order.escrowAllocations = allocations;
 
+    // P1: parcel tracking numbers, one per vendor shipment. Numbers only —
+    // vendor identities stay hidden from the customer view.
+    try {
+      const [trows] = await pool.execute(
+        `SELECT trackingNumber FROM order_vendor_marks
+         WHERE orderId = ? AND trackingNumber IS NOT NULL AND trackingNumber <> ''`,
+        [req.params.id]
+      );
+      order.trackingNumbers = [...new Set(trows.map((r) => r.trackingNumber))];
+    } catch {
+      order.trackingNumbers = [];
+    }
+
     res.json(order);
   } catch (error) {
     console.error('Error fetching order:', error);
