@@ -13,6 +13,8 @@ import { computeExpectedCompletion } from "../utils/computeExpectedCompletion.js
 import { round2, calcSubtotal, calcTax, calcShipping, calcCouponDiscount, calcOrderTotals } from "../../shared/pricing.js";
 import {
   createEscrowAllocations,
+  reallocateOrderEscrow,
+  consumeCouponForOrder,
   releaseEscrowForOrder,
   setEscrowReleaseDeadline,
   getOrderAllocations,
@@ -384,7 +386,12 @@ export const addOrderItems = async (req, res) => {
     let appliedCouponId = null;
     const couponCode = (req.body.couponCode || "").trim();
     if (couponCode) {
-      const couponResult = await Coupon.validate(couponCode, subtotal);
+      // P0-4: vendor coupons apply only to their own vendor's cart. The vendor
+      // set comes from authoritative DB rows fetched above, never the client.
+      const cartVendorIds = [...new Set(
+        requested.map((r) => productMap.get(r.productId)?.vendorId).filter((v) => v != null)
+      )];
+      const couponResult = await Coupon.validate(couponCode, subtotal, { vendorIds: cartVendorIds });
       if (!couponResult.valid) {
         return res.status(400).json({ message: couponResult.message });
       }
@@ -641,7 +648,22 @@ export const updateOrder = async (req, res) => {
       }
       const rawItems = Array.isArray(existingOrder.items) ? existingOrder.items : [];
       const subtotal = calcSubtotal(rawItems);
-      const couponResult = await Coupon.validate(couponCode, subtotal);
+      // P0-4: scope check against the STORED items. Prefer the inline vendorId
+      // persisted at creation; fall back to the product row for legacy orders.
+      const inlineVendorIds = rawItems.map((it) => it?.vendorId).filter((v) => v != null);
+      let storedVendorIds = [...new Set(inlineVendorIds)];
+      if (storedVendorIds.length === 0 && rawItems.length > 0) {
+        const pids = [...new Set(rawItems.map((it) => it?.product ?? it?.productId).filter((v) => v != null))];
+        if (pids.length > 0) {
+          const placeholders = pids.map(() => "?").join(", ");
+          const [vrows] = await pool.execute(
+            `SELECT id, vendorId FROM product WHERE id IN (${placeholders})`,
+            pids
+          );
+          storedVendorIds = [...new Set(vrows.map((r) => r.vendorId).filter((v) => v != null))];
+        }
+      }
+      const couponResult = await Coupon.validate(couponCode, subtotal, { vendorIds: storedVendorIds });
       if (!couponResult.valid) {
         return res.status(400).json({ message: couponResult.message });
       }
@@ -664,6 +686,33 @@ export const updateOrder = async (req, res) => {
     }
 
     const updatedOrder = await Order.update(req.params.id, body);
+
+    // P0-6: the discount just changed on a still-pending order, so the
+    // pending escrow allocations (computed gross at creation) are stale.
+    // Re-allocate net of the new discount. Only runs on the owner-coupon
+    // path (body.discount set above while order is unpaid); held/released
+    // allocations are never touched by reallocateOrderEscrow.
+    if (req.user.role !== 'admin' && couponCode && body.discount !== undefined) {
+      try {
+        const storedItems = Array.isArray(updatedOrder.items) ? updatedOrder.items : [];
+        await reallocateOrderEscrow(req.params.id, storedItems, { discount: body.discount });
+      } catch (reallocErr) {
+        console.warn(` Coupon escrow realloc failed for order ${req.params.id}: ${reallocErr.message}`);
+        try {
+          const [adminUsers] = await pool.execute(`SELECT id FROM users WHERE role = 'admin' LIMIT 5`);
+          for (const admin of adminUsers) {
+            await Notification.create({
+              userId: admin.id,
+              type: 'system',
+              title: 'Escrow realloc failed after coupon change',
+              message: `Order #${req.params.id} discount changed but escrow re-allocation failed. Re-run allocation manually before payment.`,
+              link: `/admin/orders`,
+            });
+          }
+        } catch { /* notify is best-effort */ }
+      }
+    }
+
     res.json({ message: "Order updated successfully", order: updatedOrder });
   } catch (error) {
     console.error('Error updating order:', error);
@@ -731,11 +780,12 @@ export const updateOrderToPaid = async (req, res) => {
         await decrementStockForOrder(paidItems, req.params.id);
       }
 
-      // Consume deferred coupon usage on admin-confirmed payment
+      // Consume deferred coupon usage on admin-confirmed payment (P0-5:
+      // race losers are journaled + flagged, not silently over-funded).
       const freshOrder = await Order.findById(req.params.id);
       if (freshOrder?.couponId) {
         try {
-          await Coupon.incrementUses(freshOrder.couponId);
+          await consumeCouponForOrder(freshOrder.couponId, req.params.id);
         } catch (e) {
  console.warn(` Could not increment coupon usage: ${e.message}`);
         }
@@ -978,10 +1028,21 @@ export const cancelOrder = async (req, res) => {
       }
     }
 
+    const wasPaid = order.paymentStatus === 'paid';
     await Order.update(req.params.id, {
       orderStatus: "cancelled",
-      paymentStatus: order.paymentStatus === 'paid' ? 'refunded' : order.paymentStatus,
+      paymentStatus: wasPaid ? 'refunded' : order.paymentStatus,
     });
+
+    // P0-6: a use was consumed at payment; the refund frees it again. Only for
+    // orders that were actually paid (pending orders never consumed a use).
+    if (wasPaid && order.couponId) {
+      try {
+        await Coupon.decrementUses(order.couponId);
+      } catch (couponErr) {
+ console.warn(` Could not release coupon use for cancelled order ${req.params.id}: ${couponErr.message}`);
+      }
+    }
 
     // Restore in-stock inventory for a cancelled order. This covers BOTH:
     // - paid orders (their stock was decremented at payment), and

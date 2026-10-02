@@ -6,6 +6,7 @@ import pool from "../config/db.js";
 import { voidEscrowForOrder } from "../Services/escrowService.js";
 import paystackServices from "../Services/paystackservices.js";
 import { recordFinancialEvent } from "../Services/ledgerService.js";
+import Coupon from "../models/couponModel.js";
 import isValidId from "../utils/isValidId.js";
 
 const VALID_STATUSES = ["pending", "approved", "rejected", "completed"];
@@ -161,6 +162,14 @@ export const updateReturnStatus = async (req, res) => {
                WHERE id = ? AND paymentStatus = 'paid'`,
               [existing.orderId]
  ).catch((e) => console.warn(` Could not mark order ${existing.orderId} refunded: ${e.message}`));
+            // P0-6: the payment consumed a coupon use; the refund frees it.
+            if (order.couponId) {
+              try {
+                await Coupon.decrementUses(order.couponId);
+              } catch (couponErr) {
+ console.warn(` Could not release coupon use for return ${req.params.id}: ${couponErr.message}`);
+              }
+            }
             // Immutable journal entry for the refund (deduped per return+order).
             await recordFinancialEvent({
               eventType: 'refund',
