@@ -52,7 +52,22 @@ const protect = asyncHandler(async(req, res, next) => {
         try {
             // Verify token
             const decoded = jwt.verify(token, process.env.JWT_SECRET);
-            
+
+            // Explicitly reject staff tokens here. Staff and users share one
+            // signing key and one cookie name, and staff ids live in the same
+            // numeric space as user ids, so a staff token reaching this
+            // middleware would be resolved against the USERS table. That was
+            // only accidentally safe: a staff token carries no `tv` claim, so
+            // the tokenVersion check below rejected it - but the separation
+            // rested entirely on that one missing field. If `tv` is ever added
+            // to staff tokens, or the version check is relaxed, staff_staff.id=5
+            // would silently authenticate as users.id=5. `vendorOrStaff` and
+            // `optionalAuth` already make this distinction explicitly.
+            if (decoded.role === 'vendor_staff') {
+                res.status(401);
+                throw new Error('Not authorized');
+            }
+
             // Get user from database (without password)
             const user = await User.findById(decoded.id);
             
@@ -89,6 +104,23 @@ const protect = asyncHandler(async(req, res, next) => {
         throw new Error('Not authorized, no token');
     }
 });
+
+/**
+ * Email-verification gate (P0-8) — require a verified email before money moves.
+ * Must be used after `protect`/`vendorOrStaff`. Admins bypass so operations
+ * can always place manual/admin orders. Accepts 1/true/'1' (MySQL returns 0/1).
+ */
+const requireVerifiedEmail = (req, res, next) => {
+    if (req.user && req.user.role === 'admin') {
+        return next();
+    }
+    const verified = req.user && (req.user.isEmailVerified === true || req.user.isEmailVerified === 1 || req.user.isEmailVerified === '1');
+    if (verified) {
+        return next();
+    }
+    res.status(403);
+    throw new Error('Please verify your email before placing an order');
+};
 
 /**
  * Admin middleware - Check if user is admin
@@ -164,7 +196,7 @@ const vendorOrStaff = async (req, res, next) => {
 
         // Staff token: validate the staff record + parent vendor.
         const [staffRows] = await pool.execute(
-            `SELECT s.id, s.name, s.email, s.permissions, s.status,
+            `SELECT s.id, s.name, s.email, s.permissions, s.status, s.tokenVersion,
                     v.userId AS vendorUserId, v.status AS vendorStatus
              FROM vendor_staff s
              JOIN vendors v ON v.userId = s.vendorId
@@ -183,6 +215,13 @@ const vendorOrStaff = async (req, res, next) => {
         if (staff.vendorStatus !== 'approved') {
             res.status(403);
             throw new Error('This vendor store is not active');
+        }
+        // Session revocation for staff, matching the user-side tokenVersion
+        // guard. Without this, changing a compromised staff password left
+        // every already-issued staff JWT valid for its full 8h.
+        if (staff.tokenVersion === undefined || decoded.tv !== staff.tokenVersion) {
+            res.status(401);
+            throw new Error('Session expired, please log in again');
         }
 
         req.user = {
@@ -222,4 +261,4 @@ const requireVendorPermission = (permission) => (req, res, next) => {
     throw new Error(`Missing permission: ${permission}`);
 };
 
-export { protect, admin, vendor, vendorOrStaff, requireVendorPermission, optionalAuth };
+export { protect, admin, vendor, vendorOrStaff, requireVendorPermission, optionalAuth, requireVerifiedEmail };

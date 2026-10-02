@@ -45,8 +45,21 @@ class User {
         errors.push('Valid email is required');
       }
       
-      if (!userData.password || typeof userData.password !== 'string' || userData.password.length < 8) {
+      if (!userData.password || typeof userData.password !== 'string') {
+        errors.push('Password is required');
+      }
+    }
+
+    // Password strength is checked whenever a password is present, on create
+    // AND on update. This used to sit inside the `if (!isUpdate)` block above,
+    // which meant the 8-character policy was silently skipped on every update
+    // path — including the self-service profile endpoint, where a 1-character
+    // password could be set to lock the account owner out.
+    if (userData.password !== undefined) {
+      if (typeof userData.password !== 'string' || userData.password.length < 8) {
         errors.push('Password must be at least 8 characters');
+      } else if (!/[A-Za-z]/.test(userData.password) || !/[0-9]/.test(userData.password)) {
+        errors.push('Password must contain at least one letter and one number');
       }
     }
 
@@ -313,10 +326,24 @@ class User {
 
       const sanitizedData = User.sanitizeUserData(updateData);
 
+      // P0-7: an email change must never inherit the old address's verified
+      // status — otherwise any authenticated session (stolen cookie, XSS,
+      // shared device) can point the account at an attacker address that
+      // stays `verified`. Detect the change against the stored row here so
+      // EVERY caller (profile edit, admin edit, OAuth) gets the reset.
+      let emailChanged = false;
       if (sanitizedData.email) {
         const existingUser = await User.findByEmail(sanitizedData.email);
         if (existingUser && existingUser.id !== parseInt(id)) {
           throw new Error('Email already exists');
+        }
+        const [[current]] = await connection.execute(
+          `SELECT email, is_email_verified FROM users WHERE id = ?`,
+          [parseInt(id)]
+        );
+        if (current && typeof current.email === 'string' &&
+            current.email.toLowerCase() !== String(sanitizedData.email).toLowerCase()) {
+          emailChanged = true;
         }
       }
 
@@ -341,6 +368,9 @@ class User {
       }
 
       setClause.push('updated_at = CURRENT_TIMESTAMP');
+      if (emailChanged) {
+        setClause.push('is_email_verified = FALSE');
+      }
       if (sanitizedData.password || sanitizedData.email) {
         setClause.push('tokenVersion = tokenVersion + 1');
       }
@@ -474,7 +504,13 @@ class User {
         // Lock account after 10 failed attempts for 1 hour
         if (failedAttempts >= 10) {
           updates.lockedUntil = new Date(Date.now() + 60 * 60 * 1000);
-          console.warn(`Account locked for user ${user.email} due to ${failedAttempts} failed attempts`);
+          // Log the user id, not the email: lockout events fire on every failed
+          // brute-force attempt, and writing customer email addresses into log
+          // aggregators (which typically have broader access and longer
+          // retention than the database) is needless PII exposure.
+          console.warn(
+            `Account locked for userId=${user.id} after ${failedAttempts} failed login attempts`
+          );
         }
 
         await pool.execute(

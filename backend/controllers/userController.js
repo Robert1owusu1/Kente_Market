@@ -1,5 +1,6 @@
 
 import asyncHandler from '../middleware/asyncHandler.js';
+import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import User from '../models/usersModel.js';
 import generateToken from '../utils/generateToken.js';
@@ -88,6 +89,9 @@ const registerUser = asyncHandler(async (req, res) => {
   if (typeof password !== 'string' || password.length < 8) {
     res.status(400);
     throw new Error('Password must be at least 8 characters long');
+  } else if (!/[A-Za-z]/.test(password) || !/[0-9]/.test(password)) {
+    res.status(400);
+    throw new Error('Password must contain at least one letter and one number');
   }
 
   // Check if user already exists
@@ -260,6 +264,9 @@ const resetPassword = asyncHandler(async (req, res) => {
   if (password.length < 8) {
     res.status(400);
     throw new Error('Password must be at least 8 characters long');
+  } else if (!/[A-Za-z]/.test(password) || !/[0-9]/.test(password)) {
+    res.status(400);
+    throw new Error('Password must contain at least one letter and one number');
   }
 
   // Find user by reset token
@@ -437,14 +444,49 @@ const updateUserProfile = asyncHandler(async (req, res) => {
   if (user) {
     // Whitelist self-editable fields; NEVER allow a user to change their own
     // role or isActive (prevents self-promotion to admin).
-    const allowedFields = ['firstName', 'lastName', 'email', 'phone', 'address', 'city', 'state', 'zipCode', 'country', 'password', 'profilePicture'];
+    //
+    // `password` is deliberately NOT here. It used to be, which turned this
+    // endpoint into a session-hijack primitive: anyone holding a valid cookie
+    // (stolen cookie, XSS, shared device) could set a 1-character password and
+    // permanently lock the real owner out while keeping their own access. There
+    // was no current-password proof and the 8-char policy was skipped because
+    // the model's password check only ran on create. Password changes now go
+    // through changePassword, which requires the current password.
+    const allowedFields = ['firstName', 'lastName', 'email', 'phone', 'address', 'city', 'state', 'zipCode', 'country', 'profilePicture'];
+
+    // A `password` here is rejected by the route's strict schema before this
+    // runs, so any client still sending it gets a 400 pointing at the new
+    // endpoint. Kept as a defence-in-depth check in case the schema is ever
+    // loosened.
+
     const updateData = {};
     allowedFields.forEach(field => {
       if (req.body[field] !== undefined) updateData[field] = req.body[field];
     });
 
+    const previousEmail = user.email;
     const updatedUser = await User.update(req.user.id, updateData);
-    
+
+    // P0-7: if the address changed, the account is unverified again — issue a
+    // fresh OTP to the NEW address (best-effort email, never blocks the save)
+    // and tell the SPA to route back through /verify-email.
+    let emailChangeNotice = null;
+    if (updateData.email && previousEmail &&
+        String(previousEmail).toLowerCase() !== String(updatedUser.email).toLowerCase()) {
+      try {
+        const otp = generateOTP();
+        await User.setVerificationToken(updatedUser.id, otp, getOTPExpiry());
+        try {
+          await sendOTPEmail(updatedUser.email, updatedUser.firstName, otp);
+        } catch (emailError) {
+          console.error('Failed to send change-of-email OTP:', emailError);
+        }
+        emailChangeNotice = 'Your email was changed. A new verification code was sent — please verify to continue ordering.';
+      } catch (otpError) {
+        console.error('Failed to issue change-of-email OTP:', otpError);
+      }
+    }
+
     res.json({
       id: updatedUser.id,
       firstName: updatedUser.firstName,
@@ -458,12 +500,72 @@ const updateUserProfile = asyncHandler(async (req, res) => {
       country: updatedUser.country,
       role: updatedUser.role,
       isAdmin: updatedUser.role === 'admin',
-      profilePicture: updatedUser.profilePicture
+      isEmailVerified: !!updatedUser.isEmailVerified,
+      profilePicture: updatedUser.profilePicture,
+      ...(emailChangeNotice ? { message: emailChangeNotice } : {}),
     });
   } else {
     res.status(404);
     throw new Error('User not found');
   }
+});
+
+/**
+ * @desc    Change own password
+ * @route   PUT /api/users/password
+ * @access  Private
+ *
+ * Split out of PUT /api/users/profile so that changing a password always
+ * requires proving you know the current one. The profile endpoint is reached
+ * by anything holding a session cookie, so a password field there means a
+ * hijacked session can both take over and lock out the account.
+ *
+ * Requires { currentPassword, newPassword }. Bumps tokenVersion, which
+ * invalidates every existing session including the caller's — the client is
+ * expected to log in again.
+ */
+const changePassword = asyncHandler(async (req, res) => {
+  const { currentPassword, newPassword } = req.body || {};
+
+  if (!currentPassword || !newPassword) {
+    res.status(400);
+    throw new Error('Please provide both currentPassword and newPassword');
+  }
+
+  if (typeof newPassword !== 'string' || newPassword.length < 8) {
+    res.status(400);
+    throw new Error('Password must be at least 8 characters long');
+  }
+  if (!/[A-Za-z]/.test(newPassword) || !/[0-9]/.test(newPassword)) {
+    res.status(400);
+    throw new Error('Password must contain at least one letter and one number');
+  }
+  if (currentPassword === newPassword) {
+    res.status(400);
+    throw new Error('New password must be different from your current password');
+  }
+
+  // Always message on failure is deliberately NOT done here: this endpoint is
+  // already gated behind a valid session, so the only party able to probe it is
+  // the authenticated user themselves. A distinct message is what lets them
+  // tell "wrong current password" from "policy rejected the new one".
+  const user = await User.findById(req.user.id);
+  if (!user) {
+    res.status(404);
+    throw new Error('User not found');
+  }
+
+  const matches = await bcrypt.compare(currentPassword, user.password);
+  if (!matches) {
+    res.status(401);
+    throw new Error('Current password is incorrect');
+  }
+
+  await User.update(req.user.id, { password: newPassword });
+
+  res.json({
+    message: 'Password updated. Please sign in again with your new password.',
+  });
 });
 
 // ============================================
@@ -576,6 +678,7 @@ export {
   getVerificationStatus,
   getUserProfile,
   updateUserProfile,
+  changePassword,
   getUsers,
   deleteUser,
   getUserById,

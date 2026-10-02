@@ -5,7 +5,7 @@ import express from "express";
 const router = express.Router();
 
 // Your existing imports (keeping the typo path for now)
-import { protect, admin } from "../middleware/authMiddleware.js";
+import { protect, admin, requireVerifiedEmail } from "../middleware/authMiddleware.js";
 
 // Your existing controller functions
 import {
@@ -79,7 +79,7 @@ router.route("/top-product-types")
 // POST /api/orders → Create new order (rate-limited)
 // GET /api/orders → Get all orders (admin only)
 router.route("/")
-  .post(protect, orderLimiter, addOrderItems)
+  .post(protect, requireVerifiedEmail, orderLimiter, addOrderItems)
   .get(protect, admin, getOrders);
 
 // GET /api/orders/myorders → Get logged-in user's orders
