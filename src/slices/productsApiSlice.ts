@@ -30,6 +30,7 @@ export const productsApiSlice = apiSlice.injectEndpoints({
         if (params.featured !== undefined) queryParams.append('featured', String(params.featured));
         if (params.minPrice) queryParams.append('minPrice', String(params.minPrice));
         if (params.maxPrice) queryParams.append('maxPrice', String(params.maxPrice));
+        if (params.includeCount) queryParams.append('includeCount', 'true');
 
         const queryString = queryParams.toString();
         const url = queryString ? `${PRODUCTS_URL}?${queryString}` : PRODUCTS_URL;
