@@ -660,7 +660,7 @@ export const updateOrder = async (req, res) => {
             `SELECT id, vendorId FROM product WHERE id IN (${placeholders})`,
             pids
           );
-          storedVendorIds = [...new Set(vrows.map((r) => r.vendorId).filter((v) => v != null))];
+          storedVendorIds = [...new Set(vrows.map((/** @type {any} */ r) => r.vendorId).filter((/** @type {any} */ v) => v != null))];
         }
       }
       const couponResult = await Coupon.validate(couponCode, subtotal, { vendorIds: storedVendorIds });
@@ -694,7 +694,7 @@ export const updateOrder = async (req, res) => {
     // allocations are never touched by reallocateOrderEscrow.
     if (req.user.role !== 'admin' && couponCode && body.discount !== undefined) {
       try {
-        const storedItems = Array.isArray(updatedOrder.items) ? updatedOrder.items : [];
+        const storedItems = updatedOrder && Array.isArray(updatedOrder.items) ? updatedOrder.items : [];
         await reallocateOrderEscrow(req.params.id, storedItems, { discount: body.discount });
       } catch (reallocErr) {
         console.warn(` Coupon escrow realloc failed for order ${req.params.id}: ${reallocErr.message}`);

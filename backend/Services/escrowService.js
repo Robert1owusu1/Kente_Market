@@ -225,6 +225,11 @@ export const createEscrowAllocations = async (orderId, items, { advanceRatio = 0
  * motion and must never be rewritten here. Safe to retry: delete + recreate
  * converges to the same rows.
  */
+/**
+ * @param {any} orderId
+ * @param {any} items
+ * @param {{ discount?: number }} [opts]
+ */
 export const reallocateOrderEscrow = async (orderId, items, { discount = 0 } = {}) => {
   await pool.execute(
     `DELETE FROM escrow_allocations WHERE orderId = ? AND status = 'pending'`,
@@ -239,6 +244,11 @@ export const reallocateOrderEscrow = async (orderId, items, { discount = 0 } = {
  * carries the discount and cannot be re-charged in-flow: journal a
  * `coupon.exhausted` event (idempotent per order+coupon) and notify admins for
  * manual reconcile instead of silently over-funding the coupon.
+ */
+/**
+ * @param {any} couponId
+ * @param {any} orderId
+ * @returns {Promise<{ consumed: boolean, coupon: any }>}
  */
 export const consumeCouponForOrder = async (couponId, orderId) => {
   if (!couponId) return { consumed: true, coupon: null };
