@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { FaTimes, FaSpinner, FaStar, FaRegStar } from 'react-icons/fa';
 import { toast } from 'react-toastify';
-import axios from 'axios';
+import { useUpdateReviewMutation } from '../../slices/miscApiSlice';
 import type { Review } from '../../types/domain';
 
 const EditReviewModal = ({ review, onClose, onSuccess }: {
@@ -12,6 +12,7 @@ const EditReviewModal = ({ review, onClose, onSuccess }: {
   const [rating, setRating] = useState(review?.rating || 0);
   const [comment, setComment] = useState(review?.comment || '');
   const [isLoading, setIsLoading] = useState(false);
+  const [updateReview] = useUpdateReviewMutation();
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -25,12 +26,12 @@ const EditReviewModal = ({ review, onClose, onSuccess }: {
     }
     setIsLoading(true);
     try {
-      await axios.put(`/api/reviews/${review.id}`, { rating, comment });
+      await updateReview({ id: review.id as number | string, rating, comment }).unwrap();
       toast.success('Review updated successfully');
       onSuccess?.();
       onClose();
     } catch (err) {
-      toast.error((err as { response?: { data?: { message?: string } } }).response?.data?.message || 'Failed to update review');
+      toast.error((err as { data?: { message?: string } }).data?.message || 'Failed to update review');
     } finally {
       setIsLoading(false);
     }

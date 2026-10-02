@@ -20,6 +20,7 @@ import {
 } from 'react-icons/fa';
 import ReturnRequestModal from '../../components/ReturnRequest/ReturnRequestModal';
 import SellItBackModal from './SellItBackModal';
+import { formatCedi } from '../../utils/formatCurrency';
 
 const orderStatusStyles = {
   pending: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
@@ -69,7 +70,7 @@ interface EscrowAllocation {
 }
 
 const fmt = (n?: number | string | null) =>
-  `GH₵${(parseFloat(String(n)) || 0).toFixed(2)}`;
+  `${formatCedi((parseFloat(String(n)) || 0))}`;
 
 const itemName = (it: LineItem) => it?.name || it?.title || 'Product';
 const itemQty = (it: LineItem) => parseInt(String(it?.quantity || it?.qty || 1), 10);

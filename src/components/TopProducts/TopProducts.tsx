@@ -12,6 +12,7 @@ import { ProductGridSkeleton } from "../loader/Skeleton";
 import { resolveImageUrl } from "../../utils/imageUrl";
 import { yardOptionsFor } from "../../utils/yards";
 import type { Product } from "../../types/domain";
+import { formatCedi } from '../../utils/formatCurrency';
 
 interface TopProduct extends Product {
   tag?: string;
@@ -326,17 +327,17 @@ const TopProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-2">
                       <span className="text-2xl font-bold text-primary">
-                        GH₵{productPrice.toFixed(2)}
+                        {formatCedi(productPrice)}
                       </span>
                       {productOriginalPrice && productOriginalPrice > productPrice && (
                         <span className="text-lg text-gray-500 line-through">
-                          GH₵{productOriginalPrice.toFixed(2)}
+                          {formatCedi(productOriginalPrice)}
                         </span>
                       )}
                     </div>
                     {productOriginalPrice && productOriginalPrice > productPrice && (
                       <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full font-medium">
-                        Save GH₵{(productOriginalPrice - productPrice).toFixed(2)}
+                        Save {formatCedi((productOriginalPrice - productPrice))}
                       </span>
                     )}
                   </div>

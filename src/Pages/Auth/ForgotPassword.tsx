@@ -1,3 +1,4 @@
+import { Base_URL as API_BASE_URL } from '../../constant';
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { MdOutlineMailOutline } from 'react-icons/md';
@@ -55,7 +56,6 @@ const ForgotPassword = () => {
   const [isSuccess, setIsSuccess] = useState(false);
   const [error, setError] = useState('');
 
-  const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:5000' : '');
 
   const validateEmail = (email: string) => {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);

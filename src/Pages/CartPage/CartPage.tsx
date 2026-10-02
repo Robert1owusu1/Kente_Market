@@ -7,6 +7,7 @@ import { toast } from "react-toastify";
 import { TAX_RATE, FREE_SHIPPING_THRESHOLD, STANDARD_SHIPPING_COST, calcOrderTotals } from "../../utils/pricing";
 import { resolveImageUrl } from "../../utils/imageUrl";
 import { yardOptionsFor } from "../../utils/yards";
+import { formatCedi } from '../../utils/formatCurrency';
 
 // The cart reducer persists a legacy `size` field (set alongside `selectedSize`)
 // that is NOT part of the CartContext.CartItem interface, so add it back here.
@@ -64,7 +65,7 @@ const CartItem = React.memo(({ item, onRemove, onUpdateQuantity, onUpdateYards, 
                 </div>
               )}
               <p className="mt-2 text-lg font-bold text-primary sm:text-2xl">
-                GH₵ {Number(item.price).toFixed(2)}
+                {formatCedi(Number(item.price))}
               </p>
             </div>
 
@@ -124,7 +125,7 @@ const CartItem = React.memo(({ item, onRemove, onUpdateQuantity, onUpdateYards, 
           <div className="text-right">
             <p className="text-sm text-gray-600 dark:text-gray-300">Subtotal</p>
             <p className="text-lg font-bold text-gray-800 dark:text-white sm:text-2xl">
-              GH₵ {(Number(item.price) * item.quantity).toFixed(2)}
+              {formatCedi((Number(item.price) * item.quantity))}
             </p>
           </div>
 
@@ -348,7 +349,7 @@ const CartPage = () => {
                     {/* Subtotal */}
                     <div className="flex justify-between text-gray-600 dark:text-gray-300">
                       <span>Subtotal</span>
-                      <span className="font-semibold">GH₵ {subtotal.toFixed(2)}</span>
+                      <span className="font-semibold">{formatCedi(subtotal)}</span>
                     </div>
                     
                     {/* Shipping */}
@@ -357,14 +358,14 @@ const CartPage = () => {
                       {shippingPrice === 0 ? (
                         <span className="text-green-600 font-semibold">Free</span>
                       ) : (
-                        <span className="font-semibold">GH₵ {shippingPrice.toFixed(2)}</span>
+                        <span className="font-semibold">{formatCedi(shippingPrice)}</span>
                       )}
                     </div>
                     
                     {/* Tax */}
                     <div className="flex justify-between text-gray-600 dark:text-gray-300">
                       <span>Tax (VAT {(TAX_RATE * 100).toFixed(1)}%)</span>
-                      <span className="font-semibold">GH₵ {taxPrice.toFixed(2)}</span>
+                      <span className="font-semibold">{formatCedi(taxPrice)}</span>
                     </div>
 
                     {/* No "Shipping Discount -X" row here: Shipping already
@@ -377,7 +378,7 @@ const CartPage = () => {
                     {/* Total */}
                     <div className="flex justify-between text-2xl font-bold text-gray-800 dark:text-white">
                       <span>Total</span>
-                      <span className="text-blue-600 dark:text-blue-400">GH₵ {totalPrice.toFixed(2)}</span>
+                      <span className="text-blue-600 dark:text-blue-400">{formatCedi(totalPrice)}</span>
                     </div>
                   </div>
 
@@ -421,7 +422,7 @@ const CartPage = () => {
                         </div>
                         <span className="text-green-700 font-medium">Free shipping applied!</span>
                       </div>
-                      <p className="text-sm text-green-600">You saved GH₵ {STANDARD_SHIPPING_COST.toFixed(2)} on shipping</p>
+                      <p className="text-sm text-green-600">You saved {formatCedi(STANDARD_SHIPPING_COST)} on shipping</p>
                     </div>
                   ) : (
                     <div className="mt-6 p-4 bg-gradient-to-br from-blue-50 to-[#fdf8ef] rounded-2xl border border-blue-200">
@@ -432,7 +433,7 @@ const CartPage = () => {
                         <span className="text-blue-700 font-medium">Almost there!</span>
                       </div>
                       <p className="text-sm text-blue-600">
-                        Add GH₵ {(FREE_SHIPPING_THRESHOLD - subtotal).toFixed(2)} more for free shipping
+                        Add {formatCedi((FREE_SHIPPING_THRESHOLD - subtotal))} more for free shipping
                       </p>
                       <div className="mt-2 w-full bg-gray-200 rounded-full h-2">
                         <div 
@@ -484,7 +485,7 @@ const CartPage = () => {
                       Yards: {itemToRemove.yards ?? itemToRemove.size ?? 'Not selected'} | Qty: {itemToRemove.quantity}
                     </p>
                     <p className="text-lg font-bold text-primary">
-                      GH₵ {(Number(itemToRemove.price) * itemToRemove.quantity).toFixed(2)}
+                      {formatCedi((Number(itemToRemove.price) * itemToRemove.quantity))}
                     </p>
                   </div>
                 </div>

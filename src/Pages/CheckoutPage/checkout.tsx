@@ -24,9 +24,10 @@ import {
   clearPendingPaymentRef,
   PAYMENT_CONFIRMATION_DELAYED_MESSAGE,
 } from '../../utils/paymentRef';
-import { useGetOrderByIdQuery } from '../../slices/ordersApiSlice';
+import { useGetOrderByIdQuery, useUpdateOrderMutation, useCreateOrderMutation } from '../../slices/ordersApiSlice';
 import axios from 'axios';
 import type { FormErrors } from "../../types/domain";
+import { formatCedi } from '../../utils/formatCurrency';
 
 interface AppliedCoupon {
   code: string;
@@ -87,6 +88,8 @@ const PICKUP_STATIONS = [
 
 export default function CheckoutPage() {
   const navigate = useNavigate();
+  const [updateOrder] = useUpdateOrderMutation();
+  const [createOrder] = useCreateOrderMutation();
   const { id: orderIdParam } = useParams();
   const { cartItems, getTotalPrice, clearCart } = useCart();
 
@@ -219,6 +222,8 @@ export default function CheckoutPage() {
     }
     setCouponLoading(true);
     try {
+      // Intentionally raw axios (not RTK): a one-shot server pre-check with no
+      // cache tags to invalidate; checkout totals always come from the server.
       const { data } = await axios.post('/api/coupons/validate', {
         code: couponCode.trim(),
         cartTotal: getTotalPrice()
@@ -579,15 +584,21 @@ export default function CheckoutPage() {
       // though the customer was charged.
       if (orderId) {
         // Update the pre-created order (created by CartPage) with the payment
-        // reference so the Paystack webhook can match and confirm it.
-        const { data } = await axios.put(`/api/orders/${orderId}`, orderData);
-        orderId = data.order?.id || data.id || orderId;
+        // reference so the Paystack webhook can match and confirm it. RTK (not
+        // raw axios) so the useGetOrderByIdQuery cache invalidates instead of
+        // rendering the stale pre-payment order.
+        const updated = await updateOrder({ orderId, ...orderData }).unwrap() as unknown as {
+          order?: { id?: unknown }; id?: unknown;
+        };
+        orderId = Number(updated.order?.id || updated.id || orderId) || orderId;
       } else {
         // Fallback: no pre-created order, create one now.
         // paymentStatus is NOT set by the client - the backend always stores it
         // as "pending" and only the Paystack webhook (or an admin) marks it paid.
-        const { data } = await axios.post('/api/orders', orderData);
-        orderId = data.order?.id || data.order?._id || data.id || data._id;
+        const created = await createOrder(orderData as unknown as Record<string, unknown>).unwrap() as unknown as {
+          order?: { id?: unknown; _id?: unknown }; id?: unknown; _id?: unknown;
+        };
+        orderId = Number(created.order?.id || created.order?._id || created.id || created._id) || orderId;
       }
 
       // 2) Verify payment on backend. Now that the order carries the reference,
@@ -1124,7 +1135,7 @@ export default function CheckoutPage() {
               {cartItems.map((item, index) => (
                 <div key={`review-item-${item.id}-${index}`} className="flex justify-between text-sm">
                   <span className="text-gray-600 dark:text-gray-300">{item.name} x {item.quantity}</span>
-                  <span className="font-medium">GH₵ {(item.price * item.quantity).toFixed(2)}</span>
+                  <span className="font-medium">{formatCedi((item.price * item.quantity))}</span>
                 </div>
               ))}
             </div>
@@ -1172,7 +1183,7 @@ export default function CheckoutPage() {
           ) : !isPaystackLoaded ? (
             'Loading Payment System...'
           ) : (
-            `Pay GH₵ ${payableTotal.toFixed(2)}`
+            `Pay ${formatCedi(payableTotal)}`
           )}
         </button>
 
@@ -1300,7 +1311,7 @@ export default function CheckoutPage() {
                       <p className="font-medium text-gray-900 dark:text-white">{item.name}</p>
                       <p className="text-sm text-gray-500 dark:text-gray-400">Qty: {item.quantity}</p>
                     </div>
-                    <p className="font-medium text-gray-900 dark:text-white">GH₵ {(item.price * item.quantity).toFixed(2)}</p>
+                    <p className="font-medium text-gray-900 dark:text-white">{formatCedi((item.price * item.quantity))}</p>
                   </div>
                 ))}
               </div>
@@ -1308,15 +1319,15 @@ export default function CheckoutPage() {
               <div className="border-t pt-4 space-y-3">
                 <div className="flex justify-between text-gray-600 dark:text-gray-300">
                   <span>Subtotal</span>
-                  <span>GH₵ {subtotal.toFixed(2)}</span>
+                  <span>{formatCedi(subtotal)}</span>
                 </div>
                 <div className="flex justify-between text-gray-600 dark:text-gray-300">
                   <span>Shipping</span>
-                  <span>GH₵ {shipping.toFixed(2)}</span>
+                  <span>{formatCedi(shipping)}</span>
                 </div>
                 <div className="flex justify-between text-gray-600 dark:text-gray-300">
                   <span>Tax</span>
-                  <span>GH₵ {tax.toFixed(2)}</span>
+                  <span>{formatCedi(tax)}</span>
                 </div>
 
                 {/* Coupon Code Input */}
@@ -1356,12 +1367,12 @@ export default function CheckoutPage() {
                 {discount > 0 && (
                   <div className="flex justify-between text-green-600">
                     <span>Discount</span>
-                    <span>-GH₵ {discount.toFixed(2)}</span>
+                    <span>-{formatCedi(discount)}</span>
                   </div>
                 )}
                 <div className="flex justify-between text-xl font-bold text-gray-900 dark:text-white pt-3 border-t">
                   <span>Total</span>
-                  <span>GH₵ {total.toFixed(2)}</span>
+                  <span>{formatCedi(total)}</span>
                 </div>
               </div>
 

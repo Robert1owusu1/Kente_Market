@@ -19,6 +19,7 @@ import { toast } from 'react-toastify';
 import { useAppSelector, useAppDispatch } from "../../store";
 import type { Product } from "../../types/domain";
 import TestingModeNotice from "../TestingModeNotice/TestingModeNotice";
+import { formatCedi } from '../../utils/formatCurrency';
 
 // Menu Configuration
 const Menu = [
@@ -391,7 +392,7 @@ const Navbar = () => {
                                   {product.category || 'Uncategorized'}
                                 </p>
                               </div>
-                              <span className="text-primary font-semibold text-sm whitespace-nowrap">GH₵ {Number(product.price).toFixed(2)}</span>
+                              <span className="text-primary font-semibold text-sm whitespace-nowrap">{formatCedi(Number(product.price))}</span>
                             </button>
                           ))}
                           {searchResults.length > 6 && (
@@ -613,7 +614,7 @@ const Navbar = () => {
                             <h4 className="font-medium text-sm text-gray-900 dark:text-white truncate">{product.title}</h4>
                             <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{product.category || 'Uncategorized'}</p>
                           </div>
-                          <span className="text-primary font-semibold text-sm whitespace-nowrap">GH₵ {Number(product.price).toFixed(2)}</span>
+                          <span className="text-primary font-semibold text-sm whitespace-nowrap">{formatCedi(Number(product.price))}</span>
                         </button>
                       ))}
                       {searchResults.length > 6 && (

@@ -5,10 +5,10 @@ import React, { useState } from "react";
 import { FaStar, FaRegStar, FaUser, FaSpinner, FaEdit, FaTrash } from "react-icons/fa";
 import { Link } from "react-router-dom";
 import { toast } from "react-toastify";
-import axios from "axios";
 import {
   useGetProductReviewsQuery,
   useCreateReviewMutation,
+  useDeleteReviewMutation,
 } from "../../slices/miscApiSlice";
 import { useAppSelector } from "../../store";
 import type { Review } from "../../types/domain";
@@ -86,6 +86,7 @@ const ProductReviews = ({ productId }: { productId?: number | string }) => {
     skip: !productId,
   });
   const [createReview, { isLoading: submitting }] = useCreateReviewMutation();
+  const [deleteReview] = useDeleteReviewMutation();
 
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState("");
@@ -117,11 +118,12 @@ const ProductReviews = ({ productId }: { productId?: number | string }) => {
 
   const handleDelete = async (reviewId?: number | string) => {
     if (!window.confirm("Are you sure you want to delete this review?")) return;
+    if (reviewId === undefined) return;
     try {
-      await axios.delete(`/api/reviews/${reviewId}`);
+      await deleteReview(reviewId).unwrap();
       toast.success("Review deleted");
     } catch (err) {
-      toast.error((err as { response?: { data?: { message?: string } } }).response?.data?.message || "Failed to delete review");
+      toast.error((err as { data?: { message?: string } }).data?.message || "Failed to delete review");
     }
   };
 
@@ -261,7 +263,6 @@ const ProductReviews = ({ productId }: { productId?: number | string }) => {
           onClose={() => setEditingReview(null)}
           onSuccess={() => {
             setEditingReview(null);
-            window.location.reload();
           }}
         />
       )}

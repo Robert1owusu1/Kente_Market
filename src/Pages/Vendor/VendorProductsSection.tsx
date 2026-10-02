@@ -13,6 +13,7 @@ import {
 } from '../../slices/vendorsApiSlice';
 import { useGetCategoriesQuery } from '../../slices/categoriesApiSlice';
 import type { Product } from '../../types/domain';
+import { formatCedi } from '../../utils/formatCurrency';
 
 interface ProductForm {
   title: string;
@@ -452,9 +453,9 @@ const VendorProductsSection = ({ vendorStatus }: { vendorStatus?: string }) => {
                     </td>
                     <td className="px-6 py-4 text-gray-600 dark:text-gray-400">{p.category || '-'}</td>
                     <td className="px-6 py-4">
-                      <span className="font-semibold text-primary">GH₵{parseFloat(String(p.price || 0)).toFixed(2)}</span>
+                      <span className="font-semibold text-primary">{formatCedi(parseFloat(String(p.price || 0)))}</span>
                       {p.isRentable && p.rentPricePerDay && (
-                        <span className="block text-xs text-gray-500 dark:text-gray-400">or GH₵{parseFloat(String(p.rentPricePerDay)).toFixed(2)}/day rent</span>
+                        <span className="block text-xs text-gray-500 dark:text-gray-400">or {formatCedi(parseFloat(String(p.rentPricePerDay)))}/day rent</span>
                       )}
                     </td>
  <td className="px-6 py-4 text-gray-600 dark:text-gray-400">{p.rating ? `${p.rating} ` : '-'}</td>

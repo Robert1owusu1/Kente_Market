@@ -45,6 +45,29 @@ export const miscApiSlice = apiSlice.injectEndpoints({
       }),
       invalidatesTags: ["Product", "Review"],
     }),
+    updateReview: builder.mutation<Review, { id: number | string; rating?: number; comment?: string }>({
+      query: ({ id, ...patch }) => ({
+        url: `${REVIEWS_URL}/${id}`,
+        method: "PUT",
+        body: patch,
+      }),
+      invalidatesTags: ["Product", "Review"],
+    }),
+    deleteReview: builder.mutation<{ message?: string }, number | string>({
+      query: (id) => ({
+        url: `${REVIEWS_URL}/${id}`,
+        method: "DELETE",
+      }),
+      invalidatesTags: ["Product", "Review"],
+    }),
+    updateReviewStatus: builder.mutation<Review, { id: number | string; status: string }>({
+      query: ({ id, status }) => ({
+        url: `${REVIEWS_URL}/${id}/status`,
+        method: "PUT",
+        body: { status },
+      }),
+      invalidatesTags: ["Review"],
+    }),
     getProductReviews: builder.query<Review[], number | string>({
       query: (productId) => ({
         url: `${REVIEWS_URL}/product/${productId}`,
@@ -96,6 +119,9 @@ export const {
   useSubmitContactMutation,
   useSubscribeNewsletterMutation,
   useCreateReviewMutation,
+  useUpdateReviewMutation,
+  useDeleteReviewMutation,
+  useUpdateReviewStatusMutation,
   useGetProductReviewsQuery,
   useGetAllReviewsQuery,
   useLazyGetProductReviewsQuery,

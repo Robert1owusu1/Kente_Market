@@ -7,6 +7,7 @@ import { toast } from 'react-toastify';
 import { FaRecycle, FaSpinner, FaTag, FaCommentAlt, FaMinus, FaPlus } from 'react-icons/fa';
 import { useCreateBuybackRequestMutation } from '../../slices/buybackApiSlice';
 import { resolveImageUrl } from '../../utils/imageUrl';
+import { formatCedi } from '../../utils/formatCurrency';
 
 export interface SellBackProduct {
   productId?: number | string;
@@ -93,7 +94,7 @@ const SellItBackModal = ({
             <p className="font-semibold text-gray-900 dark:text-white">{nameOf(product)}</p>
             {priceOf(product) > 0 && (
               <p className="text-sm text-gray-500 dark:text-gray-400">
-                You paid {`GH₵${priceOf(product).toFixed(2)}`} for this item
+                You paid {`${formatCedi(priceOf(product))}`} for this item
               </p>
             )}
           </div>

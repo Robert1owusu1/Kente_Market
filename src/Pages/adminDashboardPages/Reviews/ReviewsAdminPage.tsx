@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import { FaSpinner, FaCheck, FaEyeSlash, FaTrash, FaFlag, FaStar } from 'react-icons/fa';
 import { toast } from 'react-toastify';
-import axios from 'axios';
-import { useGetAllReviewsQuery } from '../../../slices/miscApiSlice';
+import { useGetAllReviewsQuery, useUpdateReviewStatusMutation, useDeleteReviewMutation } from '../../../slices/miscApiSlice';
 import { useGetAllReportsQuery, useUpdateReportStatusMutation } from '../../../slices/reportsApiSlice';
 import type { Review } from '../../../types/domain';
 
@@ -69,6 +68,8 @@ const ReviewsAdminPage = () => {
   const [statusFilter, setStatusFilter] = useState('all');
   const [showReports, setShowReports] = useState(false);
   const [updatingId, setUpdatingId] = useState<number | string | null>(null);
+  const [updateReviewStatus] = useUpdateReviewStatusMutation();
+  const [deleteReview] = useDeleteReviewMutation();
 
   const filtered = adminReviews.filter((r) => {
     if (statusFilter === 'all') return true;
@@ -80,11 +81,11 @@ const ReviewsAdminPage = () => {
   const handleStatusUpdate = async (reviewId: number | string, status: string) => {
     setUpdatingId(reviewId);
     try {
-      await axios.put(`/api/reviews/${reviewId}/status`, { status });
+      await updateReviewStatus({ id: reviewId, status }).unwrap();
       toast.success(`Review ${status}`);
     } catch (error) {
-      const err = error as { response?: { data?: { message?: string } }; message?: string } | undefined;
-      toast.error(err?.response?.data?.message || 'Failed to update review status');
+      const err = error as { data?: { message?: string } } | undefined;
+      toast.error(err?.data?.message || 'Failed to update review status');
     } finally {
       setUpdatingId(null);
     }
@@ -94,11 +95,11 @@ const ReviewsAdminPage = () => {
     if (!window.confirm('Are you sure you want to delete this review? This action cannot be undone.')) return;
     setUpdatingId(reviewId);
     try {
-      await axios.delete(`/api/reviews/${reviewId}`);
+      await deleteReview(reviewId).unwrap();
       toast.success('Review deleted successfully');
     } catch (error) {
-      const err = error as { response?: { data?: { message?: string } }; message?: string } | undefined;
-      toast.error(err?.response?.data?.message || 'Failed to delete review');
+      const err = error as { data?: { message?: string } } | undefined;
+      toast.error(err?.data?.message || 'Failed to delete review');
     } finally {
       setUpdatingId(null);
     }

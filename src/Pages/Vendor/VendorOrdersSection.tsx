@@ -63,7 +63,7 @@ const VendorOrdersSection = () => {
     const matchesSearch = !searchTerm ||
       (o.orderNumber || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       (o.firstName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (Array.isArray(o.items) ? o.items.map((it) => itemName(it as OrderItem)).join(' ').toLowerCase().includes(searchTerm.toLowerCase());
+      (Array.isArray(o.items) ? o.items.some((it) => itemName(it).toLowerCase().includes(searchTerm.toLowerCase())) : false);
     const matchesStatus = !filterStatus || o.orderStatus === filterStatus;
     return matchesSearch && matchesStatus;
   });

@@ -11,6 +11,7 @@ import {
 } from '../../slices/vendorsApiSlice';
 import Loader from '../../components/loader/Loader';
 import type { Coupon } from '../../types/domain';
+import { formatCedi } from '../../utils/formatCurrency';
 
 interface CouponForm {
   code: string;
@@ -181,9 +182,9 @@ const VendorCoupons = () => {
                   <tr key={c.id} className="border-t border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50">
                     <td className="px-6 py-4 font-mono font-bold text-gray-900 dark:text-white">{c.code}</td>
                     <td className="px-6 py-4 text-gray-600 dark:text-gray-400">
-                      {c.discountType === 'percentage' ? `${c.discountValue}%` : `GH₵${parseFloat(String(c.discountValue)).toFixed(2)}`}
+                      {c.discountType === 'percentage' ? `${c.discountValue}%` : `${formatCedi(parseFloat(String(c.discountValue)))}`}
                     </td>
-                    <td className="px-6 py-4 text-gray-600 dark:text-gray-400">GH₵{parseFloat(String(c.minPurchase || 0)).toFixed(2)}</td>
+                    <td className="px-6 py-4 text-gray-600 dark:text-gray-400">{formatCedi(parseFloat(String(c.minPurchase || 0)))}</td>
                     <td className="px-6 py-4 text-gray-600 dark:text-gray-400">{(c.usesUsed as number) || 0}/{(c.maxUses as string) || '∞'}</td>
                     <td className="px-6 py-4 text-gray-500 text-xs">{c.expiresAt ? new Date(c.expiresAt).toLocaleDateString() : 'Never'}</td>
                     <td className="px-6 py-4">

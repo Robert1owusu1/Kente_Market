@@ -104,6 +104,20 @@ export const usersApiSlice = apiSlice.injectEndpoints({
       },
     }),
 
+    // Change own password. Separate from updateProfile because the API requires
+    // the current password for any credential change — sending a bare `password`
+    // with the profile payload is rejected by the backend's strict schema.
+    changePassword: builder.mutation<
+      { message: string },
+      { currentPassword: string; newPassword: string }
+    >({
+      query: (data) => ({
+        url: `${USERS_URL}/password`,
+        method: "PUT",
+        body: data,
+      }),
+    }),
+
  // Get all users (admin only)
     getUsers: builder.query<AuthUser[], void>({
       query: () => ({
@@ -156,6 +170,7 @@ export const {
  useGetVerificationStatusQuery, // NEW
   useGetProfileQuery,
   useUpdateProfileMutation,
+  useChangePasswordMutation,
   useGetUsersQuery,
   useDeleteUserMutation,
   useGetUserByIdQuery,

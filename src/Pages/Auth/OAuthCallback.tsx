@@ -1,3 +1,4 @@
+import { Base_URL as API_BASE_URL } from '../../constant';
 // pages/Auth/OAuthCallback.jsx
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -10,7 +11,6 @@ import { FaCheckCircle, FaTimesCircle } from 'react-icons/fa';
 import logoImg from "../../assets/logo.png";
 import Footer from "../../components/Footer/Footer";
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:5000' : '');
 
 const OAuthCallback = () => {
   const [searchParams] = useSearchParams();

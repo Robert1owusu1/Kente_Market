@@ -1,3 +1,4 @@
+import { Base_URL as API_BASE_URL } from '../../constant';
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import React, { useState, useEffect } from "react";
 import loginilu from "../../assets/images/heropage2.jpeg"
@@ -236,7 +237,6 @@ const Login = () => {
       setErrors({ submit: errorMessage });
     }
   };
-  const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:5000' : '');
   // Handle OAuth login
   const handleOAuthLogin = async (provider: keyof typeof oauthLoading) => {
     setOauthLoading(prev => ({ ...prev, [provider]: true }));

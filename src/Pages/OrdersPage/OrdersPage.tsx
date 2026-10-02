@@ -3,11 +3,12 @@ import { Link } from 'react-router-dom';
 import { useGetMyOrdersQuery } from '../../slices/ordersApiSlice';
 import Loader from '../../components/loader/Loader';
 import { FaShoppingBag, FaShieldAlt } from 'react-icons/fa';
+import { formatCedi } from '../../utils/formatCurrency';
 
 const escrowMap = { held: 'Escrow', released: 'Released', releasing: 'Releasing', failed: 'Failed', none: '' } as const;
 const escrowLabel = (s: string) => (escrowMap[s as keyof typeof escrowMap] || '');
 
-const fmt = (n: unknown) => `GH₵${(parseFloat(String(n)) || 0).toFixed(2)}`;
+const fmt = (n: unknown) => `${formatCedi((parseFloat(String(n)) || 0))}`;
 
 const OrdersPage = () => {
   const { data: orders, isLoading, isError, error } = useGetMyOrdersQuery();
