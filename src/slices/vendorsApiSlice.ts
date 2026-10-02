@@ -171,12 +171,12 @@ export const vendorsApiSlice = apiSlice.injectEndpoints({
  // Vendor advances fulfilment status of their order (+ customised note/date)
     updateVendorOrderStatus: builder.mutation<
       Order,
-      { orderId: number | string; orderStatus?: string; productionNote?: string; expectedCompletionDate?: string }
+      { orderId: number | string; orderStatus?: string; productionNote?: string; expectedCompletionDate?: string; trackingNumber?: string }
     >({
-      query: ({ orderId, orderStatus, productionNote, expectedCompletionDate }) => ({
+      query: ({ orderId, orderStatus, productionNote, expectedCompletionDate, trackingNumber }) => ({
         url: `${VENDORS_URL}/orders/${orderId}/status`,
         method: "POST",
-        body: { orderStatus, productionNote, expectedCompletionDate },
+        body: { orderStatus, productionNote, expectedCompletionDate, trackingNumber },
       }),
       invalidatesTags: ["VendorOrder", "VendorAnalytics"],
     }),
