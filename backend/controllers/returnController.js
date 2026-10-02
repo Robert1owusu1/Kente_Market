@@ -258,7 +258,7 @@ export const updateReturnStatus = async (req, res) => {
           if (c?.productId) skipProductIds.add(c.productId);
         }
         const ownForRestore = ownLines.filter((it) => !skipProductIds.has(parseInt(it.product ?? it.productId, 10)));
-        await restoreStockForOrder(ownForRestore);
+        await restoreStockForOrder(ownForRestore, { reason: 'partial-return-restore', orderId: existing.orderId });
       } catch (restoreErr) {
  console.warn(` Partial return ${req.params.id}: stock restore failed (${restoreErr.message})`);
       }
@@ -343,7 +343,7 @@ export const updateReturnStatus = async (req, res) => {
               for (const c of conflicts) {
                 if (c?.productId) skipProductIds.add(c.productId);
               }
-              await restoreStockForOrder(order.items, { skipProductIds });
+              await restoreStockForOrder(order.items, { skipProductIds, reason: 'return-restore', orderId: existing.orderId });
               await pool.execute(
                 `UPDATE orders SET stockShortfall = 0, stockConflicts = NULL WHERE id = ?`,
                 [existing.orderId]

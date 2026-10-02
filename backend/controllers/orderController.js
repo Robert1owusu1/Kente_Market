@@ -23,6 +23,7 @@ import {
   retryFailedAllocations,
 } from "../Services/escrowService.js";
 import { reserveStockForItems } from "../Services/reservationService.js";
+import { recordStockMove } from "../Services/stockMoves.js";
 import { sendOrderConfirmationEmail, sendEscrowReleasedEmail } from "../utils/orderEmailService.js";
 import { auditFromRequest } from "../utils/auditLog.js";
 import { recordFinancialEvent } from "../Services/ledgerService.js";
@@ -95,6 +96,7 @@ export const decrementStockForOrder = async (items, orderId = null) => {
       );
       if (result.affectedRows > 0) {
         decremented[productId] = toTake;
+        await recordStockMove({ productId, delta: -toTake, reason: 'sale', orderId });
         continue;
       }
       // Nothing could be taken — distinguish a real shortage from products that
@@ -210,8 +212,8 @@ const flagStockShortfall = async (orderId, conflicts) => {
 // Restore in-stock inventory when a paid order is cancelled/refunded. Made-to-order
 // items are skipped, and products that were never taken (stock conflicts at
 // payment time) are also skipped so stock is not inflated.
-/** @param {Array<{product?: any, productId?: any, qty?: any, quantity?: any}>} items @param {{ skipProductIds?: Set<number> }} [options] */
-export const restoreStockForOrder = async (items, { skipProductIds = new Set() } = {}) => {
+/** @param {Array<{product?: any, productId?: any, qty?: any, quantity?: any}>} items @param {{ skipProductIds?: Set<number>, reason?: string, orderId?: number|string|null }} [options] */
+export const restoreStockForOrder = async (items, { skipProductIds = new Set(), reason = 'cancel-restore', orderId = null } = {}) => {
   if (!Array.isArray(items) || items.length === 0) return;
   const restores = new Map();
   for (const item of items) {
@@ -226,10 +228,13 @@ export const restoreStockForOrder = async (items, { skipProductIds = new Set() }
   const connection = await pool.getConnection();
   try {
     for (const [productId, qty] of restores) {
-      await connection.execute(
+      const [res] = await connection.execute(
         `UPDATE product SET stock = stock + ? WHERE id = ? AND madeToOrder = FALSE`,
         [qty, productId]
       );
+      if (res.affectedRows > 0) {
+        await recordStockMove({ productId, delta: qty, reason, orderId });
+      }
     }
   } catch (err) {
  console.warn(` Stock restore failed: ${err.message}`);
@@ -435,7 +440,8 @@ export const addOrderItems = async (req, res) => {
         if (reservedUnits.size > 0) {
           try {
             await restoreStockForOrder(
-              [...reservedUnits].map(([productId, qty]) => ({ product: productId, qty }))
+              [...reservedUnits].map(([productId, qty]) => ({ product: productId, qty })),
+              { reason: 'create-rollback' }
             );
           } catch (restoreErr) {
  console.warn(` Could not roll back reservation: ${restoreErr.message}`);
@@ -465,7 +471,8 @@ export const addOrderItems = async (req, res) => {
     if (reservedUnits.size > 0) {
       try {
         await restoreStockForOrder(
-          [...reservedUnits].map(([productId, qty]) => ({ product: productId, qty }))
+          [...reservedUnits].map(([productId, qty]) => ({ product: productId, qty })),
+          { reason: 'create-rollback' }
         );
       } catch (restoreErr) {
  console.warn(` Could not roll back reservation: ${restoreErr.message}`);
@@ -1085,7 +1092,7 @@ export const cancelOrder = async (req, res) => {
         for (const c of conflicts) {
           if (c?.productId) skipProductIds.add(c.productId);
         }
-        await restoreStockForOrder(order.items, { skipProductIds });
+        await restoreStockForOrder(order.items, { skipProductIds, orderId: req.params.id });
         await pool.execute(
           `UPDATE orders SET stockShortfall = 0, stockConflicts = NULL WHERE id = ?`,
           [req.params.id]
