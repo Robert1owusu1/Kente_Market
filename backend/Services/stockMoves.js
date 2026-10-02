@@ -18,7 +18,7 @@ export const STOCK_REASONS = [
 
 /**
  * Append a stock movement row. Never throws.
- * @param {{ productId: number, delta: number, reason: string, orderId?: number|null, actorId?: number|null, note?: string|null }} move
+ * @param {{ productId: number|string, delta: number|string, reason: string, orderId?: number|string|null, actorId?: number|string|null, note?: string|null }} move
  */
 export const recordStockMove = async ({ productId, delta, reason, orderId = null, actorId = null, note = null }) => {
   try {

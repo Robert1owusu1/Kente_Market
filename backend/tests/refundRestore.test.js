@@ -71,7 +71,7 @@ describe('P0-10 return-approve stock restore', () => {
   test('updateReturnStatus wires stock restore + coupon release', async () => {
     const fs = await import('node:fs/promises');
     const src = await fs.readFile(new URL('../controllers/returnController.js', import.meta.url), 'utf8');
-    assert.match(src, /restoreStockForOrder\(order\.items, \{ skipProductIds \}\)/, 'restore wired on approve');
+    assert.match(src, /restoreStockForOrder\(order\.items, \{ skipProductIds, reason: 'return-restore', orderId: existing\.orderId \}\)/, 'restore wired on approve');
     assert.match(src, /Coupon\.decrementUses\(order\.couponId\)/, 'coupon release wired');
   });
 });

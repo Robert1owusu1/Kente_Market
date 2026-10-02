@@ -26,6 +26,7 @@ class Order {
     this.escrowStatus = orderData.escrowStatus || 'none';
     this.escrowReleaseDeadline = orderData.escrowReleaseDeadline;
     this.escrowAllocations = orderData.escrowAllocations || [];
+    this.trackingNumbers = orderData.trackingNumbers || [];
     this.stockShortfall = orderData.stockShortfall || 0;
     this.stockConflicts = Order.safeParse(orderData.stockConflicts, null);
     this.created_at = orderData.created_at;
