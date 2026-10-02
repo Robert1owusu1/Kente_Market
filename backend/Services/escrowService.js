@@ -596,6 +596,89 @@ export const cancelEscrowForOrder = async (orderId) => {
  * @param {number | string} orderId
  * @returns {Promise<void>}
  */
+/**
+ * Void ONE vendor's escrow for an order (P1 partial/vendor returns).
+ * Same guarantees as voidEscrowForOrder but scoped with `AND vendorId = ?`
+ * on every statement, so innocent vendors' allocations are untouched:
+ *  - that vendor's pending/held allocations -> failed
+ *  - that vendor's available allocations -> clawed back, then failed
+ *  - releasing/released -> left for manual recovery (unchanged)
+ * @param {any} orderId
+ * @param {any} vendorId owner vendor user id
+ * @returns {Promise<void>}
+ */
+export const voidVendorEscrow = async (orderId, vendorId) => {
+  const vid = parseInt(vendorId, 10);
+  await pool.execute(
+    `UPDATE escrow_allocations
+     SET status = 'failed', updated_at = CURRENT_TIMESTAMP
+     WHERE orderId = ? AND vendorId = ? AND status IN ('pending', 'held')`,
+    [orderId, vid]
+  );
+
+  const available = await pool.execute(
+    `SELECT id, vendorId, amount, platformFee, payoutAmount
+     FROM escrow_allocations
+     WHERE orderId = ? AND vendorId = ? AND status = 'available'`,
+    [orderId, vid]
+  );
+
+  for (const allocation of available[0]) {
+    const amount = round2(parseFloat(String(allocation.payoutAmount ?? 0)) || 0);
+    if (amount <= 0) {
+      await pool.execute(
+        `UPDATE escrow_allocations
+         SET status = 'failed', reason = 'voided (no payout)', updated_at = CURRENT_TIMESTAMP
+         WHERE id = ? AND status = 'available'`,
+        [allocation.id]
+      );
+      continue;
+    }
+    const [claim] = await pool.execute(
+      `UPDATE escrow_allocations
+       SET status = 'failed', reason = 'clawed back (partial refund)', updated_at = CURRENT_TIMESTAMP
+       WHERE id = ? AND status = 'available' AND payoutAmount >= ?`,
+      [allocation.id, amount]
+    );
+    if (claim.affectedRows !== 1) continue;
+    try {
+      const debited = await clawbackVendorBalance(
+        allocation.vendorId,
+        amount,
+        `clawback:${allocation.id}`,
+        `Escrow clawed back for order ${orderId} (partial vendor refund)`
+      );
+      if (!debited) {
+ console.warn(` Clawback no-op for allocation ${allocation.id}: already withdrawn (check balance manually)`);
+      }
+      await recordFinancialEvent({
+        eventType: 'escrow.clawback',
+        direction: 'out',
+        amount,
+        vendorId: allocation.vendorId,
+        orderId,
+        allocationId: allocation.id,
+        reference: `escrow.clawback:${allocation.id}`,
+        dedupeKey: `escrow.clawback:${allocation.id}`,
+        payload: { reason: 'partial vendor refund' },
+      });
+    } catch (error) {
+ console.error(` Clawback debit failed for allocation ${allocation.id}: ${error.message}`);
+      await pool.execute(
+        `UPDATE escrow_allocations SET reason = 'clawback failed: manual recovery needed' WHERE id = ?`,
+        [allocation.id]
+      );
+    }
+  }
+
+  const escrowStatus = await recomputeOrderEscrowStatus(orderId);
+  await pool.execute(
+    `UPDATE orders SET escrowStatus = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+    [escrowStatus, orderId]
+  );
+};
+
+/** @param {any} orderId */
 export const voidEscrowForOrder = async (orderId) => {
   await pool.execute(
     `UPDATE escrow_allocations
@@ -864,9 +947,17 @@ export const reconcileRefundedButPaid = async () => {
   const journalExpr = journalTable
     ? `EXISTS(SELECT 1 FROM financial_events fe WHERE fe.dedupeKey = CONCAT('refund:', o.id) OR fe.dedupeKey LIKE CONCAT('refund:', o.id, ':%'))`
     : `0`;
+  // A FULL refund journal completes bookkeeping automatically. A PARTIAL-only
+  // trail never flips the order (it stays paid by design) — the crashed
+  // partial's vendor escrow is safe to re-void (idempotent claim), while the
+  // stock/refundedAmount remainder goes to an admin with exact recovery SQL.
+  const fullExpr = journalTable
+    ? `EXISTS(SELECT 1 FROM financial_events fe WHERE fe.dedupeKey = CONCAT('refund:', o.id) OR (fe.dedupeKey LIKE CONCAT('refund:', o.id, ':%') AND fe.dedupeKey NOT LIKE '%:partial:%'))`
+    : `0`;
   const [rows] = await pool.execute(
     `SELECT o.id, o.paymentReference, o.escrowStatus, o.refundReference,
-            (${journalExpr}) AS refundJournaled
+            (${journalExpr}) AS refundJournaled,
+            (${fullExpr}) AS fullRefundJournaled
      FROM orders o
      WHERE o.paymentStatus = 'paid' AND o.refundReference IS NOT NULL`
   );
@@ -874,7 +965,29 @@ export const reconcileRefundedButPaid = async () => {
   let recovered = 0;
   for (const row of rows) {
     try {
-      if (Number(row.refundJournaled) === 1) {
+      if (Number(row.refundJournaled) === 1 && Number(row.fullRefundJournaled) !== 1) {
+        // Partial crash: re-void is idempotent and money-safe (prevents vendor
+        // payout of refunded money); the remainder needs exact amounts, so it
+        // alerts with recovery SQL instead of guessing.
+        const markerVendor = String(row.refundReference || '').split(':').pop() ?? '';
+        try {
+          const vid = parseInt(markerVendor, 10);
+          if (Number.isFinite(vid)) await voidVendorEscrow(row.id, vid);
+        } catch { /* void is best-effort here */ }
+        try {
+          const [admins] = await pool.execute(`SELECT id FROM users WHERE role = 'admin' LIMIT 5`);
+          for (const admin of admins) {
+            await Notification.create({
+              userId: admin.id,
+              type: 'system',
+              title: 'Partial refund crashed mid-flight — finish manually',
+              message: `Order #${row.id} has a partial-refund journal but a stale paid state. Vendor escrow re-voided. Verify the Paystack refund, then run: UPDATE orders SET refundedAmount = refundedAmount + <amount> WHERE id = ${row.id}; plus restore that vendor's lines. Do NOT re-refund blindly.`,
+              link: `/admin/orders`,
+            });
+          }
+        } catch { /* notify is best-effort */ }
+        recovered += 1;
+      } else if (Number(row.refundJournaled) === 1) {
         await cancelEscrowForOrder(row.id);
         const [flip] = await pool.execute(
           `UPDATE orders SET paymentStatus = 'refunded', updated_at = CURRENT_TIMESTAMP
