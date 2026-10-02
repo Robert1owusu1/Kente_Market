@@ -5,6 +5,28 @@ import pool from "../config/db.js";
 import { clearCache } from "../middleware/cacheMiddleware.js";
 import { hasInvalidYards, INVALID_YARDS_MESSAGE } from "../utils/yards.js";
 
+// Public storefront visibility (P0-1): anonymous shoppers and vendors only ever
+// see admin-approved products. An authenticated admin may pass
+// ?approvalStatus=<status|all> to review the moderation queue through the same
+// endpoints; any other caller-supplied value is ignored.
+const publicApprovalFilter = (req) => {
+  if (req.user?.role === 'admin') {
+    const requested = (req.query.approvalStatus || '').trim();
+    if (!requested || requested === 'all') return requested === 'all' ? null : undefined;
+    if (['pending', 'approved', 'rejected', 'changes_requested'].includes(requested)) return requested;
+    return 'approved';
+  }
+  return 'approved';
+};
+
+// Resolve the approval filter into a findAll-compatible option: null = no
+// predicate (admin "all"), undefined = caller sets explicitly, else the status.
+const withApproval = (options, filter) => {
+  if (filter === null) return options;
+  if (filter === undefined) return options;
+  return { ...options, approvalStatus: filter };
+};
+
 // @desc    Fetch curated Kente Museum pieces (approved products with pattern
 //          provenance metadata), for the cultural showcase page.
 // @route   GET /api/products/museum
@@ -30,7 +52,8 @@ const getMuseumPieces = asyncHandler(async (req, res) => {
 // @access  Public
 const getProducts = asyncHandler(async (req, res) => {
   try {
-    const options = {
+    const approvalFilter = publicApprovalFilter(req);
+    const options = withApproval({
       limit: req.query.limit ? parseInt(req.query.limit) : 100,
       offset: req.query.offset ? parseInt(req.query.offset) : 0,
       category: req.query.category || null,
@@ -38,7 +61,7 @@ const getProducts = asyncHandler(async (req, res) => {
       search: req.query.search || null,
       minPrice: req.query.minPrice || null,
       maxPrice: req.query.maxPrice || null,
-    };
+    }, approvalFilter);
 
     const products = await Product.findAll(options);
 
@@ -78,6 +101,12 @@ const getProductById = asyncHandler(async (req, res) => {
   try {
     const product = await Product.findById(req.params.id);
 
+    // Unapproved products are invisible on the public route (admin preview only).
+    if (product && product.approvalStatus !== 'approved' && req.user?.role !== 'admin') {
+      res.status(404);
+      throw new Error("Product not found");
+    }
+
     if (product) {
       // "X verified orders" — only confirmed-purchase (delivered) reviews count
       // toward the trust badge shown next to a product's star rating.
@@ -107,10 +136,10 @@ const getProductById = asyncHandler(async (req, res) => {
 // @access  Public
 const getProductsByCategory = asyncHandler(async (req, res) => {
   try {
-    const options = {
+    const options = withApproval({
       limit: req.query.limit ? parseInt(req.query.limit) : 100,
       offset: req.query.offset ? parseInt(req.query.offset) : 0,
-    };
+    }, publicApprovalFilter(req));
 
     const products = await Product.findByCategory(req.params.category, options);
 
@@ -128,10 +157,10 @@ const getProductsByCategory = asyncHandler(async (req, res) => {
 // @access  Public
 const getFeaturedProducts = asyncHandler(async (req, res) => {
   try {
-    const options = {
+    const options = withApproval({
       limit: req.query.limit ? parseInt(req.query.limit) : 10,
       offset: req.query.offset ? parseInt(req.query.offset) : 0,
-    };
+    }, publicApprovalFilter(req));
 
     const products = await Product.findFeatured(options);
 
@@ -150,10 +179,10 @@ const getFeaturedProducts = asyncHandler(async (req, res) => {
 // @access  Public
 const getTrendingProducts = asyncHandler(async (req, res) => {
   try {
-    const options = {
+    const options = withApproval({
       limit: req.query.limit ? parseInt(req.query.limit) : 5,
       offset: req.query.offset ? parseInt(req.query.offset) : 0,
-    };
+    }, publicApprovalFilter(req));
 
     const products = await Product.findTrending(options);
 
@@ -286,7 +315,8 @@ const deleteProduct = asyncHandler(async (req, res) => {
 // @access  Public
 const getCategories = asyncHandler(async (req, res) => {
   try {
-    const categories = await Product.getCategories();
+    const filter = publicApprovalFilter(req);
+    const categories = await Product.getCategories(filter === null ? null : (filter ?? 'approved'));
 
     res.json(categories);
   } catch (error) {

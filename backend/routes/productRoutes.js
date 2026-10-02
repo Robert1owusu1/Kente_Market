@@ -3,7 +3,7 @@
 
 import express from "express";
 const router = express.Router();
-import { protect, admin } from "../middleware/authMiddleware.js";
+import { protect, admin, optionalAuth } from "../middleware/authMiddleware.js";
 import { cacheMiddleware } from "../middleware/cacheMiddleware.js";
 import {
   getProducts,
@@ -25,19 +25,19 @@ import {
 // CRITICAL: Order matters! Specific routes MUST come BEFORE parameterized routes
 
 // 1. Root route - Get all products (cached 60s)
-router.get('/', cacheMiddleware(60), getProducts);
+router.get('/', optionalAuth, cacheMiddleware(60), getProducts);
 
 // 2. Specific named routes (BEFORE /:id)
-router.get('/categories/list', cacheMiddleware(300), getCategories);
-router.get('/featured', cacheMiddleware(60), getFeaturedProducts);
-router.get('/trending', cacheMiddleware(60), getTrendingProducts);
-router.get('/museum', cacheMiddleware(60), getMuseumPieces);
+router.get('/categories/list', optionalAuth, cacheMiddleware(300), getCategories);
+router.get('/featured', optionalAuth, cacheMiddleware(60), getFeaturedProducts);
+router.get('/trending', optionalAuth, cacheMiddleware(60), getTrendingProducts);
+router.get('/museum', optionalAuth, cacheMiddleware(60), getMuseumPieces);
 
 // 3. Category route (has parameter but specific path)
-router.get('/category/:category', cacheMiddleware(60), getProductsByCategory);
+router.get('/category/:category', optionalAuth, cacheMiddleware(60), getProductsByCategory);
 
 // 4. ID route (MUST BE LAST among GET routes)
-router.get('/:id', cacheMiddleware(60), getProductById);
+router.get('/:id', optionalAuth, cacheMiddleware(60), getProductById);
 
 // ========================================
 // ADMIN ROUTES (POST, PUT, DELETE)

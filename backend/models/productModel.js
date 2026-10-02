@@ -251,6 +251,7 @@ class Product {
       const {
         limit = 5,
         offset = 0,
+        approvalStatus = null,
       } = options;
 
       // Validate limit and offset
@@ -259,18 +260,26 @@ class Product {
 
       // Query to get trending products
       // Trending = high rating + high reviews + recent
+      const params = [];
+      let approvalClause = '';
+      if (approvalStatus) {
+        approvalClause = ' AND p.approvalStatus = ?';
+        params.push(approvalStatus);
+      }
       const query = `
         SELECT p.*, v.businessName AS vendorBusinessName, v.status AS vendorStatus
         FROM product p
         LEFT JOIN vendors v ON v.userId = p.vendorId
-        WHERE 1=1
+        WHERE 1=1${approvalClause}
         ORDER BY 
           (COALESCE(p.rating, 0) * 0.6 + (COALESCE(p.reviews, 0) / 100) * 0.4) DESC,
           p.id DESC
         LIMIT ${safeLimit} OFFSET ${safeOffset}
       `;
 
-      const [rows] = await connection.query(query);
+      const [rows] = params.length > 0
+        ? await connection.execute(query, params)
+        : await connection.query(query);
 
       return rows.map(
         (row) =>
@@ -521,12 +530,20 @@ class Product {
         params.push(searchTerm, searchTerm, searchTerm);
       }
 
-      if (options.minPrice !== null) {
+      if (options.approvalStatus) {
+        query += " AND approvalStatus = ?";
+        params.push(options.approvalStatus);
+      }
+
+      // NOTE (P0-1 fix): guard with explicit undefined checks so an absent
+      // bound does not inject `price >= NaN`, which matches zero rows and
+      // broke every includeCount pagination total.
+      if (options.minPrice !== null && options.minPrice !== undefined) {
         query += " AND price >= ?";
         params.push(parseFloat(options.minPrice));
       }
 
-      if (options.maxPrice !== null) {
+      if (options.maxPrice !== null && options.maxPrice !== undefined) {
         query += " AND price <= ?";
         params.push(parseFloat(options.maxPrice));
       }
@@ -547,14 +564,25 @@ class Product {
   }
 
  // Get unique categories
-  static async getCategories() {
+  static async getCategories(approvalStatus = null) {
     let connection;
     try {
       connection = await pool.getConnection();
 
-      const [rows] = await connection.query(
-        "SELECT DISTINCT category FROM product WHERE category IS NOT NULL ORDER BY category"
-      );
+      const params = [];
+      let clause = "WHERE category IS NOT NULL";
+      if (approvalStatus) {
+        clause += " AND approvalStatus = ?";
+        params.push(approvalStatus);
+      }
+      const [rows] = params.length > 0
+        ? await connection.execute(
+            `SELECT DISTINCT category FROM product ${clause} ORDER BY category`,
+            params
+          )
+        : await connection.query(
+            `SELECT DISTINCT category FROM product ${clause} ORDER BY category`
+          );
 
       return rows.map(row => row.category);
     } catch (err) {
