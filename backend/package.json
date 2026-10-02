@@ -12,7 +12,7 @@
     "password:reset:test": "node test-password-reset.js",
     "start": "cross-env NODE_ENV=production node --import=@sentry/node/import server.js",
     "dev": "cross-env NODE_ENV=development nodemon --exec \"node --import=@sentry/node/import server.js\"",
-    "test": "node --test \"tests/**/*.test.js\"",
+    "test": "node --test --test-concurrency=4 \"tests/**/*.test.js\"",
     "test:unit": "node --test tests/money.test.js tests/escrowLogic.test.js tests/refundGuard.test.js tests/uploadValidation.test.js",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
