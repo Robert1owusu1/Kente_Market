@@ -24,6 +24,9 @@ interface VendorOrderRow extends Order {
   shipping?: { city?: string | null; deliveryMethod?: string | null; pickupStation?: string | null; phone?: string | null };
   productionNote?: string;
   created_at?: string;
+  myStatus?: string;
+  myTracking?: string | null;
+  vendorProgress?: { advanced?: number; delivered?: number; total?: number };
 }
 
 const orderTotal = (o: VendorOrderRow) => o?.ownSubtotal ?? (o as unknown as { totalAmount?: number }).totalAmount ?? 0;
@@ -58,6 +61,7 @@ const VendorOrdersSection = () => {
   const [filterStatus, setFilterStatus] = useState('');
   const [noteText, setNoteText] = useState<KeyedState<string, string>>({});
   const [completionDate, setCompletionDate] = useState<KeyedState<string, string>>({});
+  const [trackingNumber, setTrackingNumber] = useState<KeyedState<string, string>>({});
 
   const filteredOrders = orders.filter((o) => {
     const matchesSearch = !searchTerm ||
@@ -92,10 +96,12 @@ const VendorOrdersSection = () => {
         orderStatus: order.orderStatus,
         productionNote: noteText[String(order.id)] || undefined,
         expectedCompletionDate: completionDate[String(order.id)] || undefined,
+        trackingNumber: trackingNumber[String(order.id)] || undefined,
       }).unwrap();
-      toast.success('Order updated — customer has been notified');
+      toast.success('Order updated');
       setNoteText((s) => ({ ...s, [String(order.id)]: '' }));
       setCompletionDate((s) => ({ ...s, [String(order.id)]: '' }));
+      setTrackingNumber((s) => ({ ...s, [String(order.id)]: '' }));
       refetch();
     } catch (error) {
       const err = (error as { data?: { message?: string }; message?: string; error?: string } | undefined);
@@ -261,6 +267,40 @@ const VendorOrdersSection = () => {
                       {s}
                     </span>
                   ))}
+                </div>
+
+                {/* Shared fulfilment progress (all vendors on this order) */}
+                {typeof order.vendorProgress?.total === 'number' && order.vendorProgress.total > 1 && (
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                    {order.vendorProgress.delivered ?? 0} of {order.vendorProgress.total} weavers delivered
+                    {order.myStatus && order.myStatus !== order.orderStatus ? ` · your part: ${order.myStatus}` : ''}
+                  </p>
+                )}
+
+                {/* Parcel tracking number (your shipment only) */}
+                <div className="mb-4 flex flex-col sm:flex-row sm:items-end gap-3">
+                  <div className="flex-1">
+                    <label className="flex items-center gap-1 text-xs text-gray-600 dark:text-gray-400 mb-1">
+                      <FaTruck /> Tracking number
+                    </label>
+                    <input
+                      type="text"
+                      value={trackingNumber[String(order.id)] ?? order.myTracking ?? ''}
+                      onChange={(e) => setTrackingNumber((s) => ({ ...s, [String(order.id)]: e.target.value }))}
+                      placeholder="e.g. DHL 1234567890"
+                      className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    />
+                  </div>
+                  <div>
+                    <button
+                      onClick={() => handleProgress(order)}
+                      disabled={updating && busyOrderId === order.id}
+                      className="inline-flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-60 font-medium"
+                    >
+                      {updating && busyOrderId === order.id ? <FaSpinner className="animate-spin" /> : <FaCheckCircle />}
+                      Save Update
+                    </button>
+                  </div>
                 </div>
 
                 {/* Customised production controls */}

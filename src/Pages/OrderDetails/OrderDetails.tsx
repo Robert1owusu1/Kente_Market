@@ -209,6 +209,16 @@ const OrderDetails = () => {
               {escrow.icon ? <escrow.icon /> : null} {escrow.label}
             </span>
           </div>
+          {Array.isArray((order as unknown as { trackingNumbers?: unknown }).trackingNumbers) &&
+            ((order as unknown as { trackingNumbers?: string[] }).trackingNumbers?.length ?? 0) > 0 && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {((order as unknown as { trackingNumbers?: string[] }).trackingNumbers ?? []).map((tn) => (
+                <span key={tn} className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs font-medium">
+                  <FaTruck /> Tracking: {tn}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
