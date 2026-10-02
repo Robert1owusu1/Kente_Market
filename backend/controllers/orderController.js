@@ -547,7 +547,7 @@ export const getOrderById = async (req, res) => {
          WHERE orderId = ? AND trackingNumber IS NOT NULL AND trackingNumber <> ''`,
         [req.params.id]
       );
-      order.trackingNumbers = [...new Set(trows.map((r) => r.trackingNumber))];
+      order.trackingNumbers = [...new Set(trows.map((/** @type {any} */ r) => r.trackingNumber))];
     } catch {
       order.trackingNumbers = [];
     }
