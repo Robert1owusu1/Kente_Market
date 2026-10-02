@@ -67,9 +67,10 @@ export const applyVendor = async (req, res) => {
       }
     } catch (e) {
  console.error(` Recipient creation failed for vendor ${req.user.id}: ${e.message}`);
+      // The Paystack error text can echo back submitted account details and
+      // provider internals, so it is logged but not returned.
       return res.status(400).json({
         message: `Could not create a payout recipient with your ${type === 'momo' ? 'mobile money' : 'bank'} details. Please verify the information and try again.`,
-        detail: e.message,
       });
     }
 
@@ -633,27 +634,100 @@ export const getVendorReviews = async (req, res) => {
 // @access  Private (vendor)
 export const getVendorReturns = async (req, res) => {
   try {
-    const vendorUserId = req.user.id;
+    const vendorUserId = parseInt(req.user.id, 10);
+    // Candidate returns: inline item.vendorId match (new orders) OR any of
+    // the vendor's products referenced by the order lines (legacy orders that
+    // predate the inline field — the same LIKE prefilter technique as the
+    // vendor orders list; the JS ownership check below stays authoritative).
+    const clauses = [];
+    const params = [];
+    const pushLikes = (key, value) => {
+      for (const pattern of [`%"${key}":${value}%`, `%"${key}": ${value}%`]) {
+        clauses.push(`o.items LIKE ?`);
+        params.push(pattern);
+      }
+    };
+    if (Number.isFinite(vendorUserId)) {
+      pushLikes('vendorId', vendorUserId);
+      try {
+        const [owned] = await pool.execute(
+          `SELECT id FROM product WHERE vendorId = ? LIMIT 300`,
+          [vendorUserId]
+        );
+        for (const prod of owned) {
+          pushLikes('product', prod.id);
+          pushLikes('productId', prod.id);
+        }
+      } catch {
+        // product table unavailable — inline match only
+      }
+    }
+    const where = clauses.length > 0 ? `WHERE (${clauses.join(' OR ')})` : 'WHERE 1=0';
     const [rows] = await pool.execute(
-      `SELECT rr.*, o.orderNumber, o.totalAmount,
-              u.firstName, u.lastName, u.email
+      `SELECT rr.*, o.orderNumber, o.items, u.firstName
        FROM return_requests rr
        LEFT JOIN orders o ON o.id = rr.orderId
        LEFT JOIN users u ON u.id = rr.userId
-       WHERE EXISTS (
-         SELECT 1
-         FROM JSON_TABLE(
-           o.items,
-           '$[*]' COLUMNS (
-             vendorId INT PATH '$.vendorId'
-           )
-         ) AS jt
-         WHERE jt.vendorId = ?
-       )
+       ${where}
        ORDER BY rr.created_at DESC`,
-      [vendorUserId]
+      params
     );
-    res.json(rows);
+    // Authoritative ownership: keep returns whose order holds at least one of
+    // the caller's lines (inline vendorId wins, else the product row).
+    const pids = [...new Set(
+      rows.flatMap((r) => {
+        let items = r.items;
+        if (typeof items === 'string') {
+          try { items = JSON.parse(items); } catch { return []; }
+        }
+        return Array.isArray(items) ? items : [];
+      }).map((it) => it.product ?? it.productId ?? it.id).filter((v) => v != null)
+    )];
+    const productVendor = new Map();
+    if (pids.length > 0) {
+      const placeholders = pids.map(() => '?').join(', ');
+      const [prows] = await pool.execute(
+        `SELECT id, vendorId FROM product WHERE id IN (${placeholders})`,
+        pids
+      );
+      for (const pr of prows) productVendor.set(String(pr.id), parseInt(pr.vendorId, 10));
+    }
+    const parseItems = (raw) => {
+      let items = raw;
+      if (typeof items === 'string') {
+        try { items = JSON.parse(items); } catch { return []; }
+      }
+      return Array.isArray(items) ? items : [];
+    };
+    const projected = [];
+    for (const r of rows) {
+      const items = parseItems(r.items);
+      const own = items.filter((it) => {
+        if (it.vendorId != null && parseInt(it.vendorId, 10) === vendorUserId) return true;
+        return productVendor.get(String(it.product ?? it.productId ?? it.id)) === vendorUserId;
+      });
+      if (own.length === 0) continue;
+      // P0-2-class redaction (same policy as the vendor orders list): own
+      // lines only, no order total, no buyer surname/email/addresses.
+      projected.push({
+        id: r.id,
+        orderId: r.orderId,
+        orderNumber: r.orderNumber,
+        firstName: r.firstName || null,
+        reason: r.reason,
+        description: r.description,
+        status: r.status,
+        adminNotes: r.adminNotes || null,
+        created_at: r.created_at,
+        items: own.map((it) => ({
+          product: it.product ?? it.productId ?? it.id ?? null,
+          name: it.name || it.title || 'Product',
+          qty: parseInt(it.qty ?? it.quantity, 10) || 1,
+          price: Number(it.price) || 0,
+        })),
+      });
+    }
+    res.json(projected);
   } catch (error) {
     console.error('Error fetching vendor returns:', error);
     res.status(500).json({ message: 'Failed to fetch vendor returns' });

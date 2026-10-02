@@ -830,6 +830,94 @@ export { ESCROW_RELEASE_DAYS };
  * the case where both the webhook and the verify-paystack fallback failed.
  * Called periodically by the cleanup scheduler.
  */
+/**
+ * Refund crash reconciler (P1). Detects orders stuck in "refund initiated but
+ * still marked paid": refundReference persisted pre-call, paymentStatus never
+ * flipped because the process crashed (or the flip failed) after the provider
+ * accepted the refund.
+ * - Refund journal EXISTS (money provably left): complete the bookkeeping —
+ *   void held escrow (vendors must not also be paid), flip to refunded,
+ *   journal + notify. Idempotent via the paid-guard on every write.
+ * - No journal (attempt threw, outcome unknown): change NOTHING about money —
+ *   alert admins to verify in the Paystack dashboard and resolve manually.
+ * Never re-issues a refund here: a second provider call after an accepted-
+ * but-unrecorded first one would double-refund the customer.
+ */
+export const reconcileRefundedButPaid = async () => {
+  let journalTable = true;
+  try {
+    const [[t]] = await pool.execute(`SHOW TABLES LIKE 'financial_events'`);
+    journalTable = !!t;
+  } catch {
+    journalTable = false;
+  }
+  const journalExpr = journalTable
+    ? `EXISTS(SELECT 1 FROM financial_events fe WHERE fe.dedupeKey = CONCAT('refund:', o.id) OR fe.dedupeKey LIKE CONCAT('refund:', o.id, ':%'))`
+    : `0`;
+  const [rows] = await pool.execute(
+    `SELECT o.id, o.paymentReference, o.escrowStatus, o.refundReference,
+            (${journalExpr}) AS refundJournaled
+     FROM orders o
+     WHERE o.paymentStatus = 'paid' AND o.refundReference IS NOT NULL`
+  );
+  if (rows.length === 0) return 0;
+  let recovered = 0;
+  for (const row of rows) {
+    try {
+      if (Number(row.refundJournaled) === 1) {
+        await cancelEscrowForOrder(row.id);
+        const [flip] = await pool.execute(
+          `UPDATE orders SET paymentStatus = 'refunded', updated_at = CURRENT_TIMESTAMP
+           WHERE id = ? AND paymentStatus = 'paid'`,
+          [row.id]
+        );
+        if (flip.affectedRows > 0) {
+          try {
+            await recordFinancialEvent({
+              eventType: 'refund.reconciled',
+              direction: 'info',
+              amount: 0,
+              orderId: row.id,
+              dedupeKey: `refund.reconciled:${row.id}`,
+              payload: { refundReference: row.refundReference },
+            });
+          } catch { /* journal is best-effort */ }
+          recovered += 1;
+        }
+        try {
+          const [admins] = await pool.execute(`SELECT id FROM users WHERE role = 'admin' LIMIT 5`);
+          for (const admin of admins) {
+            await Notification.create({
+              userId: admin.id,
+              type: 'system',
+              title: 'Refund crash recovered',
+              message: `Order #${row.id} was refunded via Paystack but crashed before the books flipped. Escrow voided and order marked refunded — no action needed.`,
+              link: `/admin/orders`,
+            });
+          }
+        } catch { /* notify is best-effort */ }
+      } else {
+        try {
+          const [admins] = await pool.execute(`SELECT id FROM users WHERE role = 'admin' LIMIT 5`);
+          for (const admin of admins) {
+            await Notification.create({
+              userId: admin.id,
+              type: 'system',
+              title: 'Refund outcome unknown — verify in Paystack',
+              message: `Order #${row.id} has a refund marker (${row.refundReference || 'set'}) but is still paid with no refund journal. Check the Paystack dashboard: if refunded, flip + void manually; if not, clear refundReference and retry. Do NOT blindly re-refund.`,
+              link: `/admin/orders`,
+            });
+          }
+        } catch { /* notify is best-effort */ }
+        recovered += 1;
+      }
+    } catch (err) {
+ console.warn(` Could not reconcile refund for order ${row.id}: ${err.message}`);
+    }
+  }
+  return recovered;
+};
+
 export const recoverStuckPendingOrders = async () => {
   const [rows] = await pool.execute(
     `SELECT id, paymentReference, items, totalAmount FROM orders

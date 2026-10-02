@@ -3,6 +3,9 @@
 // (consensus fulfilment: one vendor cannot move the shared order or arm
 // escrow alone). DB-backed; cleans up after itself.
 import { test, describe, before, after } from 'node:test';
+
+// Never attempt real SMTP from tests (see emailEnabled/EMAIL_DISABLED).
+process.env.EMAIL_DISABLED = '1';
 import assert from 'node:assert/strict';
 
 let pool = null;

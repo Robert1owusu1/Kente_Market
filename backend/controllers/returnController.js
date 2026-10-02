@@ -143,12 +143,23 @@ export const updateReturnStatus = async (req, res) => {
       try {
         const order = await Order.findById(existing.orderId);
         if (order && order.paymentStatus === 'paid' && order.paymentReference) {
+          const refundMarker = `refund:${order.id}:${req.params.id}:${order.paymentReference}`;
+          try {
+            await pool.execute(
+              `UPDATE orders SET refundReference = ? WHERE id = ? AND refundReference IS NULL`,
+              [refundMarker, existing.orderId]
+            );
+          } catch (markerErr) {
+ console.warn(` Could not persist refund marker for return ${req.params.id}: ${markerErr.message}`);
+          }
           const refund = await paystackServices.refundTransaction(
             order.paymentReference,
             undefined,
             `Return ${req.params.id} approved`
           );
           if (!refund?.status) {
+            await pool.execute(`UPDATE orders SET refundReference = NULL WHERE id = ?`, [existing.orderId])
+              .catch(() => {});
  console.warn(` Return ${req.params.id}: Paystack refund rejected (${refund?.message || 'unknown'}) — manual refund required`);
           } else {
  console.log(` Return ${req.params.id}: customer refunded via Paystack`);
