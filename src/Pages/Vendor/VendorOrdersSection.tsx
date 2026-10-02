@@ -16,10 +16,17 @@ interface VendorOrderItem extends OrderItem {
 
 interface VendorOrderRow extends Order {
   firstName?: string;
-  lastName?: string;
+  // P0-2 projection: the vendor API returns only the caller's own lines plus
+  // their subtotal and minimal fulfilment routing (no sibling items, no order
+  // total, no buyer surname/email/addresses, no payment reference).
+  ownSubtotal?: number;
+  itemCount?: number;
+  shipping?: { city?: string | null; deliveryMethod?: string | null; pickupStation?: string | null; phone?: string | null };
   productionNote?: string;
   created_at?: string;
 }
+
+const orderTotal = (o: VendorOrderRow) => o?.ownSubtotal ?? (o as unknown as { totalAmount?: number }).totalAmount ?? 0;
 
 const itemName = (it: OrderItem) => it?.name || it?.title || 'Product';
 const itemQty = (it: OrderItem) => parseInt(String(it?.quantity || it?.qty || 1), 10);
@@ -53,10 +60,10 @@ const VendorOrdersSection = () => {
   const [completionDate, setCompletionDate] = useState<KeyedState<string, string>>({});
 
   const filteredOrders = orders.filter((o) => {
-    const matchesSearch = !searchTerm || 
+    const matchesSearch = !searchTerm ||
       (o.orderNumber || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       (o.firstName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (o.lastName || '').toLowerCase().includes(searchTerm.toLowerCase());
+      (Array.isArray(o.items) ? o.items.map((it) => itemName(it as OrderItem)).join(' ').toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = !filterStatus || o.orderStatus === filterStatus;
     return matchesSearch && matchesStatus;
   });
@@ -102,10 +109,10 @@ const VendorOrdersSection = () => {
     const headers = ['Order #', 'Customer', 'Date', 'Items', 'Total', 'Status', 'Payment'];
     const rows = filteredOrders.map((o) => [
       o.orderNumber || `#${o.id}`,
-      `${o.firstName || ''} ${o.lastName || ''}`.trim(),
+      `${o.firstName || 'Customer'}`.trim(),
       new Date(o.created_at || '').toLocaleDateString(),
       (Array.isArray(o.items) ? o.items.map((it) => `${itemName(it)} x${itemQty(it)}`).join('; ') : ''),
-      o.totalAmount || 0,
+      orderTotal(o),
       o.orderStatus,
       o.paymentStatus,
     ]);
@@ -187,7 +194,7 @@ const VendorOrdersSection = () => {
                       {order.orderNumber || `#${order.id}`}
                     </p>
                     <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {order.firstName ? `${order.firstName} ${order.lastName || ''}` : 'Customer'} ·{' '}
+                      {order.firstName || 'Customer'} ·{' '}
                       {new Date(order.created_at || '').toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}
                     </p>
                   </div>
@@ -219,9 +226,10 @@ const VendorOrdersSection = () => {
 
                 {/* Delivery preference */}
                 {(() => {
-                  const sa = typeof order.shippingAddress === 'string'
+                  const sa = (order.shipping as { deliveryMethod?: string; pickupStation?: string } | undefined)
+                    || (typeof order.shippingAddress === 'string'
                     ? (() => { try { return JSON.parse(order.shippingAddress as string); } catch { return {}; } })()
-                    : (order.shippingAddress || {});
+                    : (order.shippingAddress || {}));
                   const del = sa as { deliveryMethod?: string; pickupStation?: string };
                   if (del && del.deliveryMethod === 'pickup') {
                     return (

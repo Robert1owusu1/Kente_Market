@@ -7,11 +7,11 @@
   "scripts": {
     "setup-admin": "node setupFirstAdmin.js",
     "db:setup": "node setupDB.js && npm run db:migrate",
-    "db:migrate": "node migrateNewTables.js && node migrateMarketplace.js && node migrateHardening.js && node migratePaymentHardening.js && node migrateOps.js && node migrateSuggestions.js && node migrateMessagePosts.js && node migrateFulfilment.js",
+    "db:migrate": "node migrateNewTables.js && node migrateMarketplace.js && node migrateHardening.js && node migratePaymentHardening.js && node migrateOps.js && node migrateSuggestions.js && node migrateMessagePosts.js && node migrateFulfilment.js && node migrateVendorMarks.js",
     "db:backup": "bash ../.deploy/backup-db.sh",
     "password:reset:test": "node test-password-reset.js",
-    "start": "node --import=@sentry/node/import server.js",
-    "dev": "nodemon --exec \"node --import=@sentry/node/import server.js\"",
+    "start": "cross-env NODE_ENV=production node --import=@sentry/node/import server.js",
+    "dev": "cross-env NODE_ENV=development nodemon --exec \"node --import=@sentry/node/import server.js\"",
     "test": "node --test \"tests/**/*.test.js\"",
     "test:unit": "node --test tests/money.test.js tests/escrowLogic.test.js tests/refundGuard.test.js tests/uploadValidation.test.js",
     "typecheck": "tsc --noEmit -p tsconfig.json"
@@ -30,6 +30,7 @@
     "compression": "^1.8.1",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
+    "cross-env": "^10.1.0",
     "dotenv": "^17.2.2",
     "express": "^5.1.0",
     "express-async-handler": "^1.2.0",
@@ -42,12 +43,13 @@
     "multer": "^2.0.2",
     "mysql2": "^3.15.0",
     "node-cache": "^5.1.2",
-    "nodemailer": "^9.1.1",
+    "nodemailer": "^10.0.13",
     "passport": "^0.7.0",
     "passport-facebook": "^3.0.0",
     "passport-google-oauth20": "^2.0.0",
     "rate-limit-redis": "^6.0.1",
-    "redis": "^6.2.1"
+    "redis": "^6.2.1",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/cookie-parser": "^1.4.10",
