@@ -133,7 +133,7 @@ export const getOrderVendorIds = async (order) => {
 
 const getVendorMark = async (orderId, vendorUserId) => {
   const [[row]] = await pool.execute(
-    `SELECT status, note, expectedCompletionDate FROM order_vendor_marks WHERE orderId = ? AND vendorId = ?`,
+    `SELECT status, note, expectedCompletionDate, trackingNumber FROM order_vendor_marks WHERE orderId = ? AND vendorId = ?`,
     [parseInt(orderId, 10), parseInt(vendorUserId, 10)]
   );
   return row || null;
@@ -258,7 +258,7 @@ export const getVendorOrders = async (req, res) => {
         const oids = vendorOrders.map((o) => o.id);
         const placeholders = oids.map(() => '?').join(', ');
         const [mrows] = await pool.execute(
-          `SELECT orderId, vendorId, status, updated_at FROM order_vendor_marks WHERE orderId IN (${placeholders})`,
+          `SELECT orderId, vendorId, status, trackingNumber, updated_at FROM order_vendor_marks WHERE orderId IN (${placeholders})`,
           oids
         );
         for (const m of mrows) {
@@ -277,6 +277,7 @@ export const getVendorOrders = async (req, res) => {
       return {
         ...projected,
         myStatus: mine ? mine.status : 'processing',
+        myTracking: mine?.trackingNumber || null,
         vendorProgress: { advanced: ahead, delivered: done, total: marks.length },
       };
     }));
@@ -321,6 +322,10 @@ export const updateVendorOrderStatus = async (req, res) => {
     const orderStatus = (req.body.orderStatus || "").trim();
     const productionNote = (req.body.productionNote || "").trim();
     const expectedCompletionDate = req.body.expectedCompletionDate || null;
+    // P1 tracking: parcel number for the vendor's own shipment. Trimmed to the
+    // column width; key-absent means "leave unchanged" (COALESCE below).
+    const trackingProvided = req.body.trackingNumber !== undefined;
+    const trackingNumber = trackingProvided ? String(req.body.trackingNumber || '').trim().slice(0, 191) || null : null;
 
     if (!activeStatuses.includes(orderStatus)) {
       return res.status(400).json({
@@ -386,12 +391,13 @@ export const updateVendorOrderStatus = async (req, res) => {
       }
     } else {
       await pool.execute(
-        `INSERT INTO order_vendor_marks (orderId, vendorId, status, note, expectedCompletionDate)
-         VALUES (?, ?, ?, ?, ?)
+        `INSERT INTO order_vendor_marks (orderId, vendorId, status, note, expectedCompletionDate, trackingNumber)
+         VALUES (?, ?, ?, ?, ?, ?)
          ON DUPLICATE KEY UPDATE status = ?, note = COALESCE(?, note),
-           expectedCompletionDate = COALESCE(?, expectedCompletionDate)`,
-        [parseInt(req.params.id, 10), vendorUserId, orderStatus, productionNote || null, finalCompletion,
-         orderStatus, productionNote || null, finalCompletion]
+           expectedCompletionDate = COALESCE(?, expectedCompletionDate),
+           trackingNumber = COALESCE(?, trackingNumber)`,
+        [parseInt(req.params.id, 10), vendorUserId, orderStatus, productionNote || null, finalCompletion, trackingNumber,
+         orderStatus, productionNote || null, finalCompletion, trackingNumber]
       );
       const [markRows] = await pool.execute(
         `SELECT vendorId, status FROM order_vendor_marks WHERE orderId = ?`,
