@@ -4,15 +4,27 @@ import { useState } from 'react';
 import { FaUndo, FaSearch } from 'react-icons/fa';
 import { useGetVendorReturnsQuery } from '../../slices/vendorsApiSlice';
 import Loader from '../../components/loader/Loader';
+import { formatCedi } from '../../utils/formatCurrency';
 import type { ReturnRequest } from '../../slices/apiTypes';
+
+interface VendorReturnItem {
+  product?: number | string | null;
+  name?: string;
+  qty?: number;
+  price?: number | string;
+}
 
 interface VendorReturnRow extends ReturnRequest {
   orderNumber?: string;
   firstName?: string;
-  lastName?: string;
-  totalAmount?: number | string;
+  items?: VendorReturnItem[];
   created_at?: string;
 }
+
+const returnTotal = (r: VendorReturnRow) =>
+  Array.isArray(r.items)
+    ? r.items.reduce((sum, it) => sum + (Number(it.price) || 0) * (parseInt(String(it.qty ?? 1), 10) || 1), 0)
+    : 0;
 
 const statusBadge: Record<string, string> = {
   pending: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
@@ -42,7 +54,7 @@ const VendorReturns = () => {
     return (
       (r.orderNumber || '').toLowerCase().includes(term) ||
       (r.firstName || '').toLowerCase().includes(term) ||
-      (r.lastName || '').toLowerCase().includes(term)
+      (Array.isArray(r.items) ? r.items.map((it) => it.name || '').join(' ') : '').toLowerCase().includes(term)
     );
   });
 
@@ -89,9 +101,9 @@ const VendorReturns = () => {
                 {filteredReturns.map((r: VendorReturnRow) => (
                   <tr key={r.id} className="border-t border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50">
                     <td className="px-6 py-4 font-mono text-xs">{r.orderNumber || `#${r.orderId}`}</td>
-                    <td className="px-6 py-4 text-gray-900 dark:text-white">{r.firstName} {r.lastName}</td>
+                    <td className="px-6 py-4 text-gray-900 dark:text-white">{r.firstName || 'Customer'}</td>
                     <td className="px-6 py-4 text-gray-600 dark:text-gray-400">{reasonLabels[r.reason || ''] || r.reason}</td>
-                    <td className="px-6 py-4 font-semibold">GH₵{parseFloat(String(r.totalAmount || 0)).toFixed(2)}</td>
+                    <td className="px-6 py-4 font-semibold">{formatCedi(returnTotal(r))}</td>
                     <td className="px-6 py-4">
                       <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${statusBadge[r.status || ''] || statusBadge.pending}`}>
                         {r.status}

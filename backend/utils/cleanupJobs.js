@@ -10,7 +10,7 @@ import {
   reconcileStuckTransfers,
   reclaimStaleProcessingWebhooks,
 } from '../Services/transferReconciliationService.js';
-import { reconcileAvailableAllocations } from '../Services/escrowService.js';
+import { reconcileAvailableAllocations, reconcileRefundedButPaid } from '../Services/escrowService.js';
 import { runScheduledJob } from './schedulerJob.js';
 
 // Deactivate (not destroy) stale unverified users. Never hard-delete a user
@@ -227,12 +227,13 @@ const scheduleJobs = () => {
   run('reconcileStuckTransfers', reconcileStuckTransfers, 30 * 60 * 1000);
   run('reclaimStaleProcessingWebhooks', reclaimStaleProcessingWebhooks, 15 * 60 * 1000);
   run('reconcileAvailableAllocations', reconcileAvailableAllocations, 15 * 60 * 1000);
+  run('reconcileRefundedButPaid', reconcileRefundedButPaid, 15 * 60 * 1000);
   // Weekly vendor demand digest (Monday mornings). Settings-guarded and
   // idempotent per calendar week; not fired on boot (that would email everyone).
   setTimeout(() => runScheduledJob('sendWeeklyVendorDigest', sendWeeklyVendorDigest).catch(() => {}), 7 * DAY);
   setInterval(() => runScheduledJob('sendWeeklyVendorDigest', sendWeeklyVendorDigest).catch(() => {}), 7 * DAY);
 
- console.log(' Cleanup scheduler started (users 24h, escrow 2h, stuck orders 30m, reservations 30m, SLA 1h, restock 1h, price-drop 1h, abandoned-cart 1h, transfers 30m, webhook reclaim 15m, digest weekly) — distributed lock + job status + failure alerts active');
+ console.log(' Cleanup scheduler started (users 24h, escrow 2h, stuck orders 30m, reservations 30m, SLA 1h, restock 1h, price-drop 1h, abandoned-cart 1h, transfers 30m, webhook reclaim 15m, refund reconcile 15m, digest weekly) — distributed lock + job status + failure alerts active');
 };
 
 export const startCleanupSchedule = () => {

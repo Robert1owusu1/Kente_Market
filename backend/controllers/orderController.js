@@ -997,6 +997,21 @@ export const cancelOrder = async (req, res) => {
     // accepted. If the refund fails, the order is left untouched so the money
     // cannot silently disappear from the platform's books.
     if (order.paymentStatus === 'paid') {
+      // P1 refund reconciler: persist the initiation marker BEFORE calling
+      // the provider, so a crash between provider-accept and the status flip
+      // below stays detectable (marker set + still paid + refund journaled).
+      // An explicit provider REJECTION clears it (money provably did not
+      // move); a THROW keeps it (unknown — reconciler alerts for dashboard
+      // verification instead of touching money).
+      const refundMarker = `refund:${order.id}:${order.paymentReference}`;
+      try {
+        await pool.execute(
+          `UPDATE orders SET refundReference = ? WHERE id = ? AND refundReference IS NULL`,
+          [refundMarker, req.params.id]
+        );
+      } catch (markerErr) {
+ console.warn(` Could not persist refund marker for order ${req.params.id}: ${markerErr.message}`);
+      }
       try {
         const refund = await paystackServices.refundTransaction(
           order.paymentReference,
@@ -1004,6 +1019,8 @@ export const cancelOrder = async (req, res) => {
           `Order ${req.params.id} cancelled`
         );
         if (!refund?.status) {
+          await pool.execute(`UPDATE orders SET refundReference = NULL WHERE id = ?`, [req.params.id])
+            .catch(() => {});
           return res.status(400).json({
             message: `Refund failed (${refund?.message || 'unknown reason'}). Order was not cancelled. Please refund the customer manually.`,
           });

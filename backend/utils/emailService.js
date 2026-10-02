@@ -2,6 +2,36 @@
 import nodemailer from 'nodemailer';
 import crypto from 'crypto';
 
+/**
+ * Mask an email address for logs: keep the first character of the local part
+ * and the full domain, so a support engineer can still correlate a message
+ * with an account, without writing customer PII into log aggregators (which
+ * generally have broader access and longer retention than the database).
+ */
+const maskEmail = (email) => {
+  const value = String(email || '');
+  const at = value.indexOf('@');
+  if (at <= 0) return '[redacted]';
+  const local = value.slice(0, at);
+  const domain = value.slice(at + 1);
+  const head = local.slice(0, 1);
+  return `${head}${'*'.repeat(Math.max(local.length - 1, 1))}@${domain}`;
+};
+
+/**
+ * Mask the token in a password-reset URL. The full URL is a live credential:
+ * anyone who reads the log line can reset that account's password for the next
+ * hour. Only the origin and path shape are useful for debugging.
+ */
+const maskResetUrl = (url) => {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.origin}${parsed.pathname}?token=[redacted]`;
+  } catch {
+    return '[redacted-url]';
+  }
+};
+
 // Create transporter - Fixed for nodemailer v7
 const createTransporter = () => {
   // Debug log
@@ -31,6 +61,9 @@ const createTransporter = () => {
  * fall back to in-app notifications without wrapping sendMail in try/catch.
  */
 export const emailEnabled = () => {
+  // EMAIL_DISABLED=1 short-circuits all SMTP (live-DB test suites set it so
+  // they never attempt real delivery with long timeouts).
+  if (process.env.EMAIL_DISABLED === '1') return false;
   if (!process.env.EMAIL_USER || !process.env.EMAIL_PASSWORD) {
     return false;
   }
@@ -46,7 +79,7 @@ export const emailEnabled = () => {
 export const sendEmailSafely = async (email, subject, html) => {
   if (!email || !subject || !html) return false;
   if (!emailEnabled()) {
- console.warn(`⏭ Email disabled/skipped for "${subject}" -> ${email} (set EMAIL_USER/EMAIL_PASSWORD)`);
+ console.warn(`Email disabled/skipped for "${subject}" -> ${maskEmail(email)} (set EMAIL_USER/EMAIL_PASSWORD)`);
     return false;
   }
   const transporter = createTransporter();
@@ -57,10 +90,10 @@ export const sendEmailSafely = async (email, subject, html) => {
       subject,
       html,
     });
- console.log(` Sent "${subject}" to ${email}: ${info.messageId}`);
+ console.log(` Sent "${subject}" to ${maskEmail(email)}: ${info.messageId}`);
     return true;
   } catch (error) {
- console.error(` Email failed for "${subject}" -> ${email}:`, error.message);
+ console.error(` Email failed for "${subject}" -> ${maskEmail(email)}:`, error.message);
     return false;
   }
 };
@@ -142,7 +175,7 @@ export const sendOTPEmail = async (email, firstName, otp) => {
   };
 
   try {
- console.log(` Sending OTP email to ${email}...`);
+ console.log(` Sending OTP email to ${maskEmail(email)}...`);
     const info = await transporter.sendMail(mailOptions);
  console.log(` OTP email sent: ${info.messageId}`);
     return true;
@@ -206,7 +239,7 @@ export const sendWelcomeEmail = async (email, firstName) => {
   };
 
   try {
- console.log(` Sending welcome email to ${email}...`);
+ console.log(` Sending welcome email to ${maskEmail(email)}...`);
     const info = await transporter.sendMail(mailOptions);
  console.log(` Welcome email sent: ${info.messageId}`);
   } catch (error) {
@@ -292,8 +325,8 @@ export const sendPasswordResetEmail = async (email, firstName, resetToken) => {
   };
 
   try {
- console.log(` Sending password reset email to ${email}...`);
- console.log(` Reset URL: ${resetUrl}`);
+ console.log(` Sending password reset email to ${maskEmail(email)}...`);
+ console.log(` Reset URL: ${maskResetUrl(resetUrl)}`);
     const info = await transporter.sendMail(mailOptions);
  console.log(` Password reset email sent: ${info.messageId}`);
     return true;
@@ -368,7 +401,7 @@ export const sendPasswordResetConfirmation = async (email, firstName) => {
   };
 
   try {
- console.log(` Sending password reset confirmation to ${email}...`);
+ console.log(` Sending password reset confirmation to ${maskEmail(email)}...`);
     const info = await transporter.sendMail(mailOptions);
  console.log(` Password reset confirmation sent: ${info.messageId}`);
   } catch (error) {
@@ -406,7 +439,7 @@ export const sendContactConfirmation = async (email, name) => {
     `,
   };
   try {
- console.log(` Sending contact confirmation to ${email}...`);
+ console.log(` Sending contact confirmation to ${maskEmail(email)}...`);
     const info = await transporter.sendMail(mailOptions);
  console.log(` Contact confirmation sent: ${info.messageId}`);
   } catch (error) {
@@ -439,7 +472,7 @@ export const sendSubscribeConfirmation = async (email) => {
     `,
   };
   try {
- console.log(` Sending subscribe confirmation to ${email}...`);
+ console.log(` Sending subscribe confirmation to ${maskEmail(email)}...`);
     const info = await transporter.sendMail(mailOptions);
  console.log(` Subscribe confirmation sent: ${info.messageId}`);
   } catch (error) {
