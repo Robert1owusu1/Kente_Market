@@ -41,6 +41,8 @@ describe('Ghana pricing rules (shared/pricing.js)', () => {
     expect(calcCouponDiscount(100, 'percentage', 10)).toBe(10);
     expect(calcCouponDiscount(30, 'fixed', 50)).toBe(30);
     expect(calcCouponDiscount(100, 'percentage', -5)).toBe(0);
+    expect(calcTax(100)).toBe(15);
+    expect(calcShipping(100)).toBe(15);
   });
 
   test('subtotal tolerates qty/quantity shapes; escrow splits add up', () => {

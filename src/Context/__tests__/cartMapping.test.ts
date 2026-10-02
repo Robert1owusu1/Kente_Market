@@ -1,7 +1,7 @@
 // Cart shape migration: server lines {product,name,qty,image} must become
 // client lines {id,title,quantity,img} or every count/total renders NaN.
 import { describe, test, expect } from 'vitest';
-import { remapServerLine, migrateCartItem, normalizeColors } from '../../Context/CartContext';
+import { remapServerLine, migrateCartItem, normalizeColors } from '../../utils/cartMapping';
 import type { CartItem } from '../../Context/CartContext';
 
 const serverLine = {
