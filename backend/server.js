@@ -149,7 +149,12 @@ if (!sessionSecret) {
 }
 app.use(session({
   secret: sessionSecret,
-  store: new MySQLStore({}, pool),
+  // The connection must be passed as `options.connection`. Passing the pool as
+  // a second positional argument (`new MySQLStore({}, pool)`) is not how
+  // express-mysql-session reads it, so the store built its own unconfigured
+  // connection - meaning the app's TLS settings and connect deadline in
+  // config/db.js were not applied to session traffic.
+  store: new MySQLStore({}, { connection: pool }),
   resave: false,
   saveUninitialized: false,
   cookie: {
@@ -173,10 +178,17 @@ if (process.env.NODE_ENV === 'production') {
  console.error(' FRONTEND_URL must be set in production (CORS allow-list)');
     process.exit(1);
   }
+  // P0-9: without the secret every paid path degrades to "charged but
+  // stuck pending" (verify HMAC fails, settlement auth fails, recovery
+  // cannot run). A warning is not enough for money — fail fast like
+  // JWT_SECRET/FRONTEND_URL above.
+  if (!process.env.PAYSTACK_SECRET_KEY) {
+ console.error(' PAYSTACK_SECRET_KEY must be set in production');
+    process.exit(1);
+  }
   const warn = (name, msg) => {
  if (!process.env[name]) console.log(`${name} not set — ${msg}`);
   };
-  warn('PAYSTACK_SECRET_KEY', 'payment verification / webhooks will fail');
   warn('EMAIL_USER', 'email delivery (OTP / password reset) will fail');
   warn('REPLICATE_API_TOKEN', 'AI try-on is disabled (503)');
   warn('GOOGLE_CLIENT_ID', 'Google sign-in is disabled');
@@ -242,11 +254,17 @@ app.use('/uploads', (req, res, next) => {
   res.send(PLACEHOLDER_SVG);
 });
 
+// Uploaded media. These were served `immutable, max-age=30d`, which means a
+// user who uploads something personal and then deletes it cannot make the bytes
+// unreachable - the browser and any intermediary cache keep serving them for a
+// month. A short cache still covers the common case (the same image re-read on
+// the next page view) while letting a delete actually take effect. Filenames are
+// unguessable (crypto.randomUUID), which is what makes short caching safe here.
 app.use(
   '/uploads',
   express.static(uploadsRoot, {
-    maxAge: '30d',
-    immutable: true,
+    maxAge: '1h',
+    etag: true,
   })
 );
 
@@ -263,7 +281,20 @@ app.use(
 // 9. Apply general rate limiting to all API routes
 app.use('/api/', apiLimiter);
 
-// 9b. CSRF protection for state-changing requests (cookie-based auth)
+// 9b. CSRF protection for state-changing requests (cookie-based auth).
+//
+// Invariant: when the frontend and API are on different origins, cookies must
+// be SameSite=None (see config/cookieConfig.js) because browsers will not attach
+// them to cross-site fetch(). SameSite=None is precisely the configuration that
+// removes the browser's built-in CSRF defence, so the double-submit token here
+// is the ONLY thing standing between a third-party site and an authenticated
+// action (change email, place an order, edit a vendor profile). If this mount is
+// ever moved, narrowed, or reordered after the routes, that protection silently
+// disappears with no test failing. Assert the coupling explicitly.
+if (cookieSameSite() === 'none' && typeof csrfProtection !== 'function') {
+  console.error(' COOKIE_SAME_SITE=none requires csrfProtection to be mounted on /api/');
+  process.exit(1);
+}
 app.use('/api/', csrfProtection);
 
 // ============================================

@@ -72,9 +72,13 @@ export default function CustomRequestCheckout() {
   }, [userInfo]);
 
   useEffect(() => {
+    // P0-9: surface a missing/invalid public key like the main checkout does —
+    // previously the pay button silently never initialized here.
     const key = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY;
     if (key && !key.includes("xxxx") && key.length >= 20) {
       setPaystackKey(key);
+    } else {
+      toast.error('Payment system not configured. Please contact support.');
     }
   }, []);
 
