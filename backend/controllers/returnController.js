@@ -7,6 +7,7 @@ import { voidEscrowForOrder } from "../Services/escrowService.js";
 import paystackServices from "../Services/paystackservices.js";
 import { recordFinancialEvent } from "../Services/ledgerService.js";
 import Coupon from "../models/couponModel.js";
+import { restoreStockForOrder } from "./orderController.js";
 import isValidId from "../utils/isValidId.js";
 
 const VALID_STATUSES = ["pending", "approved", "rejected", "completed"];
@@ -162,6 +163,28 @@ export const updateReturnStatus = async (req, res) => {
                WHERE id = ? AND paymentStatus = 'paid'`,
               [existing.orderId]
  ).catch((e) => console.warn(` Could not mark order ${existing.orderId} refunded: ${e.message}`));
+            // P0-10: the payment decremented stock; the refund must put the
+            // units back (mirrors cancelOrder). Lines never taken at payment
+            // (stock conflicts) are skipped so stock is not inflated.
+            try {
+              const skipProductIds = new Set();
+              const storedConflicts = order.stockConflicts;
+              const conflicts = Array.isArray(storedConflicts)
+                ? storedConflicts
+                : typeof storedConflicts === 'string'
+                ? (() => { try { return JSON.parse(storedConflicts); } catch { return []; } })()
+                : [];
+              for (const c of conflicts) {
+                if (c?.productId) skipProductIds.add(c.productId);
+              }
+              await restoreStockForOrder(order.items, { skipProductIds });
+              await pool.execute(
+                `UPDATE orders SET stockShortfall = 0, stockConflicts = NULL WHERE id = ?`,
+                [existing.orderId]
+              );
+            } catch (restoreErr) {
+ console.warn(` Could not restore stock for return ${req.params.id}: ${restoreErr.message}`);
+            }
             // P0-6: the payment consumed a coupon use; the refund frees it.
             if (order.couponId) {
               try {
