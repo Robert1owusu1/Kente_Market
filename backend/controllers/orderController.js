@@ -309,6 +309,14 @@ export const addOrderItems = async (req, res) => {
       return res.status(400).json({ message: "One or more products are no longer available" });
     }
 
+    // Moderation gate (P0-1): only admin-approved products may be ordered.
+    // Rejected / pending / changes_requested items must never reach payment,
+    // escrow allocation or stock reservation — even when ordered by direct ID.
+    const unapproved = [...productMap.values()].find((p) => p.approvalStatus !== 'approved');
+    if (unapproved) {
+      return res.status(400).json({ message: "One or more products are not available for sale" });
+    }
+
     // Stock enforcement: reject quantities that exceed available inventory for
     // in-stock (non made-to-order) items. Made-to-order items are woven on
     // demand, so finite stock does not apply.
