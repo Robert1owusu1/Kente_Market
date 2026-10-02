@@ -11,6 +11,7 @@ import { resolveImageUrl } from '../../utils/imageUrl';
 import { yardOptionsFor, evenYardsFrom } from '../../utils/yards';
 import Seo from '../../components/Seo/Seo';
 import type { Product } from '../../types/domain';
+import { formatCedi } from '../../utils/formatCurrency';
 
 type ProductCardType = Product & {
   printType?: string;
@@ -374,11 +375,11 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
 
           <div className="flex items-center gap-2 mb-3 flex-wrap">
             <span className="text-lg sm:text-2xl font-bold text-primary">
-              GH₵{productPrice.toFixed(2)}
+              {formatCedi(productPrice)}
             </span>
             {product.originalPrice && Number(product.originalPrice) > productPrice && (
               <span className="text-sm sm:text-lg text-gray-500 line-through">
-                GH₵{Number(product.originalPrice).toFixed(2)}
+                {formatCedi(Number(product.originalPrice))}
               </span>
             )}
           </div>

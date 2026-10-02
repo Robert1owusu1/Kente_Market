@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { FaWallet, FaUniversity, FaMobileAlt, FaSpinner, FaCheckCircle, FaExclamationTriangle } from 'react-icons/fa';
 import { toast } from 'react-toastify';
 import { useGetMyVendorProfileQuery, useWithdrawVendorMutation } from '../../slices/vendorsApiSlice';
-import { formatCurrency } from '../../utils/formatCurrency';
+import {formatCurrency, formatCedi} from '../../utils/formatCurrency';
 import Loader from '../../components/loader/Loader';
 
 const txBadge: Record<string, string> = {
@@ -141,7 +141,7 @@ const VendorPayouts = () => {
             step="0.01"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
-            placeholder={`Max: GH₵${(summary.availableBalance || 0).toFixed(2)}`}
+            placeholder={`Max: ${formatCedi((summary.availableBalance || 0))}`}
             className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
           />
           <button

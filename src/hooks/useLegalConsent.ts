@@ -9,7 +9,7 @@ export type LegalDoc = "terms" | "privacy";
 
 const API_BASE_URL =
   import.meta.env.VITE_API_URL ||
-  (import.meta.env.DEV ? "http://localhost:5000" : "");
+  "";
 
 const STORAGE_KEYS: Record<LegalDoc, string> = {
   terms: "bk_agreed_terms",

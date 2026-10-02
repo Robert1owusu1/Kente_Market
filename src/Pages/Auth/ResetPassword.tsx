@@ -1,3 +1,4 @@
+import { Base_URL as API_BASE_URL } from '../../constant';
 // ResetPassword.jsx - Complete Component
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
@@ -74,7 +75,6 @@ const ResetPassword = () => {
   const [isTokenValid, setIsTokenValid] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
 
-  const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:5000' : '');
 
   // Validate token on mount
   useEffect(() => {
@@ -110,12 +110,16 @@ const ResetPassword = () => {
   const validateForm = () => {
     const newErrors: FormErrors = {};
     
+    // Matches the server policy exactly (8 chars, at least one letter and one
+    // number). This used to demand upper AND lower AND a digit, which the
+    // backend never enforced — so the UI rejected valid passwords and the
+    // message described a rule that did not exist.
     if (!formData.password) {
       newErrors.password = 'Password is required';
     } else if (formData.password.length < 8) {
       newErrors.password = 'Password must be at least 8 characters';
-    } else if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(formData.password)) {
-      newErrors.password = 'Password must contain uppercase, lowercase, and number';
+    } else if (!/[A-Za-z]/.test(formData.password) || !/[0-9]/.test(formData.password)) {
+      newErrors.password = 'Password must contain at least one letter and one number';
     }
     
     if (!formData.confirmPassword) {

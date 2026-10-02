@@ -7,6 +7,7 @@ import { useGetMyWishlistQuery, useRemoveFromWishlistMutation } from '../../slic
 import { ProductGridSkeleton } from '../../components/loader/Skeleton';
 import { resolveImageUrl } from '../../utils/imageUrl';
 import { yardOptionsFor } from '../../utils/yards';
+import { formatCedi } from '../../utils/formatCurrency';
 
 interface WishlistView {
   id?: number | string;
@@ -215,11 +216,11 @@ const WishlistPage = () => {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <span className="text-lg font-bold text-primary">
-                      GH₵ {Number(data.price).toFixed(2)}
+                      {formatCedi(Number(data.price))}
                     </span>
                     {data.originalPrice && (
                       <span className="text-sm text-gray-400 line-through">
-                        GH₵ {Number(data.originalPrice).toFixed(2)}
+                        {formatCedi(Number(data.originalPrice))}
                       </span>
                     )}
                   </div>

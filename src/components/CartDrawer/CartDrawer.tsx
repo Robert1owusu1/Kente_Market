@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { FaTimes, FaArrowRight, FaShoppingCart } from "react-icons/fa";
 import { calcOrderTotals } from "../../utils/pricing";
 import { resolveImageUrl } from "../../utils/imageUrl";
+import { formatCedi } from '../../utils/formatCurrency';
 
 const ANIMATION_DURATION = 300;
 
@@ -162,7 +163,7 @@ const CartDrawer = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
                           {item.title}
                         </h4>
                         <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                          Price: GH₵ {Number(item.price).toFixed(2)}
+                          Price: {formatCedi(Number(item.price))}
                         </p>
 
                         <div className="mt-4 flex flex-wrap items-center gap-3">
@@ -191,7 +192,7 @@ const CartDrawer = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
                           </div>
 
                           <p className="text-sm font-medium text-gray-600 dark:text-gray-300">
-                            Subtotal: GH₵ {(Number(item.price) * item.quantity).toFixed(2)}
+                            Subtotal: {formatCedi((Number(item.price) * item.quantity))}
                           </p>
                         </div>
                       </div>
@@ -216,21 +217,21 @@ const CartDrawer = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
               <div className="space-y-2 text-sm text-gray-600 dark:text-gray-300">
                 <div className="flex justify-between">
                   <span>Subtotal</span>
-                  <span>GH₵ {totals.subtotal.toFixed(2)}</span>
+                  <span>{formatCedi(totals.subtotal)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Shipping</span>
-                  <span>{totals.shipping === 0 ? "Free" : `GH₵ ${totals.shipping.toFixed(2)}`}</span>
+                  <span>{totals.shipping === 0 ? "Free" : `${formatCedi(totals.shipping)}`}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Tax</span>
-                  <span>GH₵ {totals.tax.toFixed(2)}</span>
+                  <span>{formatCedi(totals.tax)}</span>
                 </div>
               </div>
 
               <div className="mt-3 flex items-center justify-between text-lg font-semibold text-gray-900 dark:text-white">
                 <span>Total</span>
-                <span>GH₵ {totals.total.toFixed(2)}</span>
+                <span>{formatCedi(totals.total)}</span>
               </div>
 
               <Link

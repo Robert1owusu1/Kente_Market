@@ -1,3 +1,4 @@
+import { Base_URL as API_BASE_URL } from '../../constant';
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { FcGoogle } from "react-icons/fc";
@@ -407,7 +408,6 @@ const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     toast.error(errorMessage);
   }
 };
-const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:5000' : '');
 
 
   // OAuth handler: Google sign-up requires accepting the legal policies first.

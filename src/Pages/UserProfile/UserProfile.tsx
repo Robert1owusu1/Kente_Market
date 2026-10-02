@@ -5,7 +5,7 @@ import { IoMdSearch } from "react-icons/io";
 import { BiLoaderAlt } from "react-icons/bi";
 import { useAppDispatch, useAppSelector } from '../../store';
 import type { Address, Design, PaymentMethod, ReturnRequest, Ticket } from '../../slices/apiTypes';
-import { useLogoutMutation, useUpdateProfileMutation } from '../../slices/usersApiSlice';
+import { useLogoutMutation, useUpdateProfileMutation, useChangePasswordMutation } from '../../slices/usersApiSlice';
 import { useUploadProfilePictureMutation, useDeleteProfilePictureMutation } from '../../slices/profileApiSlice';
 import { logout, setCredentials } from '../../slices/authSlice';
 import { toast } from 'react-toastify';
@@ -17,6 +17,7 @@ import { useGetMyPaymentMethodsQuery, useAddPaymentMethodMutation, useSetDefault
 import { useGetMyTicketsQuery, useCreateTicketMutation } from '../../slices/supportApiSlice';
 import { useCart } from '../../Context/CartContext';
 import { resolveImageUrl } from '../../utils/imageUrl';
+import { formatCedi } from '../../utils/formatCurrency';
 
 type ProfileReturn = ReturnRequest & { orderNumber?: string | number; orderId?: number | string; description?: string };
 type ProfileAddress = Address & { label?: string; addressLine1?: string; addressLine2?: string; zipCode?: string; phone?: string };
@@ -36,6 +37,7 @@ const CustomerProfile = () => {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isEditing, setIsEditing] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
 
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
@@ -45,6 +47,7 @@ const CustomerProfile = () => {
 
   const [logoutApiCall, { isLoading: isLoggingOut }] = useLogoutMutation();
   const [updateProfile, { isLoading: loadingUpdateProfile }] = useUpdateProfileMutation();
+  const [changePassword, { isLoading: loadingChangePassword }] = useChangePasswordMutation();
   
   const { data: myOrders, isLoading: loadingMyOrders, error: ordersError } = useGetMyOrdersQuery();
 
@@ -79,8 +82,11 @@ const CustomerProfile = () => {
       return;
     }
 
-    if (password && password.length < 6) {
-      toast.error('Password must be at least 6 characters');
+    // Password policy mirrors the backend exactly (8 chars, at least one letter
+    // and one number). The old check here allowed 6 chars, so the UI happily
+    // accepted passwords the server rejected.
+    if (password && (password.length < 8 || !/[A-Za-z]/.test(password) || !/[0-9]/.test(password))) {
+      toast.error('Password must be at least 8 characters and include a letter and a number');
       return;
     }
 
@@ -89,20 +95,46 @@ const CustomerProfile = () => {
       return;
     }
 
+    if (password && !currentPassword) {
+      toast.error('Enter your current password to set a new one');
+      return;
+    }
+
     try {
-      const updateData = { 
+      // Password is deliberately NOT part of the profile payload. Changing it
+      // goes through its own endpoint, which requires the current password —
+      // otherwise anyone holding a stolen session cookie could both take over
+      // the account and lock the owner out.
+      const result = await updateProfile({
         firstName: trimmedFirstName,
         lastName: trimmedLastName,
         email: trimmedEmail,
-        ...(password && { password })
-      };
+      }).unwrap();
 
-      const result = await updateProfile(updateData).unwrap();
+      if (password) {
+        try {
+          await changePassword({ currentPassword, newPassword: password }).unwrap();
+          toast.success('Profile and password updated. Please sign in again.');
+          setCurrentPassword('');
+          setPassword('');
+          setConfirmPassword('');
+          setIsEditing(false);
+          await logoutApiCall().unwrap().catch(() => undefined);
+          dispatch(logout());
+          navigate('/login');
+          return;
+        } catch (pwErr) {
+          toast.error(
+            apiErr(pwErr)?.data?.message || apiErr(pwErr)?.error || 'Password change failed'
+          );
+          console.error('Password change failed:', pwErr);
+          return;
+        }
+      }
+
       dispatch(setCredentials({ ...userInfo, ...result }));
       toast.success('Profile updated successfully');
       setIsEditing(false);
-      setPassword('');
-      setConfirmPassword('');
     } catch (err) {
       const errorMsg = apiErr(err)?.data?.message || apiErr(err)?.error || 'Failed to update profile';
       toast.error(errorMsg);
@@ -370,7 +402,7 @@ const CustomerProfile = () => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-gray-600 dark:text-gray-400">Total Spent</p>
-              <p className="text-2xl font-bold text-secondary">GH₵ {customerData.totalSpent.toFixed(2)}</p>
+              <p className="text-2xl font-bold text-secondary">{formatCedi(customerData.totalSpent)}</p>
             </div>
             <FaCreditCard className="text-3xl text-secondary/70" />
           </div>
@@ -498,7 +530,7 @@ const CustomerProfile = () => {
                   </div>
                   <div>
                     <p className="text-sm text-gray-600 dark:text-gray-400">Total</p>
-                    <p className="text-xl font-bold text-primary">GH₵ {(Number(order.totalAmount) || 0).toFixed(2)}</p>
+                    <p className="text-xl font-bold text-primary">{formatCedi((Number(order.totalAmount) || 0))}</p>
                   </div>
                 </div>
 
@@ -604,21 +636,55 @@ const CustomerProfile = () => {
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Email *</label>
                 <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:border-primary" required />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">New Password</label>
-                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Leave blank to keep current" className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:border-primary" />
+              <div className="md:col-span-2">
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                  Leave the password fields blank to keep your current password.
+                </p>
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Current Password</label>
+                <input
+                  type="password"
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  placeholder="Required to set a new password"
+                  autoComplete="current-password"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:border-primary"
+                />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Confirm Password</label>
-                <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Confirm new password" className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:border-primary" />
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">New Password</label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="At least 8 chars, a letter and a number"
+                  autoComplete="new-password"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:border-primary"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Confirm New Password</label>
+                <input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Repeat the new password"
+                  autoComplete="new-password"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:border-primary"
+                />
               </div>
             </div>
             
             <div className="flex gap-4 pt-4">
-              <button type="submit" disabled={loadingUpdateProfile} className="flex-1 bg-primary text-white px-6 py-3 rounded-lg hover:bg-primary/90 transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
-                {loadingUpdateProfile ? <><BiLoaderAlt className="animate-spin" />Updating...</> : 'Save Changes'}
+              <button
+                type="submit"
+                disabled={loadingUpdateProfile || loadingChangePassword}
+                className="flex-1 bg-primary text-white px-6 py-3 rounded-lg hover:bg-primary/90 transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {loadingUpdateProfile || loadingChangePassword ? <><BiLoaderAlt className="animate-spin" />Updating...</> : 'Save Changes'}
               </button>
-              <button type="button" onClick={() => { setIsEditing(false); setFirstName(userInfo.firstName || ''); setLastName(userInfo.lastName || ''); setEmail(userInfo.email || ''); setPassword(''); setConfirmPassword(''); }} className="flex-1 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 px-6 py-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors font-semibold">
+              <button type="button" onClick={() => { setIsEditing(false); setFirstName(userInfo.firstName || ''); setLastName(userInfo.lastName || ''); setEmail(userInfo.email || ''); setCurrentPassword(''); setPassword(''); setConfirmPassword(''); }} className="flex-1 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 px-6 py-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors font-semibold">
                 Cancel
               </button>
             </div>
