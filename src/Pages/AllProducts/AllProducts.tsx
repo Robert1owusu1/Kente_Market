@@ -32,15 +32,26 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
   const [searchParams, setSearchParams] = useSearchParams();
   const urlSearchQuery = searchParams.get('search') || '';
 
+ // P1 pagination: growing-limit over the server catalogue (server clamps
+ // 1..60/page, default 24). includeCount drives the hasMore affordance.
+ const PAGE_SIZE = 24;
+ const [visibleLimit, setVisibleLimit] = useState(PAGE_SIZE);
+ // New searches start from the first page again.
+ useEffect(() => { setVisibleLimit(PAGE_SIZE); }, [urlSearchQuery]);
  // Pass search parameter to the query
   const { data: productsData, isLoading, error, refetch } = useGetProductsQuery(
-    urlSearchQuery ? { search: urlSearchQuery } : {}
+    { ...(urlSearchQuery ? { search: urlSearchQuery } : {}), limit: visibleLimit, includeCount: true }
   );
+  const serverPagination = (
+    productsData as unknown as { pagination?: { total?: number; limit?: number; offset?: number; hasMore?: boolean } }
+  )?.pagination;
+  const serverHasMore = serverPagination?.hasMore ?? false;
   const products: ProductCardType[] = (
     Array.isArray(productsData)
       ? productsData
       : productsData?.products || productsData?.docs || []
   ) as ProductCardType[];
+  const serverTotal = serverPagination?.total ?? products.length;
   const apiError = error as { data?: { message?: string }; error?: string } | undefined;
   const { data: platformCategories = [] } = useGetCategoriesQuery();
 
@@ -755,6 +766,20 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
             {filteredProducts.map(product => (
               <ProductCard key={product.id} product={product} />
             ))}
+          </div>
+        )}
+
+        {filteredProducts.length > 0 && serverHasMore && (
+          <div className="text-center mt-10">
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
+              Showing {filteredProducts.length} of {serverTotal} products
+            </p>
+            <button
+              onClick={() => setVisibleLimit((l) => l + PAGE_SIZE)}
+              className="bg-primary text-white px-8 py-3 rounded-lg hover:bg-primary/90 transition-colors duration-200 font-medium"
+            >
+              Show more
+            </button>
           </div>
         )}
 

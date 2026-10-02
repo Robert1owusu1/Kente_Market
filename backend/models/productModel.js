@@ -15,6 +15,59 @@ function safeParse(value) {
   return [value];
 }
 
+// Customer-facing text columns searched by findAll/count.
+const SEARCH_COLS = ['title', 'description', 'patternName', 'patternMeaning', 'culturalSignificance', 'tag', 'category'];
+
+// P1 search: 'match' when a composite FULLTEXT index exists (MySQL prod —
+// relevance-ranked, multi-column incl. description/pattern fields), else
+// 'like' (this TiDB: per-word AND-of-ORs across the same columns, a strict
+// recall upgrade over the old title/category/tag LIKE). Probed once per
+// process; LIKE is the steady state where FULLTEXT is unavailable.
+let searchMode = null;
+const detectSearchMode = async (connection) => {
+  if (searchMode) return searchMode;
+  try {
+    await connection.execute(
+      `SELECT COUNT(*) AS n FROM product
+       WHERE MATCH(title, description, patternName, patternMeaning, culturalSignificance, tag, category)
+       AGAINST (? IN NATURAL LANGUAGE MODE)`,
+      ['kente']
+    );
+    searchMode = 'match';
+  } catch {
+    searchMode = 'like';
+  }
+  return searchMode;
+};
+
+/**
+ * Builds the search predicate for product list/count queries.
+ */
+const searchPredicate = async (connection, search, alias) => {
+  const words = String(search || '').split(/\s+/).map((w) => w.trim()).filter((w) => w.length > 0).slice(0, 8);
+  if (words.length === 0) return { where: '', params: [], relevance: null };
+  const pfx = alias ? `${alias}.` : '';
+  if ((await detectSearchMode(connection)) === 'match') {
+    const cols = SEARCH_COLS.map((c) => `${pfx}${c}`).join(', ');
+    const phrase = words.join(' ');
+    return {
+      where: ` AND MATCH(${cols}) AGAINST (? IN NATURAL LANGUAGE MODE)`,
+      params: [phrase],
+      // relevance is built from the split words (never raw user input), so
+      // inlining it into ORDER BY is injection-safe.
+      relevance: `MATCH(${cols}) AGAINST (${JSON.stringify(phrase)} IN NATURAL LANGUAGE MODE)`,
+    };
+  }
+  const groups = [];
+  const params = [];
+  for (const w of words) {
+    const term = `%${w}%`;
+    groups.push(`(${SEARCH_COLS.map((c) => `${pfx}${c} LIKE ?`).join(' OR ')})`);
+    for (let i = 0; i < SEARCH_COLS.length; i++) params.push(term);
+  }
+  return { where: ` AND ${groups.join(' AND ')}`, params, relevance: null };
+};
+
 class Product {
   constructor(data) {
     this.id = data.id;
@@ -151,11 +204,13 @@ class Product {
         params.push(featured ? 1 : 0);
       }
 
-      // Search in title, category, or tag
+      // P1 search predicate (MATCH with relevance when indexed, extended LIKE otherwise)
+      let relevanceOrder = '';
       if (search) {
-        query += " AND (p.title LIKE ? OR p.category LIKE ? OR p.tag LIKE ?)";
-        const searchTerm = `%${search}%`;
-        params.push(searchTerm, searchTerm, searchTerm);
+        const pred = await searchPredicate(connection, search, 'p');
+        query += pred.where;
+        params.push(...pred.params);
+        if (pred.relevance) relevanceOrder = pred.relevance + ' DESC, ';
       }
 
       // Price range filters
@@ -170,7 +225,7 @@ class Product {
       }
 
       // Add LIMIT and OFFSET
-      query += ` ORDER BY p.id DESC LIMIT ${safeLimit} OFFSET ${safeOffset}`;
+      query += ` ORDER BY ${relevanceOrder}p.id DESC LIMIT ${safeLimit} OFFSET ${safeOffset}`;
 
       const [rows] = params.length > 0 
         ? await connection.execute(query, params)
@@ -525,9 +580,9 @@ class Product {
       }
 
       if (options.search) {
-        query += " AND (title LIKE ? OR category LIKE ? OR tag LIKE ?)";
-        const searchTerm = `%${options.search}%`;
-        params.push(searchTerm, searchTerm, searchTerm);
+        const pred = await searchPredicate(connection, options.search, '');
+        query += pred.where;
+        params.push(...pred.params);
       }
 
       if (options.approvalStatus) {
