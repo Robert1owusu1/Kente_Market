@@ -92,7 +92,7 @@ export default function CheckoutPage() {
   const [updateOrder] = useUpdateOrderMutation();
   const [createOrder] = useCreateOrderMutation();
   const { id: orderIdParam } = useParams();
-  const { cartItems, getTotalPrice, clearCart } = useCart();
+  const { cartItems, clearCart } = useCart();
 
   // Pre-created order (created by CartPage before it routed here). Used to
   // (a) charge the SERVER's total and (b) key the persisted payment reference.

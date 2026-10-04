@@ -1,5 +1,6 @@
 
 import asyncHandler from '../middleware/asyncHandler.js';
+import pool from '../config/db.js';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import User from '../models/usersModel.js';
