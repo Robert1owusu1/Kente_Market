@@ -351,6 +351,7 @@ const CustomerProfile = () => {
   const menuItems = [
     { id: 'dashboard', name: 'Dashboard', icon: FaUser },
     { id: 'orders', name: 'Order History', icon: FaShoppingBag },
+    { id: 'customRequests', name: 'My Custom Requests', icon: FaPalette },
     { id: 'returns', name: 'My Returns', icon: FaUndo },
     { id: 'designs', name: 'My Designs', icon: FaPalette },
     { id: 'favorites', name: 'Favorites', icon: FaHeart },
@@ -1397,10 +1398,19 @@ const CustomerProfile = () => {
               <nav className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-2 mb-4">
                 {menuItems.map((item) => {
                   const Icon = item.icon;
+                  const isCustomRequests = item.id === 'customRequests';
                   return (
                     <button
                       key={item.id}
-                      onClick={() => { setActiveSection(item.id); setMobileMenuOpen(false); }}
+                      onClick={() => {
+                        if (isCustomRequests) {
+                          navigate('/custom-requests');
+                          setMobileMenuOpen(false);
+                        } else {
+                          setActiveSection(item.id);
+                          setMobileMenuOpen(false);
+                        }
+                      }}
                       className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors text-left ${
                         activeSection === item.id
                           ? 'bg-primary text-white'
@@ -1433,10 +1443,17 @@ const CustomerProfile = () => {
               <nav className="p-2">
                 {menuItems.map((item) => {
                   const Icon = item.icon;
+                  const isCustomRequests = item.id === 'customRequests';
                   return (
                     <button
                       key={item.id}
-                      onClick={() => setActiveSection(item.id)}
+                      onClick={() => {
+                        if (isCustomRequests) {
+                          navigate('/custom-requests');
+                        } else {
+                          setActiveSection(item.id);
+                        }
+                      }}
                       className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors text-left ${
                         activeSection === item.id
                           ? 'bg-primary text-white'
