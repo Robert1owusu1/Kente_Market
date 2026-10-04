@@ -265,6 +265,7 @@ export const restoreStockForOrder = async (items, { skipProductIds = new Set(), 
 export const addOrderItems = async (req, res) => {
   // Hoisted so the catch block can roll back reservations taken in the try.
   let reservedUnits = new Map();
+  let newOrder = null; /** @type { { id: number | string, [key: string]: any } | null } */
   try {
     const rawItems = /** @type {Array<any>} */ (Array.isArray(req.body.items) ? req.body.items : []);
     if (rawItems.length === 0) {
@@ -465,7 +466,7 @@ export const addOrderItems = async (req, res) => {
       }
     }
 
-    const newOrder = await Order.create(orderData);
+    newOrder = await Order.create(orderData);
 
     // Coupon usage is NOT consumed here. It is deferred until payment is
     // confirmed (Paystack charge.success webhook or admin mark-as-paid), so a
