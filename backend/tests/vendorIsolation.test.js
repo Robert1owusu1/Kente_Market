@@ -135,36 +135,67 @@ describe('P0-2 vendor order projection', () => {
 });
 
 describe('P0-3 consensus fulfilment', () => {
+  // Helper to advance a vendor through the pipeline step by step
+  const advanceVendor = async (vendorId, orderId, targetStatus) => {
+    const pipeline = ['processing', 'packaging', 'shipped', 'arrived', 'delivered'];
+    const results = [];
+    // Get current status from order_vendor_marks
+    const [[mark]] = await pool.execute(
+      `SELECT status FROM order_vendor_marks WHERE orderId = ? AND vendorId = ?`,
+      [orderId, vendorId]
+    );
+    let currentStatus = mark?.status || 'processing';
+    let currentIdx = pipeline.indexOf(currentStatus);
+    const targetIdx = pipeline.indexOf(targetStatus);
+    
+    // Advance step by step
+    for (let i = currentIdx + 1; i <= targetIdx; i++) {
+      const nextStatus = pipeline[i];
+      const r = await markAs(vendorId, orderId, nextStatus);
+      results.push({ status: nextStatus, result: r });
+      if (r.status !== 200) break;
+    }
+    return results;
+  };
+
   test('A advancing alone does not move the shared order', { skip: !dbAvailable }, async () => {
-    const r = await markAs(state.vendorA, state.multiOrder, 'shipped');
-    assert.equal(r.status, 200, JSON.stringify(r.body));
-    assert.equal(r.body.myStatus, 'shipped');
-    assert.equal(r.body.consensus, 'processing', 'B is still at processing');
+    // Vendor A advances to 'shipped' step by step
+    const results = await advanceVendor(state.vendorA, state.multiOrder, 'shipped');
+    const last = results[results.length - 1].result;
+    assert.equal(last.status, 200, JSON.stringify(last.body));
+    assert.equal(last.body.myStatus, 'shipped');
+    assert.equal(last.body.consensus, 'processing', 'B is still at processing');
     const row = await dbOrder(state.multiOrder);
     assert.equal(row.orderStatus, 'processing', 'global untouched by one vendor');
   });
 
   test('both vendors shipped advances the global order', { skip: !dbAvailable }, async () => {
-    const r = await markAs(state.vendorB, state.multiOrder, 'shipped');
-    assert.equal(r.status, 200);
-    assert.equal(r.body.consensus, 'shipped');
+    // Vendor B advances to 'shipped' step by step
+    const results = await advanceVendor(state.vendorB, state.multiOrder, 'shipped');
+    const last = results[results.length - 1].result;
+    assert.equal(last.status, 200);
+    assert.equal(last.body.consensus, 'shipped');
     const row = await dbOrder(state.multiOrder);
     assert.equal(row.orderStatus, 'shipped');
   });
 
   test('one vendor delivered does NOT arm escrow for the shared order', { skip: !dbAvailable }, async () => {
-    const r = await markAs(state.vendorA, state.multiOrder, 'delivered');
-    assert.equal(r.status, 200);
-    assert.equal(r.body.consensus, 'shipped', 'B has not delivered');
+    // Vendor A advances to 'delivered' step by step
+    const results = await advanceVendor(state.vendorA, state.multiOrder, 'delivered');
+    const last = results[results.length - 1].result;
+    assert.equal(last.status, 200);
+    assert.equal(last.body.consensus, 'shipped', 'B has not delivered');
     const row = await dbOrder(state.multiOrder);
     assert.equal(row.orderStatus, 'shipped');
     assert.equal(row.escrowReleaseDeadline, null, 'escrow clock not armed by one vendor');
   });
 
   test('all delivered flips global + arms escrow deadline', { skip: !dbAvailable }, async () => {
-    const r = await markAs(state.vendorB, state.multiOrder, 'delivered');
-    assert.equal(r.status, 200);
-    assert.equal(r.body.consensus, 'delivered');
+    // Vendor B advances to 'delivered' step by step
+    const results = await advanceVendor(state.vendorB, state.multiOrder, 'delivered');
+    const last = results[results.length - 1].result;
+    assert.equal(last.status, 200);
+    assert.equal(last.body.consensus, 'delivered');
     const row = await dbOrder(state.multiOrder);
     assert.equal(row.orderStatus, 'delivered');
     assert.ok(row.escrowReleaseDeadline, 'deadline armed only on consensus');
@@ -172,15 +203,49 @@ describe('P0-3 consensus fulfilment', () => {
   });
 
   test('backward move against own mark rejected', { skip: !dbAvailable }, async () => {
+    // Vendor A is at 'delivered', trying to go back to 'packaging' should fail
     const r = await markAs(state.vendorA, state.multiOrder, 'packaging');
     assert.equal(r.status, 400, 'cannot move own mark backwards');
   });
 
-  test('single-vendor order flows straight through', { skip: !dbAvailable }, async () => {
-    const r = await markAs(state.vendorA, state.singleOrder, 'delivered');
-    assert.equal(r.status, 200, JSON.stringify(r.body));
-    assert.equal(r.body.consensus, 'delivered');
+  test('single-vendor order flows through pipeline step by step', { skip: !dbAvailable }, async () => {
+    // Single-vendor order must also advance through all stages
+    const results = await advanceVendor(state.vendorA, state.singleOrder, 'delivered');
+    const last = results[results.length - 1].result;
+    assert.equal(last.status, 200, JSON.stringify(last.body));
+    assert.equal(last.body.consensus, 'delivered');
     const row = await dbOrder(state.singleOrder);
     assert.equal(row.orderStatus, 'delivered');
+  });
+
+  test('forward skip (processing → delivered) is rejected', { skip: !dbAvailable }, async () => {
+    // Create a fresh single-vendor order for this test with a proper item for vendorA
+    const line = (pid, vendorId) => ({
+      product: pid, name: `item-${pid}`, qty: 1, price: 100, image: '/uploads/test.png', vendorId, reserved: 1,
+    });
+    const [orderRow] = await pool.execute(
+      `INSERT INTO orders (userId, orderNumber, items, totalAmount, shippingAddress, billingAddress,
+       paymentMethod, paymentStatus, orderStatus, shippingCost, tax, discount, notes, paymentReference, couponId)
+       VALUES (?, 'TEST-SKIP', ?, 100, '{}', '{}', 'card', 'paid', 'processing', 0, 0, 0, null, null, null)`,
+      [state.buyer, JSON.stringify([line(state.prodA, state.vendorA)])]
+    );
+    const testOrderId = orderRow.insertId;
+    await pool.execute(
+      `INSERT INTO order_vendor_marks (orderId, vendorId, status) VALUES (?, ?, 'processing')`,
+      [testOrderId, state.vendorA]
+    );
+    // vendor_order_fulfillment uses 'packaging' for processing orders (per migration backfill)
+    await pool.execute(
+      `INSERT INTO vendor_order_fulfillment (orderId, vendorId, status) VALUES (?, ?, 'packaging')`,
+      [testOrderId, state.vendorA]
+    );
+    
+    // Try to jump from processing to delivered - should be rejected
+    const r = await markAs(state.vendorA, testOrderId, 'delivered');
+    assert.equal(r.status, 400, 'forward skip should be rejected');
+    assert.ok(r.body.message.includes('one stage at a time'));
+    
+    // Cleanup
+    await pool.execute(`DELETE FROM orders WHERE id = ?`, [testOrderId]);
   });
 });

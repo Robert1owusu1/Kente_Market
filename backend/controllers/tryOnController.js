@@ -50,10 +50,102 @@ const reserveTryOnCredit = async (userId) => {
  * POST /api/tryon/generate
  * Body: { modelImage, garmentImage, garmentName, category }
  */
-/** Fail-closed feature flag: the AI try-on is OFF unless the operator has
- *  explicitly enabled it (AI_TRYON_ENABLED !== 'false') AND configured a token. */
+/** Feature flag: the AI try-on is OFF unless the operator has explicitly set
+ *  AI_TRYON_ENABLED=true AND configured a token. This used to be enabled by
+ *  default (the check was `!== 'false'`), which contradicted its own comment
+ *  and meant any deployment that set a Replicate token silently started
+ *  spending money on inference for anyone who signed up. */
 export const isTryOnEnabled = () =>
-  process.env.AI_TRYON_ENABLED !== 'false' && !!process.env.REPLICATE_API_TOKEN;
+  process.env.AI_TRYON_ENABLED === 'true' && !!process.env.REPLICATE_API_TOKEN;
+
+/**
+ * Validate an image reference before handing it to a third-party fetcher.
+ *
+ * Replicate resolves and downloads `human_img` / `garm_img` from THEIR network
+ * position, so an unvalidated user-supplied URL turns this endpoint into
+ * delegated SSRF: a caller could aim Replicate's fetcher at loopback, a cloud
+ * metadata endpoint, or an internal-only service and read the response back
+ * through the generated image.
+ *
+ * Two shapes are accepted:
+ *   - `data:image/...;base64,...` - inline bytes, so there is no network fetch
+ *     and therefore no SSRF. This is what the photo upload and camera capture
+ *     produce, and the decoded size is capped below.
+ *   - `https://<public host>/...` - a real URL, restricted to public hosts so
+ *     it cannot resolve to loopback, RFC1918, CGNAT, or instance metadata.
+ *
+ * Product images legitimately come from the API's own upload host, so there is
+ * no host allow-list by default; set AI_TRYON_ALLOWED_HOSTS to narrow it.
+ */
+const MAX_INLINE_IMAGE_BYTES = 5 * 1024 * 1024;
+
+const isPrivateHostname = (hostname) => {
+  const h = hostname.toLowerCase();
+  if (h === "localhost" || h.endsWith(".localhost") || h.endsWith(".local") || h.endsWith(".internal")) {
+    return true;
+  }
+  // Cloud instance metadata endpoints.
+  if (h === "169.254.169.254" || h === "metadata.google.internal" || h === "metadata.goog") {
+    return true;
+  }
+  // Any IPv6 literal, and any IPv4 literal. A hostname can be an IP without a
+  // TLD, so these have to be rejected here rather than by the protocol check.
+  if (h.includes(":")) return true;
+  const v4 = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (!v4) return false;
+  const a = Number(v4[1]);
+  const b = Number(v4[2]);
+  if (a === 0 || a === 10 || a === 127) return true;        // 0/8, 10/8, 127/8
+  if (a === 169 && b === 254) return true;                  // link-local / metadata
+  if (a === 172 && b >= 16 && b <= 31) return true;         // 172.16/12
+  if (a === 192 && b === 168) return true;                  // 192.168/16
+  if (a === 100 && b >= 64 && b <= 127) return true;        // 100.64/10 CGNAT
+  return false;
+};
+
+const extraAllowedHosts = () =>
+  (process.env.AI_TRYON_ALLOWED_HOSTS || "")
+    .split(",")
+    .map((h) => h.trim().toLowerCase())
+    .filter(Boolean);
+
+const assertFetchableImageUrl = (value, field) => {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error(`${field} is required`);
+  }
+
+  if (value.startsWith("data:")) {
+    if (!/^data:image\/(png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/=]+$/i.test(value)) {
+      throw new Error(`${field} must be a base64-encoded png, jpeg, webp or gif image`);
+    }
+    const approxBytes = Math.floor(((value.length - value.indexOf(",") - 1) * 3) / 4);
+    if (approxBytes > MAX_INLINE_IMAGE_BYTES) {
+      throw new Error(`${field} exceeds the 5MB inline image limit`);
+    }
+    return value;
+  }
+
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`${field} must be a valid https URL`);
+  }
+  if (url.protocol !== "https:") {
+    throw new Error(`${field} must be an https URL`);
+  }
+  if (url.username || url.password) {
+    throw new Error(`${field} must not contain credentials`);
+  }
+  if (isPrivateHostname(url.hostname)) {
+    throw new Error(`${field} must be a publicly reachable image URL`);
+  }
+  const allowed = extraAllowedHosts();
+  if (allowed.length > 0 && !allowed.includes(url.hostname.toLowerCase())) {
+    throw new Error(`${field} is not on the allowed host list`);
+  }
+  return url.toString();
+};
 
 /**
  * Public capability check so the UI can hide the try-on entry points when the
@@ -77,6 +169,18 @@ export const generateTryOn = expressAsyncHandler(async (req, res) => {
     throw new Error("modelImage and garmentImage are required");
   }
 
+  // Validate BEFORE reserving a credit, so a rejected SSRF attempt does not
+  // burn one of the user's daily try-ons.
+  let safeModelImage;
+  let safeGarmentImage;
+  try {
+    safeModelImage = assertFetchableImageUrl(modelImage, "modelImage");
+    safeGarmentImage = assertFetchableImageUrl(garmentImage, "garmentImage");
+  } catch (err) {
+    res.status(400);
+    throw err;
+  }
+
   // Enforce the per-user daily cost limit.
   const allowed = await reserveTryOnCredit(req.user.id);
   if (!allowed) {
@@ -87,13 +191,6 @@ export const generateTryOn = expressAsyncHandler(async (req, res) => {
   }
 
   try {
-    if (!process.env.REPLICATE_API_TOKEN) {
-      res.status(503);
-      throw new Error(
-        "AI try-on service is not configured. Set REPLICATE_API_TOKEN in the backend .env file."
-      );
-    }
-
     // Replicate IDM-VTON (cuuupid/idm-vton) virtual try-on.
     // NOTE: IDM-VTON is CC BY-NC-SA (non-commercial) - fine for dev/testing,
     // but for production either get a commercial license or swap providers.
@@ -103,8 +200,8 @@ export const generateTryOn = expressAsyncHandler(async (req, res) => {
         // Current latest version of cuuupid/idm-vton (verified live).
         version: "0513734a452173b8173e907e3a59d19a36266e55b48528559432bd21c7d7e985",
         input: {
-          human_img: modelImage,
-          garm_img: garmentImage,
+          human_img: safeModelImage,
+          garm_img: safeGarmentImage,
           garment_des: garmentName || "Authentic Kente cloth",
           category: category || "upper_body",
           seed: Math.floor(Math.random() * 100000),

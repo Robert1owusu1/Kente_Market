@@ -1,5 +1,5 @@
 import pool from '../config/db.js';
-import { autoReleaseExpiredEscrows, recoverStuckPendingOrders } from '../Services/escrowService.js';
+import { autoReleaseExpiredEscrows, autoReleaseExpiredVendorEscrows, recoverStuckPendingOrders } from '../Services/escrowService.js';
 import Notification from '../models/notificationModel.js';
 import { sendEmailSafely } from './emailService.js';
 import { scanWishlistRestocks } from '../Services/wishlistRestockService.js';
@@ -218,6 +218,7 @@ const scheduleJobs = () => {
 
   run('cleanupUnverifiedUsers', cleanupUnverifiedUsers, 24 * HOUR);
   run('autoReleaseExpiredEscrows', autoReleaseExpiredEscrows, 2 * HOUR);
+  run('autoReleaseExpiredVendorEscrows', autoReleaseExpiredVendorEscrows, 2 * HOUR);
   run('recoverStuckPendingOrders', recoverStuckPendingOrders, 30 * 60 * 1000);
   run('releaseExpiredReservations', releaseExpiredReservations, 30 * 60 * 1000);
   run('escalateStaleCustomRequests', escalateStaleCustomRequests, HOUR);
@@ -233,7 +234,7 @@ const scheduleJobs = () => {
   setTimeout(() => runScheduledJob('sendWeeklyVendorDigest', sendWeeklyVendorDigest).catch(() => {}), 7 * DAY);
   setInterval(() => runScheduledJob('sendWeeklyVendorDigest', sendWeeklyVendorDigest).catch(() => {}), 7 * DAY);
 
- console.log(' Cleanup scheduler started (users 24h, escrow 2h, stuck orders 30m, reservations 30m, SLA 1h, restock 1h, price-drop 1h, abandoned-cart 1h, transfers 30m, webhook reclaim 15m, refund reconcile 15m, digest weekly) — distributed lock + job status + failure alerts active');
+ console.log(' Cleanup scheduler started (users 24h, escrow 2h, vendor escrow 2h, stuck orders 30m, reservations 30m, SLA 1h, restock 1h, price-drop 1h, abandoned-cart 1h, transfers 30m, webhook reclaim 15m, refund reconcile 15m, digest weekly) — distributed lock + job status + failure alerts active');
 };
 
 export const startCleanupSchedule = () => {

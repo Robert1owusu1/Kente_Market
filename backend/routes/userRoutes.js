@@ -10,6 +10,7 @@ import {
     validateResetToken,
     getUserProfile,
     updateUserProfile,
+    changePassword,
     getUsers,
     deleteUser,
     getUserById,
@@ -20,6 +21,7 @@ import {
 } from '../controllers/userController.js';
 import { protect, admin } from "../middleware/authMiddleware.js";
 import { authLimiter, passwordResetLimiter, registerLimiter } from "../middleware/rateLimitMiddleware.js";
+import { validate, updateUserProfileSchema, changePasswordSchema } from "../middleware/validators.js";
 
 // ============================================
 // PUBLIC ROUTES (No Authentication Required)
@@ -47,7 +49,10 @@ router.post('/forgot-password', passwordResetLimiter, forgotPassword);
 
 // Validate reset token (check if token is valid and not expired)
 // GET /api/users/reset-password/:token
-router.get('/reset-password/:token', validateResetToken);
+// Rate-limited like its mutating sibling: this is a public oracle that confirms
+// whether a guessed or leaked token is live and unexpired, so it needs the same
+// 3/hour cap rather than being an unthrottled probe.
+router.get('/reset-password/:token', passwordResetLimiter, validateResetToken);
 
 // Reset password with token
 // POST /api/users/reset-password/:token
@@ -78,7 +83,12 @@ router.get('/verification-status', protect, getVerificationStatus);
 // PUT /api/users/profile
 router.route('/profile')
     .get(protect, getUserProfile)
-    .put(protect, updateUserProfile);
+    .put(protect, validate(updateUserProfileSchema), updateUserProfile);
+
+// Change own password. Separate from the profile route so it can require the
+// current password — see the comment on changePassword.
+// PUT /api/users/password
+router.put('/password', protect, authLimiter, validate(changePasswordSchema), changePassword);
 
 // ============================================
 // ADMIN ROUTES (Protected + Admin Only)

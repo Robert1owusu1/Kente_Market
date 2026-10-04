@@ -1,0 +1,103 @@
+# .github/workflows/backup.yml
+# Daily encrypted DB backup to Cloudflare R2
+# Runs at 02:00 UTC; manual trigger also available.
+
+name: Daily DB Backup
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # 02:00 UTC daily
+  workflow_dispatch:      # manual trigger
+
+permissions:
+  contents: read
+  id-token: write  # for OIDC to R2 (if using)
+
+jobs:
+  backup:
+    name: Encrypted DB Backup → R2
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # These must be set as GitHub repository secrets (Settings → Secrets → Actions)
+      DB_HOST: ${{ secrets.DB_HOST }}
+      DB_PORT: ${{ secrets.DB_PORT }}
+      DB_USER: ${{ secrets.DB_USER }}
+      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+      DB_NAME: ${{ secrets.DB_NAME }}
+      DB_SSL: ${{ secrets.DB_SSL }}           # '1' for TLS, '0' for plain
+      DB_SSL_CA: ${{ secrets.DB_SSL_CA }}     # base64-encoded CA cert (optional)
+      BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}  # AES-256-CBC passphrase (32+ chars)
+      R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}  # e.g. https://<account>.r2.cloudflarestorage.com
+      R2_BUCKET: ${{ secrets.R2_BUCKET }}      # e.g. kente-market-backups
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_PATH_STYLE: 'true'
+      # Optional: BACKUP_GPG_KEY_ID for public-key encryption instead of passphrase
+      # BACKUP_GPG_KEY_ID: ${{ secrets.BACKUP_GPG_KEY_ID }}
+      # Optional: BACKUP_UPLOADS=1 to also archive backend/uploads
+      BACKUP_UPLOADS: '0'
+      BACKUP_RETENTION: '35'  # keep 35 daily backups
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Install dependencies (mysql-client, gpg, rclone, openssl)
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y mysql-client gpg rclone openssl pv
+
+      - name: Configure rclone for R2
+        run: |
+          mkdir -p ~/.config/rclone
+          cat > ~/.config/rclone/rclone.conf <<EOF
+          [r2]
+          type = s3
+          provider = Cloudflare
+          endpoint = ${R2_ENDPOINT}
+          access_key_id = ${R2_ACCESS_KEY_ID}
+          secret_access_key = ${R2_SECRET_ACCESS_KEY}
+          region = auto
+          acl = private
+          server_side_encryption = AES256
+          EOF
+
+      - name: Prepare CA cert (if using TLS)
+        if: env.DB_SSL == '1' && env.DB_SSL_CA != ''
+        run: |
+          echo "${DB_SSL_CA}" | base64 -d > /tmp/ca.pem
+          echo "MYSQL_CA=/tmp/ca.pem" >> $GITHUB_ENV
+
+      - name: Run backup script
+        id: backup
+        run: |
+          chmod +x .deploy/backup-db.sh
+          bash .deploy/backup-db.sh
+
+      - name: Upload to R2
+        if: success()
+        run: |
+          # Find the latest backup file
+          LATEST=$(ls -t ~/.kente-backups/*.enc 2>/dev/null | head -1)
+          if [ -z "$LATEST" ]; then
+            echo "No backup file found!"
+            exit 1
+          fi
+          echo "Uploading $LATEST to r2:${R2_BUCKET}/..."
+          rclone copy "$LATEST" "r2:${R2_BUCKET}/" --progress
+          # Also upload SHA256 sidecar
+          rclone copy "${LATEST}.sha256" "r2:${R2_BUCKET}/" --progress
+
+      - name: Cleanup old backups on R2 (retention)
+        if: success()
+        run: |
+          rclone delete "r2:${R2_BUCKET}/" --min-age ${BACKUP_RETENTION}d --dry-run
+          rclone delete "r2:${R2_BUCKET}/" --min-age ${BACKUP_RETENTION}d
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "Backup failed! Check workflow logs."
+          # Could add Slack/Discord/Email notification here
+          exit 1

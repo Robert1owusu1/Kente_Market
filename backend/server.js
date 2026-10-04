@@ -75,6 +75,7 @@ import suggestionRoutes from './routes/suggestionRoutes.js';
 import customRequestRoutes from './routes/customRequestRoutes.js'; // Custom orders // NEW - User suggestions
 import buybackRoutes from './routes/buybackRoutes.js'; // Sell-back / borrow-back loop // NEW - User suggestions
 import { startCleanupSchedule } from './utils/cleanupJobs.js';
+import { metricsMiddleware, metricsHandler } from './utils/metrics.js';
 
 // Setup __dirname for ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -333,6 +334,12 @@ app.get('/health/live', (req, res) => res.status(200).json({ status: 'OK', ts: n
 app.get('/', (req, res) => {
   res.send('API is running..');
 });
+
+// Prometheus metrics endpoint (public, no auth - for Prometheus scraping)
+app.get('/metrics', metricsHandler);
+
+// Apply metrics middleware to all API routes
+app.use('/api/', metricsMiddleware);
 
 // API Routes
 app.use('/api/products', productRoutes);

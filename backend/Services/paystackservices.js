@@ -58,9 +58,15 @@ class PaystackService {
    * @returns {Promise<PaystackEnvelope>} Transaction verification response
    */
   async verifyTransaction(reference) {
+    // The reference is interpolated into a URL path. Callers pass it straight
+    // from req.body in the custom-order checkout, so it is validated here (at
+    // the boundary) and encoded, rather than trusting every call site.
+    if (typeof reference !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(reference)) {
+      throw new Error('Invalid payment reference');
+    }
     try {
       const response = await axios.get(
-        `${this.baseUrl}/transaction/verify/${reference}`,
+        `${this.baseUrl}/transaction/verify/${encodeURIComponent(reference)}`,
         { headers: this.headers }
       );
       return response.data;

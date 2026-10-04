@@ -39,10 +39,24 @@ const normalizePermissions = (permissions) => {
   return out;
 };
 
+// Brute-force lockout for staff, mirroring the customer policy in
+// usersModel.authenticate (10 consecutive failures -> locked for 1 hour).
+// Without this, staff password guessing was bounded only by an in-memory
+// per-IP+email rate limiter that resets on every deploy and is per-instance.
+const STAFF_MAX_FAILED = 10;
+const STAFF_LOCK_MINUTES = 60;
+
+// bcrypt cost factor used for every other password in the app. Staff accounts
+// were hashed at 10, which is ~4x cheaper to crack, and they gate the vendor
+// panel (earnings, payouts, bank details).
+const STAFF_BCRYPT_ROUNDS = 12;
+
 // Issue a staff JWT in an HTTP-only cookie so staff can use the vendor panel.
-const setStaffCookie = (res, staffId, vendorId) => {
+// `tv` embeds the staff tokenVersion so a password change invalidates every
+// outstanding staff session, matching how user sessions are revoked.
+const setStaffCookie = (res, staffId, vendorId, tokenVersion = 0) => {
   const token = jwt.sign(
-    { id: staffId, vendorId, role: 'vendor_staff' },
+    { id: staffId, vendorId, role: 'vendor_staff', tv: tokenVersion },
     process.env.JWT_SECRET,
     { expiresIn: '8h' }
   );
@@ -84,12 +98,62 @@ export const staffLogin = async (req, res) => {
       return res.status(403).json({ message: 'This vendor store is not active' });
     }
 
+    // Brute-force lockout, checked before the password comparison so a locked
+    // account does not leak timing information through bcrypt.
+    if (staff.locked_until && new Date(staff.locked_until) > new Date()) {
+      return res.status(423).json({
+        message: 'Account temporarily locked after too many failed attempts. Try again later.',
+      });
+    }
+
     const passwordOk = await bcrypt.compare(password, staff.password);
     if (!passwordOk) {
+      const attempts = (staff.failed_attempts || 0) + 1;
+      const shouldLock = attempts >= STAFF_MAX_FAILED;
+      await pool.execute(
+        `UPDATE vendor_staff
+            SET failed_attempts = ?,
+                locked_until = ?,
+                last_failed_at = CURRENT_TIMESTAMP
+          WHERE id = ?`,
+        [
+          shouldLock ? 0 : attempts,
+          shouldLock
+            ? new Date(Date.now() + STAFF_LOCK_MINUTES * 60 * 1000)
+            : null,
+          staff.id,
+        ]
+      );
+      if (shouldLock) {
+        console.warn(
+          `Staff account locked after ${STAFF_MAX_FAILED} failed attempts (staffId=${staff.id})`
+        );
+      }
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
-    setStaffCookie(res, staff.id, staff.vendorId);
+    // Successful login clears the counter and any lock.
+    await pool.execute(
+      `UPDATE vendor_staff
+          SET failed_attempts = 0, locked_until = NULL, last_failed_at = NULL
+        WHERE id = ?`,
+      [staff.id]
+    );
+
+    // Opportunistically upgrade legacy cost-10 hashes now that we hold the
+    // plaintext, so the stronger factor applies from the next login onward.
+    if (/^\$2[aby]\$10\$/.test(staff.password || '')) {
+      try {
+        await pool.execute('UPDATE vendor_staff SET password = ? WHERE id = ?', [
+          await bcrypt.hash(password, STAFF_BCRYPT_ROUNDS),
+          staff.id,
+        ]);
+      } catch (err) {
+        console.warn(' Could not upgrade staff bcrypt cost:', err.message);
+      }
+    }
+
+    setStaffCookie(res, staff.id, staff.vendorId, staff.tokenVersion ?? 0);
     res.json({
       message: 'Staff login successful',
       staff: {
@@ -139,6 +203,10 @@ export const createStaff = async (req, res) => {
     }
     if (password.length < 8) {
       return res.status(400).json({ message: 'Password must be at least 8 characters' });
+    } else if (!/[A-Za-z]/.test(password) || !/[0-9]/.test(password)) {
+      return res.status(400).json({
+        message: 'Password must contain at least one letter and one number',
+      });
     }
 
     const vendor = await Vendor.findByUserId(req.user.id);
@@ -146,7 +214,7 @@ export const createStaff = async (req, res) => {
       return res.status(403).json({ message: 'Approved vendor account required' });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPassword = await bcrypt.hash(password, STAFF_BCRYPT_ROUNDS);
     const normalized = normalizePermissions(permissions);
 
     const [result] = await pool.execute(
@@ -202,8 +270,19 @@ export const updateStaff = async (req, res) => {
     if (password !== undefined) {
       if (String(password).length < 8) {
         return res.status(400).json({ message: 'Password must be at least 8 characters' });
+      } else if (!/[A-Za-z]/.test(password) || !/[0-9]/.test(password)) {
+        return res.status(400).json({
+          message: 'Password must contain at least one letter and one number',
+        });
       }
-      sets.push('password = ?'); vals.push(await bcrypt.hash(password, 10));
+      sets.push('password = ?'); vals.push(await bcrypt.hash(password, STAFF_BCRYPT_ROUNDS));
+      // Revoke outstanding staff sessions: bump tokenVersion so every JWT
+      // already issued for this account stops validating. Without this, the
+      // standard response to a suspected compromise (change the password) left
+      // a stolen staff cookie working for the full 8h token lifetime.
+      sets.push('tokenVersion = tokenVersion + 1');
+      // A new password should also clear any active brute-force lock.
+      sets.push('failed_attempts = 0', 'locked_until = NULL');
     }
     if (permissions !== undefined) {
       sets.push('permissions = ?'); vals.push(JSON.stringify(normalizePermissions(permissions)));

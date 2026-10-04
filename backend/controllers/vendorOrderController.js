@@ -360,6 +360,15 @@ export const updateVendorOrderStatus = async (req, res) => {
           message: `Cannot move backwards from '${ownStatus}' to '${orderStatus}'.`,
         });
       }
+      // SECURITY FIX (V-11): Enforce state adjacency — vendors may only advance
+      // one stage at a time (processing → packaging → shipped → arrived → delivered).
+      // This prevents a vendor from jumping directly to 'delivered' and arming the
+      // escrow release clock without shipment evidence. Admin override is allowed.
+      if (!isAdmin && nextIdx > ownIdx + 1) {
+        return res.status(400).json({
+          message: `Invalid transition: must advance one stage at a time. Next allowed: '${PIPELINE[ownIdx + 1]}'`,
+        });
+      }
     }
 
     // Only meaningful for customised orders, but allow on any to keep flow simple.
@@ -420,10 +429,11 @@ export const updateVendorOrderStatus = async (req, res) => {
       patch.orderStatus = consensus;
       if (consensus === 'delivered') patch.deliveredAt = new Date();
     }
-    // Mirror the caller's note/date to the shared row for the single-note
-    // customer view; per-vendor truth lives in order_vendor_marks.
-    if (productionNote) patch.productionNote = productionNote;
-    if (finalCompletion) patch.expectedCompletionDate = finalCompletion;
+    // SECURITY FIX (N-4): Do NOT write productionNote/expectedCompletionDate to
+    // the shared order row. Vendor A's note would overwrite Vendor B's, changing
+    // what the customer sees ("Action A changes Resource B"). Per-vendor notes
+    // and dates already live in order_vendor_marks and vendor_order_fulfillment.
+    // The customer-facing note can be derived from the marks at render time.
     if (Object.keys(patch).length > 0) {
       updated = await Order.update(req.params.id, patch);
     }

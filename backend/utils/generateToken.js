@@ -3,6 +3,42 @@ import jwt from 'jsonwebtoken';
 import { cookieSameSite } from '../config/cookieConfig.js';
 import { setCsrfCookie } from '../middleware/csrfMiddleware.js';
 
+export const SESSION_7D = '7d';
+export const SESSION_30D = '30d';
+const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * Sign a user session JWT. This is the ONLY place a `jwt` session cookie's
+ * claims are defined.
+ *
+ * It used to exist twice with different shapes: this module signed
+ * `{ id, tv }` at 7d/30d, while config/passPort.js exported its own
+ * `generateToken(user)` signing `{ id, role, tv }` at a flat 30d and used by
+ * the OAuth routes. Two functions with the same name, the same purpose, and
+ * silently different lifetimes and claim sets is a footgun: a change to
+ * session policy (adding a claim, shortening the lifetime, rotating the
+ * algorithm) applies to password logins or to OAuth logins depending only on
+ * which file you opened. Both now go through here.
+ *
+ * @param {object|number} userOrId - User record (carries .id, .role, .tokenVersion) or user ID
+ * @param {string} expiresIn - Session lifetime
+ * @returns {string} signed JWT
+ */
+export const signUserToken = (userOrId, expiresIn = SESSION_7D) => {
+  const isUser = typeof userOrId === 'object' && userOrId !== null;
+  const userId = isUser ? userOrId.id : userOrId;
+  // Session-revocation claim: tokens are only valid while JWT `tv` matches the
+  // user's current users.tokenVersion. Password/email changes bump the version,
+  // which instantly invalidates every previously issued token.
+  const tv = isUser ? (userOrId.tokenVersion ?? 0) : 0;
+  return jwt.sign(
+    { id: userId, role: isUser ? userOrId.role : undefined, tv },
+    process.env.JWT_SECRET,
+    { expiresIn }
+  );
+};
+
 /**
  * Generate JWT token and set it as HTTP-only cookie
  * @param {object} res - Express response object
@@ -11,26 +47,15 @@ import { setCsrfCookie } from '../middleware/csrfMiddleware.js';
  */
 const generateToken = (res, userOrId, rememberMe = false) => {
   const userId = typeof userOrId === 'object' && userOrId !== null ? userOrId.id : userOrId;
-  // Session-revocation claim: tokens are only valid while JWT `tv` matches the
-  // user's current users.tokenVersion. Password/email changes bump the version,
-  // which instantly invalidates every previously issued token.
   const tv = typeof userOrId === 'object' && userOrId !== null ? (userOrId.tokenVersion ?? 0) : 0;
 
   // Token expiration time
   // Remember Me: 30 days, Normal: 7 days
-  const expiresIn = rememberMe ? '30d' : '7d';
-  
-  // Generate JWT
-  const token = jwt.sign(
-    { id: userId, tv }, 
-    process.env.JWT_SECRET,
-    { expiresIn }
-  );
+  const expiresIn = rememberMe ? SESSION_30D : SESSION_7D;
+  const token = signUserToken(userOrId, expiresIn);
 
   // Calculate cookie max age in milliseconds
-  const maxAge = rememberMe 
-    ? 30 * 24 * 60 * 60 * 1000  // 30 days in milliseconds
-    : 7 * 24 * 60 * 60 * 1000;   // 7 days in milliseconds
+  const maxAge = rememberMe ? THIRTY_DAYS_MS : SEVEN_DAYS_MS;
 
   // Set JWT as HTTP-Only cookie
   res.cookie('jwt', token, {

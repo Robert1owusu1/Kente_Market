@@ -290,7 +290,7 @@ export const createVendorProduct = async (req, res) => {
       patternName, patternMeaning, culturalSignificance, origin, weavingTechnique,
       yards, occasions, designStory, careInstructions, weight, wholesalePrice,
       retailPrice, madeToOrder, video, gallery, sku, stock, lowStockThreshold,
-      isRentable, rentPricePerDay, threadTypes, dominantThread,
+      isRentable, rentPricePerDay, threadTypes, dominantThread, advanceRatio,
     } = req.body;
 
     if (!title || !img || !price || !category) {
@@ -318,8 +318,8 @@ export const createVendorProduct = async (req, res) => {
          yards, occasions, designStory, careInstructions, weight, wholesalePrice,
          retailPrice, madeToOrder, video, gallery,
          approvalStatus, approvalNote, approvedAt, stock, sku, lowStockThreshold,
-         isRentable, rentPricePerDay, threadTypes, dominantThread)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         isRentable, rentPricePerDay, threadTypes, dominantThread, advanceRatio)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         title,
         img,
@@ -359,6 +359,7 @@ export const createVendorProduct = async (req, res) => {
         rentPricePerDay != null && rentPricePerDay !== '' ? parseFloat(rentPricePerDay) : null,
         threadTypes && threadTypes.length ? JSON.stringify(threadTypes) : null,
         dominantThread || null,
+        advanceRatio !== undefined && advanceRatio !== '' ? parseFloat(advanceRatio) : null,
       ]
     );
     const [product] = await pool.execute(`SELECT * FROM product WHERE id = ?`, [result.insertId]);
@@ -401,6 +402,7 @@ export const updateVendorProduct = async (req, res) => {
       'retailPrice', 'madeToOrder', 'video', 'gallery', 'stock', 'sku', 'lowStockThreshold',
       'isRentable', 'rentPricePerDay',
       'threadTypes', 'dominantThread',
+      'advanceRatio',
     ];
     const sets = [];
     const values = [];
@@ -741,7 +743,7 @@ export const getVendorCoupons = async (req, res) => {
   try {
     const vendorUserId = req.user.id;
     const [rows] = await pool.execute(
-      `SELECT * FROM coupons WHERE vendorId = ? OR vendorId IS NULL ORDER BY created_at DESC`,
+      `SELECT * FROM coupons WHERE vendorId = ? ORDER BY created_at DESC`,
       [vendorUserId]
     );
     res.json(rows);

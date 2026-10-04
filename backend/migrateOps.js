@@ -129,6 +129,33 @@ try {
     }
   }
 
+  // ============================================================
+  // 5. STAFF BRUTE-FORCE LOCKOUT + SESSION REVOCATION
+  // ============================================================
+  // vendor_staff had no failed-attempt counter and no revocable session
+  // version, so vendor-panel brute force was bounded only by an in-memory
+  // per-IP+email limiter - which is per-instance and vanishes on restart, so
+  // in practice the only real brake was a bcrypt comparison. These columns give
+  // staff the same protections customer accounts already had.
+  if (await tableExists('vendor_staff')) {
+    const staffColumns = [
+      ['failed_attempts', "INT NOT NULL DEFAULT 0 COMMENT 'consecutive failed staff logins'"],
+      ['locked_until', "DATETIME NULL COMMENT 'staff login locked until this time'"],
+      ['last_failed_at', 'DATETIME NULL'],
+      ['tokenVersion', "INT NOT NULL DEFAULT 0 COMMENT 'bumped on password change; staff JWTs must match'"],
+    ];
+    for (const [name, definition] of staffColumns) {
+      if (!(await columnExists('vendor_staff', name))) {
+        await connection.query(`ALTER TABLE vendor_staff ADD COLUMN ${name} ${definition}`);
+        console.log(` Added vendor_staff.${name}`);
+      } else {
+        console.log(`vendor_staff.${name} already exists - skipping`);
+      }
+    }
+  } else {
+    console.log('vendor_staff not present - skipping staff hardening');
+  }
+
  console.log(' Ops migration complete');
 } catch (err) {
  console.error(' Ops migration failed:', err.message);

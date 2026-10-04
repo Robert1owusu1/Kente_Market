@@ -222,9 +222,18 @@ export const updateReturnStatus = async (req, res) => {
       if (!fresh || fresh.paymentStatus !== 'paid' || !fresh.paymentReference) {
         return res.status(400).json({ message: 'Partial refunds require a paid order with a payment reference' });
       }
-      const refundMarker = `refund:${order.id}:${req.params.id}:partial:${partialVendorId}`;
-      await pool.execute(`UPDATE orders SET refundReference = ? WHERE id = ?`, [refundMarker, existing.orderId])
-        .catch(() => {});
+      // SECURITY FIX (V-07): Atomic claim on the ORDER (single dedupe key per order).
+      // Only the winner of this CAS proceeds to call Paystack. All paths share
+      // the same dedupeKey: `refund:${orderId}`. The order-level refundReference
+      // is used as the claim marker.
+      const claimResult = await pool.execute(
+        `UPDATE orders SET refundReference = ? WHERE id = ? AND refundReference IS NULL`,
+        [`refund:${order.id}:partial:${partialVendorId}:${req.params.id}`, existing.orderId]
+      );
+      if (claimResult.affectedRows === 0) {
+        // Another path already claimed or completed the refund for this order.
+        return res.status(409).json({ message: 'Refund already claimed or in progress for this order' });
+      }
       let refund;
       try {
         refund = await paystackServices.refundTransaction(
@@ -262,6 +271,7 @@ export const updateReturnStatus = async (req, res) => {
       } catch (restoreErr) {
  console.warn(` Partial return ${req.params.id}: stock restore failed (${restoreErr.message})`);
       }
+      // SECURITY FIX (V-07): Use single shared dedupeKey per order
       await recordFinancialEvent({
         eventType: 'refund',
         direction: 'out',
@@ -270,7 +280,7 @@ export const updateReturnStatus = async (req, res) => {
         orderId: order.id,
         reference: order.paymentReference,
         providerReference: refund?.data?.failure_reference || order.paymentReference,
-        dedupeKey: `refund:${order.id}:${req.params.id}:partial:${partialVendorId}`,
+        dedupeKey: `refund:${order.id}`,
         payload: { reason: `Return ${req.params.id} partial (vendor ${partialVendorId})`, ownSubtotal },
       }).catch(() => {});
       await pool.execute(
@@ -298,14 +308,13 @@ export const updateReturnStatus = async (req, res) => {
       try {
         const order = await Order.findById(existing.orderId);
         if (order && order.paymentStatus === 'paid' && order.paymentReference) {
-          const refundMarker = `refund:${order.id}:${req.params.id}:${order.paymentReference}`;
-          try {
-            await pool.execute(
-              `UPDATE orders SET refundReference = ? WHERE id = ? AND refundReference IS NULL`,
-              [refundMarker, existing.orderId]
-            );
-          } catch (markerErr) {
- console.warn(` Could not persist refund marker for return ${req.params.id}: ${markerErr.message}`);
+          // SECURITY FIX (V-07): Atomic claim with shared dedupeKey `refund:${orderId}`
+          const claimResult = await pool.execute(
+            `UPDATE orders SET refundReference = ? WHERE id = ? AND refundReference IS NULL`,
+            [`refund:${order.id}:${req.params.id}:${order.paymentReference}`, existing.orderId]
+          );
+          if (claimResult.affectedRows === 0) {
+            return res.status(409).json({ message: 'Refund already claimed or in progress for this order' });
           }
           const refund = await paystackServices.refundTransaction(
             order.paymentReference,

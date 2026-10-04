@@ -2,7 +2,7 @@
 import express from 'express';
 const router = express.Router();
 
-import { protect, admin, vendorOrStaff, requireVendorPermission } from '../middleware/authMiddleware.js';
+import { protect, admin, vendorOrStaff, requireVendorPermission, requireVerifiedEmail } from '../middleware/authMiddleware.js';
 import {
   applyVendor,
   getMyVendorProfile,
@@ -52,8 +52,8 @@ router.route('/admin-scorecard').get(protect, admin, getAdminVendorScorecard);
 // GET /api/vendors/messages → messages received by the vendor
 router.route('/messages').get(vendorOrStaff, requireVendorPermission('view_customers'), getVendorMessages);
 
-// POST /api/vendors/apply → become/update vendor application (any logged-in user)
-router.route('/apply').post(protect, applyVendor);
+// POST /api/vendors/apply → become/update vendor application (any logged-in user with verified email)
+router.route('/apply').post(protect, requireVerifiedEmail, applyVendor);
 
 // GET /api/vendors/me → own vendor profile + escrow summary (vendor, staff w/ view_earnings, or admin)
 router.route('/me').get(vendorOrStaff, requireVendorPermission('view_earnings'), getMyVendorProfile);

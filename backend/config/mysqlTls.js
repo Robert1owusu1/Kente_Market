@@ -1,9 +1,12 @@
 // config/mysqlTls.js
 // Shared TLS option builder for connecting to managed/cloud MySQL that REQUIRES
 // TLS (e.g. TiDB Serverless, AWS RDS, DigitalOcean managed databases).
-//   DB_SSL=1    -> TLS enabled, certificate NOT verified (cloud quick-start)
-//   DB_SSL_CA=  -> TLS enabled and verified against the given CA file (production)
-// When neither is set, TLS stays off for plain local MySQL (no behavior change).
+//   DB_SSL=1    -> TLS enabled, certificate NOT verified (dev quick-start only)
+//   DB_SSL_CA=<path> -> TLS enabled AND verified against that CA (production)
+//   DB_SSL_ALLOW_UNVERIFIED=1 -> explicit opt-in to unverified TLS in production
+// When DB_SSL is unset, TLS stays off for plain local MySQL (no behavior change).
+// In production, DB_SSL=1 with no CA now refuses to start unless
+// DB_SSL_ALLOW_UNVERIFIED=1 is set.
 import fs from 'fs';
 
 export const mysqlTls = () => {
@@ -27,9 +30,20 @@ export const mysqlTls = () => {
       );
     }
   } else if (process.env.NODE_ENV === 'production') {
-    console.warn(
-'DB_SSL=1 without DB_SSL_CA: TLS is enabled but certificates are NOT verified. Set DB_SSL_CA for production.'
-    );
+    // DB_SSL=1 with no CA means TLS without certificate verification, i.e. a
+    // MITM-able channel carrying DB credentials, password hashes and vendor
+    // bank/momo details. This used to only log a warning and connect anyway.
+    if (process.env.DB_SSL_ALLOW_UNVERIFIED === '1') {
+      console.warn(
+        'DB_SSL_ALLOW_UNVERIFIED=1: connecting WITHOUT certificate verification. This is MITM-able.'
+      );
+    } else {
+      throw new Error(
+        'DB_SSL=1 without DB_SSL_CA would connect without certificate verification, which is ' +
+        'MITM-able and carries DB credentials, password hashes and vendor payout details. Set ' +
+        'DB_SSL_CA to your provider CA file, or set DB_SSL_ALLOW_UNVERIFIED=1 to accept the risk.'
+      );
+    }
   }
   return { rejectUnauthorized: false };
 };

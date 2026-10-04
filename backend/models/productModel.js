@@ -180,6 +180,14 @@ class Product {
                    WHERE 1=1`;
       const params = [];
 
+      // SECURITY FIX (N-6): Public product queries must require vendor status = 'approved'.
+      // Without this, suspended/unapproved vendors' products remain visible and purchasable.
+      // Only admin/moderation/vendor-inventory queries (which pass explicit approvalStatus
+      // or vendorId) can bypass this by not going through the public controllers.
+      if (!approvalStatus && !vendorId) {
+        query += " AND v.status = 'approved'";
+      }
+
       // Filter by approval status (public listing = 'approved' only)
       if (approvalStatus) {
         query += " AND p.approvalStatus = ?";
@@ -261,11 +269,13 @@ class Product {
 
       connection = await pool.getConnection();
 
+      // SECURITY FIX (N-6): Public product detail must require vendor status = 'approved'.
+      // Admin/moderation/vendor-inventory queries use separate controllers that don't call this.
       const [rows] = await connection.execute(
         `SELECT p.*, v.businessName AS vendorBusinessName, v.status AS vendorStatus
          FROM product p
          LEFT JOIN vendors v ON v.userId = p.vendorId
-         WHERE p.id = ?`,
+         WHERE p.id = ? AND v.status = 'approved'`,
         [parseInt(id)]
       );
 
@@ -320,6 +330,10 @@ class Product {
       if (approvalStatus) {
         approvalClause = ' AND p.approvalStatus = ?';
         params.push(approvalStatus);
+      }
+      // SECURITY FIX (N-6): Public trending queries must require vendor status = 'approved'.
+      if (!approvalStatus) {
+        approvalClause += " AND v.status = 'approved'";
       }
       const query = `
         SELECT p.*, v.businessName AS vendorBusinessName, v.status AS vendorStatus

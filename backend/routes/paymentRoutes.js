@@ -98,9 +98,18 @@ router.post('/verify-paystack', protect, async (req, res) => {
       });
     }
 
+    // SECURITY FIX (V-09): encodeURIComponent the reference to prevent
+    // same-host path injection (e.g. reference="../../balance" would
+    // turn the URL into https://api.paystack.co/transaction/verify/../../balance).
+    // Also validate reference format to reject obviously malicious input.
+    if (!/^[A-Za-z0-9._-]{1,100}$/.test(reference)) {
+      return res.status(400).json({ success: false, message: 'Invalid reference format' });
+    }
+    const encodedRef = encodeURIComponent(reference);
+
     // Verify payment with Paystack
     const response = await axios.get(
-      `https://api.paystack.co/transaction/verify/${reference}`,
+      `https://api.paystack.co/transaction/verify/${encodedRef}`,
       {
         headers: {
           Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,

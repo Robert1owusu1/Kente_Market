@@ -203,6 +203,8 @@ export default function CheckoutPage() {
   // totalAmount is what Paystack must be initialized with. The localStorage
   // computation (orderTotals above) is only the fallback while the order has
   // not loaded yet (or if that request fails).
+  // SECURITY FIX (V-01): After a coupon is applied via PUT, the server order's
+  // totalAmount is the NET amount. We always charge the server total when available.
   const { data: serverOrder } = useGetOrderByIdQuery(preOrderId ?? 0, { skip: !preOrderId });
   const serverTotal = serverOrder ? Number(serverOrder.totalAmount) : NaN;
   const payableTotal = resolvePayableTotal(serverTotal, total);
@@ -221,23 +223,30 @@ export default function CheckoutPage() {
       toast.error('Please enter a coupon code');
       return;
     }
+    if (!preOrderId) {
+      toast.error('Order not found. Please restart checkout.');
+      return;
+    }
     setCouponLoading(true);
     try {
-      // Intentionally raw axios (not RTK): a one-shot server pre-check with no
-      // cache tags to invalidate; checkout totals always come from the server.
-      const { data } = await axios.post('/api/coupons/validate', {
-        code: couponCode.trim(),
-        cartTotal: getTotalPrice()
+      // SECURITY FIX (V-01): Apply coupon to the server order BEFORE charging.
+      // This ensures the server's totalAmount reflects the discount, so Paystack
+      // is initialized with the NET amount. The coupon is validated server-side
+      // and the order's totalAmount/discount/couponId are updated atomically.
+      const { data } = await axios.put(`/api/orders/${preOrderId}`, {
+        couponCode: couponCode.trim()
       });
-      if (data.coupon) {
-        setAppliedCoupon(data.coupon);
-        toast.success(`Coupon applied: ${data.coupon.discountType === 'percentage' ? `${data.coupon.discountValue}% off` : `GH₵${data.coupon.discountValue} off`}`);
+      if (data.order) {
+        // Invalidate RTK query cache so useGetOrderByIdQuery refetches with the
+        // updated net total. The order now has the authoritative discounted total.
+        setAppliedCoupon({ code: couponCode.trim(), discountType: data.order.discountType, discountValue: data.order.discountValue });
+        toast.success('Coupon applied successfully');
       } else {
-        toast.error(data.message || 'Invalid coupon');
+        toast.error(data.message || 'Failed to apply coupon');
       }
     } catch (err) {
       const apiErr = err as { response?: { data?: { message?: string } }; message?: string } | undefined;
-      toast.error(apiErr?.response?.data?.message || apiErr?.message || 'Failed to validate coupon');
+      toast.error(apiErr?.response?.data?.message || apiErr?.message || 'Failed to apply coupon');
     } finally {
       setCouponLoading(false);
     }
@@ -542,18 +551,12 @@ export default function CheckoutPage() {
     let orderId = preOrderId;
 
     try {
+      // SECURITY FIX (V-01): The coupon has already been applied to the server
+      // order via PUT /api/orders/:id {couponCode}. The server's totalAmount is
+      // now the NET amount. We only need to attach the payment reference and
+      // shipping/billing addresses. Do NOT send couponCode or discount again —
+      // the server will verify the paid amount matches its booked totalAmount.
       const orderData = {
-        items: cartItems.map(item => ({
-          product: item.id,
-          name: sanitizeInput(item.title || item.name),
-          qty: parseInt(String(item.quantity)),
-          price: parseFloat(String(item.price)),
-          image: item.img || (item as unknown as { image?: string }).image,
-          selectedColor: item.selectedColor,
-          selectedSize: item.selectedSize,
-          yards: item.yards ?? item.selectedSize ?? null
-        })),
-        totalAmount: parseFloat(total.toFixed(2)),
         shippingAddress: {
           ...shippingAddress,
           deliveryMethod,
@@ -570,10 +573,6 @@ export default function CheckoutPage() {
           update_time: new Date().toISOString(),
           email_address: shippingAddress.email
         },
-        shippingCost: parseFloat(shipping.toFixed(2)),
-        tax: parseFloat(tax.toFixed(2)),
-        discount: parseFloat(discount.toFixed(2)),
-        couponCode: appliedCoupon ? appliedCoupon.code : undefined,
         notes: paymentMethod === 'momo' ? `Mobile Number: ${momoNumber}` : null
       };
 

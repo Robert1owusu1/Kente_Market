@@ -2,6 +2,7 @@ import express from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import { randomUUID } from 'crypto';
 import { fileURLToPath } from 'url';
 import { protect } from '../middleware/authMiddleware.js';
 import { uploadLimiter } from '../middleware/rateLimitMiddleware.js';
@@ -35,10 +36,13 @@ const storage = multer.diskStorage({
     cb(null, profilesDir);
   },
   filename: (req, file, cb) => {
-    // Generate unique filename: userId_timestamp.ext
-    const uniqueSuffix = `${req.user.id}_${Date.now()}`;
-    const ext = path.extname(file.originalname);
-    cb(null, `profile_${uniqueSuffix}${ext}`);
+    // Unguessable filename. This used to be `profile_<userId>_<Date.now()>.ext`
+    // where userId is a small sequential integer and the millisecond timestamp
+    // is the only other secret - so profile pictures were enumerable by anyone
+    // who could guess a plausible id and time window, and /uploads is served
+    // from the API origin so the URL is directly probeable.
+    const ext = path.extname(file.originalname).toLowerCase();
+    cb(null, `profile_${randomUUID()}${ext}`);
   },
 });
 
@@ -121,10 +125,9 @@ router.post('/upload', protect, uploadLimiter, upload.single('profilePicture'), 
       fs.unlinkSync(req.file.path);
     }
     
-    res.status(500).json({ 
-      message: 'Failed to upload profile picture',
-      error: error.message 
-    });
+    // No raw error.message here: it is fs/driver text (ENOENT, EACCES, SQL)
+    // and this route is reachable by any signed-in user.
+    res.status(500).json({ message: 'Failed to upload profile picture' });
   }
 });
 
@@ -157,10 +160,7 @@ router.delete('/picture', protect, async (req, res) => {
     res.json({ message: 'Profile picture deleted successfully' });
   } catch (error) {
  console.error(' Error deleting profile picture:', error);
-    res.status(500).json({ 
-      message: 'Failed to delete profile picture',
-      error: error.message 
-    });
+    res.status(500).json({ message: 'Failed to delete profile picture' });
   }
 });
 

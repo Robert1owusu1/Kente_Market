@@ -6,6 +6,7 @@ import { protect } from '../middleware/authMiddleware.js';
 import { uploadLimiter } from '../middleware/rateLimitMiddleware.js';
 import { validateImageFile } from '../utils/imageValidator.js';
 import { putObject, deleteObject, storageBackend } from '../Services/storageService.js';
+import { randomUUID } from 'crypto';
 
 const router = express.Router();
 
@@ -74,10 +75,13 @@ router.post('/', protect, adminOrVendor, uploadLimiter, (req, res) => {
       }
 
       // 2) Persist through the storage adapter. Key is
-      //    "<ownerId>-product-<ts>-<rand><ext>" so the DELETE route can enforce
-      //    that only the uploader (or an admin) may remove the file.
+      //    "<ownerId>-product-<uuid><ext>" so the DELETE route can enforce that
+      //    only the uploader (or an admin) may remove the file. The random part
+      //    used to be Math.random(), which is predictable from prior output and
+      //    made product image URLs guessable; the owner id is still a small
+      //    sequential integer, so the UUID is what provides the entropy.
       const ext = path.extname(req.file.originalname).toLowerCase() || '.jpg';
-      const key = `products/${req.user.id}-product-${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
+      const key = `products/${req.user.id}-product-${randomUUID()}${ext}`;
       const publicUrl = await putObject({ key, sourcePath: stagedPath(req.file) });
 
  console.log(' Image uploaded successfully:', {
@@ -109,31 +113,37 @@ router.delete('/:filename', protect, adminOrVendor, async (req, res) => {
   try {
     const { filename } = req.params;
 
-    // Ownership check: filename is prefixed "<ownerId>-product-...". Admins may
-    // delete any file; vendors may only delete files they uploaded themselves.
+    // SECURITY FIX (V-02): Normalize FIRST, then authorize.
+    // Express 5.2.1 decodes %2F in path params, so a single segment can carry
+    // traversal-shaped strings like "7-x/../8-product-u.jpg".
+    // We must validate the raw filename matches the expected pattern before
+    // extracting ownership, and delete using the validated basename.
+    const base = path.basename(filename);
+    if (base !== filename || filename.includes('..') || !/^\d+-(product|reference)-[\w-]+\.[a-z0-9]+$/i.test(filename)) {
+      return res.status(400).json({ message: 'Invalid filename' });
+    }
+
+    // Ownership check on the VALIDATED filename
     if (req.user.role !== 'admin') {
-      const ownerId = filename.split('-', 1)[0];
+      const ownerId = base.split('-', 1)[0];
       if (!ownerId || ownerId !== String(req.user.id)) {
         return res.status(403).json({ message: 'You can only delete files you uploaded' });
       }
     }
 
-    // Sanitize filename to prevent directory traversal attacks
-    const sanitizedFilename = path.basename(filename);
-
-    const removed = await deleteObject(`products/${sanitizedFilename}`);
+    const removed = await deleteObject(`products/${base}`);
     if (!removed) {
-      return res.status(404).json({ message: 'Image not found', filename: sanitizedFilename });
+      return res.status(404).json({ message: 'Image not found', filename: base });
     }
- console.log(' Image deleted:', sanitizedFilename);
+ console.log(' Image deleted:', base);
     res.json({
       message: 'Image deleted successfully',
-      filename: sanitizedFilename,
+      filename: base,
     });
   } catch (error) {
  console.error(' Delete error:', error);
     res.status(500).json({
-      message: 'Failed to delete image: ' + error.message
+      message: 'Failed to delete image'
     });
   }
 });
@@ -164,7 +174,7 @@ router.post('/reference', protect, uploadLimiter, (req, res) => {
       }
 
       const ext = path.extname(req.file.originalname).toLowerCase() || '.jpg';
-      const key = `references/${req.user.id}-reference-${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
+      const key = `references/${req.user.id}-reference-${randomUUID()}${ext}`;
       const publicUrl = await putObject({ key, sourcePath: stagedPath(req.file) });
 
       res.status(200).json({
@@ -187,18 +197,25 @@ router.post('/reference', protect, uploadLimiter, (req, res) => {
 router.delete('/reference/:filename', protect, async (req, res) => {
   try {
     const { filename } = req.params;
+
+    // SECURITY FIX (V-02): Same normalization-before-auth pattern as product delete
+    const base = path.basename(filename);
+    if (base !== filename || filename.includes('..') || !/^\d+-(product|reference)-[\w-]+\.[a-z0-9]+$/i.test(filename)) {
+      return res.status(400).json({ message: 'Invalid filename' });
+    }
+
     if (req.user.role !== 'admin') {
-      const ownerId = filename.split('-', 1)[0];
+      const ownerId = base.split('-', 1)[0];
       if (!ownerId || ownerId !== String(req.user.id)) {
         return res.status(403).json({ message: 'You can only delete files you uploaded' });
       }
     }
-    const sanitized = path.basename(filename);
-    const removed = await deleteObject(`references/${sanitized}`);
+
+    const removed = await deleteObject(`references/${base}`);
     if (!removed) {
       return res.status(404).json({ message: 'File not found' });
     }
-    res.json({ message: 'Reference image deleted', filename: sanitized });
+    res.json({ message: 'Reference image deleted', filename: base });
   } catch {
     res.status(500).json({ message: 'Failed to delete reference image' });
   }

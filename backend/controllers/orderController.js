@@ -21,6 +21,7 @@ import {
   holdEscrowForOrder,
   cancelEscrowForOrder,
   retryFailedAllocations,
+  ESCROW_RELEASE_DAYS,
 } from "../Services/escrowService.js";
 import { reserveStockForItems } from "../Services/reservationService.js";
 import { recordStockMove } from "../Services/stockMoves.js";
@@ -354,6 +355,19 @@ export const addOrderItems = async (req, res) => {
     const { reserved, failures: reservationFailures } = await reserveStockForItems(requested);
     reservedUnits = reserved;
     if (reservationFailures.length > 0) {
+      // SECURITY FIX (V-03): Restore any units already reserved before returning.
+      // Without this, a partial failure permanently locks those units out of
+      // the catalog because no order row exists for the sweeper to recover.
+      if (reservedUnits.size > 0) {
+        try {
+          await restoreStockForOrder(
+            [...reservedUnits].map(([productId, qty]) => ({ product: productId, qty })),
+            { reason: 'reserve-rollback' }
+          );
+        } catch (restoreErr) {
+ console.warn(` Could not roll back partial reservation: ${restoreErr.message}`);
+        }
+      }
       const f = reservationFailures[0];
       const p = productMap.get(f.productId);
       return res.status(400).json({
@@ -468,7 +482,11 @@ export const addOrderItems = async (req, res) => {
     console.error('Error creating order:', error);
     // Roll back any stock reservation taken for this order so a failed creation
     // never permanently locks units out of the catalog.
-    if (reservedUnits.size > 0) {
+    // SECURITY FIX (V-08): If the order was already created (has an ID), skip
+    // the in-memory restore. The order row persists with reserved markers, and
+    // the sweeper (releaseExpiredReservations) will recover those units. Doing
+    // both causes double-restoration and stock inflation.
+    if (reservedUnits.size > 0 && !newOrder?.id) {
       try {
         await restoreStockForOrder(
           [...reservedUnits].map(([productId, qty]) => ({ product: productId, qty })),
@@ -664,6 +682,15 @@ export const updateOrder = async (req, res) => {
       if (existingOrder.paymentStatus === 'paid' || existingOrder.paymentStatus === 'refunded') {
         return res.status(400).json({
           message: "A coupon can only be applied before payment",
+        });
+      }
+      // SECURITY FIX (V-01): Freeze coupon changes once a paymentReference is
+      // attached. The paymentReference indicates a charge has been initiated;
+      // changing the order total after this point would diverge from what was
+      // actually charged.
+      if (existingOrder.paymentReference) {
+        return res.status(400).json({
+          message: "Cannot apply coupon after payment has been initialized",
         });
       }
       const rawItems = Array.isArray(existingOrder.items) ? existingOrder.items : [];
@@ -868,6 +895,36 @@ export const updateOrderToDelivered = async (req, res) => {
       })
     );
 
+    // P0-2: Create/update per-vendor fulfillment records and set escrow deadlines
+    // This allows each vendor's escrow to be released independently when they deliver
+    const { 
+      setVendorEscrowReleaseDeadline,
+    } = await import('../Services/escrowService.js');
+
+    // Get all vendor allocations for this order
+    const allocations = await getOrderAllocations(req.params.id);
+    const vendorIds = [...new Set(allocations.map(a => a.vendorId))];
+
+    for (const vendorId of vendorIds) {
+      // Upsert vendor_order_fulfillment record
+      await pool.execute(
+        `INSERT INTO vendor_order_fulfillment (orderId, vendorId, status, deliveredAt, escrowReleaseDeadline, created_at)
+         VALUES (?, ?, 'delivered', NOW(), DATE_ADD(NOW(), INTERVAL ? DAY), NOW())
+         ON DUPLICATE KEY UPDATE 
+           status = 'delivered',
+           deliveredAt = NOW(),
+           escrowReleaseDeadline = DATE_ADD(NOW(), INTERVAL ? DAY),
+           updated_at = CURRENT_TIMESTAMP`,
+        [req.params.id, vendorId, ESCROW_RELEASE_DAYS, ESCROW_RELEASE_DAYS]
+      );
+
+      // If escrow is held for this vendor, set their individual deadline
+      const vendorAlloc = allocations.find(a => a.vendorId == vendorId && a.status === 'held');
+      if (vendorAlloc) {
+        await setVendorEscrowReleaseDeadline(req.params.id, vendorId);
+      }
+    }
+
     // Escrow orders get an auto-release deadline: if the customer does not
     // confirm receipt within the window, funds are released automatically.
     // Handle the race where escrow is not yet held (webhook delayed):
@@ -925,24 +982,46 @@ export const confirmOrderReceived = async (req, res) => {
       return res.status(403).json({ message: "Not authorized to confirm this order" });
     }
 
-    if (order.escrowStatus !== 'held') {
-      return res.status(400).json({
-        message:
-          order.escrowStatus === 'released'
-            ? "Escrow for this order has already been released"
-            : order.escrowStatus === 'none'
-            ? "This order is not held in escrow"
-            : `Cannot confirm receipt while escrow status is '${order.escrowStatus}'`,
-      });
+    // P0-2: Support per-vendor confirmation via optional vendorId query param
+    // If vendorId provided, release only that vendor's escrow; otherwise release all
+    const vendorId = req.query.vendorId ? parseInt(req.query.vendorId, 10) : null;
+
+    let result;
+    if (vendorId) {
+      // Per-vendor confirmation: check this vendor's fulfillment status
+      const [vof] = await pool.execute(
+        `SELECT status FROM vendor_order_fulfillment WHERE orderId = ? AND vendorId = ?`,
+        [req.params.id, vendorId]
+      );
+      if (vof.length === 0 || vof[0].status !== 'delivered') {
+        return res.status(400).json({ 
+          message: "This vendor's fulfillment is not yet marked as delivered" 
+        });
+      }
+      const { releaseVendorEscrow } = await import('../Services/escrowService.js');
+      result = await releaseVendorEscrow(req.params.id, vendorId);
+    } else {
+      // Global confirmation (all vendors) - existing behavior
+      if (order.escrowStatus !== 'held') {
+        return res.status(400).json({
+          message:
+            order.escrowStatus === 'released'
+              ? "Escrow for this order has already been released"
+              : order.escrowStatus === 'none'
+              ? "This order is not held in escrow"
+              : `Cannot confirm receipt while escrow status is '${order.escrowStatus}'`,
+        });
+      }
+
+      if (order.orderStatus !== 'delivered') {
+        return res.status(400).json({
+          message: "Order must be marked as delivered before receipt can be confirmed",
+        });
+      }
+
+      result = await releaseEscrowForOrder(req.params.id);
     }
 
-    if (order.orderStatus !== 'delivered') {
-      return res.status(400).json({
-        message: "Order must be marked as delivered before receipt can be confirmed",
-      });
-    }
-
-    const result = await releaseEscrowForOrder(req.params.id);
     const updatedOrder = await Order.findById(req.params.id);
 
     // Escrow-release confirmation email — once, when allocations actually moved.
@@ -989,6 +1068,7 @@ export const confirmOrderReceived = async (req, res) => {
   }
 };
 
+
 // @desc    Cancel order and void escrow
 // @route   PUT /api/orders/:id/cancel
 // @access  Private/Admin
@@ -1017,20 +1097,16 @@ export const cancelOrder = async (req, res) => {
     // accepted. If the refund fails, the order is left untouched so the money
     // cannot silently disappear from the platform's books.
     if (order.paymentStatus === 'paid') {
-      // P1 refund reconciler: persist the initiation marker BEFORE calling
-      // the provider, so a crash between provider-accept and the status flip
-      // below stays detectable (marker set + still paid + refund journaled).
-      // An explicit provider REJECTION clears it (money provably did not
-      // move); a THROW keeps it (unknown — reconciler alerts for dashboard
-      // verification instead of touching money).
-      const refundMarker = `refund:${order.id}:${order.paymentReference}`;
-      try {
-        await pool.execute(
-          `UPDATE orders SET refundReference = ? WHERE id = ? AND refundReference IS NULL`,
-          [refundMarker, req.params.id]
-        );
-      } catch (markerErr) {
- console.warn(` Could not persist refund marker for order ${req.params.id}: ${markerErr.message}`);
+      // SECURITY FIX (V-07): Atomic claim with shared dedupeKey `refund:${orderId}`.
+      // Only the winner of this CAS proceeds to call Paystack. The order-level
+      // refundReference is used as the claim marker. This prevents both the
+      // return path and the cancel path from refunding the same order.
+      const claimResult = await pool.execute(
+        `UPDATE orders SET refundReference = ? WHERE id = ? AND refundReference IS NULL`,
+        [`refund:${order.id}:cancel:${order.paymentReference}`, req.params.id]
+      );
+      if (claimResult.affectedRows === 0) {
+        return res.status(409).json({ message: 'Refund already claimed or in progress for this order' });
       }
       try {
         const refund = await paystackServices.refundTransaction(

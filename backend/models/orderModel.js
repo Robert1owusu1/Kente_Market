@@ -76,33 +76,88 @@ class Order {
 
     const connection = await pool.getConnection();
     try {
-    const [result] = await connection.execute(
-      `INSERT INTO orders 
-      (userId, orderNumber, items, totalAmount, shippingAddress, billingAddress,
-       paymentMethod, paymentStatus, orderStatus, shippingCost, tax, discount, notes, paymentReference, couponId, expectedCompletionDate, productionNote)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        orderData.userId,
-        orderData.orderNumber,
-        JSON.stringify(orderData.items || []),
-        orderData.totalAmount,
-        JSON.stringify(orderData.shippingAddress || {}),
-        JSON.stringify(orderData.billingAddress || {}),
-        orderData.paymentMethod || 'pending',
-        orderData.paymentStatus || 'pending',
-        orderData.orderStatus || 'pending',
-        orderData.shippingCost || 0,
-        orderData.tax || 0,
-        orderData.discount || 0,
-        orderData.notes || null,
-        orderData.paymentReference || null,
-        orderData.couponId || null,
-        orderData.expectedCompletionDate || null,
-        orderData.productionNote || null,
-      ]
-    );
-      return { id: result.insertId, ...orderData };
+      await connection.beginTransaction();
+      
+      const [result] = await connection.execute(
+        `INSERT INTO orders 
+        (userId, orderNumber, items, totalAmount, shippingAddress, billingAddress,
+         paymentMethod, paymentStatus, orderStatus, shippingCost, tax, discount, notes, paymentReference, couponId, expectedCompletionDate, productionNote)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          orderData.userId,
+          orderData.orderNumber,
+          JSON.stringify(orderData.items || []),
+          orderData.totalAmount,
+          JSON.stringify(orderData.shippingAddress || {}),
+          JSON.stringify(orderData.billingAddress || {}),
+          orderData.paymentMethod || 'pending',
+          orderData.paymentStatus || 'pending',
+          orderData.orderStatus || 'pending',
+          orderData.shippingCost || 0,
+          orderData.tax || 0,
+          orderData.discount || 0,
+          orderData.notes || null,
+          orderData.paymentReference || null,
+          orderData.couponId || null,
+          orderData.expectedCompletionDate || null,
+          orderData.productionNote || null,
+        ]
+      );
+
+      const orderId = result.insertId;
+
+      // Dual-write: populate order_items for vendor-scoped queries
+      if (Array.isArray(orderData.items) && orderData.items.length > 0) {
+        // Build product -> vendorId map
+        const productIds = [...new Set(
+          orderData.items.map(it => it.product ?? it.productId ?? it.id).filter(v => v != null)
+        )];
+        
+        let productVendorMap = new Map();
+        if (productIds.length > 0) {
+          const placeholders = productIds.map(() => '?').join(',');
+          const [prows] = await connection.execute(
+            `SELECT id, vendorId FROM product WHERE id IN (${placeholders})`,
+            productIds
+          );
+          for (const pr of prows) {
+            productVendorMap.set(String(pr.id), pr.vendorId);
+          }
+        }
+
+        // Insert order_items rows
+        for (const item of orderData.items) {
+          const productId = item.product ?? item.productId ?? item.id;
+          const vendorId = item.vendorId ?? productVendorMap.get(String(productId)) ?? null;
+
+          await connection.execute(
+            `INSERT INTO order_items 
+            (orderId, vendorId, productId, name, qty, price, image, selectedColor, selectedSize, yards, isCustomizable, productionTime, reserved, customRequestId, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+            [
+              orderId,
+              vendorId,
+              productId || null,
+              item.name || item.title || 'Product',
+              parseInt(item.qty ?? item.quantity ?? 1, 10) || 1,
+              parseFloat(item.price) || 0,
+              item.image || null,
+              item.selectedColor || item.color || null,
+              item.selectedSize || item.size || null,
+              item.yards ?? null,
+              item.isCustomizable ? 1 : 0,
+              parseInt(item.productionTime ?? 1, 10) || 1,
+              parseInt(item.reserved ?? 0, 10) || 0,
+              item.customRequestId ?? null,
+            ]
+          );
+        }
+      }
+
+      await connection.commit();
+      return { id: orderId, ...orderData };
     } catch (error) {
+      await connection.rollback();
       throw new Error("Error creating order: " + error.message);
     } finally {
       connection.release();

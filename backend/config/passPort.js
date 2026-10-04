@@ -5,7 +5,7 @@ import { Strategy as FacebookStrategy } from 'passport-facebook';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import pool from './db.js';
-import jwt from 'jsonwebtoken';
+import { signUserToken, SESSION_7D } from '../utils/generateToken.js';
 
 // Helper: Find or create user from OAuth profile
 const findOrCreateOAuthUser = async (provider, profile, opts = {}) => {
@@ -107,17 +107,17 @@ const findOrCreateOAuthUser = async (provider, profile, opts = {}) => {
   }
 };
 
-// Generate JWT token for user
-// NOTE: claim MUST be `id` to match middleware/authMiddleware.js which reads decoded.id
-// `tv` carries the user's tokenVersion for session revocation (password/email
-// changes bump the version and invalidate old tokens).
-export const generateToken = (user) => {
-  return jwt.sign(
-    { id: user.id, role: user.role, tv: user.tokenVersion ?? 0 },
-    process.env.JWT_SECRET,
-    { expiresIn: '30d' }
-  );
-};
+// Sign a user session JWT for the OAuth flow.
+//
+// This used to be a second, independent implementation of what
+// utils/generateToken.js already did: same name, same purpose, different
+// claim set and a flat 30-day lifetime where password login defaults to 7 days.
+// Any future change to session policy would have applied to one login path and
+// not the other. It now delegates to the single canonical signer.
+//
+// NOTE: claim MUST be `id` to match middleware/authMiddleware.js which reads decoded.id.
+// `tv` carries the user's tokenVersion for session revocation.
+export const generateToken = (user) => signUserToken(user, SESSION_7D);
 
 // Configure Passport strategies
 export const configurePassport = () => {
@@ -131,7 +131,11 @@ export const configurePassport = () => {
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
       callbackURL: `${process.env.OAUTH_CALLBACK_URL}/api/auth/google/callback`,
       scope: ['profile', 'email'],
-      passReqToCallback: true
+      passReqToCallback: true,
+      // SECURITY FIX (V-05): Enable state parameter for CSRF protection.
+      // The state is verified in authRoutes.js callback handler before
+      // this strategy is invoked, but we also enable it here for defense in depth.
+      state: true
     }, async (req, accessToken, refreshToken, profile, done) => {
       try {
         const user = await findOrCreateOAuthUser('google', profile, { consentAt: req.consentAt });

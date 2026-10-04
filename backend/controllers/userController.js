@@ -171,7 +171,17 @@ const logoutUser = asyncHandler(async (req, res) => {
     try {
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
       if (decoded?.id) {
-        await User.bumpTokenVersion(decoded.id);
+        // SECURITY FIX (V-06): Branch on role to bump the correct tokenVersion.
+        // Staff tokens carry role='vendor_staff' and must bump vendor_staff.tokenVersion,
+        // NOT users.tokenVersion (which would log out an unrelated customer/admin).
+        if (decoded.role === 'vendor_staff') {
+          await pool.execute(
+            `UPDATE vendor_staff SET tokenVersion = tokenVersion + 1 WHERE id = ?`,
+            [decoded.id]
+          );
+        } else {
+          await User.bumpTokenVersion(decoded.id);
+        }
       }
     } catch {
       // Token already expired/invalid — nothing to revoke.

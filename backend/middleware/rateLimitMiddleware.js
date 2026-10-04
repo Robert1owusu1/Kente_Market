@@ -138,6 +138,24 @@ export const subscribeLimiter = rateLimit({
   }
 });
 
+// Rate limiter for public coupon validation. Codes can be as short as 3 chars
+// and the validator distinguishes not-found from expired / limit-reached /
+// minimum-not-met, so without this a caller can enumerate the code space and
+// read back each coupon's configuration.
+export const couponValidateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  ...redisStore('rl:coupon'),
+  skipSuccessfulRequests: true,
+  message: 'Too many coupon checks, please try again later.',
+  handler: (req, res) => {
+    res.status(429).json({
+      message: 'Too many coupon checks. Please try again in 15 minutes.',
+      retryAfter: req.rateLimit.resetTime,
+    });
+  },
+});
+
 // Rate limiter for password reset (anti-enumeration)
 export const passwordResetLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour

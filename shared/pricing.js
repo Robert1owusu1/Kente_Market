@@ -104,3 +104,53 @@ export const calcEscrowFees = (
   const payoutAmount = round2(Math.max(gross - platformFee, 0));
   return { platformFee, payoutAmount };
 };
+
+
+
+// --- Order status metadata ---
+export const STATUS_STEPS = [
+  "pending",
+  "quoted",
+  "accepted",
+  "paid",
+  "in_progress",
+  "completed",
+  "cancelled",
+  "declined"
+];
+
+export const STATUS_META = {
+  pending: {
+    label: "Awaiting quote",
+    color: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+  },
+  quoted: {
+    label: "Quote received",
+    color: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
+  },
+  accepted: {
+    label: "Approved — awaiting payment",
+    color: "bg-[#fbeacb] text-[#7c2d12] dark:bg-[#431407]/40 dark:text-[#f2c169]"
+  },
+  paid: {
+    label: "Paid — on the loom",
+    color: "bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300"
+  },
+  in_progress: {
+    label: "Cut & finished",
+    color: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
+  },
+  completed: {
+    label: "Completed",
+    color: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300"
+  },
+  cancelled: {
+    label: "Cancelled",
+    color: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300"
+  },
+  declined: {
+    label: "Declined",
+    color: "bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300"
+  }
+};
+

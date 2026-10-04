@@ -47,3 +47,18 @@ export function calcEscrowFees(
   feeRate: number | string | null | undefined,
   fallbackRate?: number
 ): EscrowFees;
+
+
+
+// --- Order status metadata ---
+export const STATUS_STEPS: string[];
+export const STATUS_META: {
+  pending: { label: string; color: string };
+  quoted: { label: string; color: string };
+  accepted: { label: string; color: string };
+  paid: { label: string; color: string };
+  in_progress: { label: string; color: string };
+  completed: { label: string; color: string };
+  cancelled: { label: string; color: string };
+  declined: { label: string; color: string };
+};

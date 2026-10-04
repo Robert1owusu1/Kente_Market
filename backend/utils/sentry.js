@@ -1,4 +1,5 @@
 import * as Sentry from '@sentry/node';
+import { redactUrl } from './logger.js';
 
 let initialized = false;
 
@@ -29,7 +30,10 @@ export const setupSentryErrorHandler = (app) => {
 export const captureError = (err, req = {}) => {
   if (!initialized) return;
 
-  const route = `${req.method || 'UNKNOWN'} ${req.originalUrl || 'UNKNOWN'}`;
+  // Redacted: the OAuth consent flow passes a signed JWT in the query string,
+  // and this value becomes a Sentry `route` tag that is searchable, exportable
+  // and retained for months.
+  const route = `${req.method || 'UNKNOWN'} ${redactUrl(req.originalUrl) || 'UNKNOWN'}`;
   const user =
     req.user && typeof req.user === 'object' && req.user.id
       ? { id: String(req.user.id) }

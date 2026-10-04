@@ -85,11 +85,15 @@ export const setupSecurity = (app) => {
     if (origin && isAllowedOrigin(origin)) {
       res.header('Access-Control-Allow-Origin', origin);
       res.header('Vary', 'Origin');
+      // Only advertise credentialed CORS to an origin we actually allow. It is
+      // not exploitable today (a browser will not expose a credentialed
+      // response without a concrete Allow-Origin), but sending it to every
+      // caller just tells a prober exactly which header combination to look for.
+      res.header('Access-Control-Allow-Credentials', 'true');
     }
 
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
     res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, X-CSRF-Token');
-    res.header('Access-Control-Allow-Credentials', 'true');
 
     // Handle preflight
     if (req.method === 'OPTIONS') {

@@ -12,7 +12,11 @@ import User from '../models/usersModel.js';
 
 const router = express.Router();
 
-const COOKIE_MAX_AGE = 30 * 24 * 60 * 60 * 1000; // 30 days
+// Matches the OAuth session token lifetime (SESSION_7D). These used to disagree:
+// the cookie was valid for 30 days while the JWT inside it expired in 7 (and 30
+// in the old duplicate signer), so the cookie outlived its own token and kept
+// re-sending a dead credential on every request for three weeks.
+const COOKIE_MAX_AGE = 7 * 24 * 60 * 60 * 1000; // 7 days
 const CONSENT_COOKIE_MAX_AGE = 10 * 60 * 1000; // 10 minutes
 
 // Sign a short-lived token proving the user accepted the legal policies.
@@ -97,6 +101,20 @@ const handleOAuthSuccess = (req, res) => {
 // GOOGLE OAUTH ROUTES
 // ============================================
 
+// Sign a short-lived, browser-bound state token for OAuth CSRF protection.
+// Stored in an httpOnly cookie and verified at callback.
+const signOAuthState = () =>
+  jwt.sign({ purpose: 'oauth_state', nonce: crypto.randomUUID() }, process.env.JWT_SECRET, { expiresIn: '10m' });
+
+const isOAuthStateValid = (token) => {
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    return decoded.purpose === 'oauth_state';
+  } catch {
+    return false;
+  }
+};
+
 // Initiate Google OAuth. Refuses to start unless the caller has accepted the
 // legal policies (signed consent token from POST /api/auth/consent).
 router.get('/google',
@@ -113,6 +131,19 @@ router.get('/google',
       maxAge: CONSENT_COOKIE_MAX_AGE,
       path: '/'
     });
+
+    // SECURITY FIX (V-05): Issue a per-request, browser-bound state token to
+    // prevent login CSRF / session fixation. The state is stored in an httpOnly
+    // cookie and passed to Google; the callback verifies it matches.
+    const stateToken = signOAuthState();
+    res.cookie('oauth_state', stateToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: cookieSameSite(),
+      maxAge: CONSENT_COOKIE_MAX_AGE,
+      path: '/'
+    });
+
     next();
   },
   passport.authenticate('google', {
@@ -121,12 +152,23 @@ router.get('/google',
   })
 );
 
-// Google OAuth callback. The consent cookie must still be present and valid.
+// Google OAuth callback. The consent cookie AND state cookie must be present and valid.
 router.get('/google/callback',
   (req, res, next) => {
     if (!isConsentTokenValid(req.cookies.oauth_consent)) {
       return res.redirect(`${process.env.FRONTEND_URL}/login?error=consent_required`);
     }
+    // SECURITY FIX (V-05): Verify OAuth state parameter (login CSRF protection).
+    // The state must be present in the query, match the httpOnly cookie, and
+    // be single-use (consumed here).
+    const queryState = req.query.state;
+    const cookieState = req.cookies?.oauth_state;
+    if (!queryState || !cookieState || queryState !== cookieState || !isOAuthStateValid(queryState)) {
+      return res.redirect(`${process.env.FRONTEND_URL}/login?error=invalid_oauth_state`);
+    }
+    // Clear the state cookie so it can't be replayed.
+    res.clearCookie('oauth_state', { path: '/', httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: cookieSameSite() });
+
     req.consentAt = new Date();
     next();
   },
@@ -168,7 +210,10 @@ router.post('/oauth/exchange', async (req, res) => {
     if (decoded.purpose !== 'oauth_exchange') {
       return res.status(401).json({ message: 'Invalid token' });
     }
-    if (!decoded.tv || !decoded.jti) {
+    // SECURITY FIX (N-2): Use explicit null/undefined check instead of falsy check.
+    // tokenVersion can be 0 (falsy) for legitimate users, which would incorrectly
+    // reject their OAuth exchange.
+    if (decoded.tv === undefined || decoded.tv === null || !decoded.jti) {
       return res.status(401).json({ message: 'Invalid token' });
     }
 

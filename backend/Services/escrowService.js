@@ -132,10 +132,10 @@ export const createEscrowAllocations = async (orderId, items, { advanceRatio = 0
 
   const placeholders = productIds.map(() => '?').join(', ');
   const [products] = await pool.execute(
-    `SELECT id, vendorId, price FROM product WHERE id IN (${placeholders})`,
+    `SELECT id, vendorId, price, advanceRatio FROM product WHERE id IN (${placeholders})`,
     productIds
   );
-  /** @type {Array<{ id: number, vendorId: number | string, price: number | string, category?: string }>} */
+  /** @type {Array<{ id: number, vendorId: number | string, price: number | string, category?: string, advanceRatio?: number | null }>} */
   const productRows = products;
   const productMap = new Map(productRows.map((p) => [p.id, p]));
 
@@ -166,8 +166,6 @@ export const createEscrowAllocations = async (orderId, items, { advanceRatio = 0
     }
   }
 
-  const ratio = Math.max(0, Math.min(1, parseFloat(String(advanceRatio)) || 0));
-
   let created = 0;
   for (const [vendorId] of vendorTotals) {
     // Resolve the effective commission via the commission engine:
@@ -179,6 +177,13 @@ export const createEscrowAllocations = async (orderId, items, { advanceRatio = 0
       category: productForVendor?.category,
     });
     const totalAmount = vendorTotals.get(vendorId) || 0;
+
+    // Use product-level advanceRatio if set, otherwise fall back to order-level option,
+    // otherwise fall back to global CUSTOM_ADVANCE_RATIO (default 0.5)
+    const productAdvanceRatio = productForVendor?.advanceRatio;
+    const ratio = productAdvanceRatio !== null && productAdvanceRatio !== undefined
+      ? parseFloat(String(productAdvanceRatio))
+      : Math.max(0, Math.min(1, parseFloat(String(advanceRatio)) || 0));
 
     if (ratio > 0 && totalAmount > 0) {
       // 50/50 (or configured) advance escrow: split into advance + balance.
@@ -504,6 +509,76 @@ export const releaseEscrowForOrder = async (orderId) => {
 };
 
 /**
+ * Release escrow for a SPECIFIC VENDOR in an order (P0-2).
+ * Called when that vendor's fulfillment is marked delivered and customer confirms
+ * (or auto-release deadline passes for that vendor).
+ * Does NOT affect other vendors' allocations in the same order.
+ * @param {number | string} orderId
+ * @param {number | string} vendorId
+ * @returns {Promise<{ released: number, available: number, failed: number }>}
+ */
+export const releaseVendorEscrow = async (orderId, vendorId) => {
+  const allocations = await getOrderAllocations(orderId);
+  const vendorAllocs = allocations.filter(a => a.vendorId == vendorId);
+  if (vendorAllocs.length === 0) return { released: 0, available: 0, failed: 0 };
+
+  let available = 0;
+  let failed = 0;
+
+  for (const allocation of vendorAllocs) {
+    if (allocation.status === 'held') {
+      const updated = await releaseAllocation(allocation);
+      if (updated.status === 'available') available += 1;
+      else if (updated.status === 'failed') failed += 1;
+    }
+  }
+
+  // Update vendor_order_fulfillment status to delivered
+  await pool.execute(
+    `UPDATE vendor_order_fulfillment 
+     SET status = 'delivered', deliveredAt = NOW(), updated_at = CURRENT_TIMESTAMP
+     WHERE orderId = ? AND vendorId = ?`,
+    [orderId, vendorId]
+  );
+
+  // Recompute order-level escrow status (may still be held if other vendors pending)
+  const escrowStatus = await recomputeOrderEscrowStatus(orderId);
+  await pool.execute(
+    `UPDATE orders SET escrowStatus = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+    [escrowStatus, orderId]
+  );
+
+  return { released: available, available, failed };
+};
+
+/**
+ * Auto-release vendor escrow when their fulfillment deadline passes.
+ * Called by cleanup scheduler.
+ */
+export const autoReleaseExpiredVendorEscrows = async () => {
+  const [rows] = await pool.execute(
+    `SELECT vof.orderId, vof.vendorId
+     FROM vendor_order_fulfillment vof
+     JOIN orders o ON o.id = vof.orderId
+     WHERE vof.status IN ('delivered','shipped')
+       AND vof.deliveredAt IS NOT NULL
+       AND vof.escrowReleaseDeadline IS NOT NULL
+       AND vof.escrowReleaseDeadline < NOW()`
+  );
+
+  for (const row of rows) {
+    const result = await releaseVendorEscrow(row.orderId, row.vendorId);
+    console.log(
+      `⏰ Auto-released expired vendor escrow for order ${row.orderId}, vendor ${row.vendorId} (` +
+        `${result.released} released, ${result.failed} failed)`
+    );
+  }
+  if (rows.length > 0) {
+    console.log(`⏰ Vendor escrow auto-release pass complete (${rows.length} vendor(s))`);
+  }
+};
+
+/**
  * Place an order's allocations into escrow ("held") once payment succeeds.
  * Idempotent: safe to call multiple times (double-webhook race).
  * @param {number | string} orderId
@@ -537,6 +612,23 @@ export const setEscrowReleaseDeadline = async (orderId) => {
      SET escrowReleaseDeadline = DATE_ADD(NOW(), INTERVAL ? DAY), updated_at = CURRENT_TIMESTAMP
      WHERE id = ? AND escrowStatus = 'held'`,
     [ESCROW_RELEASE_DAYS, orderId]
+  );
+  return ESCROW_RELEASE_DAYS;
+};
+
+/**
+ * Set the auto-release deadline for a SPECIFIC VENDOR's escrow.
+ * Called when that vendor's fulfillment is marked delivered.
+ * @param {number | string} orderId
+ * @param {number | string} vendorId
+ * @returns {Promise<number>} the configured release window in days
+ */
+export const setVendorEscrowReleaseDeadline = async (orderId, vendorId) => {
+  await pool.execute(
+    `UPDATE vendor_order_fulfillment
+     SET escrowReleaseDeadline = DATE_ADD(NOW(), INTERVAL ? DAY), updated_at = CURRENT_TIMESTAMP
+     WHERE orderId = ? AND vendorId = ?`,
+    [ESCROW_RELEASE_DAYS, orderId, vendorId]
   );
   return ESCROW_RELEASE_DAYS;
 };
@@ -1056,8 +1148,16 @@ export const recoverStuckPendingOrders = async () => {
   for (const order of rows) {
     try {
       const { default: axios } = await import('axios');
+      // SECURITY FIX (V-09): encodeURIComponent the reference to prevent
+      // same-host path injection. Also validate format.
+      const ref = order.paymentReference;
+      if (!ref || !/^[A-Za-z0-9._-]{1,100}$/.test(ref)) {
+ console.warn(` Stuck order ${order.id}: invalid paymentReference format, skipping`);
+        continue;
+      }
+      const encodedRef = encodeURIComponent(ref);
       const resp = await axios.get(
-        `https://api.paystack.co/transaction/verify/${order.paymentReference}`,
+        `https://api.paystack.co/transaction/verify/${encodedRef}`,
         { headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` } }
       );
       const tx = resp.data?.data;
