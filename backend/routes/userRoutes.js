@@ -20,7 +20,7 @@ import {
     getVerificationStatus
 } from '../controllers/userController.js';
 import { protect, admin } from "../middleware/authMiddleware.js";
-import { authLimiter, passwordResetLimiter, registerLimiter } from "../middleware/rateLimitMiddleware.js";
+import { authLimiter, accountAuthLimiter, passwordResetLimiter, accountResetLimiter, registerLimiter, accountRegisterLimiter } from "../middleware/rateLimitMiddleware.js";
 import { validate, updateUserProfileSchema, changePasswordSchema } from "../middleware/validators.js";
 
 // ============================================
@@ -29,11 +29,15 @@ import { validate, updateUserProfileSchema, changePasswordSchema } from "../midd
 
 // Register new user
 // POST /api/users
-router.post('/', registerLimiter, registerUser);
+router.post('/', registerLimiter, accountRegisterLimiter, registerUser);
 
 // Login user (rate-limited to prevent brute-force)
 // POST /api/users/auth
-router.post('/auth', authLimiter, authUser);
+// Two limiters, both required: `authLimiter` bounds one source address, and
+// `accountAuthLimiter` bounds attempts against ONE target account using a key
+// the client cannot forge (it has no IP component, so rotating
+// X-Forwarded-For does not reset it).
+router.post('/auth', authLimiter, accountAuthLimiter, authUser);
 
 // Logout user
 // POST /api/users/logout
@@ -45,7 +49,10 @@ router.post('/logout', logoutUser);
 
 // Request password reset (sends email with reset link)
 // POST /api/users/forgot-password
-router.post('/forgot-password', passwordResetLimiter, forgotPassword);
+// `accountResetLimiter` is keyed on the TARGET email (no IP component), so an
+// attacker rotating X-Forwarded-For cannot mail-bomb a victim or grind reset
+// tokens — the IP-keyed limiter alone was measured bypassable that way.
+router.post('/forgot-password', passwordResetLimiter, accountResetLimiter, forgotPassword);
 
 // Validate reset token (check if token is valid and not expired)
 // GET /api/users/reset-password/:token

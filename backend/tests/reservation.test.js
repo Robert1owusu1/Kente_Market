@@ -29,6 +29,18 @@ const ts = Date.now();
 
 before(async () => {
   if (!dbAvailable || !pool) return;
+  // MySQL enforces the foreign keys TiDB does not: product.vendorId and
+  // orders.userId both point at users(id), and this fixture predates that
+  // distinction (it passed on TiDB by inserting children with no parent).
+  // INSERT IGNORE keeps the rows idempotent — the sibling suite stockRace
+  // uses the same two ids and may already have created them, possibly while
+  // this one runs. Rows are deliberately left in place: deleting a shared
+  // fixture id mid-run would ON DELETE SET NULL a concurrent suite's product.
+  await pool.execute(
+    `INSERT IGNORE INTO users (id, firstName, lastName, email, password, role, is_email_verified)
+     VALUES (240001, 'Fixture', 'Vendor', 'fixture-vendor-240001@example.test', 'unused-fixture-hash', 'vendor', 1),
+            (270001, 'Fixture', 'Buyer',   'fixture-buyer-270001@example.test',   'unused-fixture-hash', 'customer', 1)`
+  );
   const [pRes] = await pool.execute(
     `INSERT INTO product (title, img, price, category, stock, vendorId, madeToOrder, approvalStatus)
      VALUES (?, ?, ?, ?, ?, ?, 0, 'approved')`,

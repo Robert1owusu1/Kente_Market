@@ -5,7 +5,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import User from '../models/usersModel.js';
 import generateToken from '../utils/generateToken.js';
-import { cookieSameSite } from '../config/cookieConfig.js';
+import { cookieSameSite, cookieSecure } from '../config/cookieConfig.js';
 import { clearCsrfCookie } from '../middleware/csrfMiddleware.js';
 import { 
   generateOTP, 
@@ -34,15 +34,10 @@ const authUser = asyncHandler(async (req, res) => {
     throw new Error('Please provide email and password');
   }
 
-  // Authenticate user
+  // Authenticate user. Locked accounts return the SAME generic 401 as bad
+  // credentials (no oracle for account existence / lock state).
   let user;
-  try {
-    user = await User.authenticate(email, password);
-  } catch (lockError) {
-    // Account is locked — return 423 Locked
-    res.status(423);
-    throw new Error(lockError.message);
-  }
+  user = await User.authenticate(email, password);
 
   if (!user) {
     res.status(401);
@@ -191,7 +186,7 @@ const logoutUser = asyncHandler(async (req, res) => {
 
   res.cookie('jwt', '', {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: cookieSecure(req), // N-8
     sameSite: cookieSameSite(),
     expires: new Date(0),
     path: '/'
@@ -210,6 +205,13 @@ const logoutUser = asyncHandler(async (req, res) => {
  * @route   POST /api/users/forgot-password
  * @access  Public
  */
+// V-10: the reply to forgot-password must be a pure function of the REQUEST,
+// never of whether the account exists. Two different 200 messages (and a 500
+// when the SMTP send failed, which only ever happens for an existing account)
+// were both precise existence oracles. One body, always 200.
+const FORGOT_PASSWORD_REPLY =
+  'If an account exists with this email, a password reset link will be sent.';
+
 const forgotPassword = asyncHandler(async (req, res) => {
   const { email } = req.body;
 
@@ -221,35 +223,31 @@ const forgotPassword = asyncHandler(async (req, res) => {
   // Find user by email
   const user = await User.findByEmail(email);
 
-  if (!user) {
-    // Don't reveal if user exists (security best practice)
-    res.status(200).json({
-      message: 'If an account exists with this email, a password reset link will be sent.'
-    });
-    return;
+  if (user) {
+    try {
+      // Generate reset token
+      const resetToken = await User.createPasswordResetToken(user.id);
+
+      // Send password reset email
+      await sendPasswordResetEmail(user.email, user.firstName, resetToken);
+
+      console.log(`Password reset email sent`);
+    } catch (error) {
+      // Deliberately NOT surfaced. A 4xx/5xx here can only be produced by an
+      // EXISTING account, which is exactly the oracle this endpoint must not
+      // have — so a delivery failure is logged loudly, the unusable token is
+      // dropped (a retry issues a fresh one) and the caller still gets the
+      // identical reply.
+      console.error(' forgot-password: reset email could not be delivered:', error?.message);
+      try {
+        await User.clearResetToken(user.id);
+      } catch (clearErr) {
+        console.error(' forgot-password: could not clear token:', clearErr?.message);
+      }
+    }
   }
 
-  try {
-    // Generate reset token
-    const resetToken = await User.createPasswordResetToken(user.id);
-
-    // Send password reset email
-    await sendPasswordResetEmail(user.email, user.firstName, resetToken);
-
-    console.log(`Password reset email sent`);
-
-    res.status(200).json({
-      message: 'Password reset link has been sent to your email address.'
-    });
-  } catch (error) {
- console.error(' Error in forgot password:', error);
-    
-    // Clear any created tokens
-    await User.clearResetToken(user.id);
-    
-    res.status(500);
-    throw new Error('Failed to send password reset email. Please try again.');
-  }
+  res.status(200).json({ message: FORGOT_PASSWORD_REPLY });
 });
 
 /**
@@ -321,19 +319,20 @@ const validateResetToken = asyncHandler(async (req, res) => {
 
   const user = await User.findByResetToken(token);
 
-  // Always return the same response — never reveal whether a token is valid.
-  if (!user) {
-    res.status(200).json({
-      valid: false,
-      message: 'If the link is valid, you will be redirected.'
-    });
-    return;
-  }
-
+  // V-10: byte-identical reply for a valid, an expired and an unknown token.
+  // The old body carried `valid: true|false`, which turned this endpoint into
+  // a token oracle (only the 3/hour IP limiter stood behind it, and that limiter
+  // is XFF-spoofable — N-9). The frontend only reads `response.ok`, so nothing
+  // client-side depended on the flag; POST /reset-password/:token remains the
+  // authority that reports an invalid link.
   res.status(200).json({
-    valid: true,
-    message: 'Token is valid'
+    message: 'If the link is valid, you will be able to set a new password on the next screen.'
   });
+  if (!user) {
+    // Keep the negative case observable in server logs without changing the
+    // bytes on the wire.
+    console.log(' reset-token validation: link not usable (unknown or expired)');
+  }
 });
 
 // ============================================

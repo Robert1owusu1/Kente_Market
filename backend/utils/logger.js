@@ -66,19 +66,55 @@ const SENSITIVE_QUERY_KEYS = new Set([
 ]);
 
 /**
- * Strip sensitive query values from a URL, keeping the shape (and the
- * non-sensitive params) so the log line stays useful for debugging.
+ * Strip sensitive values from a URL, keeping the shape (and the non-sensitive
+ * params) so the log line stays useful for debugging.
+ *
+ * RED-TEAM FIX (P1): this also covers PATH segments, not just query params.
+ * `GET /api/users/reset-password/:token` puts a single-use account-takeover
+ * capability in the path; `redactUrl` used to return the path untouched, so
+ * every password-reset link was written to the log in full. Anyone with log
+ * access (aggregator, APM, support tooling, a log-scraping XSS) could take
+ * over the account. The path prefix stays readable for debugging.
  */
+const SENSITIVE_PATH_SEGMENTS = new Set([
+  'reset-password',
+  'reset_password',
+  'verify-email',
+  'verify_email',
+]);
+
 export const redactUrl = (originalUrl) => {
   if (!originalUrl) return originalUrl;
-  const [path, query] = String(originalUrl).split('?');
+  const [rawPath, query] = String(originalUrl).split('?');
+
+  // Redact the segment that FOLLOWS a sensitive path keyword.
+  const segments = String(rawPath).split('/');
+  for (let i = 0; i < segments.length - 1; i += 1) {
+    if (SENSITIVE_PATH_SEGMENTS.has(segments[i].toLowerCase())) {
+      segments[i + 1] = '[redacted]';
+    }
+  }
+  const path = segments.join('/');
+
   if (!query) return path;
   const cleaned = query
     .split('&')
     .map((pair) => {
       const eq = pair.indexOf('=');
       if (eq === -1) return pair;
-      const key = decodeURIComponent(pair.slice(0, eq));
+      // RED-TEAM FIX (P0 DoS): decodeURIComponent throws URIError on a
+      // malformed escape in the KEY position (e.g. `GET /?%=1`). This runs in a
+      // `res.on('finish')` listener, so the throw escaped Express entirely,
+      // surfaced as an uncaughtException and the process exited — one
+      // unauthenticated request killed the whole API (incl. webhooks).
+      // Redaction must never be able to take the server down: a key we cannot
+      // decode is simply not one of ours, so keep the pair verbatim.
+      let key;
+      try {
+        key = decodeURIComponent(pair.slice(0, eq));
+      } catch {
+        return pair;
+      }
       if (SENSITIVE_QUERY_KEYS.has(key.toLowerCase())) return `${key}=[redacted]`;
       return pair;
     })

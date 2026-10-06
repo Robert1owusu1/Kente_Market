@@ -14,6 +14,7 @@ import crypto from 'crypto';
 import Cart from '../models/cartModel.js';
 import { optionalAuth } from '../middleware/authMiddleware.js';
 import { apiLimiter } from '../middleware/rateLimitMiddleware.js';
+import { cookieSecure } from '../config/cookieConfig.js';
 
 const router = express.Router();
 
@@ -33,7 +34,7 @@ const resolveOwner = (req, res) => {
       httpOnly: true,
       maxAge: 365 * 24 * 60 * 60 * 1000,
       sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
+      secure: cookieSecure(req), // N-8
       path: '/',
     });
   }

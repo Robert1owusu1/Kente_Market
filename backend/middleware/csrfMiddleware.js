@@ -18,7 +18,7 @@
 // which removes that guard — this middleware is what enforces CSRF there.
 
 import crypto from 'crypto';
-import { cookieSameSite } from '../config/cookieConfig.js';
+import { cookieSameSite, cookieSecure } from '../config/cookieConfig.js';
 
 export const CSRF_COOKIE_NAME = 'csrf_token';
 export const CSRF_HEADER_NAME = 'x-csrf-token';
@@ -41,9 +41,9 @@ const issueCsrfToken = () => {
 };
 
 /** Cookie attributes mirror the JWT session cookie (minus HttpOnly so the SPA can echo it). */
-const csrfCookieOptions = () => ({
+const csrfCookieOptions = (req) => ({
   httpOnly: false,
-  secure: process.env.NODE_ENV === 'production',
+  secure: cookieSecure(req), // N-8
   sameSite: cookieSameSite(),
   maxAge: CSRF_COOKIE_MAX_AGE,
   path: '/',
@@ -51,7 +51,7 @@ const csrfCookieOptions = () => ({
 
 /** Refresh the CSRF token cookie (used the moment a session JWT is issued). */
 export const setCsrfCookie = (res) => {
-  res.cookie(CSRF_COOKIE_NAME, issueCsrfToken(), csrfCookieOptions());
+  res.cookie(CSRF_COOKIE_NAME, issueCsrfToken(), csrfCookieOptions(res.req));
   return res;
 };
 
@@ -65,14 +65,14 @@ export const getOrIssueCsrfToken = (req, res) => {
   const existing = req.cookies?.[CSRF_COOKIE_NAME];
   if (existing) return existing;
   const token = issueCsrfToken();
-  res.cookie(CSRF_COOKIE_NAME, token, csrfCookieOptions());
+  res.cookie(CSRF_COOKIE_NAME, token, csrfCookieOptions(req));
   return token;
 };
 
 /** Clear the CSRF cookie (used on logout, mirroring the JWT clear). */
 export const clearCsrfCookie = (res) => {
   res.cookie(CSRF_COOKIE_NAME, '', {
-    ...csrfCookieOptions(),
+    ...csrfCookieOptions(res.req),
     maxAge: 0,
     expires: new Date(0),
   });

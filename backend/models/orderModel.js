@@ -18,6 +18,9 @@ class Order {
     this.notes = orderData.notes;
     this.paymentReference = orderData.paymentReference || orderData.payment_reference || null;
     this.couponId = orderData.couponId || null;
+    // N-7/V-04: 0=none 1=reserved (slot held, unpaid) 2=settled (slot owned
+    // permanently). Not client-writable; see migrateCouponUse.js.
+    this.couponUseState = Number(orderData.couponUseState ?? 0);
     this.expectedCompletionDate = orderData.expectedCompletionDate;
     this.productionNote = orderData.productionNote;
     // Present on every row (SELECT o.*) — must survive the constructor or
@@ -81,8 +84,8 @@ class Order {
       const [result] = await connection.execute(
         `INSERT INTO orders 
         (userId, orderNumber, items, totalAmount, shippingAddress, billingAddress,
-         paymentMethod, paymentStatus, orderStatus, shippingCost, tax, discount, notes, paymentReference, couponId, expectedCompletionDate, productionNote)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         paymentMethod, paymentStatus, orderStatus, shippingCost, tax, discount, notes, paymentReference, couponId, expectedCompletionDate, productionNote, couponUseState)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           orderData.userId,
           orderData.orderNumber,
@@ -101,6 +104,11 @@ class Order {
           orderData.couponId || null,
           orderData.expectedCompletionDate || null,
           orderData.productionNote || null,
+          // Coupon slot state travels with the insert so a reservation cannot be
+          // lost between taking the slot and creating the order. Callers that
+          // reserved a use pass 1; every other insert stays 0, which makes the
+          // settlement path take the slot itself (never a free discount).
+          orderData.couponUseState ?? 0,
         ]
       );
 

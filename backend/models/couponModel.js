@@ -164,10 +164,11 @@ class Coupon {
    * them, so checkout is authoritative.
    */
   static async validate(code, cartTotal, { vendorIds } = {}) {
-    let connection;
+    // No pooled connection is held here on purpose: findByCode acquires its own,
+    // and nesting two acquires per checkout deadlocks the pool once N
+    // concurrent checkouts validate the same moment (pool size is finite).
+    // Every check below is a pure function of the coupon row already fetched.
     try {
-      connection = await pool.getConnection();
-
       const coupon = await Coupon.findByCode(code);
 
       if (!coupon) {
@@ -215,8 +216,6 @@ class Coupon {
     } catch (err) {
       console.error("DB Error (Coupon.validate):", err.message);
       throw new Error(`Error validating coupon: ${err.message}`);
-    } finally {
-      if (connection) connection.release();
     }
   }
 
@@ -245,21 +244,29 @@ class Coupon {
     let connection;
     try {
       connection = await pool.getConnection();
-      // Conditional increment: never let usesUsed exceed maxUses. Validation
-      // (Coupon.validate) and this consumption are deliberately not the same
-      // statement — usage is deferred until payment confirms — so N in-flight
-      // checkouts that all saw "1 use left" must not push the counter past the
-      // cap here. affectedRows 0 = limit reached at consumption time.
+      // Conditional increment: never let usesUsed exceed maxUses. This single
+      // statement is the authority behind BOTH the reservation taken when a
+      // coupon is booked onto an order (reserveUse) and the legacy settlement
+      // path for orders created before that fix — N concurrent checkouts that
+      // all saw "1 use left" cannot push the counter past the cap. affectedRows
+      // 0 = the limit was already reached.
       const [result] = await connection.execute(
         "UPDATE coupons SET usesUsed = usesUsed + 1 WHERE id = ? AND (maxUses IS NULL OR usesUsed < maxUses)",
         [parseInt(id)]
       );
       // P0-5: report the race loser instead of silently keeping the discount.
       if (result.affectedRows === 0) {
- console.warn(` Coupon ${id}: usage not consumed — limit reached at payment time`);
+ console.warn(` Coupon ${id}: usage not consumed — limit reached at settlement time`);
       }
       const consumed = result.affectedRows > 0;
-      return { consumed, coupon: await Coupon.findById(id) };
+      // Re-read on the SAME connection: findById/findByCode would take a second
+      // pooled connection while this one is held, and two nested acquires per
+      // checkout deadlock the pool under concurrent checkouts.
+      const [rows] = await connection.execute(
+        "SELECT * FROM coupons WHERE id = ?",
+        [parseInt(id)]
+      );
+      return { consumed, coupon: rows[0] || null };
     } catch (err) {
       console.error("DB Error (Coupon.incrementUses):", err.message);
       throw new Error(`Error incrementing coupon uses: ${err.message}`);
@@ -280,12 +287,150 @@ class Coupon {
         "UPDATE coupons SET usesUsed = GREATEST(usesUsed - 1, 0) WHERE id = ?",
         [parseInt(id)]
       );
-      return await Coupon.findById(id);
+      // Same-connection re-read (no nested pool acquire — see incrementUses).
+      const [rows] = await connection.execute(
+        "SELECT * FROM coupons WHERE id = ?",
+        [parseInt(id)]
+      );
+      return rows[0] || null;
     } catch (err) {
       console.error("DB Error (Coupon.decrementUses):", err.message);
       throw new Error(`Error decrementing coupon uses: ${err.message}`);
     } finally {
       if (connection) connection.release();
+    }
+  }
+
+  // =========================================================================
+  // N-7 / V-04 — coupon maxUses enforced on the MONEY, not on the counter.
+  //
+  // orders.couponUseState: 0 = none, 1 = reserved, 2 = settled.
+  // The slot itself lives in coupons.usesUsed; this column records whether
+  // THIS order already accounted for its slot, which is what makes reserve,
+  // settle and release safe to run more than once.
+  // =========================================================================
+
+  /**
+   * Atomically take ONE use of a coupon for an order that is being booked.
+   * Validation (Coupon.validate) is advisory — this is the authority: the
+   * conditional UPDATE cannot exceed maxUses no matter how many concurrent
+   * checkouts saw "1 use left".
+   * @returns {Promise<{reserved: boolean, coupon: any}>}
+   */
+  static async reserveUse(id) {
+    const { consumed, coupon } = await Coupon.incrementUses(id);
+    return { reserved: consumed, coupon };
+  }
+
+  /**
+   * Read an order's coupon-slot state.
+   * @returns {Promise<number|null>} 0/1/2, or null when the order does not
+   * carry this coupon (or there is no such order).
+   */
+  static async getOrderCouponState(orderId, couponId) {
+    if (!orderId || !couponId) return null;
+    const [rows] = await pool.execute(
+      `SELECT couponUseState FROM orders WHERE id = ? AND couponId = ? LIMIT 1`,
+      [orderId, couponId]
+    );
+    if (rows.length === 0) return null;
+    return Number(rows[0]?.couponUseState ?? 0);
+  }
+
+  /**
+   * CAS an order's coupon-slot state between two DIFFERENT values.
+   * Returns true only when this call performed the transition, so a caller can
+   * safely own the matching side effect exactly once.
+   */
+  static async transitionOrderCoupon(orderId, couponId, fromState, toState) {
+    if (!orderId || !couponId || fromState === toState) return false;
+    const [res] = await pool.execute(
+      `UPDATE orders SET couponUseState = ?, updated_at = CURRENT_TIMESTAMP
+       WHERE id = ? AND couponId = ? AND couponUseState = ?`,
+      [toState, orderId, couponId, fromState]
+    );
+    return res.affectedRows === 1;
+  }
+
+  /**
+   * Settle a legacy/crash-recovered order: claim the slot FOR THIS ORDER and
+   * take it in ONE transaction, so it is impossible to either
+   *   (a) settle the same order twice (retry/webhook/verify), or
+   *   (b) mark an order settled without actually holding a slot.
+   * If the cap is already reached the transaction rolls back and the order is
+   * left unclaimed — the caller reports it instead of honouring the discount.
+   * @returns {Promise<{consumed: boolean, exhausted: boolean}>}
+   */
+  static async consumeForOrderOnce(orderId, couponId) {
+    if (!orderId || !couponId) return { consumed: false, exhausted: false };
+    const connection = await pool.getConnection();
+    try {
+      await connection.beginTransaction();
+
+      const [claim] = await connection.execute(
+        `UPDATE orders SET couponUseState = 2, updated_at = CURRENT_TIMESTAMP
+         WHERE id = ? AND couponId = ? AND couponUseState = 0`,
+        [orderId, couponId]
+      );
+      if (claim.affectedRows !== 1) {
+        await connection.rollback();
+        return { consumed: false, exhausted: false };
+      }
+
+      const [take] = await connection.execute(
+        `UPDATE coupons SET usesUsed = usesUsed + 1
+         WHERE id = ? AND (maxUses IS NULL OR usesUsed < maxUses)`,
+        [parseInt(couponId)]
+      );
+      if (take.affectedRows !== 1) {
+        // Cap reached: undo the claim so the order is not left marked settled
+        // while holding no slot, then let the caller journal the over-redeem.
+        await connection.rollback();
+        return { consumed: false, exhausted: true };
+      }
+
+      await connection.commit();
+      return { consumed: true, exhausted: false };
+    } catch (err) {
+      try { await connection.rollback(); } catch { /* connection may be gone */ }
+      throw new Error(`Error settling coupon for order: ${err.message}`);
+    } finally {
+      connection.release();
+    }
+  }
+
+  /**
+   * Give back a slot held by an order that will never settle (cancelled or
+   * expired before payment). The 1 -> 0 CAS inside the transaction is the
+   * ownership test: cancelOrder and the expiry sweeper can both try, and only
+   * the winner decrements — so a slot can never be released twice.
+   * @returns {Promise<boolean>} true when this call released the slot
+   */
+  static async releaseForOrder(orderId, couponId) {
+    if (!orderId || !couponId) return false;
+    const connection = await pool.getConnection();
+    try {
+      await connection.beginTransaction();
+      const [claim] = await connection.execute(
+        `UPDATE orders SET couponUseState = 0, updated_at = CURRENT_TIMESTAMP
+         WHERE id = ? AND couponId = ? AND couponUseState = 1 AND paymentStatus <> 'paid'`,
+        [orderId, couponId]
+      );
+      if (claim.affectedRows !== 1) {
+        await connection.rollback();
+        return false;
+      }
+      await connection.execute(
+        `UPDATE coupons SET usesUsed = GREATEST(usesUsed - 1, 0) WHERE id = ?`,
+        [parseInt(couponId)]
+      );
+      await connection.commit();
+      return true;
+    } catch (err) {
+      try { await connection.rollback(); } catch { /* connection may be gone */ }
+      throw new Error(`Error releasing coupon reservation: ${err.message}`);
+    } finally {
+      connection.release();
     }
   }
 }

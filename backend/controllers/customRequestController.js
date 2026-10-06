@@ -285,6 +285,14 @@ export const checkoutRequest = async (req, res) => {
       return res.status(400).json({ message: "This payment reference has already been used." });
     }
 
+    // Suspended-vendor re-check: status may have changed since quote/accept.
+    {
+      const [[vrow]] = await pool.execute(`SELECT status FROM vendors WHERE userId = ?`, [request.vendorId]);
+      if (!vrow || vrow.status !== 'approved') {
+        return res.status(400).json({ message: "This vendor is not available for new orders." });
+      }
+    }
+
     const items = [
       {
         product: request.baseProductId || null,

@@ -146,7 +146,12 @@ export const createEscrowAllocations = async (orderId, items, { advanceRatio = 0
     const pid = /** @type {any} */ (it?.product || it?.productId || it?.id);
     const product = productMap.get(pid);
     const vendorId = product?.vendorId || it?.vendorId || null;
-    const qty = parseFloat(String(it?.quantity)) || 1;
+    // RED-TEAM FIX (P0): order lines produced by orderController carry `qty`
+    // (custom-request lines carry both). Reading only `quantity` silently fell
+    // back to 1, so a 3-unit order escrowed ONE unit: the customer was charged
+    // for 3, the vendor could only ever be paid for 1, and the discount
+    // apportionment (netFactor below) used a wrong gross subtotal too.
+    const qty = parseFloat(String(it?.quantity ?? it?.qty)) || 1;
     const price = parseFloat(String(it?.price ?? product?.price)) || 0;
     grossSubtotal += qty * price;
     if (!vendorId) continue; // platform-owned items skip escrow
@@ -244,45 +249,121 @@ export const reallocateOrderEscrow = async (orderId, items, { discount = 0 } = {
 };
 
 /**
- * Consume one coupon use for a just-paid order (P0-5). When the usage cap was
- * reached between validation and payment (race loser), the order already
- * carries the discount and cannot be re-charged in-flow: journal a
- * `coupon.exhausted` event (idempotent per order+coupon) and notify admins for
- * manual reconcile instead of silently over-funding the coupon.
+ * Journal + notify when a coupon use could not be taken at settlement time.
+ * Dedupe key is per order+coupon, so webhook/verify retries never duplicate it.
+ * @param {any} couponId
+ * @param {any} orderId
+ * @param {any} coupon
  */
+const reportCouponExhausted = async (couponId, orderId, coupon) => {
+  try {
+    await recordFinancialEvent({
+      eventType: 'coupon.exhausted',
+      direction: 'info',
+      amount: 0,
+      orderId,
+      dedupeKey: `coupon.exhausted:${orderId}:${couponId}`,
+      payload: { couponId, orderId },
+    });
+  } catch { /* journal is best-effort */ }
+  try {
+    const [admins] = await pool.execute(`SELECT id FROM users WHERE role = 'admin' LIMIT 5`);
+    for (const admin of admins) {
+      await Notification.create({
+        userId: admin.id,
+        type: 'system',
+        title: 'Coupon over-redeemed at payment',
+        message: `Order #${orderId} was paid with a coupon that hit its usage cap. The discount was honored; reconcile manually.`,
+        link: `/admin/orders`,
+      });
+    }
+  } catch { /* notify is best-effort */ }
+  return { consumed: false, coupon };
+};
+
 /**
+ * Settle the coupon slot for a just-paid order — N-7 / V-04.
+ *
+ * The slot itself is taken when the coupon is booked onto the order
+ * (Coupon.reserveUse, one atomic conditional UPDATE against maxUses), so this
+ * function's job is to record that the slot now belongs to the order
+ * permanently, and to do so EXACTLY ONCE no matter how many times the payment
+ * callback, verification, webhook and reconciliation paths call it.
+ *
+ * orders.couponUseState: 0 = none, 1 = reserved (unpaid), 2 = settled.
+ *
+ *  - state 1 -> 2 : reserved at booking; no counter change, retries are no-ops.
+ *  - state 2      : already settled; return immediately (the idempotency path).
+ *  - state 0      : order predates reserve-at-booking (or its state write was
+ *                   lost). Take the slot in ONE transaction together with the
+ *                   0 -> 2 claim, so neither a retry nor a concurrent webhook
+ *                   can take a second slot, and the order can never be marked
+ *                   settled while holding no slot.
+ *  - no such row  : defensive fallback to the plain atomic increment.
+ *
+ * When the cap is already spent the discount is reported (coupon.exhausted +
+ * admin notification) instead of silently ignored — and never funded twice.
+ *
  * @param {any} couponId
  * @param {any} orderId
  * @returns {Promise<{ consumed: boolean, coupon: any }>}
  */
 export const consumeCouponForOrder = async (couponId, orderId) => {
   if (!couponId) return { consumed: true, coupon: null };
-  const { consumed, coupon } = await Coupon.incrementUses(couponId);
-  if (!consumed) {
+
+  let coupon = null;
+  try {
+    coupon = await Coupon.findById(couponId);
+  } catch { /* coupon row may be gone; reporting still works */ }
+
+  const state = await Coupon.getOrderCouponState(orderId, couponId);
+
+  if (state === 1) {
+    // Reserved at booking: flip to settled. A losing transition just means a
+    // concurrent path already did it — the slot is held either way, exactly once.
     try {
-      await recordFinancialEvent({
-        eventType: 'coupon.exhausted',
-        direction: 'info',
-        amount: 0,
-        orderId,
-        dedupeKey: `coupon.exhausted:${orderId}:${couponId}`,
-        payload: { couponId, orderId },
-      });
-    } catch { /* journal is best-effort */ }
-    try {
-      const [admins] = await pool.execute(`SELECT id FROM users WHERE role = 'admin' LIMIT 5`);
-      for (const admin of admins) {
-        await Notification.create({
-          userId: admin.id,
-          type: 'system',
-          title: 'Coupon over-redeemed at payment',
-          message: `Order #${orderId} was paid with a coupon that hit its usage cap at payment time. The discount was honored; reconcile manually.`,
-          link: `/admin/orders`,
-        });
-      }
-    } catch { /* notify is best-effort */ }
+      await Coupon.transitionOrderCoupon(orderId, couponId, 1, 2);
+    } catch (err) {
+      console.warn(` Could not mark coupon slot settled for order ${orderId}: ${err.message}`);
+    }
+    return { consumed: true, coupon };
   }
-  return { consumed, coupon };
+
+  if (state === 2) {
+    // Payment callback retried / webhook replay / verification after webhook:
+    // the slot was already taken. Never take another one.
+    return { consumed: true, coupon };
+  }
+
+  if (state === 0) {
+    try {
+      const outcome = await Coupon.consumeForOrderOnce(orderId, couponId);
+      if (outcome.consumed) {
+        return { consumed: true, coupon: coupon ?? (await Coupon.findById(couponId)) };
+      }
+      if (!outcome.exhausted) {
+        // Lost the claim to a concurrent path for this same order — check whether
+        // it succeeded rather than taking a slot ourselves.
+        const again = await Coupon.getOrderCouponState(orderId, couponId);
+        if (again === 1 || again === 2) {
+          if (again === 1) await Coupon.transitionOrderCoupon(orderId, couponId, 1, 2);
+          return { consumed: true, coupon };
+        }
+      }
+      return await reportCouponExhausted(couponId, orderId, coupon);
+    } catch (err) {
+      console.error(`Failed to settle coupon for order ${orderId}: ${err.message}`);
+      throw err;
+    }
+  }
+
+  // No order row carries this coupon (orderId missing / mismatched): keep the
+  // historical behaviour — one atomic, cap-respecting increment.
+  const { consumed, coupon: fresh } = await Coupon.incrementUses(couponId);
+  if (!consumed) {
+    return await reportCouponExhausted(couponId, orderId, coupon ?? fresh);
+  }
+  return { consumed: true, coupon: fresh };
 };
 
 /**
@@ -703,7 +784,7 @@ export const voidVendorEscrow = async (orderId, vendorId) => {
   const vid = parseInt(vendorId, 10);
   await pool.execute(
     `UPDATE escrow_allocations
-     SET status = 'failed', updated_at = CURRENT_TIMESTAMP
+     SET status = 'failed', reason = 'voided (partial vendor refund)', updated_at = CURRENT_TIMESTAMP
      WHERE orderId = ? AND vendorId = ? AND status IN ('pending', 'held')`,
     [orderId, vid]
   );
@@ -774,7 +855,7 @@ export const voidVendorEscrow = async (orderId, vendorId) => {
 export const voidEscrowForOrder = async (orderId) => {
   await pool.execute(
     `UPDATE escrow_allocations
-     SET status = 'failed', updated_at = CURRENT_TIMESTAMP
+     SET status = 'failed', reason = 'voided (order cancelled/refunded)', updated_at = CURRENT_TIMESTAMP
      WHERE orderId = ? AND status IN ('pending', 'held')`,
     [orderId]
   );
@@ -853,10 +934,24 @@ export const voidEscrowForOrder = async (orderId) => {
 /**
  * Retry payouts for all failed escrow allocations of an order.
  * Admin endpoint: allows retrying vendor payouts that failed.
+ * RB-02: Does NOT retry allocations for refunded/voided/cancelled orders.
  * @param {number | string} orderId
- * @returns {Promise<{ retried: number, failed: number }>}
+ * @returns {Promise<{ retried: number, failed: number, skipped: number }>}
  */
 export const retryFailedAllocations = async (orderId) => {
+  // First check the order state - do not retry for refunded/voided/cancelled orders
+  const [[order]] = await pool.execute(
+    `SELECT paymentStatus, orderStatus FROM orders WHERE id = ?`,
+    [orderId]
+  );
+  if (!order) {
+    return { retried: 0, failed: 0, skipped: 0 };
+  }
+  // A refunded or voided allocation must NEVER become vendor wallet credit through retry.
+  // Only retry for orders that are still active (paid and not cancelled/refunded).
+  const isRefundedOrVoided = order.paymentStatus === 'refunded' || order.orderStatus === 'cancelled';
+
+  // Get failed allocations for this order
   const [rows] = await pool.execute(
     `SELECT ea.*, v.businessName, v.recipientCode, v.status AS vendorStatus
      FROM escrow_allocations ea
@@ -866,23 +961,49 @@ export const retryFailedAllocations = async (orderId) => {
     [orderId]
   );
 
+  if (isRefundedOrVoided) {
+    return { retried: 0, failed: 0, skipped: rows.length };
+  }
+
   let retried = 0;
   let failed = 0;
+  let skippedVoid = 0;
 
   for (const allocation of rows) {
+    // RB-02 partial-refund guard: allocations voided by a cancel/refund carry
+    // a void/clawback/refund reason and must NEVER become wallet credit via
+    // retry — even when the parent order is still paid (partial refund).
+    const reason = String(allocation.reason || '').toLowerCase();
+    if (reason.includes('void') || reason.includes('clawback') || reason.includes('refund') || reason.includes('order creation failed')) {
+      skippedVoid += 1;
+      continue;
+    }
+    // TOCTOU guard: the order-level check above races a concurrent refund/
+    // cancel. Re-verify the parent order is still active immediately before
+    // each failed->held claim; a refund that landed mid-loop must win and the
+    // remaining allocations must be skipped, never credited.
+    const [[live]] = await pool.execute(
+      `SELECT paymentStatus, orderStatus FROM orders WHERE id = ?`,
+      [orderId]
+    );
+    if (!live || live.paymentStatus === 'refunded' || live.orderStatus === 'cancelled') {
+      skippedVoid += 1;
+      continue;
+    }
     // 'failed' allocations come from cancel/void (pending|held -> failed).
     // releaseAllocation only transitions held -> available, so move the row
     // back to 'held' FIRST; a stale 'pending' would make the release no-op
     // and the retry would silently do nothing.
-    await pool.execute(
+    const [claimed] = await pool.execute(
       `UPDATE escrow_allocations
        SET status = 'held', updated_at = CURRENT_TIMESTAMP
        WHERE id = ? AND status = 'failed'`,
       [allocation.id]
     );
+    if (claimed.affectedRows !== 1) continue;
     allocation.status = 'held';
     const updated = await releaseAllocation(allocation);
-    if (updated.status === 'releasing') retried += 1;
+    if (updated.status === 'available') retried += 1;
     else if (updated.status === 'failed') failed += 1;
   }
 
@@ -892,7 +1013,7 @@ export const retryFailedAllocations = async (orderId) => {
     [escrowStatus, orderId]
   );
 
-  return { retried, failed };
+  return { retried, failed, skipped: skippedVoid };
 };
 
 /**
@@ -1186,7 +1307,7 @@ export const recoverStuckPendingOrders = async () => {
         // double-decrement stock.
         const [flipResult] = await pool.execute(
           `UPDATE orders SET paymentStatus = 'paid', orderStatus = 'processing', updated_at = CURRENT_TIMESTAMP
-           WHERE id = ? AND paymentStatus = 'pending'`,
+           WHERE id = ? AND paymentStatus = 'pending' AND orderStatus NOT IN ('cancelled', 'refunded')`,
           [order.id]
         );
         if (flipResult.affectedRows === 0) continue;

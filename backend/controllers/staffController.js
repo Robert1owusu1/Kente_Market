@@ -8,7 +8,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import pool from '../config/db.js';
 import Vendor from '../models/vendorModel.js';
-import { cookieSameSite } from '../config/cookieConfig.js';
+import { cookieSameSite, cookieSecure } from '../config/cookieConfig.js';
 import { setCsrfCookie } from '../middleware/csrfMiddleware.js';
 
 const VALID_PERMISSIONS = [
@@ -62,7 +62,7 @@ const setStaffCookie = (res, staffId, vendorId, tokenVersion = 0) => {
   );
   res.cookie('jwt', token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: cookieSecure(res.req), // N-8
     sameSite: cookieSameSite(),
     maxAge: 8 * 60 * 60 * 1000,
   });

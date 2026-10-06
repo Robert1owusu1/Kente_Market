@@ -45,9 +45,14 @@ const up = async () => {
     let totalProcessed = 0;
 
     while (true) {
+      // mysql2's execute() speaks the server-side prepared-statement protocol,
+      // which rejects a placeholder in LIMIT/OFFSET ("Incorrect arguments to
+      // LIMIT"). That threw here and aborted `npm run db:migrate`, so every
+      // migration after this one — including the coupon-use and login-window
+      // ones — never ran from the chain. Both values are internal integers.
       const [orders] = await connection.execute(
-        `SELECT id, items, created_at FROM orders ORDER BY id LIMIT ? OFFSET ?`,
-        [batchSize, offset]
+        `SELECT id, items, created_at FROM orders ORDER BY id LIMIT ${Number(batchSize)} OFFSET ${Number(offset)}`,
+        []
       );
 
       if (orders.length === 0) break;

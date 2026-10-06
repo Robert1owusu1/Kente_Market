@@ -37,6 +37,16 @@ const parseItems = (items) => {
 
 const formatMoney = (value) => `GH₵ ${(Number(value) || 0).toFixed(2)}`;
 
+// Escape user/vendor-controlled text before interpolating into HTML email.
+// Prevents stored XSS via product names, colors, addresses, notes.
+export const escapeHtml = (value) =>
+  String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
 const renderItems = (items) => {
   if (!Array.isArray(items) || items.length === 0) {
     return '<tr><td style="padding:10px;border-bottom:1px solid #eee;" colspan="3">No items</td></tr>';
@@ -45,8 +55,8 @@ const renderItems = (items) => {
     .map((item, i) => {
       const qty = Number(item.qty ?? item.quantity ?? 1) || 1;
       const price = Number(item.price ?? 0) || 0;
-      const title = item.name || item.title || `Item ${i + 1}`;
-      const variant = item.selectedColor ? ` <span style="color:#666;">(${item.selectedColor})</span>` : '';
+      const title = escapeHtml(item.name || item.title || `Item ${i + 1}`);
+      const variant = item.selectedColor ? ` <span style="color:#666;">(${escapeHtml(item.selectedColor)})</span>` : '';
       return `<tr>
         <td style="padding:10px;border-bottom:1px solid #eee;">${title}${variant}</td>
         <td style="padding:10px;border-bottom:1px solid #eee;text-align:center;">${qty}</td>
@@ -96,10 +106,10 @@ const deliveryBlock = (order) => {
     : {};
   const deliveryMethod = ship.deliveryMethod || 'home';
   if (deliveryMethod === 'pickup') {
-    return `Pickup at: <strong>${ship.pickupStation || ship.city || 'your chosen pickup station'}</strong>`;
+    return `Pickup at: <strong>${escapeHtml(ship.pickupStation || ship.city || 'your chosen pickup station')}</strong>`;
   }
   const name = `${ship.firstName || ''} ${ship.lastName || ''}`.trim();
-  const lines = [name, ship.address, `${ship.city}${ship.region ? `, ${ship.region}` : ''}`, ship.phone].filter(Boolean);
+  const lines = [name, ship.address, `${ship.city}${ship.region ? `, ${ship.region}` : ''}`, ship.phone].filter(Boolean).map(escapeHtml);
   return lines.join('<br/>');
 };
 
@@ -128,15 +138,15 @@ export const sendOrderConfirmationEmail = async (orderId) => {
 
   const items = parseItems(order.items);
   const orderUrl = `${frontendUrl()}/order/${order.id}`;
-  const firstName = customer.firstName || customer.email;
+  const firstName = escapeHtml(customer.firstName || customer.email);
 
   const html = layout('Order Confirmation', `
     <h2>Akwaaba, ${firstName}!</h2>
     <p>Thank you for your order. Your payment of <strong>${formatMoney(order.totalAmount)}</strong> has been received.</p>
 
     <div class="card">
-      <p style="margin:0;"><strong>Order number:</strong> ${order.orderNumber}</p>
-      <p style="margin:4px 0 0;"><strong>Payment method:</strong> ${order.paymentMethod || 'Card'}</p>
+      <p style="margin:0;"><strong>Order number:</strong> ${escapeHtml(order.orderNumber)}</p>
+      <p style="margin:4px 0 0;"><strong>Payment method:</strong> ${escapeHtml(order.paymentMethod || 'Card')}</p>
       <p style="margin:4px 0 0;"><strong>Estimated delivery:</strong> ${order.expectedCompletionDate ? new Date(order.expectedCompletionDate).toLocaleDateString() : 'Soon — we will keep you posted.'}</p>
     </div>
 
@@ -173,19 +183,19 @@ export const sendOrderStatusEmail = async (orderId, { statusLabel = 'updated', n
   if (!customer?.email) return false;
 
   const orderUrl = `${frontendUrl()}/order/${order.id}`;
-  const firstName = customer.firstName || customer.email;
+  const firstName = escapeHtml(customer.firstName || customer.email);
   const friendly = statusLabel === 'shipped'
  ? 'your order is on its way '
-    : `your order is now ${statusLabel}`;
+    : `your order is now ${escapeHtml(statusLabel)}`;
 
-  const html = layout(`Order Update: ${statusLabel}`, `
+  const html = layout(`Order Update: ${escapeHtml(statusLabel)}`, `
     <h2>Hello ${firstName},</h2>
     <p>Good news — <strong>${friendly}</strong>.</p>
 
     <div class="card">
-      <p style="margin:0;"><strong>Order number:</strong> ${order.orderNumber}</p>
-      <p style="margin:4px 0 0;"><strong>Status:</strong> ${statusLabel.charAt(0).toUpperCase()}${statusLabel.slice(1)}</p>
-      ${note ? `<p style="margin:8px 0 0;" class="muted"><strong>Note from the seller:</strong> "${note}"</p>` : ''}
+      <p style="margin:0;"><strong>Order number:</strong> ${escapeHtml(order.orderNumber)}</p>
+      <p style="margin:4px 0 0;"><strong>Status:</strong> ${escapeHtml(statusLabel.charAt(0).toUpperCase())}${escapeHtml(statusLabel.slice(1))}</p>
+      ${note ? `<p style="margin:8px 0 0;" class="muted"><strong>Note from the seller:</strong> "${escapeHtml(note)}"</p>` : ''}
     </div>
 
     <div style="text-align:center;margin:24px 0;">
@@ -209,14 +219,14 @@ export const sendEscrowReleasedEmail = async (orderId) => {
   if (!customer?.email) return false;
 
   const orderUrl = `${frontendUrl()}/order/${order.id}`;
-  const firstName = customer.firstName || customer.email;
+  const firstName = escapeHtml(customer.firstName || customer.email);
 
   const html = layout('Receipt Confirmed', `
     <h2>Medaase, ${firstName}!</h2>
-    <p>You confirmed receipt of order <strong>${order.orderNumber}</strong>. Your payment is now being released to the weaver, and the order is complete.</p>
+    <p>You confirmed receipt of order <strong>${escapeHtml(order.orderNumber)}</strong>. Your payment is now being released to the weaver, and the order is complete.</p>
 
     <div class="card">
-      <p style="margin:0;"><strong>Order number:</strong> ${order.orderNumber}</p>
+      <p style="margin:0;"><strong>Order number:</strong> ${escapeHtml(order.orderNumber)}</p>
       <p style="margin:4px 0 0;"><strong>Status:</strong> Delivered &amp; confirmed</p>
     </div>
 

@@ -3,7 +3,7 @@ import express from 'express';
 const router = express.Router();
 
 import { protect, vendor } from '../middleware/authMiddleware.js';
-import { staffAuthLimiter } from '../middleware/rateLimitMiddleware.js';
+import { staffAuthLimiter, accountAuthLimiter } from '../middleware/rateLimitMiddleware.js';
 import {
   staffLogin,
   listStaff,
@@ -15,7 +15,10 @@ import {
 // Mounted at /api/vendors/staff
 
 // POST /api/vendors/staff/login → staff sign-in (public, brute-force limited)
-router.route('/login').post(staffAuthLimiter, staffLogin);
+// `staffAuthLimiter` bounds email+IP; `accountAuthLimiter` bounds the target
+// account alone, so rotating X-Forwarded-For (which invalidates the IP half of
+// the first key) still cannot grind one staff account.
+router.route('/login').post(staffAuthLimiter, accountAuthLimiter, staffLogin);
 
 // GET/POST /api/vendors/staff → list / create
 router.route('/').get(protect, vendor, listStaff);

@@ -33,9 +33,26 @@ CREATE TABLE users (
   last_login DATETIME,
   failed_login_attempts INT DEFAULT 0,
   locked_until DATETIME NULL,
+  -- Consent proof. Kept in sync with usersModel.create()/passPort.js, which
+  -- both write this column; without it every fresh install failed registration
+  -- with ER_BAD_FIELD_ERROR (the column existed only on databases created
+  -- before the dump fell behind).
+  legal_consent_at DATETIME NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
+
+-- express-mysql-session store (server.js). Declared here rather than left to
+-- the library's async self-provisioning at boot, so a database built from this
+-- file is complete before the first request. The utf8mb4_bin collation matters:
+-- session ids are case-sensitive, and a ci collation would let 'AbC' match
+-- 'abc' in a PRIMARY KEY lookup.
+CREATE TABLE IF NOT EXISTS sessions (
+  session_id VARCHAR(128) COLLATE utf8mb4_bin NOT NULL,
+  expires INT UNSIGNED NOT NULL,
+  data MEDIUMTEXT COLLATE utf8mb4_bin,
+  PRIMARY KEY (session_id)
+) ENGINE=InnoDB;
 
 -- Promotions / banners / events table
 CREATE TABLE IF NOT EXISTS promotions (

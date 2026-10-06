@@ -3,6 +3,30 @@ import pool from '../config/db.js';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 
+// ---------------------------------------------------------------------------
+// V-10 (P2) — account lockout must be a defence, not a weapon.
+//
+// Before this, failed_login_attempts was an ALL-TIME counter reset only by a
+// successful login. Once an account had been locked once, the counter never
+// dropped below the threshold again, so a single bad password after the
+// 1-hour lock re-locked it: one request per hour maintained a permanent
+// lockout against a chosen victim.
+//
+// The counter is now a rolling window: a failure older than
+// LOGIN_FAILURE_WINDOW_MINUTES starts the count over at 1. Reaching the lock
+// therefore requires LOGIN_LOCK_THRESHOLD failures INSIDE one window, which
+// the per-account limiter (5 / 15 min, no IP component) already bounds when
+// it is healthy. The window deliberately matches that limiter's window.
+//
+// LOCK_THRESHOLD stays at 10 and the lock stays at 1 hour: existing tests and
+// operator expectations for "10 wrong passwords = locked out for an hour"
+// are unchanged; only the UNREACHABLE-below-threshold residue is gone.
+// ---------------------------------------------------------------------------
+const LOGIN_FAILURE_WINDOW_MINUTES = 15;
+const LOGIN_LOCK_THRESHOLD = 10;
+const LOGIN_LOCK_MINUTES = 60;
+
+
 class User {
   constructor(data) {
     this.id = data.id;
@@ -24,6 +48,14 @@ class User {
     this.resetPasswordExpire = data.reset_password_expire || null;
     this.lastLogin = data.last_login || null;
     this.tokenVersion = data.tokenVersion ?? 0;
+    // RB-07: lockout columns must survive model construction. findByEmail
+    // aliases failed_login_attempts/locked_until to camelCase; without these
+    // assignments authenticate() never sees them and lockout is dead code.
+    this.failedLoginAttempts = data.failedLoginAttempts ?? data.failed_login_attempts ?? 0;
+    this.lockedUntil = data.lockedUntil ?? data.locked_until ?? null;
+    // V-10: timestamp of the most recent failed attempt. The counter above is
+    // a ROLLING WINDOW keyed off this column, not an all-time tally.
+    this.lastFailedAt = data.lastFailedAt ?? data.last_failed_at ?? null;
     this.createdAt = data.created_at;
     this.updatedAt = data.updated_at;
   }
@@ -489,42 +521,66 @@ class User {
         return null;
       }
 
-      // Check if account is locked due to too many failed attempts
+      // Check if account is locked due to too many failed attempts.
+      // RB-07: return a generic failure (no throw) so a locked account is
+      // indistinguishable from bad credentials — a distinct 423/message would
+      // let anyone probe which emails exist and DoS specific accounts.
+      // The lock is still enforced (no password check while locked); the
+      // caller must return a generic 401 for both cases.
       if (user.lockedUntil && new Date(user.lockedUntil) > new Date()) {
-        throw new Error('Account is temporarily locked due to too many failed login attempts. Please try again later.');
+        return null;
       }
 
       const isMatch = await user.comparePassword(password);
 
       if (!isMatch) {
-        // Increment failed attempts
-        const failedAttempts = (user.failedLoginAttempts || 0) + 1;
-        const updates = { failedLoginAttempts: failedAttempts };
+        // V-10: windowed increment. ONE atomic statement decides whether this
+        // failure continues the current run or starts a fresh one, so a
+        // concurrent pair of attempts can never resurrect a decayed counter,
+        // and a quiet period always brings the count back to 1.
+        await pool.execute(
+          `UPDATE users
+              SET failed_login_attempts = IF(
+                    last_failed_at IS NULL
+                    OR last_failed_at < DATE_SUB(NOW(), INTERVAL ${LOGIN_FAILURE_WINDOW_MINUTES} MINUTE),
+                    1,
+                    failed_login_attempts + 1
+                  ),
+                  last_failed_at = NOW()
+            WHERE id = ?`,
+          [user.id]
+        );
 
-        // Lock account after 10 failed attempts for 1 hour
-        if (failedAttempts >= 10) {
-          updates.lockedUntil = new Date(Date.now() + 60 * 60 * 1000);
+        // Lock only once the count is at/above the threshold. Because the
+        // counter decays, re-reaching it requires LOGIN_LOCK_THRESHOLD fresh
+        // failures inside one window — a request-per-hour attacker can no
+        // longer keep a chosen account locked forever (V-10).
+        const [lockRes] = await pool.execute(
+          `UPDATE users
+              SET locked_until = DATE_ADD(NOW(), INTERVAL ${LOGIN_LOCK_MINUTES} MINUTE)
+            WHERE id = ? AND failed_login_attempts >= ?`,
+          [user.id, LOGIN_LOCK_THRESHOLD]
+        );
+
+        if (lockRes.affectedRows > 0) {
           // Log the user id, not the email: lockout events fire on every failed
           // brute-force attempt, and writing customer email addresses into log
           // aggregators (which typically have broader access and longer
           // retention than the database) is needless PII exposure.
           console.warn(
-            `Account locked for userId=${user.id} after ${failedAttempts} failed login attempts`
+            `Account locked for userId=${user.id} after ${LOGIN_LOCK_THRESHOLD} failed login attempts`
           );
         }
-
-        await pool.execute(
-          'UPDATE users SET failed_login_attempts = ?, locked_until = ? WHERE id = ?',
-          [updates.failedLoginAttempts, updates.lockedUntil || null, user.id]
-        );
 
         return null;
       }
 
-      // Reset failed attempts on successful login
-      if (user.failedLoginAttempts > 0) {
+      // Reset the whole lockout state on a successful login: counter, window
+      // marker and lock. The window marker must go too, otherwise the first
+      // failure after a clean login would inherit an old timestamp.
+      if (user.failedLoginAttempts > 0 || user.lockedUntil || user.lastFailedAt) {
         await pool.execute(
-          'UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE id = ?',
+          'UPDATE users SET failed_login_attempts = 0, locked_until = NULL, last_failed_at = NULL WHERE id = ?',
           [user.id]
         );
       }
@@ -753,6 +809,9 @@ class User {
              reset_password_token = NULL,
              reset_password_expire = NULL,
              tokenVersion = tokenVersion + 1,
+             failed_login_attempts = 0,
+             locked_until = NULL,
+             last_failed_at = NULL,
              updated_at = CURRENT_TIMESTAMP
          WHERE id = ?`,
         [hashedPassword, userId]

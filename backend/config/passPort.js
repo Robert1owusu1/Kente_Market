@@ -10,6 +10,11 @@ import { signUserToken, SESSION_7D } from '../utils/generateToken.js';
 // Helper: Find or create user from OAuth profile
 const findOrCreateOAuthUser = async (provider, profile, opts = {}) => {
   const consentAt = opts?.consentAt || null;
+  // RB-06: Google LOGIN must not silently create accounts. Creation is only
+  // allowed on the explicit signup path (allowCreate === true). Login with an
+  // unknown identity returns null so the caller fails with a generic error
+  // (no existence oracle).
+  const allowCreate = opts?.allowCreate === true;
   let connection;
   try {
     connection = await pool.getConnection();
@@ -62,6 +67,7 @@ const findOrCreateOAuthUser = async (provider, profile, opts = {}) => {
         await connection.execute(
           `UPDATE users SET ${providerId} = ?, is_email_verified = 1,
              password = ?, failed_login_attempts = 0, locked_until = NULL,
+             last_failed_at = NULL,
              tokenVersion = tokenVersion + 1,
              legal_consent_at = COALESCE(legal_consent_at, ?)
            WHERE id = ?`,
@@ -78,7 +84,10 @@ const findOrCreateOAuthUser = async (provider, profile, opts = {}) => {
       }
     }
     
-    // 3. Create new user
+    // 3. Create new user (explicit signup path only — see allowCreate above).
+    if (!allowCreate) {
+      return null;
+    }
     const firstName = profile.name?.givenName || profile.displayName?.split(' ')[0] || 'User';
     const lastName = profile.name?.familyName || profile.displayName?.split(' ').slice(1).join(' ') || '';
     const profilePicture = profile.photos?.[0]?.value || null;
@@ -132,13 +141,16 @@ export const configurePassport = () => {
       callbackURL: `${process.env.OAUTH_CALLBACK_URL}/api/auth/google/callback`,
       scope: ['profile', 'email'],
       passReqToCallback: true,
-      // SECURITY FIX (V-05): Enable state parameter for CSRF protection.
-      // The state is verified in authRoutes.js callback handler before
-      // this strategy is invoked, but we also enable it here for defense in depth.
-      state: true
+      // RB-06: do NOT use Passport's session state store. The app issues its
+      // own signed state JWT (see authRoutes signOAuthState) and passes it as
+      // the OAuth `state` param per-request. Enabling Passport's store here
+      // would create a second, conflicting state value and break login.
+      state: false
     }, async (req, accessToken, refreshToken, profile, done) => {
       try {
-        const user = await findOrCreateOAuthUser('google', profile, { consentAt: req.consentAt });
+        const allowCreate = req?.oauthMode === 'signup';
+        const user = await findOrCreateOAuthUser('google', profile, { consentAt: req.consentAt, allowCreate });
+        if (!user) return done(null, false);
         return done(null, user);
       } catch (error) {
         return done(error, null);

@@ -272,6 +272,10 @@ export const updateReturnStatus = async (req, res) => {
  console.warn(` Partial return ${req.params.id}: stock restore failed (${restoreErr.message})`);
       }
       // SECURITY FIX (V-07): Use single shared dedupeKey per order
+      // NOTE: the key MUST contain a ':partial:' segment. The crash reconciler
+      // (reconcileRefundedButPaid) classifies a bare `refund:${orderId}` key as
+      // proof of a FULL refund and would otherwise void ALL vendors and flip a
+      // partially-refunded (still paid) order to refunded on its next pass.
       await recordFinancialEvent({
         eventType: 'refund',
         direction: 'out',
@@ -280,7 +284,8 @@ export const updateReturnStatus = async (req, res) => {
         orderId: order.id,
         reference: order.paymentReference,
         providerReference: refund?.data?.failure_reference || order.paymentReference,
-        dedupeKey: `refund:${order.id}`,
+        // Format must match test expectation and reconciler: refund:orderId:returnId:partial:vendorId
+        dedupeKey: `refund:${order.id}:${req.params.id}:partial:${partialVendorId}`,
         payload: { reason: `Return ${req.params.id} partial (vendor ${partialVendorId})`, ownSubtotal },
       }).catch(() => {});
       await pool.execute(

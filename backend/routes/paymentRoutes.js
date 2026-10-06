@@ -161,7 +161,7 @@ router.post('/verify-paystack', protect, async (req, res) => {
         // verified charge (double-spend).
         const [flipResult] = await pool.execute(
           `UPDATE orders SET paymentStatus = 'paid', orderStatus = 'processing', updated_at = CURRENT_TIMESTAMP
-           WHERE id = ? AND paymentReference = ? AND paymentStatus != 'paid'`,
+           WHERE id = ? AND paymentReference = ? AND paymentStatus != 'paid' AND orderStatus NOT IN ('cancelled', 'refunded')`,
           [order.id, reference]
         );
         const orderId = order.id;
@@ -360,7 +360,7 @@ router.post('/paystack-webhook', webhookLimiter, async (req, res) => {
               const [result] = await connection.execute(
                 `UPDATE orders 
                  SET paymentStatus = 'paid', orderStatus = 'processing', updated_at = CURRENT_TIMESTAMP
-                 WHERE paymentReference = ? AND paymentStatus != 'paid'`,
+                 WHERE paymentReference = ? AND paymentStatus != 'paid' AND orderStatus NOT IN ('cancelled', 'refunded')`,
                 [reference]
               );
               if (result.affectedRows > 0) {

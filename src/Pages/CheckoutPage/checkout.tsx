@@ -114,6 +114,10 @@ export default function CheckoutPage() {
   const [isPaystackLoaded, setIsPaystackLoaded] = useState(false);
   const [couponCode, setCouponCode] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState<AppliedCoupon | null>(null);
+  // V-01: authoritative NET total returned by the server when the coupon is
+  // booked. Latched from the mutation response (not from a refetch) so the
+  // charge can never use a stale pre-coupon value.
+  const [couponNetTotal, setCouponNetTotal] = useState<number>(NaN);
   const [couponLoading, setCouponLoading] = useState(false);
 
  // Secure environment variable handling
@@ -207,7 +211,14 @@ export default function CheckoutPage() {
   // totalAmount is the NET amount. We always charge the server total when available.
   const { data: serverOrder } = useGetOrderByIdQuery(preOrderId ?? 0, { skip: !preOrderId });
   const serverTotal = serverOrder ? Number(serverOrder.totalAmount) : NaN;
-  const payableTotal = resolvePayableTotal(serverTotal, total);
+  // V-01: charge precedence, most-authoritative first —
+  //   1. the NET total latched from the coupon-apply response (no refetch race)
+  //   2. the cached server order total
+  //   3. the local cart computation, only while the order has not loaded
+  const payableTotal = resolvePayableTotal(
+    couponNetTotal,
+    resolvePayableTotal(serverTotal, total)
+  );
   const payableAmountInPesewas = toPesewas(payableTotal);
 
   // Validate total amount
@@ -233,20 +244,47 @@ export default function CheckoutPage() {
       // This ensures the server's totalAmount reflects the discount, so Paystack
       // is initialized with the NET amount. The coupon is validated server-side
       // and the order's totalAmount/discount/couponId are updated atomically.
-      const { data } = await axios.put(`/api/orders/${preOrderId}`, {
-        couponCode: couponCode.trim()
-      });
-      if (data.order) {
-        // Invalidate RTK query cache so useGetOrderByIdQuery refetches with the
-        // updated net total. The order now has the authoritative discounted total.
-        setAppliedCoupon({ code: couponCode.trim(), discountType: data.order.discountType, discountValue: data.order.discountValue });
+      //
+      // This MUST go through the RTK `updateOrder` mutation, never raw axios:
+      // the raw axios PUT left `useGetOrderByIdQuery` serving the PRE-coupon
+      // total, and `payableTotal` below prefers that cached value — so Paystack
+      // was initialised with the GROSS amount while the server had booked the
+      // NET one. `verify-paystack` then rejects on `paidKobo !== expectedKobo`
+      // (backend/routes/paymentRoutes.js), the money is captured by Paystack and
+      // the order never flips to 'paid'. The mutation invalidates the Order tag
+      // (slices/ordersApiSlice.ts), and the returned total is latched below so
+      // the charge is correct even if Pay is clicked before the refetch lands.
+      const updated = await updateOrder({
+        orderId: preOrderId,
+        couponCode: couponCode.trim(),
+      }).unwrap() as unknown as {
+        order?: {
+          totalAmount?: number | string;
+          discountType?: AppliedCoupon['discountType'];
+          discountValue?: AppliedCoupon['discountValue'];
+        };
+        message?: string;
+      };
+      const netTotal = Number(updated.order?.totalAmount);
+      if (updated.order && Number.isFinite(netTotal) && netTotal > 0) {
+        setCouponNetTotal(netTotal);
+        setAppliedCoupon({
+          code: couponCode.trim(),
+          discountType: updated.order.discountType,
+          discountValue: updated.order.discountValue,
+        });
         toast.success('Coupon applied successfully');
       } else {
-        toast.error(data.message || 'Failed to apply coupon');
+        toast.error(updated.message || 'Failed to apply coupon');
       }
     } catch (err) {
-      const apiErr = err as { response?: { data?: { message?: string } }; message?: string } | undefined;
-      toast.error(apiErr?.response?.data?.message || apiErr?.message || 'Failed to apply coupon');
+      // RTK unwrap rejects with `{ data: {...} }`; raw axios rejects with
+      // `{ response: {...} }`. Handle both so a rejected coupon still shows the
+      // server's own message (e.g. "Coupon usage limit reached").
+      const e = err as
+        | { data?: { message?: string }; response?: { data?: { message?: string } }; message?: string }
+        | undefined;
+      toast.error(e?.data?.message || e?.response?.data?.message || e?.message || 'Failed to apply coupon');
     } finally {
       setCouponLoading(false);
     }

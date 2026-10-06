@@ -4,7 +4,7 @@ import passport from 'passport';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { generateToken } from '../config/passPort.js';
-import { cookieSameSite } from '../config/cookieConfig.js';
+import { cookieSameSite, cookieSecure } from '../config/cookieConfig.js';
 import { authLimiter } from '../middleware/rateLimitMiddleware.js';
 import { setCsrfCookie, getOrIssueCsrfToken } from '../middleware/csrfMiddleware.js';
 import { consumeOnce } from '../utils/redisClient.js';
@@ -44,7 +44,7 @@ router.post('/consent', authLimiter, (req, res) => {
   const consentToken = signConsentToken();
   res.cookie('oauth_consent', consentToken, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: cookieSecure(res.req), // N-8
     sameSite: cookieSameSite(),
     maxAge: CONSENT_COOKIE_MAX_AGE,
     path: '/'
@@ -58,7 +58,7 @@ router.post('/consent', authLimiter, (req, res) => {
 const setAuthCookie = (res, token) => {
   res.cookie('jwt', token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: cookieSecure(res.req), // N-8
     sameSite: cookieSameSite(),
     maxAge: COOKIE_MAX_AGE
   });
@@ -117,8 +117,9 @@ const isOAuthStateValid = (token) => {
 
 // Initiate Google OAuth. Refuses to start unless the caller has accepted the
 // legal policies (signed consent token from POST /api/auth/consent).
-router.get('/google',
-  (req, res, next) => {
+// `mode=signup` selects the explicit account-creation path; plain /google is
+// LOGIN ONLY and never creates an account (RB-06).
+const startGoogleOAuth = (mode) => (req, res, next) => {
     if (!isConsentTokenValid(req.query.consent)) {
       return res.redirect(`${process.env.FRONTEND_URL}/login?error=consent_required`);
     }
@@ -126,39 +127,57 @@ router.get('/google',
     // callback (the consent query param will not survive the Google round-trip).
     res.cookie('oauth_consent', signConsentToken(), {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: cookieSecure(res.req), // N-8
       sameSite: cookieSameSite(),
       maxAge: CONSENT_COOKIE_MAX_AGE,
       path: '/'
     });
 
-    // SECURITY FIX (V-05): Issue a per-request, browser-bound state token to
+    // RB-06: Issue a per-request, browser-bound state token to
     // prevent login CSRF / session fixation. The state is stored in an httpOnly
-    // cookie and passed to Google; the callback verifies it matches.
+    // cookie AND passed to Google as the OAuth `state` param; the callback
+    // verifies they match. Single-use via cookie clear at callback.
     const stateToken = signOAuthState();
     res.cookie('oauth_state', stateToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: cookieSecure(res.req), // N-8
       sameSite: cookieSameSite(),
       maxAge: CONSENT_COOKIE_MAX_AGE,
       path: '/'
     });
 
-    next();
-  },
-  passport.authenticate('google', {
-    scope: ['profile', 'email'],
-    session: false
-  })
-);
+    req.oauthMode = mode;
+    res.cookie('oauth_mode', mode, {
+      httpOnly: true,
+      secure: cookieSecure(res.req), // N-8
+      sameSite: cookieSameSite(),
+      maxAge: CONSENT_COOKIE_MAX_AGE,
+      path: '/'
+    });
+    passport.authenticate('google', {
+      scope: ['profile', 'email'],
+      session: false,
+      state: stateToken,
+    })(req, res, next);
+};
+
+router.get('/google', startGoogleOAuth('login'));
+// Explicit Google signup path — the ONLY OAuth path that may create accounts.
+router.get('/google/signup', startGoogleOAuth('signup'));
 
 // Google OAuth callback. The consent cookie AND state cookie must be present and valid.
+const googleCallbackMode = (req, res, next) => {
+  // mode is carried in the callback `state` round-trip? No — the state JWT is
+  // opaque. Carry mode via a short-lived httpOnly cookie set at initiation.
+  req.oauthMode = req.cookies?.oauth_mode === 'signup' ? 'signup' : 'login';
+  next();
+};
 router.get('/google/callback',
   (req, res, next) => {
     if (!isConsentTokenValid(req.cookies.oauth_consent)) {
       return res.redirect(`${process.env.FRONTEND_URL}/login?error=consent_required`);
     }
-    // SECURITY FIX (V-05): Verify OAuth state parameter (login CSRF protection).
+    // RB-06: Verify OAuth state parameter (login CSRF protection).
     // The state must be present in the query, match the httpOnly cookie, and
     // be single-use (consumed here).
     const queryState = req.query.state;
@@ -167,16 +186,24 @@ router.get('/google/callback',
       return res.redirect(`${process.env.FRONTEND_URL}/login?error=invalid_oauth_state`);
     }
     // Clear the state cookie so it can't be replayed.
-    res.clearCookie('oauth_state', { path: '/', httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: cookieSameSite() });
+    res.clearCookie('oauth_state', { path: '/', httpOnly: true, secure: cookieSecure(res.req), sameSite: cookieSameSite() }); // N-8
+    res.clearCookie('oauth_mode', { path: '/', httpOnly: true, secure: cookieSecure(res.req), sameSite: cookieSameSite() }); // N-8
 
     req.consentAt = new Date();
     next();
   },
-  passport.authenticate('google', {
-    failureRedirect: `${process.env.FRONTEND_URL}/login?error=google_failed`,
-    session: false
-  }),
-  handleOAuthSuccess
+  googleCallbackMode,
+  (req, res, next) => {
+    passport.authenticate('google', (err, user) => {
+      // Generic failure for every OAuth error / unknown identity: no oracle
+      // for whether an email exists (RB-06).
+      if (err || !user) {
+        return res.redirect(`${process.env.FRONTEND_URL}/login?error=google_failed`);
+      }
+      req.user = user;
+      return handleOAuthSuccess(req, res);
+    })(req, res, next);
+  }
 );
 
 // Consumed OAuth exchange tokens (jti). 1h TTL > 10m token lifetime, so a

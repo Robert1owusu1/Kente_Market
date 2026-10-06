@@ -266,6 +266,10 @@ export const addOrderItems = async (req, res) => {
   // Hoisted so the catch block can roll back reservations taken in the try.
   let reservedUnits = new Map();
   let newOrder = null; /** @type { { id: number | string, [key: string]: any } | null } */
+  // N-7 / V-04: coupon booking state for THIS request. Declared outside the
+  // try so the catch block can hand a reserved use back when the booking fails.
+  let appliedCouponId = null;
+  let couponSlotReserved = false;
   try {
     const rawItems = /** @type {Array<any>} */ (Array.isArray(req.body.items) ? req.body.items : []);
     if (rawItems.length === 0) {
@@ -324,6 +328,28 @@ export const addOrderItems = async (req, res) => {
     const unapproved = [...productMap.values()].find((p) => p.approvalStatus !== 'approved');
     if (unapproved) {
       return res.status(400).json({ message: "One or more products are not available for sale" });
+    }
+
+    // Suspended-vendor gate: products from non-approved vendors must not be
+    // purchasable even by direct ID (public listings hide them, but checkout
+    // bypasses the model). Check authoritative vendor status here.
+    {
+      const ownerIds = [...new Set([...productMap.values()].map((p) => p.vendorId).filter((v) => v != null))];
+      if (ownerIds.length > 0) {
+        const vPlaceholders = ownerIds.map(() => "?").join(", ");
+        const [vrows] = await pool.execute(
+          `SELECT userId, status FROM vendors WHERE userId IN (${vPlaceholders})`,
+          ownerIds
+        );
+        const statusByVendor = new Map(vrows.map((/** @type {any} */ r) => [r.userId, r.status]));
+        const blocked = [...productMap.values()].find((p) => {
+          if (p.vendorId == null) return false; // platform-owned
+          return statusByVendor.get(p.vendorId) !== 'approved';
+        });
+        if (blocked) {
+          return res.status(400).json({ message: "One or more products are not available for sale" });
+        }
+      }
     }
 
     // Stock enforcement: reject quantities that exceed available inventory for
@@ -403,7 +429,8 @@ export const addOrderItems = async (req, res) => {
     // The code is validated against the DB, and the resulting discount is
     // authoritative so a user cannot invent their own totals.
     let discount = 0;
-    let appliedCouponId = null;
+    // appliedCouponId / couponSlotReserved are declared above the try block so
+    // the catch path can release a slot this booking took but never completed.
     const couponCode = (req.body.couponCode || "").trim();
     if (couponCode) {
       // P0-4: vendor coupons apply only to their own vendor's cart. The vendor
@@ -416,6 +443,17 @@ export const addOrderItems = async (req, res) => {
         return res.status(400).json({ message: couponResult.message });
       }
       const c = couponResult.coupon;
+      // N-7 / V-04: `validate` above is ADVISORY — it only tells us the coupon
+      // looked usable a moment ago. This reservation is the authority: one
+      // atomic conditional UPDATE either hands us exactly ONE use or tells us
+      // the cap is already spent, and it does so BEFORE any discount is booked
+      // onto the order. Two concurrent checkouts cannot both win it, so a
+      // capped coupon can never fund more discounted orders than maxUses.
+      const reservation = await Coupon.reserveUse(c.id);
+      if (!reservation.reserved) {
+        return res.status(400).json({ message: "Coupon usage limit reached" });
+      }
+      couponSlotReserved = true;
       discount = calcCouponDiscount(subtotal, c.discountType, c.discountValue);
       appliedCouponId = c.id;
     }
@@ -441,6 +479,8 @@ export const addOrderItems = async (req, res) => {
       notes: req.body.notes || null,
       paymentReference: req.body.paymentReference || req.body.paymentResult?.id || null,
       couponId: appliedCouponId,
+      // 1 = this order already holds its coupon slot (reserved above).
+      couponUseState: appliedCouponId ? 1 : 0,
     };
 
     // A payment reference identifies exactly ONE Paystack charge. Refuse to
@@ -462,15 +502,27 @@ export const addOrderItems = async (req, res) => {
  console.warn(` Could not roll back reservation: ${restoreErr.message}`);
           }
         }
+        // N-7/V-04: the order row was never created, so hand the reserved
+        // coupon use straight back (there is no order to CAS against yet).
+        if (couponSlotReserved) {
+          couponSlotReserved = false;
+          try {
+            await Coupon.decrementUses(appliedCouponId);
+          } catch (couponErr) {
+ console.warn(` Could not release coupon reservation: ${couponErr.message}`);
+          }
+        }
         return res.status(400).json({ message: "This payment reference has already been used" });
       }
     }
 
     newOrder = await Order.create(orderData);
 
-    // Coupon usage is NOT consumed here. It is deferred until payment is
-    // confirmed (Paystack charge.success webhook or admin mark-as-paid), so a
-    // coupon is never wasted on an abandoned checkout.
+    // N-7/V-04: ONE use was already taken above, atomically, and is recorded on
+    // the order (couponUseState = 1). Payment/settlement only flips that to 2 —
+    // it never takes another slot, so webhook + verify retries for the same
+    // order cannot burn extra redemptions. A cancelled/expired order gives the
+    // slot back (see cancelOrder / releaseExpiredReservations).
 
     // Multi-vendor escrow: split the order into per-vendor allocations at
     // placement. Platform-owned items are excluded automatically (no vendorId
@@ -481,18 +533,70 @@ export const addOrderItems = async (req, res) => {
     res.status(201).json({ message: "Order created successfully", order: newOrder });
   } catch (error) {
     console.error('Error creating order:', error);
+    // N-7/V-04: a booking that did not survive must not burn a redemption —
+    // give the reserved coupon use back (via the order row when one exists,
+    // otherwise straight to the counter; the order cannot settle either way).
+    if (couponSlotReserved) {
+      couponSlotReserved = false;
+      try {
+        if (newOrder?.id) {
+          await Coupon.releaseForOrder(newOrder.id, appliedCouponId);
+        } else {
+          await Coupon.decrementUses(appliedCouponId);
+        }
+      } catch (couponErr) {
+ console.warn(` Could not release coupon reservation: ${couponErr.message}`);
+      }
+    }
     // Roll back any stock reservation taken for this order so a failed creation
     // never permanently locks units out of the catalog.
-    // SECURITY FIX (V-08): If the order was already created (has an ID), skip
-    // the in-memory restore. The order row persists with reserved markers, and
-    // the sweeper (releaseExpiredReservations) will recover those units. Doing
-    // both causes double-restoration and stock inflation.
-    if (reservedUnits.size > 0 && !newOrder?.id) {
+    if (reservedUnits.size > 0) {
       try {
-        await restoreStockForOrder(
-          [...reservedUnits].map(([productId, qty]) => ({ product: productId, qty })),
-          { reason: 'create-rollback' }
-        );
+        if (newOrder?.id) {
+          // Order was created but something after it failed (e.g. escrow allocation).
+          // Cancel the order to restore stock immediately rather than waiting for
+          // the 45-minute sweeper. This also voids any partial escrow allocations.
+          // Zero the reserved markers on the stored items so a later reader
+          // never sees stale reserved>0 on a cancelled order.
+          try {
+            const [[created]] = await pool.execute(`SELECT items FROM orders WHERE id = ?`, [newOrder.id]);
+            let stored = created?.items;
+            if (typeof stored === 'string') { try { stored = JSON.parse(stored); } catch { stored = null; } }
+            if (Array.isArray(stored)) {
+              const cleaned = stored.map((it) =>
+                parseInt(it?.reserved, 10) > 0 ? { ...it, reserved: 0 } : it
+              );
+              await pool.execute(
+                `UPDATE orders SET items = ?, orderStatus = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+                [JSON.stringify(cleaned), newOrder.id]
+              );
+            } else {
+              await pool.execute(
+                `UPDATE orders SET orderStatus = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+                [newOrder.id]
+              );
+            }
+          } catch {
+            await pool.execute(
+              `UPDATE orders SET orderStatus = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+              [newOrder.id]
+            );
+          }
+          await restoreStockForOrder(
+            [...reservedUnits].map(([productId, qty]) => ({ product: productId, qty })),
+            { reason: 'create-rollback', orderId: newOrder.id }
+          );
+          await pool.execute(
+            `UPDATE escrow_allocations SET status = 'failed', reason = 'order creation failed', updated_at = CURRENT_TIMESTAMP WHERE orderId = ? AND status IN ('pending', 'held')`,
+            [newOrder.id]
+          );
+        } else {
+          // Order.create never succeeded; simple in-memory rollback is correct.
+          await restoreStockForOrder(
+            [...reservedUnits].map(([productId, qty]) => ({ product: productId, qty })),
+            { reason: 'create-rollback' }
+          );
+        }
       } catch (restoreErr) {
  console.warn(` Could not roll back reservation: ${restoreErr.message}`);
       }
@@ -597,6 +701,13 @@ export const getMyOrders = async (req, res) => {
 // @access  Private
 /** @param {AppRequest} req @param {import("express").Response} res */
 export const updateOrder = async (req, res) => {
+  // N-7 / V-04 bookkeeping for this request: whether we took a NEW coupon slot
+  // (so a failure anywhere below can hand it back), which coupon it was, and
+  // which coupon it displaced (whose slot is released only after success).
+  // Declared outside the try because the catch path needs them too.
+  let newCouponSlotTaken = false;
+  let newCouponId = null;
+  let replacedCouponId = null;
   try {
     if (!isValidId(req.params.id)) {
       return res.status(400).json({ message: "Invalid order ID" });
@@ -678,6 +789,9 @@ export const updateOrder = async (req, res) => {
     // NEVER after payment: rewriting totalAmount/discount/couponId on a paid
     // order would diverge the books from what Paystack actually collected (and
     // would let a coupon be applied without its use ever being consumed).
+    // N-7 / V-04 bookkeeping flags (newCouponSlotTaken / newCouponId /
+    // replacedCouponId) are declared above the try so the catch path can hand
+    // an unused reservation back.
     const couponCode = (req.body.couponCode || "").trim();
     if (req.user.role !== 'admin' && couponCode) {
       if (existingOrder.paymentStatus === 'paid' || existingOrder.paymentStatus === 'refunded') {
@@ -716,13 +830,39 @@ export const updateOrder = async (req, res) => {
         return res.status(400).json({ message: couponResult.message });
       }
       const c = couponResult.coupon;
+
+      // N-7 / V-04: `validate` above is ADVISORY — it only reports that the
+      // coupon looked usable a moment ago. This reservation is the authority:
+      // one atomic conditional UPDATE hands us exactly ONE use or refuses when
+      // the cap is spent, and it runs BEFORE the discounted total is written.
+      // Idempotent when this order already holds the same coupon (re-PUT must
+      // never take a second slot), so a retried apply cannot burn capacity.
+      const holdsSlotAlready =
+        String(existingOrder.couponId) === String(c.id) &&
+        Number(existingOrder.couponUseState ?? 0) >= 1;
+      if (!holdsSlotAlready) {
+        const reservation = await Coupon.reserveUse(c.id);
+        if (!reservation.reserved) {
+          return res.status(400).json({ message: "Coupon usage limit reached" });
+        }
+        newCouponSlotTaken = true;
+        newCouponId = c.id;
+        // Replacing an earlier coupon: its slot is released only AFTER this
+        // order has successfully moved to the new coupon (never before, so a
+        // failure in between cannot lose a use).
+        if (existingOrder.couponId && String(existingOrder.couponId) !== String(c.id)) {
+          replacedCouponId = existingOrder.couponId;
+        }
+      }
+
       const discount = calcCouponDiscount(subtotal, c.discountType, c.discountValue);
       const shipping = Number(existingOrder.shippingCost ?? calcShipping(subtotal));
       const tax = Number(existingOrder.tax ?? calcTax(subtotal));
       body.discount = discount;
       body.totalAmount = round2(subtotal + shipping + tax - discount);
       body.couponId = c.id;
-      // Coupon usage is deferred until payment is confirmed.
+      // couponUseState is set on the order row right after the update below —
+      // it is never accepted from the client (not in Order.allowedFields).
     }
 
     // Fulfilment data integrity: flipping to 'delivered' must always record
@@ -733,7 +873,44 @@ export const updateOrder = async (req, res) => {
       body.deliveredAt = new Date();
     }
 
+    // RB-03/RB-10: the generic update path must never resurrect a cancelled
+    // or refunded order. Payment flips belong to the guarded mark-paid
+    // endpoint / webhook / verify paths. Strip or reject them here.
+    if (body.paymentStatus === 'paid' || body.orderStatus === 'processing') {
+      const terminal = existingOrder.paymentStatus === 'refunded' || existingOrder.orderStatus === 'cancelled';
+      if (terminal) {
+        return res.status(400).json({
+          message: 'Cannot mark a cancelled or refunded order as paid. Use the payment recovery flow.',
+        });
+      }
+      if (body.paymentStatus === 'paid' && existingOrder.paymentStatus !== 'paid') {
+        return res.status(400).json({
+          message: 'Use PUT /api/orders/:id/pay to mark an order as paid.',
+        });
+      }
+    }
+
+    // If this throws, the outer catch hands back the reservation taken above
+    // (the order still points at the old coupon, so the slot would be orphaned).
     const updatedOrder = await Order.update(req.params.id, body);
+
+    if (newCouponSlotTaken) {
+      newCouponSlotTaken = false;
+      try {
+        // Record the reservation on the order (0 -> 1). When a previous coupon
+        // was displaced the state is already 1 and now names the new coupon —
+        // the transition simply no-ops, which is exactly right.
+        await Coupon.transitionOrderCoupon(req.params.id, newCouponId, 0, 1);
+        if (replacedCouponId) {
+          await Coupon.decrementUses(replacedCouponId);
+        }
+      } catch (relErr) {
+        // Fail-safe direction only: a lost decrement under-counts availability,
+        // a missed transition makes settlement take the slot itself. Neither can
+        // ever fund an extra discounted order.
+        console.warn(` Could not finalize coupon reservation: ${relErr.message}`);
+      }
+    }
 
     // P0-6: the discount just changed on a still-pending order, so the
     // pending escrow allocations (computed gross at creation) are stale.
@@ -764,6 +941,17 @@ export const updateOrder = async (req, res) => {
     res.json({ message: "Order updated successfully", order: updatedOrder });
   } catch (error) {
     console.error('Error updating order:', error);
+    // N-7 / V-04: a reservation taken for a coupon that never made it onto the
+    // order must not burn a redemption. Once Order.update has succeeded this
+    // flag is already false, so a settled booking is never rolled back here.
+    if (newCouponSlotTaken && newCouponId) {
+      newCouponSlotTaken = false;
+      try {
+        await Coupon.decrementUses(newCouponId);
+      } catch (relErr) {
+        console.warn(` Could not release coupon reservation: ${relErr.message}`);
+      }
+    }
     res.status(500).json({ message: "Internal server error" });
   }
 };
@@ -794,11 +982,52 @@ export const updateOrderToPaid = async (req, res) => {
     // second time.
     const alreadyPaid = existingOrder.paymentStatus === 'paid';
 
-    if (!alreadyPaid) {
-      await Order.update(req.params.id, {
-        paymentStatus: "paid",
-        orderStatus: "processing",
+    // RB-03: Admin mark-paid must obey the same financial state machine.
+    // It must not bypass cancellation or refund.
+    if (existingOrder.paymentStatus === 'refunded' || existingOrder.orderStatus === 'cancelled') {
+      return res.status(400).json({
+        message: `Cannot mark order as paid: order is ${existingOrder.paymentStatus === 'refunded' ? 'refunded' : 'cancelled'}.`,
       });
+    }
+
+    if (!alreadyPaid) {
+      // Atomic conditional flip: a cancel/refund racing this admin click must
+      // win — affectedRows === 0 means the order moved and we must not run
+      // escrow/stock/coupon side effects.
+      const [flip] = await pool.execute(
+        `UPDATE orders SET paymentStatus = 'paid', orderStatus = 'processing', updated_at = CURRENT_TIMESTAMP
+         WHERE id = ? AND paymentStatus != 'paid' AND orderStatus NOT IN ('cancelled', 'refunded')`,
+        [req.params.id]
+      );
+      if (flip.affectedRows === 0) {
+        const [[current]] = await pool.execute(
+          `SELECT paymentStatus, orderStatus FROM orders WHERE id = ?`,
+          [req.params.id]
+        );
+        if (current && (current.paymentStatus === 'refunded' || current.orderStatus === 'cancelled')) {
+          return res.status(400).json({
+            message: `Cannot mark order as paid: order is ${current.paymentStatus === 'refunded' ? 'refunded' : 'cancelled'}.`,
+          });
+        }
+        // Lost the race to a concurrent webhook/verify that just paid the
+        // order. Side effects (escrow hold, stock decrement, coupon consume,
+        // receipt email) already ran there — running them again here would
+        // double-decrement stock and double-consume the coupon. Re-read and
+        // treat as idempotent with NO side effects.
+        const fresh = await Order.findById(req.params.id);
+        if (fresh?.paymentStatus === 'paid') {
+          await auditFromRequest(req, {
+            action: 'order.markPaid',
+            entityType: 'order',
+            entityId: req.params.id,
+            before: { paymentStatus: existingOrder.paymentStatus },
+            after: { paymentStatus: fresh?.paymentStatus, orderStatus: fresh?.orderStatus, note: 'race-lost-to-webhook' },
+          });
+          return res.json({ message: 'Order was already paid', order: fresh, escrowHeld: 0 });
+        }
+        // Row vanished or is in an unexpected state — do not run side effects.
+        return res.status(409).json({ message: 'Order changed concurrently; please refresh and retry.' });
+      }
     }
 
     // For customised orders, seed the expected completion date (order start +
@@ -1143,10 +1372,27 @@ export const cancelOrder = async (req, res) => {
     }
 
     const wasPaid = order.paymentStatus === 'paid';
-    await Order.update(req.params.id, {
-      orderStatus: "cancelled",
-      paymentStatus: wasPaid ? 'refunded' : order.paymentStatus,
-    });
+    
+    // RB-04: Use conditional update to detect if sweeper already cancelled this order.
+    // Only update status if it's still 'pending' or 'processing'. If affectedRows === 0,
+    // another process (sweeper or concurrent cancel) already cancelled it.
+    const [statusUpdate] = await pool.execute(
+      `UPDATE orders 
+       SET orderStatus = 'cancelled', 
+           paymentStatus = ?,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = ? AND orderStatus IN ('pending', 'processing')`,
+      [wasPaid ? 'refunded' : order.paymentStatus, req.params.id]
+    );
+    const statusChanged = statusUpdate.affectedRows > 0;
+        
+    if (!statusChanged) {
+      // Lost the race: another process (sweeper or concurrent cancel) already
+      // cancelled this order and already ran stock restore + escrow void.
+      // Running coupon release or a second restore/void here would double-count.
+      const current = await Order.findById(req.params.id);
+      return res.json({ message: 'Order cancelled', order: current });
+    }
 
     // P0-6: a use was consumed at payment; the refund frees it again. Only for
     // orders that were actually paid (pending orders never consumed a use).
@@ -1155,6 +1401,18 @@ export const cancelOrder = async (req, res) => {
         await Coupon.decrementUses(order.couponId);
       } catch (couponErr) {
  console.warn(` Could not release coupon use for cancelled order ${req.params.id}: ${couponErr.message}`);
+      }
+    } else if (!wasPaid && order.couponId) {
+      // N-7 / V-04: this order holds a RESERVED use taken at booking (not a
+      // settled one — state 2 only ever exists on a paid order). Give it back
+      // so an abandoned checkout cannot permanently burn a redemption. The
+      // 1 -> 0 CAS inside releaseForOrder is the ownership test, so the
+      // expiry sweeper cancelling the same order concurrently can never
+      // release the same slot twice.
+      try {
+        await Coupon.releaseForOrder(order.id, order.couponId);
+      } catch (couponErr) {
+ console.warn(` Could not release coupon reservation for order ${req.params.id}: ${couponErr.message}`);
       }
     }
 
@@ -1166,31 +1424,54 @@ export const cancelOrder = async (req, res) => {
     // Products that were short at payment time (stock conflicts) were never
     // taken, so they are skipped to avoid inflating stock. Made-to-order items
     // are never restored.
-    const reservedTotal = (Array.isArray(order.items) ? order.items : []).reduce(
-      (sum, it) => sum + (parseInt(it?.reserved, 10) || 0),
-      0
-    );
-    if (order.paymentStatus === 'paid' || reservedTotal > 0) {
-      try {
-        const skipProductIds = new Set();
-        const storedConflicts = order.stockConflicts;
-        const conflicts = Array.isArray(storedConflicts)
-          ? storedConflicts
-          : typeof storedConflicts === 'string'
-          ? (() => { try { return JSON.parse(/** @type {string} */ (storedConflicts)); } catch { return []; } })()
-          : [];
-        for (const c of conflicts) {
-          if (c?.productId) skipProductIds.add(c.productId);
-        }
-        await restoreStockForOrder(order.items, { skipProductIds, orderId: req.params.id });
-        await pool.execute(
-          `UPDATE orders SET stockShortfall = 0, stockConflicts = NULL WHERE id = ?`,
-          [req.params.id]
-        );
-      } catch (restoreErr) {
+    //
+    // RB-04: Only restore stock if THIS cancellation actually changed the order
+    // status (statusChanged === true). If statusChanged is false, the sweeper
+    // already cancelled the order and restored the stock (and zeroed reserved markers).
+    if (statusChanged) {
+      // Re-fetch items to get current reserved markers
+      const [[freshOrder]] = await pool.execute(
+        `SELECT items FROM orders WHERE id = ?`,
+        [req.params.id]
+      );
+      const freshItems = freshOrder?.items
+        ? (typeof freshOrder.items === 'string' ? JSON.parse(freshOrder.items) : freshOrder.items)
+        : (Array.isArray(order.items) ? order.items : []);
+      const reservedTotal = freshItems.reduce(
+        (/** @type {any} */ sum, /** @type {any} */ it) => sum + (parseInt(it?.reserved, 10) || 0),
+        0
+      );
+      
+      // For paid orders, always restore (stock was decremented at payment, not reserved).
+      // For pending orders, only restore if reserved markers are still > 0
+      // (meaning sweeper hasn't already released them).
+      const shouldRestore = wasPaid || reservedTotal > 0;
+            if (shouldRestore) {
+        try {
+          const skipProductIds = new Set();
+          const storedConflicts = order.stockConflicts;
+          const conflicts = Array.isArray(storedConflicts)
+            ? storedConflicts
+            : typeof storedConflicts === 'string'
+            ? (() => { try { return JSON.parse(/** @type {string} */ (storedConflicts)); } catch { return []; } })()
+            : [];
+          for (const c of conflicts) {
+            if (c?.productId) skipProductIds.add(c.productId);
+          }
+                    await restoreStockForOrder(freshItems, { skipProductIds, orderId: req.params.id });
+          await pool.execute(
+            `UPDATE orders SET stockShortfall = 0, stockConflicts = NULL WHERE id = ?`,
+            [req.params.id]
+          );
+        } catch (restoreErr) {
  console.warn(` Could not restore stock for cancelled order ${req.params.id}: ${restoreErr.message}`);
+        }
       }
     }
+    // If statusChanged is false, the sweeper already cancelled the order and
+    // restored the stock (and zeroed reserved markers). We skip restoration
+    // to avoid double-counting.
+
 
     // Void any held escrow allocations so funds return to the platform
     if (order.escrowStatus === 'held' || order.escrowStatus === 'none') {
@@ -1227,6 +1508,13 @@ export const retryEscrowPayouts = async (req, res) => {
       return res.status(404).json({ message: "Order not found" });
     }
 
+    // RB-02: Do not allow retry for refunded/voided/cancelled orders
+    if (order.paymentStatus === 'refunded' || order.orderStatus === 'cancelled') {
+      return res.status(400).json({
+        message: `Cannot retry escrow for a ${order.paymentStatus === 'refunded' ? 'refunded' : 'cancelled'} order.`,
+      });
+    }
+
     if (!['failed', 'releasing'].includes(order.escrowStatus)) {
       return res.status(400).json({
         message: `Order escrow status is '${order.escrowStatus}'. Only orders with failed or in-flight payouts can be retried.`,
@@ -1241,11 +1529,16 @@ export const retryEscrowPayouts = async (req, res) => {
       entityType: 'order',
       entityId: req.params.id,
       before: { escrowStatus: order.escrowStatus },
-      after: { escrowStatus: updatedOrder?.escrowStatus, retried: result.retried, failed: result.failed },
+      after: { escrowStatus: updatedOrder?.escrowStatus, retried: result.retried, failed: result.failed, skipped: result.skipped },
     });
 
+    let message = `Retry complete: ${result.retried} payouts initiated, ${result.failed} failed.`;
+    if (result.skipped > 0) {
+      message += ` ${result.skipped} skipped (order refunded/voided).`;
+    }
+
     res.status(200).json({
-      message: `Retry complete: ${result.retried} payouts initiated, ${result.failed} failed.`,
+      message,
       result,
       escrowStatus: updatedOrder?.escrowStatus,
     });

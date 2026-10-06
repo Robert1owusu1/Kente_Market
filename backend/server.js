@@ -121,6 +121,21 @@ if (trustProxySetting === 0 && process.env.NODE_ENV === 'production') {
  console.log('TRUST_PROXY not set — assuming the server is directly exposed (req.ip = socket IP).');
   console.log('   If a reverse proxy (Nginx/Caddy) fronts this app, set TRUST_PROXY=1 in backend/.env.');
 }
+// N-9: trusting a hop means trusting whatever X-Forwarded-For that hop forwards.
+// Every IP-keyed limiter (api, auth, reset, upload...) inherits this decision,
+// so the requirement is stated loudly instead of being silently assumed — the
+// shipped backend/.env sets TRUST_PROXY=1 with no documented proxy.
+if (trustProxySetting > 0) {
+  const line = `TRUST_PROXY=${trustProxySetting}: req.ip is derived from X-Forwarded-For.`;
+  if (process.env.NODE_ENV === 'production') {
+    console.warn(` ${line}`);
+    console.warn('   IP-keyed rate limits are only as good as this proxy: it MUST append the real');
+    console.warn('   client address, and the Node port must not be reachable except through it.');
+    console.warn('   Set TRUST_PROXY=0 when nothing fronts this server.');
+  } else {
+    console.log(` ${line} (non-production) — a proxy must append the real client address.`);
+  }
+}
 app.set('trust proxy', trustProxySetting);
 
 // ============================================
@@ -159,7 +174,12 @@ app.use(session({
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: process.env.NODE_ENV === 'production',
+    // N-8: 'auto' derives Secure from the actual request scheme (including
+    // X-Forwarded-Proto when TRUST_PROXY is on), while the two combinations
+    // that must never be sent in cleartext — SameSite=None and production —
+    // are forced. cookieSecure() applies the same rule everywhere else; at
+    // config time there is no request yet, hence the explicit check.
+    secure: cookieSameSite() === 'none' || process.env.NODE_ENV === 'production' ? true : 'auto',
     httpOnly: true,
     sameSite: cookieSameSite(),
     maxAge: 24 * 60 * 60 * 1000 // 24 hours
@@ -294,6 +314,21 @@ app.use('/api/', apiLimiter);
 // disappears with no test failing. Assert the coupling explicitly.
 if (cookieSameSite() === 'none' && typeof csrfProtection !== 'function') {
   console.error(' COOKIE_SAME_SITE=none requires csrfProtection to be mounted on /api/');
+  process.exit(1);
+}
+
+// N-8: SameSite=None is only valid next to Secure cookies, and Secure cookies
+// only make sense on a real HTTPS deployment. The shipped `backend/.env` used
+// to carry `COOKIE_SAME_SITE=none` with `NODE_ENV` empty, which produced a live
+// `Set-Cookie: …; SameSite=None` with no `Secure` — rejected by browsers, and
+// session-credential-eligible for cleartext if it had been accepted. Refuse to
+// boot in that combination instead of quietly issuing unsafe auth cookies.
+if (cookieSameSite() === 'none' && process.env.NODE_ENV !== 'production') {
+  console.error(' Refusing to boot: COOKIE_SAME_SITE=none requires NODE_ENV=production.');
+  console.error('   SameSite=None is for a cross-origin frontend served over HTTPS, where every');
+  console.error('   auth cookie must also carry the Secure flag (N-8).');
+  console.error('   Local development: set COOKIE_SAME_SITE=lax in backend/.env — the Vite proxy');
+  console.error('   keeps /api same-origin, and localhost is same-site across ports.');
   process.exit(1);
 }
 app.use('/api/', csrfProtection);

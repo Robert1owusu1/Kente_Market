@@ -1,6 +1,6 @@
 // utils/generateToken.js - COMPLETE VERSION WITH REMEMBER ME
 import jwt from 'jsonwebtoken';
-import { cookieSameSite } from '../config/cookieConfig.js';
+import { cookieSameSite, cookieSecure } from '../config/cookieConfig.js';
 import { setCsrfCookie } from '../middleware/csrfMiddleware.js';
 
 export const SESSION_7D = '7d';
@@ -60,7 +60,7 @@ const generateToken = (res, userOrId, rememberMe = false) => {
   // Set JWT as HTTP-Only cookie
   res.cookie('jwt', token, {
     httpOnly: true,                                    // Prevents XSS attacks (client-side JavaScript cannot access)
-    secure: process.env.NODE_ENV === 'production',    // HTTPS only in production
+    secure: cookieSecure(res.req),                    // N-8: forced for SameSite=None and production
     sameSite: cookieSameSite(),                         // CSRF (lax default; none for cross-origin frontend)
     maxAge: maxAge,                                    // Cookie expiration time
     path: '/'                                          // Cookie available for entire domain

@@ -49,6 +49,25 @@ const orderHasVendorItem = async (order, vendorUserId, productVendor = null) => 
   });
 };
 
+// Product-id -> vendorId map for the given order's lines (used when a line has
+// no inline vendorId). Returns an empty map when there is nothing to resolve.
+const buildProductVendorMap = async (order) => {
+  const items = Array.isArray(order.items) ? order.items : [];
+  const pids = [...new Set(
+    items
+      .filter((it) => it?.vendorId == null)
+      .map((it) => it?.product ?? it?.productId ?? it?.id)
+      .filter((x) => x != null)
+  )];
+  if (pids.length === 0) return new Map();
+  const placeholders = pids.map(() => '?').join(', ');
+  const [rows] = await pool.execute(
+    `SELECT id, vendorId FROM product WHERE id IN (${placeholders})`,
+    pids
+  );
+  return new Map(rows.map((r) => [String(r.id), parseInt(r.vendorId, 10)]));
+};
+
 /**
  * Per-vendor projection of an order (P0-2 tenant isolation).
  * Own lines only; operational fields kept; buyer PII minimized to first
@@ -458,8 +477,15 @@ export const updateVendorOrderStatus = async (req, res) => {
     // Notify the customer only when the visible order status actually moved.
     // (A vendor advancing their own mark ahead of the consensus must not
     // send the customer a status the order has not reached.)
+    // SECURITY FIX (R-3): the raw order row contains buyer PII (email, full
+    // address, payment reference) and sibling vendors' line items. Non-admin
+    // callers only ever receive the per-vendor projection.
+    const respondOrder = isAdmin
+      ? updated
+      : projectVendorOrder(updated, vendorUserId, await buildProductVendorMap(updated));
+
     if (!advanced) {
-      return res.json({ message: 'Progress saved', order: updated, myStatus: isAdmin ? consensus : orderStatus, consensus });
+      return res.json({ message: 'Progress saved', order: respondOrder, myStatus: isAdmin ? consensus : orderStatus, consensus });
     }
     try {
       const customerEmail = await getCustomerEmail(order.userId);
@@ -487,7 +513,7 @@ export const updateVendorOrderStatus = async (req, res) => {
  console.warn(` Could not notify customer: ${notifyErr.message}`);
     }
 
-    res.json({ message: "Order status updated", order: updated, myStatus: isAdmin ? consensus : orderStatus, consensus });
+    res.json({ message: "Order status updated", order: respondOrder, myStatus: isAdmin ? consensus : orderStatus, consensus });
   } catch (error) {
     console.error("Error updating vendor order status:", error);
     res.status(500).json({ message: "Internal server error" });

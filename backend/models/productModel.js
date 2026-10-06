@@ -24,6 +24,16 @@ const SEARCH_COLS = ['title', 'description', 'patternName', 'patternMeaning', 'c
 // recall upgrade over the old title/category/tag LIKE). Probed once per
 // process; LIKE is the steady state where FULLTEXT is unavailable.
 let searchMode = null;
+// Words FULLTEXT cannot honour must be DROPPED, not required: MySQL returns
+// nothing at all for a required stopword or for a token shorter than
+// innodb_ft_min_token_size (measured on MySQL 8.4 — '+the kente' and '+k kente'
+// both match 0 rows while '+kente' matches the kente rows). The stopword list
+// lives in information_schema.INNODB_FT_DEFAULT_STOPWORD, which is
+// MySQL/MariaDB-only; if it cannot be read we keep the LIKE path rather than
+// promise per-word semantics we cannot keep.
+let ftMinTokenSize = 3;
+let ftStopwords = new Set();
+
 const detectSearchMode = async (connection) => {
   if (searchMode) return searchMode;
   try {
@@ -33,6 +43,16 @@ const detectSearchMode = async (connection) => {
        AGAINST (? IN NATURAL LANGUAGE MODE)`,
       ['kente']
     );
+    const [[minTok]] = await connection.execute(
+      'SELECT @@innodb_ft_min_token_size AS minToken',
+      []
+    );
+    const [stopWords] = await connection.execute(
+      'SELECT word FROM information_schema.INNODB_FT_DEFAULT_STOPWORD',
+      []
+    );
+    ftMinTokenSize = Number(minTok?.minToken) || 3;
+    ftStopwords = new Set(stopWords.map((r) => String(r.word).toLowerCase()));
     searchMode = 'match';
   } catch {
     searchMode = 'like';
@@ -49,14 +69,32 @@ const searchPredicate = async (connection, search, alias) => {
   const pfx = alias ? `${alias}.` : '';
   if ((await detectSearchMode(connection)) === 'match') {
     const cols = SEARCH_COLS.map((c) => `${pfx}${c}`).join(', ');
-    const phrase = words.join(' ');
-    return {
-      where: ` AND MATCH(${cols}) AGAINST (? IN NATURAL LANGUAGE MODE)`,
-      params: [phrase],
-      // relevance is built from the split words (never raw user input), so
-      // inlining it into ORDER BY is injection-safe.
-      relevance: `MATCH(${cols}) AGAINST (${JSON.stringify(phrase)} IN NATURAL LANGUAGE MODE)`,
-    };
+    // EVERY indexable word must match (AND) — the contract the 'like' path and
+    // tests/productSearch.test.js already enforce. The previous single
+    // NATURAL-LANGUAGE MATCH OR'd the words together, so prod MySQL returned
+    // the REDCLOTH row for 'REDCLOTH nosuchwordxyz' while the TiDB dev database
+    // (no FULLTEXT, so 'like') did not: the same query meant two different
+    // things depending on which database served it.
+    const indexable = words.filter(
+      (w) => w.length >= ftMinTokenSize && !ftStopwords.has(w.toLowerCase())
+    );
+    if (indexable.length > 0) {
+      return {
+        where: ` AND ${indexable
+          .map(() => `MATCH(${cols}) AGAINST (? IN NATURAL LANGUAGE MODE)`)
+          .join(' AND ')}`,
+        // One parameter per word; callers spread these where `where` is
+        // appended, so order is preserved.
+        params: [...indexable],
+        // Relevance stays a single inline expression so ORDER BY needs no extra
+        // parameter. The value is quoted by JSON.stringify and the words were
+        // split from user input on whitespace — never concatenated raw.
+        relevance: `MATCH(${cols}) AGAINST (${JSON.stringify(words.join(' '))} IN NATURAL LANGUAGE MODE)`,
+      };
+    }
+    // Nothing indexable (e.g. 'the', '4m'): FULLTEXT cannot answer that query
+    // at all, so fall through to substring matching instead of returning an
+    // empty page for a search that used to work.
   }
   const groups = [];
   const params = [];
