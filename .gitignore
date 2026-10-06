@@ -39,3 +39,7 @@ src/assets/images/images.jpeg
 *.njsproj
 *.sln
 *.sw?
+
+# Generated Hyperframes/brag output — not part of this project
+brag-output/
+brag-output-*/
