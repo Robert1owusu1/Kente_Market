@@ -115,23 +115,26 @@ const isOAuthStateValid = (token) => {
   }
 };
 
-// Initiate Google OAuth. Refuses to start unless the caller has accepted the
-// legal policies (signed consent token from POST /api/auth/consent).
-// `mode=signup` selects the explicit account-creation path; plain /google is
-// LOGIN ONLY and never creates an account (RB-06).
+// Initiate Google OAuth. Account CREATION (signup) requires proof of legal
+// acceptance (signed consent token from POST /api/auth/consent).
+// Plain /google is LOGIN ONLY, never creates an account (RB-06), and must
+// NOT gate returning users on re-accepting Terms/Privacy.
+// `mode=signup` selects the explicit account-creation path.
 const startGoogleOAuth = (mode) => (req, res, next) => {
-    if (!isConsentTokenValid(req.query.consent)) {
-      return res.redirect(`${process.env.FRONTEND_URL}/login?error=consent_required`);
+    if (mode === 'signup') {
+      if (!isConsentTokenValid(req.query.consent)) {
+        return res.redirect(`${process.env.FRONTEND_URL}/register?error=consent_required`);
+      }
+      // Mirror the acceptance into an httpOnly cookie so we can re-verify it at the
+      // callback (the consent query param will not survive the Google round-trip).
+      res.cookie('oauth_consent', signConsentToken(), {
+        httpOnly: true,
+        secure: cookieSecure(res.req), // N-8
+        sameSite: cookieSameSite(),
+        maxAge: CONSENT_COOKIE_MAX_AGE,
+        path: '/'
+      });
     }
-    // Mirror the acceptance into an httpOnly cookie so we can re-verify it at the
-    // callback (the consent query param will not survive the Google round-trip).
-    res.cookie('oauth_consent', signConsentToken(), {
-      httpOnly: true,
-      secure: cookieSecure(res.req), // N-8
-      sameSite: cookieSameSite(),
-      maxAge: CONSENT_COOKIE_MAX_AGE,
-      path: '/'
-    });
 
     // RB-06: Issue a per-request, browser-bound state token to
     // prevent login CSRF / session fixation. The state is stored in an httpOnly
@@ -165,7 +168,9 @@ router.get('/google', startGoogleOAuth('login'));
 // Explicit Google signup path — the ONLY OAuth path that may create accounts.
 router.get('/google/signup', startGoogleOAuth('signup'));
 
-// Google OAuth callback. The consent cookie AND state cookie must be present and valid.
+// Google OAuth callback. The state cookie must always be present and valid.
+// The consent cookie is only required for signup (account creation); login
+// must not re-gate returning users.
 const googleCallbackMode = (req, res, next) => {
   // mode is carried in the callback `state` round-trip? No — the state JWT is
   // opaque. Carry mode via a short-lived httpOnly cookie set at initiation.
@@ -173,9 +178,10 @@ const googleCallbackMode = (req, res, next) => {
   next();
 };
 router.get('/google/callback',
+  googleCallbackMode,
   (req, res, next) => {
-    if (!isConsentTokenValid(req.cookies.oauth_consent)) {
-      return res.redirect(`${process.env.FRONTEND_URL}/login?error=consent_required`);
+    if (req.oauthMode === 'signup' && !isConsentTokenValid(req.cookies.oauth_consent)) {
+      return res.redirect(`${process.env.FRONTEND_URL}/register?error=consent_required`);
     }
     // RB-06: Verify OAuth state parameter (login CSRF protection).
     // The state must be present in the query, match the httpOnly cookie, and
@@ -192,7 +198,6 @@ router.get('/google/callback',
     req.consentAt = new Date();
     next();
   },
-  googleCallbackMode,
   (req, res, next) => {
     passport.authenticate('google', (err, user) => {
       // Generic failure for every OAuth error / unknown identity: no oracle
@@ -229,9 +234,9 @@ router.post('/oauth/exchange', async (req, res) => {
     if (!token) {
       return res.status(400).json({ message: 'Missing token' });
     }
-    if (!req.cookies || !isConsentTokenValid(req.cookies.oauth_consent)) {
-      return res.status(401).json({ message: 'Consent required' });
-    }
+    // No consent-cookie check here: consent is enforced at OAuth initiation
+    // and callback for signup only. Login must not require it, and the
+    // exchange token itself is purpose-bound, short-lived, and single-use.
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     if (decoded.purpose !== 'oauth_exchange') {

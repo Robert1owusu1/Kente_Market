@@ -13,9 +13,6 @@ import { setCredentials } from "../../slices/authSlice";
 import { useAppDispatch, useAppSelector } from "../../store";
 import { toast } from 'react-toastify';
 import Footer from "../../components/Footer/Footer";
-import LegalConsentBox from "../legal/LegalConsentBox";
-import LegalConsentModal from "../legal/LegalConsentModal";
-import { useLegalConsent } from "../../hooks/useLegalConsent";
 import type { FormErrors } from "../../types/domain";
 import logoImg from "../../assets/logo.png";
 
@@ -167,8 +164,6 @@ const Login = () => {
     apple: false
   });
 
-  const legal = useLegalConsent();
-
  // FIXED: Single useEffect for redirect logic with replace to prevent history issues
   useEffect(() => {
     if (userInfo) {
@@ -237,34 +232,14 @@ const Login = () => {
       setErrors({ submit: errorMessage });
     }
   };
-  // Handle OAuth login
-  const handleOAuthLogin = async (provider: keyof typeof oauthLoading) => {
-    setOauthLoading(prev => ({ ...prev, [provider]: true }));
-
-    if (provider === 'google') {
-      if (!legal.bothAccepted) {
-        setOauthLoading(prev => ({ ...prev, [provider]: false }));
-        setErrors(prev => ({
-          ...prev,
-          oauth: 'Please read and accept the Terms of Service and Privacy Policy before continuing.'
-        }));
-        legal.openDoc('terms');
-        return;
-      }
-
-      try {
-        const consentToken = await legal.requestConsentToken();
-        window.location.href = `${API_BASE_URL}/api/auth/google?consent=${encodeURIComponent(consentToken)}`;
-        return;
-      } catch (err) {
-        setErrors(prev => ({ ...prev, oauth: (err as Error).message || 'Could not continue with Google. Please try again.' }));
-        setOauthLoading(prev => ({ ...prev, [provider]: false }));
-        return;
-      }
+  // Handle OAuth login — login never requires re-accepting Terms/Privacy.
+  // (Legal acceptance is collected once at account creation on /register.)
+  const handleOAuthLogin = (provider: keyof typeof oauthLoading) => {
+    if (provider !== 'google') {
+      return;
     }
-
-    // Other providers are not configured
-    setOauthLoading(prev => ({ ...prev, [provider]: false }));
+    setOauthLoading(prev => ({ ...prev, [provider]: true }));
+    window.location.href = `${API_BASE_URL}/api/auth/google`;
   };
 
   return (
@@ -385,13 +360,6 @@ const Login = () => {
                 <FcGoogle />
               </IconButton>
 
-              {/* Legal acceptance is required to continue with Google */}
-              <LegalConsentBox
-                acceptedDocs={legal.acceptedDocs}
-                bothAccepted={legal.bothAccepted}
-                openDoc={legal.openDoc}
-                disabled={isLoading}
-              />
             </div>
 
             {/* OAuth Error */}
@@ -456,13 +424,6 @@ const Login = () => {
           </div>
         </div>
       </div>
-
-      {/* Legal Agreement Modal */}
-      <LegalConsentModal
-        activeDoc={legal.activeDoc}
-        onClose={() => legal.setActiveDoc(null)}
-        onAgree={legal.handleDocAgree}
-      />
 
       <Footer />
     </>

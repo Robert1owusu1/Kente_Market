@@ -36,7 +36,7 @@ export function useLegalConsent() {
   };
 
   // Ask the backend to certify this acceptance; the returned token is appended
-  // to the Google OAuth start URL (/api/auth/google?consent=<token>).
+  // to the Google signup start URL (/api/auth/google/signup?consent=<token>).
   const requestConsentToken = async (): Promise<string> => {
     const res = await fetch(`${API_BASE_URL}/api/auth/consent`, {
       method: "POST",

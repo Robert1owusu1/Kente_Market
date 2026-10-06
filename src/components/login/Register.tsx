@@ -427,7 +427,7 @@ const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
 
       try {
         const consentToken = await legal.requestConsentToken();
-        window.location.href = `${API_BASE_URL}/api/auth/google?consent=${encodeURIComponent(consentToken)}`;
+        window.location.href = `${API_BASE_URL}/api/auth/google/signup?consent=${encodeURIComponent(consentToken)}`;
         return;
       } catch (err) {
         setErrors(prev => ({ ...prev, oauth: (err as Error).message || 'Could not continue with Google. Please try again.' }));
