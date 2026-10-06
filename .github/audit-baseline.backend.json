@@ -1,0 +1,12 @@
+{
+  "accepted": {
+    "braces": "high",
+    "chokidar": "high",
+    "nodemon": "high"
+  },
+  "reasons": {
+    "braces": "Advisory covers every published version; npm's only offered fix is a breaking upgrade of the watch stack. Dev-only (nodemon) — the runtime dependency tree audits clean.",
+    "chokidar": "Reachable only from nodemon -> chokidar -> braces. Dev-only.",
+    "nodemon": "Dev-only process watcher. Runtime (non-dev) dependencies have zero advisories: `npm audit --omit=dev` exits 0."
+  }
+}

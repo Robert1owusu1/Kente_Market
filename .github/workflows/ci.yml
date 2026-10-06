@@ -9,9 +9,41 @@ permissions:
   contents: read
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # N-11: secrets must never land in the repository. Full-history scan with the
+  # same gitleaks version/command validated locally against this repo. The one
+  # legacy finding (a Paystack TEST key pasted into backend/.env.example in an
+  # older commit — already removed from the file) is recorded in .gitleaksignore
+  # by fingerprint, so it cannot silently mask anything new: any other finding
+  # fails this job.
+  # ---------------------------------------------------------------------------
+  secret-scan:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout (full history)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+
+      - name: Scan working tree and history for secrets
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/gitleaks.tgz \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.24.3/gitleaks_8.24.3_linux_x64.tar.gz
+          tar -xzf /tmp/gitleaks.tgz -C /tmp gitleaks
+          /tmp/gitleaks detect --source . --redact --no-banner --exit-code 1
+
+  # ---------------------------------------------------------------------------
+  # Typecheck + lint + DB-less test run (proves the skip path stays honest) +
+  # dependency-advisory ratchet + frontend build. These are the gates N-12 asks
+  # to keep green on every merge.
+  # ---------------------------------------------------------------------------
   lint-unit-build:
     name: Lint + tests + build
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -40,10 +72,99 @@ jobs:
       - name: Lint (eslint, whole repo)
         run: npm run lint
 
-      - name: Backend tests (full suite)
+      - name: Backend tests without a database (skip path)
         # DB-backed suites skip automatically when no database is reachable,
-        # so the full suite passes in CI without a database.
+        # so this run proves CI never goes green by silently skipping work it
+        # meant to do: the same suites run for real in backend-tests-db below.
         run: npm test --prefix backend
+
+      - name: Frontend tests (vitest)
+        run: npm run test:frontend
+
+      # N-11: a raw `npm audit --audit-level=high` cannot pass here — braces
+      # (via tailwindcss 3.x / nodemon) is advisory-affected in every published
+      # version and the only offered fix is a breaking tailwindcss v4 upgrade.
+      # A gate that starts red gets deleted, so this is a ratchet: known
+      # advisories live in .github/audit-baseline.*.json with reasons, and CI
+      # fails on any NEW high/critical advisory, any severity escalation, or a
+      # failed audit run. Runtime dependencies must stay clean:
+      # `npm audit --omit=dev` exits 0 for both workspaces.
+      - name: Dependency audit — frontend (ratchet)
+        run: |
+          npm audit --json > /tmp/audit-frontend.json || true
+          node .github/scripts/audit-gate.mjs /tmp/audit-frontend.json .github/audit-baseline.frontend.json
+
+      - name: Dependency audit — backend (ratchet)
+        run: |
+          cd backend
+          npm audit --json > /tmp/audit-backend.json || true
+          node ../.github/scripts/audit-gate.mjs /tmp/audit-backend.json ../.github/audit-baseline.backend.json
 
       - name: Build frontend
         run: npm run build
+
+  # ---------------------------------------------------------------------------
+  # N-11: the suite must run against a real database, not only the skip path.
+  # Disposable MySQL 8.4 (same major as the local validation run): load
+  # branding_house.sql, run EVERY migration in db:migrate, then the full suite.
+  # The commands below are exactly the ones that produced 191/191 against a
+  # clean MySQL 8.4 with no .env present.
+  # ---------------------------------------------------------------------------
+  backend-tests-db:
+    name: Backend tests (MySQL)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: branding_house
+          MYSQL_USER: ci
+          MYSQL_PASSWORD: ci
+          MYSQL_RANDOM_ROOT_PASSWORD: "yes"
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -u ci -pci --silent"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
+    env:
+      # No .env exists in CI: every value the app needs is declared here, and
+      # every secret is an obvious placeholder (CI's own secret scan reads this
+      # file — it must never match a key-shaped value).
+      DB_HOST: 127.0.0.1
+      DB_PORT: "3306"
+      DB_USER: ci
+      DB_PASSWORD: ci
+      DB_NAME: branding_house
+      DB_SSL: ""
+      JWT_SECRET: ci-only-jwt-secret-replace-before-production
+      SESSION_SECRET: ci-only-session-secret-replace-before-production
+      PAYSTACK_SECRET_KEY: ci-placeholder-paystack-secret
+      PAYSTACK_PUBLIC_KEY: ci-placeholder-paystack-public
+      FRONTEND_URL: http://localhost:5173
+      EMAIL_DISABLED: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Setup Node 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend deps
+        run: npm ci --prefix backend
+
+      - name: Create schema and run every migration
+        # db:setup = setupDB.js (load branding_house.sql) && db:migrate (the
+        # full chain, incl. legal_consent_at/sessions sync and the login-window
+        # column). A failure here means a fresh install is broken, so it must
+        # fail the build.
+        run: npm run db:setup --prefix backend
+
+      - name: Backend tests (full suite, database reachable)
+        run: npm test --prefix backend
