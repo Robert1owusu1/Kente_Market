@@ -18,6 +18,13 @@ export const createCoupon = async (req, res) => {
     if (discountValue === undefined || isNaN(discountValue) || parseFloat(discountValue) <= 0) {
       return res.status(400).json({ message: "Discount value must be greater than 0" });
     }
+    // C2: vendors are capped at 50% (createVendorCoupon), but the admin path
+    // had no ceiling at all. >100% is not a discount, it is a negative total —
+    // see shared/pricing.js calcCouponDiscount. Mirror the vendor rule so the
+    // two create paths agree on what "valid" means.
+    if (discountType === "percentage" && parseFloat(discountValue) > 100) {
+      return res.status(400).json({ message: "Percentage discounts cannot exceed 100%" });
+    }
 
     const coupon = await Coupon.create({ code, discountType, discountValue, minPurchase, maxUses, expiresAt, isActive });
 
@@ -69,6 +76,28 @@ export const updateCoupon = async (req, res) => {
     const existing = await Coupon.findById(req.params.id);
     if (!existing) {
       return res.status(404).json({ message: "Coupon not found" });
+    }
+
+    // C2: this path called `Coupon.update(req.params.id, req.body)` with no
+    // validation whatsoever, so an admin PUT could turn an existing 10% coupon
+    // into 500% — bypassing the cap createCoupon enforces. Evaluate the
+    // EFFECTIVE values (same shape as updateVendorCoupon), so sending only one
+    // of discountType/discountValue cannot sneak a >100% coupon through.
+    const body = req.body || {};
+    const nextType = body.discountType !== undefined ? body.discountType : existing.discountType;
+    const nextValue =
+      body.discountValue !== undefined
+        ? parseFloat(body.discountValue)
+        : parseFloat(existing.discountValue);
+
+    if (body.discountType !== undefined && !["percentage", "fixed"].includes(body.discountType)) {
+      return res.status(400).json({ message: "Discount type must be 'percentage' or 'fixed'" });
+    }
+    if (!Number.isFinite(nextValue) || nextValue <= 0) {
+      return res.status(400).json({ message: "Discount value must be greater than 0" });
+    }
+    if (nextType === "percentage" && nextValue > 100) {
+      return res.status(400).json({ message: "Percentage discounts cannot exceed 100%" });
     }
 
     const coupon = await Coupon.update(req.params.id, req.body);

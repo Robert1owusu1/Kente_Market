@@ -3,6 +3,9 @@ import express from 'express';
 const router = express.Router();
 
 import { protect, admin, vendorOrStaff, requireVendorPermission, requireVerifiedEmail } from '../middleware/authMiddleware.js';
+// M-7/M-8: express-level price validation on the two vendor product write
+// paths, matching what the admin routes now do.
+import { validate, productPriceSchema } from '../middleware/validators.js';
 import {
   applyVendor,
   getMyVendorProfile,
@@ -83,11 +86,11 @@ router.route('/coupons/:id').delete(vendorOrStaff, requireVendorPermission('mana
 // GET /api/vendors/myproducts → vendor's own products
 // POST /api/vendors/products → vendor creates a product
 router.route('/myproducts').get(vendorOrStaff, requireVendorPermission('manage_products'), getMyProducts);
-router.route('/products').post(vendorOrStaff, requireVendorPermission('manage_products'), createVendorProduct);
+router.route('/products').post(vendorOrStaff, requireVendorPermission('manage_products'), validate(productPriceSchema), createVendorProduct);
 
 // PUT /api/vendors/products/:id → vendor updates own product
 // DELETE /api/vendors/products/:id → vendor deletes own product
-router.route('/products/:id').put(vendorOrStaff, requireVendorPermission('manage_products'), updateVendorProduct);
+router.route('/products/:id').put(vendorOrStaff, requireVendorPermission('manage_products'), validate(productPriceSchema), updateVendorProduct);
 router.route('/products/:id').delete(vendorOrStaff, requireVendorPermission('manage_products'), deleteVendorProduct);
 
 // POST /api/vendors/withdraw → vendor withdraws from available wallet balance

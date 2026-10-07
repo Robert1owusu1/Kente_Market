@@ -170,6 +170,11 @@ CREATE TABLE product (
   INDEX idx_product_price (price),
   INDEX idx_product_vendor (vendorId),
   INDEX idx_product_approval (approvalStatus),
+  -- I3: absolute stock writes must never go negative. The application clamps
+  -- via utils/nonNegativeInt.js (that clamp is what holds on TiDB, which parses
+  -- but does not enforce CHECK); this is the backstop for any future writer
+  -- written without it.
+  CONSTRAINT chk_product_stock_nonneg CHECK (stock >= 0),
   CONSTRAINT fk_product_vendor FOREIGN KEY (vendorId) REFERENCES users(id) ON DELETE SET NULL
 );
 

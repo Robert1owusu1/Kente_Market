@@ -875,8 +875,13 @@ export const updateOrder = async (req, res) => {
       const discount = calcCouponDiscount(subtotal, c.discountType, c.discountValue);
       const shipping = Number(existingOrder.shippingCost ?? calcShipping(subtotal));
       const tax = Number(existingOrder.tax ?? calcTax(subtotal));
-      body.discount = discount;
-      body.totalAmount = round2(subtotal + shipping + tax - discount);
+      // C2: `discount` is now capped at `subtotal` inside calcCouponDiscount,
+      // but shipping and tax are read from the stored order rather than
+      // recomputed here, so the floor is enforced rather than assumed. A
+      // negative totalAmount would corrupt escrow allocation and make
+      // Paystack's expectedKobo verification disagree with what was charged.
+      body.discount = Math.min(discount, subtotal);
+      body.totalAmount = Math.max(0, round2(subtotal + shipping + tax - body.discount));
       body.couponId = c.id;
       // couponUseState is set on the order row right after the update below —
       // it is never accepted from the client (not in Order.allowedFields).

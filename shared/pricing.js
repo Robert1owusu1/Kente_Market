@@ -59,7 +59,14 @@ export const calcShipping = (
 export const calcCouponDiscount = (subtotal, discountType, discountValue) => {
   const value = Math.max(0, parseFloat(discountValue) || 0);
   if (discountType === 'percentage') {
-    return round2((subtotal * value) / 100);
+    // C2: the percentage branch had no ceiling while `fixed` was already
+    // capped at subtotal. A >100% admin coupon therefore produced a discount
+    // larger than the goods it applied to, and `orderController`'s apply-coupon
+    // path (`totalAmount = subtotal + shipping + tax - discount`) wrote the
+    // result straight through — a NEGATIVE order total, which then fed the
+    // escrow allocation and Paystack's `expectedKobo` check. Cap it at the
+    // subtotal so a discount can never exceed what is being discounted.
+    return round2(Math.min((subtotal * value) / 100, subtotal));
   }
   return Math.min(value, subtotal);
 };

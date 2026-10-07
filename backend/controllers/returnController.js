@@ -288,10 +288,39 @@ export const updateReturnStatus = async (req, res) => {
         dedupeKey: `refund:${order.id}:${req.params.id}:partial:${partialVendorId}`,
         payload: { reason: `Return ${req.params.id} partial (vendor ${partialVendorId})`, ownSubtotal },
       }).catch(() => {});
-      await pool.execute(
-        `UPDATE orders SET refundedAmount = refundedAmount + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-        [amount, existing.orderId]
-      ).catch((e) => console.warn(` Could not increment refundedAmount: ${e.message}`));
+      // R2: `validatePartialRefund` read `refundedAmount` far earlier (in the
+      // same request) and this write had no condition — a textbook
+      // check-then-act. It is unreachable today only because the V-07 CAS
+      // claim sits between them and allows exactly one refund claim per order
+      // for its whole life, so no racing writer can exist. Hardened anyway:
+      // the write now refuses to push `refundedAmount` past `totalAmount`, so
+      // even a future change to per-return claiming cannot oversubscribe.
+      //
+      // Note what happens on refusal: the Paystack refund ABOVE already moved
+      // real money, so failing the response here would tell the client the
+      // refund failed when it did not. Log loudly instead — the reconciler
+      // keys off this column and needs to see the mismatch — and still return
+      // success, because the refund genuinely succeeded.
+      try {
+        const [counted] = await pool.execute(
+          `UPDATE orders
+              SET refundedAmount = refundedAmount + ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND refundedAmount + ? <= totalAmount`,
+          [amount, existing.orderId, amount]
+        );
+        if (counted.affectedRows === 0) {
+          console.error(
+            ` R2: refundedAmount NOT incremented for order ${existing.orderId}: ` +
+              `+${amount} would exceed totalAmount. Paystack refund already executed — ` +
+              `MANUAL RECONCILIATION REQUIRED.`
+          );
+        }
+      } catch (e) {
+        console.error(
+          ` R2: could not increment refundedAmount for order ${existing.orderId}: ${e.message} — ` +
+            `MANUAL RECONCILIATION REQUIRED.`
+        );
+      }
       const updatedReturn = await ReturnRequest.findById(req.params.id);
       return res.json({ message: 'Partial vendor refund issued', returnRequest: updatedReturn, refundedAmount: amount, vendorId: partialVendorId });
     }

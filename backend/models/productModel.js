@@ -1,5 +1,6 @@
 // FILE: backend/models/productModel.js
 import pool from "../config/db.js";
+import { toNonNegativeInt } from "../utils/nonNegativeInt.js";
 
 // Safe JSON/CSV parser
 function safeParse(value) {
@@ -309,11 +310,22 @@ class Product {
 
       // SECURITY FIX (N-6): Public product detail must require vendor status = 'approved'.
       // Admin/moderation/vendor-inventory queries use separate controllers that don't call this.
+      //
+      // The `OR p.vendorId IS NULL` is load-bearing, not a loophole. The join
+      // is a LEFT JOIN, but a WHERE clause on the right-hand table turns it
+      // back into an INNER JOIN — so `AND v.status = 'approved'` alone filtered
+      // out every row whose vendorId is NULL, i.e. every platform product
+      // (`vendorId INT NULL COMMENT 'Owner vendor; NULL = platform product'`).
+      // Those rows showed up in listings (which do not apply this filter) and
+      // then 404'd on their detail page, while `Product.create`/`update` —
+      // which return this method's result — handed back null instead of the
+      // row they had just written. A NULL vendor has no status that can be
+      // suspended, so admitting it does not weaken N-6.
       const [rows] = await connection.execute(
         `SELECT p.*, v.businessName AS vendorBusinessName, v.status AS vendorStatus
          FROM product p
          LEFT JOIN vendors v ON v.userId = p.vendorId
-         WHERE p.id = ? AND v.status = 'approved'`,
+         WHERE p.id = ? AND (v.status = 'approved' OR p.vendorId IS NULL)`,
         [parseInt(id)]
       );
 
@@ -446,7 +458,7 @@ class Product {
           JSON.stringify(productData.sizes || []),
           productData.printType || null,
           productData.material || null,
-          parseInt(productData.reviews) || 0,
+          toNonNegativeInt(productData.reviews),
           productData.isCustomizable ? 1 : 0,
           JSON.stringify(productData.colors || []),
           productData.tag || null,
@@ -477,9 +489,9 @@ class Product {
           productData.approvalStatus || 'approved',
           productData.approvalNote || null,
           productData.approvedAt || null,
-          parseInt(productData.stock) || 0,
+          toNonNegativeInt(productData.stock),
           productData.sku || null,
-          parseInt(productData.lowStockThreshold) || 0,
+          toNonNegativeInt(productData.lowStockThreshold),
           productData.isRentable ? 1 : 0,
           productData.rentPricePerDay != null && productData.rentPricePerDay !== ''
             ? parseFloat(productData.rentPricePerDay)
@@ -550,7 +562,7 @@ class Product {
             values.push(updateData[key] !== null && updateData[key] !== '' ? parseFloat(updateData[key]) : null);
           } else if (intColumns.has(key)) {
             setClause.push(`${key} = ?`);
-            values.push(parseInt(updateData[key]) || 0);
+            values.push(toNonNegativeInt(updateData[key]));
           } else if (boolColumns.has(key)) {
             setClause.push(`${key} = ?`);
             values.push(updateData[key] ? 1 : 0);

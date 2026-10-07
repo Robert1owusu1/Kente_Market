@@ -7,6 +7,7 @@ import { getWallet } from '../Services/walletService.js';
 import { getAvailableAllocationsForVendor, payoutAllocation } from '../Services/escrowService.js';
 import { PLATFORM_FEE_RATE } from '../config/businessConfig.js';
 import { hasInvalidYards, INVALID_YARDS_MESSAGE } from '../utils/yards.js';
+import { toNonNegativeInt } from '../utils/nonNegativeInt.js';
 
 // Create a URL-safe slug from a business name (Ghanaian accents transliterated
 // to ASCII; everything else stripped).
@@ -352,9 +353,9 @@ export const createVendorProduct = async (req, res) => {
         approvalStatus,
         isAdmin ? null : 'Awaiting review by the platform team.',
         approvedAt,
-        parseInt(stock) || 0,
+        toNonNegativeInt(stock),
         autoSku,
-        parseInt(lowStockThreshold) || 0,
+        toNonNegativeInt(lowStockThreshold),
         isRentable ? 1 : 0,
         rentPricePerDay != null && rentPricePerDay !== '' ? parseFloat(rentPricePerDay) : null,
         threadTypes && threadTypes.length ? JSON.stringify(threadTypes) : null,
@@ -419,7 +420,7 @@ export const updateVendorProduct = async (req, res) => {
           values.push(req.body[key] !== '' && req.body[key] != null ? parseFloat(req.body[key]) : null);
         } else if (['stock', 'lowStockThreshold'].includes(key)) {
           sets.push(`${key} = ?`);
-          values.push(parseInt(req.body[key]) || 0);
+          values.push(toNonNegativeInt(req.body[key]));
         } else {
           sets.push(`${key} = ?`);
           values.push(req.body[key]);

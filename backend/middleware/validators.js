@@ -52,6 +52,34 @@ export const registerSchema = z
   })
   .partial();
 
+// M-7: price had almost no schema anywhere. `productModel.create` rejected
+// `price <= 0`, but the admin UPDATE path and BOTH vendor paths did a bare
+// `parseFloat()` — so a vendor could publish a product at price 0 (buyers pay
+// nothing) or -500 (a negative line in calcSubtotal). This is mounted on the
+// four product create/update routes as express-level validation, so the input
+// is rejected at the edge with a 400 instead of reaching money math.
+//
+// `.passthrough()` is load-bearing: a product payload carries ~50 fields
+// (gallery, threadTypes, patternMeaning, …) and the default object schema
+// STRIPS anything not declared. A stripping schema here would silently drop
+// most of the product on every update — validation must not change what the
+// endpoint accepts, only reject what is invalid.
+//
+// `price` is optional rather than required because "required" is already
+// handled where it belongs — `productModel.create` and `createVendorProduct`
+// both demand it — and this schema is mounted on update routes too, where an
+// absent price means "leave it alone".
+//
+// Note `price: ''` is rejected (coerces to 0, not positive). That is a
+// behaviour change from the model's `floatColumns` branch, which turned ''
+// into NULL — and a NULL price makes `calcSubtotal` fall back to 0, i.e. a
+// free product. Refusing it is the point.
+export const productPriceSchema = z
+  .object({
+    price: z.coerce.number().positive('Price must be greater than 0').optional(),
+  })
+  .passthrough();
+
 export const validate = (schema) => (req, res, next) => {
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) {

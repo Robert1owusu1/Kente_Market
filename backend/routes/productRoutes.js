@@ -5,6 +5,8 @@ import express from "express";
 const router = express.Router();
 import { protect, admin, optionalAuth } from "../middleware/authMiddleware.js";
 import { cacheMiddleware } from "../middleware/cacheMiddleware.js";
+// M-7/M-8: express-level price validation on the two admin product write paths.
+import { validate, productPriceSchema } from "../middleware/validators.js";
 import {
   getProducts,
   getProductById,
@@ -44,10 +46,10 @@ router.get('/:id', optionalAuth, cacheMiddleware(60), getProductById);
 // ========================================
 
 // Create product (admin only)
-router.post('/', protect, admin, createProduct);
+router.post('/', protect, admin, validate(productPriceSchema), createProduct);
 
 // Update product (admin only)
-router.put('/:id', protect, admin, updateProduct);
+router.put('/:id', protect, admin, validate(productPriceSchema), updateProduct);
 
 // Delete product (admin only)
 router.delete('/:id', protect, admin, deleteProduct);
