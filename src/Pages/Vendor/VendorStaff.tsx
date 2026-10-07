@@ -24,6 +24,10 @@ const ALL_PERMISSIONS = [
   'manage_coupons',
   'reply_reviews',
   'manage_staff',
+  // A8: lets this staff account rewrite the PUBLIC store page — business
+  // name, the /store/:slug URL, logo, cover, weaver story and social links.
+  // Must stay in sync with VALID_PERMISSIONS in backend/controllers/staffController.js.
+  'manage_storefront',
 ];
 
 const permLabels: Record<string, string> = {
@@ -35,6 +39,7 @@ const permLabels: Record<string, string> = {
   manage_coupons: 'Manage coupons',
   reply_reviews: 'Reply to reviews',
   manage_staff: 'Manage staff',
+  manage_storefront: 'Edit public storefront (name, URL, branding)',
 };
 
 const statusBadge = (status: string | undefined) =>

@@ -61,8 +61,12 @@ router.route('/apply').post(protect, requireVerifiedEmail, applyVendor);
 // GET /api/vendors/me → own vendor profile + escrow summary (vendor, staff w/ view_earnings, or admin)
 router.route('/me').get(vendorOrStaff, requireVendorPermission('view_earnings'), getMyVendorProfile);
 
-// PUT /api/vendors/profile → update business/storefront profile
-router.route('/profile').put(vendorOrStaff, updateVendorProfile);
+// PUT /api/vendors/profile → update business/storefront profile.
+// A8: this was the ONE mutating vendor route with no requireVendorPermission
+// behind it, so a staff account holding no permissions at all could still
+// rename the store, move its /store/:slug URL and rewrite everything the
+// public storefront page renders.
+router.route('/profile').put(vendorOrStaff, requireVendorPermission('manage_storefront'), updateVendorProfile);
 
 // GET /api/vendors/analytics → vendor analytics (financial)
 router.route('/analytics').get(vendorOrStaff, requireVendorPermission('view_earnings'), getVendorAnalytics);

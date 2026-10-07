@@ -11,6 +11,13 @@ import Vendor from '../models/vendorModel.js';
 import { cookieSameSite, cookieSecure } from '../config/cookieConfig.js';
 import { setCsrfCookie } from '../middleware/csrfMiddleware.js';
 
+// A8: `manage_storefront` was missing from this list, and
+// requireVendorPermission was therefore never asked for it — so
+// PUT /api/vendors/profile, which rewrites the PUBLIC store page
+// (business name, the /store/:slug URL, logo, cover, weaver story, social
+// links), ran behind vendorOrStaff alone. Any staff member could do it,
+// including one whose permission object was completely empty. The vendor's
+// own account is unaffected: requireVendorPermission always passes the owner.
 const VALID_PERMISSIONS = [
   'manage_orders',
   'view_customers',
@@ -20,6 +27,7 @@ const VALID_PERMISSIONS = [
   'manage_coupons',
   'reply_reviews',
   'manage_staff',
+  'manage_storefront',
 ];
 
 // mysql2 auto-parses JSON columns to objects; tolerate both forms.
