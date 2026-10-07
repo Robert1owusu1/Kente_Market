@@ -94,13 +94,26 @@ export const applyVendor = async (req, res) => {
 
     let vendor;
     if (existing) {
+      // C5: do NOT reset `status` here. The old payload always wrote
+      // status='pending' on a re-application, which had two consequences once
+      // vendor paths started enforcing approval:
+      //
+      //   * an APPROVED store re-pended itself — its products then disappear
+      //     from the storefront (N-6 hides everything not 'approved') and the
+      //     owner is locked out of their own dashboard until an admin notices;
+      //   * a SUSPENDED store re-pended itself, silently erasing the
+      //     sanction. Suspension is the administrator's decision to lift, not
+      //     the vendor's to reset by submitting a form again.
+      //
+      // A re-application from an existing store is a payout-detail update, not
+      // a new application. Vendor.update skips `undefined`, so omitting the
+      // field leaves whatever state the store is in untouched.
       vendor = await Vendor.update(existing.id, {
         businessName,
         contactPhone: contactPhone || existing.contactPhone,
         ...payoutFields,
         recipientCode: recipientCode || existing.recipientCode,
         recipientType: recipientType || existing.recipientType,
-        status: 'pending',
       });
     } else {
       vendor = await Vendor.create({

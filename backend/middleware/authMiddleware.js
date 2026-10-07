@@ -136,17 +136,86 @@ const admin = (req, res, next) => {
 };
 
 /**
- * Vendor middleware - Check if user is a vendor (or admin)
- * Must be used after protect middleware
+ * C5 — the STORE, not the TOKEN, decides whether an account may act as a vendor.
+ *
+ * `vendor` and `vendorOrStaff` both checked only `users.role`, and `applyVendor`
+ * sets role='vendor' in the SAME request that creates the store with
+ * status='pending'. So one second after submitting an application — long before
+ * any administrator has seen it — the applicant could call every vendor
+ * endpoint: publish products, mint staff accounts through POST /api/vendors/staff,
+ * create coupons, advance order fulfilment, withdraw a balance.
+ *
+ * The staff branch of `vendorOrStaff` already enforced
+ * `staff.vendorStatus !== 'approved'`. The owner branch never consulted
+ * `vendors.status` at all: the middleware enforced the invariant for the
+ * employee and not for their employer.
+ *
+ * `status` is the VENDORS enum ('pending' | 'approved' | 'suspended'). It is
+ * deliberately not `approvalStatus`, which is the PRODUCT moderation column —
+ * reading the wrong one is how the sibling productModel finding got shipped.
+ *
+ * Exactly one exemption, and only one:
+ *   GET /api/vendors/me
+ * VendorDashboard renders entirely off that response (it is the dashboard's
+ * entry point, and VendorSettings/VendorPayouts read `vendor.status` from it),
+ * so blocking it would leave a pending applicant with no way to discover that
+ * they are pending — the very state the endpoint exists to report. It returns
+ * only their own row and passes the status through verbatim; every other
+ * dashboard section now fails with 403 until the store is approved, which is
+ * the point.
  */
-const vendor = (req, res, next) => {
-    if (req.user && (req.user.role === 'vendor' || req.user.role === 'admin')) {
-        next();
-    } else {
+const APPLICATION_STATUS_PATH = '/api/vendors/me';
+
+const isOwnApplicationStatusRead = (req) =>
+    req.method === 'GET' && req.originalUrl.split('?')[0] === APPLICATION_STATUS_PATH;
+
+/**
+ * Resolve `vendors.status` and enforce approval.
+ * Callers must have already established `req.user` and its vendor/admin role.
+ * Returns { ok: true } or { ok: false, message } — it never throws, so both
+ * middlewares report the same reason.
+ */
+const requireApprovedStore = async (req) => {
+    // An administrator is not a vendor; there is no store row to approve.
+    if (req.user.role === 'admin') return { ok: true };
+    if (isOwnApplicationStatusRead(req)) return { ok: true };
+
+    const [rows] = await pool.execute(
+        `SELECT status FROM vendors WHERE userId = ?`,
+        [req.user.id]
+    );
+    // Fail closed: role='vendor' with no store row means the row was removed
+    // underneath the account, and a store you cannot name is not a store you
+    // may sell from.
+    if (rows.length === 0) {
+        return { ok: false, message: 'No vendor store exists on this account' };
+    }
+    const status = rows[0].status;
+    if (status !== 'approved') {
+        return {
+            ok: false,
+            message: `Your vendor store is ${status} and cannot be used until an administrator approves it`,
+        };
+    }
+    return { ok: true };
+};
+
+/**
+ * Vendor middleware - Check if user is a vendor (or admin), AND that their
+ * store is approved. Must be used after protect middleware.
+ */
+const vendor = asyncHandler(async (req, res, next) => {
+    if (!(req.user && (req.user.role === 'vendor' || req.user.role === 'admin'))) {
         res.status(403);
         throw new Error('Not authorized as a vendor');
     }
-};
+    const gate = await requireApprovedStore(req);
+    if (!gate.ok) {
+        res.status(403);
+        throw new Error(gate.message);
+    }
+    next();
+});
 
 /**
  * Vendor-or-staff middleware — self-contained guard for the vendor panel.
@@ -161,16 +230,36 @@ const vendor = (req, res, next) => {
  * token has no users row).
  */
 const vendorOrStaff = async (req, res, next) => {
+    // Token trouble is shared by both token kinds, so settle it before the
+    // branches split. Reported exactly as `protect` reports it.
+    let decoded;
     try {
         const token = req.cookies.jwt;
-        if (!token) {
-            res.status(401);
-            throw new Error('Not authorized, no token');
-        }
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        if (!token) throw new Error('Not authorized, no token');
+        decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (error) {
+        res.status(401);
+        return next(
+            error.message === 'Not authorized, no token'
+                ? error
+                : new Error('Not authorized, token failed'),
+        );
+    }
 
-        // Normal vendor/admin token.
-        if (decoded.role !== 'vendor_staff') {
+    // Normal vendor/admin token.
+    if (decoded.role !== 'vendor_staff') {
+        // This branch used to share the catch at the bottom of this function —
+        // which was written for the STAFF branch: it logs 'Staff auth error'
+        // and answers 401 'Not authorized, staff token failed'. So every owner
+        // failure arrived as that sentence, at a status the frontend reads as
+        // session expiry (apiSlice: `response.status === 401` ->
+        // handleUnauthorized). A customer who merely opened a vendor URL, a
+        // deactivated account, and — since C5 — a pending applicant were each
+        // logged out of the whole site and told that a staff token they never
+        // presented had failed. Owner failures keep their own status and
+        // message instead; `next()` sits outside the try so a synchronous
+        // downstream throw is not caught here and handed to next() twice.
+        try {
             const user = await User.findById(decoded.id);
             if (!user) {
                 res.status(401);
@@ -191,10 +280,26 @@ const vendorOrStaff = async (req, res, next) => {
                 res.status(403);
                 throw new Error('Not authorized as a vendor');
             }
-            return next();
+            // C5: mirror the staff branch below, which already refuses a store
+            // whose status !== 'approved'. Without this the owner of a pending
+            // store had MORE reach than the staff they had not hired yet.
+            const ownerGate = await requireApprovedStore(req);
+            if (!ownerGate.ok) {
+                res.status(403);
+                throw new Error(ownerGate.message);
+            }
+        } catch (error) {
+            // errorHandeler trusts the sticky res.statusCode, so whatever this
+            // branch decided is what the client sees. Only a failure that got
+            // this far without a status (a driver error) becomes 401.
+            if (res.statusCode === 200) res.status(401);
+            return next(error);
         }
+        return next();
+    }
 
-        // Staff token: validate the staff record + parent vendor.
+    // Staff token: validate the staff record + parent vendor.
+    try {
         const [staffRows] = await pool.execute(
             `SELECT s.id, s.name, s.email, s.permissions, s.status, s.tokenVersion,
                     v.userId AS vendorUserId, v.status AS vendorStatus
