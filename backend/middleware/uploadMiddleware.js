@@ -27,12 +27,19 @@ const stagingStorage = multer.diskStorage({
 
 // File filter - only accept images (extension + declared MIME are a first
 // gate; the magic-byte check in the route is the authoritative one).
+//
+// Anchored, matching the twin that already is in profileRoutes.js: the old
+// /jpeg|jpg|png|gif|webp/ matched any filename or MIME CONTAINING a token, so
+// `holiday.pngx` (extname `.pngx` holds `png`) and `image/pngfoo` sailed
+// through a gate that reads like a control while rejecting nothing. The
+// declared MIME is still only the client's word — the magic bytes are the
+// evidence — but a gate that accepts everything it claims to filter is worse
+// than no gate, because it invites the next reader to rely on it.
 const imageFileFilter = (req, file, cb) => {
-  const allowedTypes = /jpeg|jpg|png|gif|webp/;
-  const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-  const mimetype = allowedTypes.test(file.mimetype);
+  const allowedExt = /\.(jpe?g|png|gif|webp)$/i;
+  const allowedMime = /^image\/(jpe?g|png|gif|webp)$/;
 
-  if (extname && mimetype) {
+  if (allowedMime.test(file.mimetype) && allowedExt.test(path.extname(file.originalname))) {
     cb(null, true);
   } else {
     cb(new Error('Only image files are allowed (jpeg, jpg, png, gif, webp)'), false);
@@ -50,4 +57,4 @@ const upload = multer({
 
 export default upload;
 
-export { stagingDir }; // used in tests + temp cleanup helpers
+export { stagingDir, imageFileFilter }; // used by tests + temp cleanup helpers

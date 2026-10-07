@@ -80,7 +80,18 @@ router.post('/', protect, adminOrVendor, uploadLimiter, (req, res) => {
       //    used to be Math.random(), which is predictable from prior output and
       //    made product image URLs guessable; the owner id is still a small
       //    sequential integer, so the UUID is what provides the entropy.
-      const ext = path.extname(req.file.originalname).toLowerCase() || '.jpg';
+      // 3) The extension comes from the BYTES, not from the filename.
+      //    Everything else on this request is the client's word — the
+      //    originalname and the declared MIME both — and the multer filter is
+      //    only a first gate in front of them. `verdict.format` is the one
+      //    value here produced by sniffing the content, so extension and
+      //    content cannot disagree: a real PNG sent as `holiday.pngx` is
+      //    stored as `.png`, and "which rule does the static server apply to
+      //    this file" stops being a question a client gets to answer. It also
+      //    keeps the key inside the DELETE route's
+      //    `\d+-(product|reference)-[\w-]+\.[a-z0-9]+` pattern — an extension
+      //    that failed that check was an image nobody could ever remove.
+      const ext = `.${verdict.format}`;
       const key = `products/${req.user.id}-product-${randomUUID()}${ext}`;
       const publicUrl = await putObject({ key, sourcePath: stagedPath(req.file) });
 
@@ -173,7 +184,9 @@ router.post('/reference', protect, uploadLimiter, (req, res) => {
         return res.status(400).json({ message: verdict.reason });
       }
 
-      const ext = path.extname(req.file.originalname).toLowerCase() || '.jpg';
+      // Extension from the sniffed content, not the client filename — see the
+      // product upload above for why this is not a style choice.
+      const ext = `.${verdict.format}`;
       const key = `references/${req.user.id}-reference-${randomUUID()}${ext}`;
       const publicUrl = await putObject({ key, sourcePath: stagedPath(req.file) });
 
