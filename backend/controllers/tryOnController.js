@@ -70,18 +70,42 @@ export const isTryOnEnabled = () =>
  * Two shapes are accepted:
  *   - `data:image/...;base64,...` - inline bytes, so there is no network fetch
  *     and therefore no SSRF. This is what the photo upload and camera capture
- *     produce, and the decoded size is capped below.
- *   - `https://<public host>/...` - a real URL, restricted to public hosts so
- *     it cannot resolve to loopback, RFC1918, CGNAT, or instance metadata.
+ *     produce, and the decoded size is capped below. Always accepted.
+ *   - `https://<host>/...` - a real URL, and only one the operator has named
+ *     in AI_TRYON_ALLOWED_HOSTS.
  *
- * Product images legitimately come from the API's own upload host, so there is
- * no host allow-list by default; set AI_TRYON_ALLOWED_HOSTS to narrow it.
+ * F4a: this used to be syntactic only. `isPrivateHostname` inspects the
+ * STRING, so `https://localtest.me/` - which resolves to 127.0.0.1 - passed,
+ * and the allow-list was optional: with it unset, every hostname on the public
+ * internet was fetchable on the caller's say-so.
+ *
+ * Resolving the name ourselves would not have closed that. Replicate resolves
+ * it again, from their address, at their moment, so a lookup we perform first
+ * answers a DIFFERENT question from the one that decides where the bytes
+ * actually come from; DNS rebinding is the sharp version of the gap, but even
+ * without it the two lookups are independent and there is no way for us to
+ * make theirs agree with ours. The only lever without that race is deciding
+ * WHICH hostnames are permissible at all, so the list is now required: an
+ * unset AI_TRYON_ALLOWED_HOSTS accepts `data:` URIs and nothing else.
+ *
+ * The list matches whole hostnames - no wildcards, no suffix matching - and
+ * the port must be the default one: `new URL` normalises `:443` away, so a
+ * non-empty port is a deliberate non-default, and trusting a host on :443 says
+ * nothing about what else that host serves on :8080.
  */
 const MAX_INLINE_IMAGE_BYTES = 5 * 1024 * 1024;
 
 const isPrivateHostname = (hostname) => {
   const h = hostname.toLowerCase();
-  if (h === "localhost" || h.endsWith(".localhost") || h.endsWith(".local") || h.endsWith(".internal")) {
+  // Names that only ever resolve inside somebody's network. `.corp`, `.lan`,
+  // `.intranet`, `.home` and `.localdomain` are the classic internal-only
+  // suffixes: a resolver with a search domain folds them onto a private
+  // address, and no public host is ever served on them.
+  if (
+    h === "localhost"
+    || [".localhost", ".local", ".internal", ".corp", ".lan", ".intranet", ".home", ".localdomain"]
+      .some((suffix) => h.endsWith(suffix))
+  ) {
     return true;
   }
   // Cloud instance metadata endpoints.
@@ -109,7 +133,10 @@ const extraAllowedHosts = () =>
     .map((h) => h.trim().toLowerCase())
     .filter(Boolean);
 
-const assertFetchableImageUrl = (value, field) => {
+// Exported so the suite can drive the real predicate: this is the function
+// that decides what a caller may make Replicate fetch, and a source assertion
+// about it would only ever prove the text is present.
+export const assertFetchableImageUrl = (value, field) => {
   if (typeof value !== "string" || !value.trim()) {
     throw new Error(`${field} is required`);
   }
@@ -137,11 +164,27 @@ const assertFetchableImageUrl = (value, field) => {
   if (url.username || url.password) {
     throw new Error(`${field} must not contain credentials`);
   }
+  if (url.port) {
+    // `new URL` strips a default `:443`, so anything still here is a
+    // deliberate non-default port that the host allow-list cannot vouch for.
+    throw new Error(`${field} must use the default https port`);
+  }
   if (isPrivateHostname(url.hostname)) {
     throw new Error(`${field} must be a publicly reachable image URL`);
   }
+
+  // Fail closed. An unset list used to mean "any public host", which left the
+  // decision with the caller; it now means "no host at all", so the operator
+  // has to name the one place product images come from before this endpoint
+  // will make anyone fetch anything.
   const allowed = extraAllowedHosts();
-  if (allowed.length > 0 && !allowed.includes(url.hostname.toLowerCase())) {
+  if (allowed.length === 0) {
+    throw new Error(
+      `${field}: this deployment permits no external image host. `
+      + 'Set AI_TRYON_ALLOWED_HOSTS to the host(s) product images are served from.',
+    );
+  }
+  if (!allowed.includes(url.hostname.toLowerCase())) {
     throw new Error(`${field} is not on the allowed host list`);
   }
   return url.toString();
