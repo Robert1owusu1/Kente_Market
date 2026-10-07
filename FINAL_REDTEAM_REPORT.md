@@ -312,7 +312,8 @@ logic) → **1 fail** (test 3); restored → **5/5 pass**.
 | Full suite (sequential), **dev database** (N-19) | same command against TiDB | **229/229 pass, 0 fail, 0 skipped, exit 0** |
 | CI invocation, **CI database** *(pre-N-19)* | `npm test` (`--test-concurrency=4`) against MySQL 8.4 | **218/218 pass, 0 fail, 0 skipped, exit 0** (3 consecutive idle runs) |
 | CI invocation, **dev database** (N-19) | `npm test` against TiDB | **229/229 pass, 0 fail, 0 skipped, exit 0** (3 consecutive runs, all captured — plus one earlier run with 1 unattributed failure, see the flakiness note) |
-| **CI job, end to end (N-11)** | `npm run db:setup && npm test` with no `.env`, CI-style env, MySQL 8.4 service | **`db:setup` exit 0** (schema + all 21 migrations) **then 218/218, exit 0** |
+| **CI job, end to end (N-11)** *(pre-N-19)* | `npm run db:setup && npm test` with no `.env`, CI-style env, MySQL 8.4 service | **`db:setup` exit 0** (schema + all 21 migrations) **then 218/218, exit 0** |
+| **CI job, end to end (N-19)** | GitHub Actions **run 49** on `852d213`, `mysql:8.4` service | `db:setup && npm test` **exit 0 → 229/229 on MySQL 8.4**; all 3 jobs green — Secret scan (4 s), Lint + tests + build (41 s), Backend tests (MySQL) (57 s) |
 | **N-18 stability (repeated runs)** | 10 × `node --test tests/couponMaxUses.test.js`, then 8 × `db:setup && npm test` (before/after the fix) | **before:** 2/8 full-suite runs failed with `500 … Duplicate entry 'ORD-…'`; **after:** 10/10 targeted + 10/11 full-suite green (the 1 loss was the load-induced runner IPC error noted below) |
 | CI invocation (no database) | `DB_HOST=127.0.0.1 DB_PORT=1 … node --test "tests/**/*.test.js"` | **165 tests: 111 pass, 54 skipped, 0 fail, exit 0** (was 154/100/54, originally 127/77/50) |
 | **New P2 suite, with DB (TiDB)** | `node --test tests/loginLockout.test.js` | **21/21 pass, exit 0** |
