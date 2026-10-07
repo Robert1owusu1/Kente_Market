@@ -58,6 +58,23 @@ export function getOrLoadCsrfToken(): Promise<string | null> {
   return inflight;
 }
 
+/**
+ * Headers for a raw (non-axios) state-changing fetch: JSON content type plus
+ * the CSRF echo. Axios callers get the header from the interceptor installed
+ * in main.tsx; a raw `fetch` bypasses it entirely, and the backend 403s any
+ * POST whose browser also carried the csrf_token cookie. That is exactly how
+ * Google login broke in production: the OAuth exchange POST had no header, so
+ * it answered 403 "CSRF token missing", no session cookie was minted, and the
+ * follow-up profile fetch died with 401 "Not authenticated". Every
+ * state-changing `fetch(` in the SPA must build its headers with this.
+ */
+export async function csrfJsonHeaders(): Promise<Record<string, string>> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const token = await getOrLoadCsrfToken();
+  if (token) headers[CSRF_HEADER] = token;
+  return headers;
+}
+
 /** Forget the cached token (call when the session changes, i.e. login/logout). */
 export function resetCsrfToken(): void {
   generation += 1;

@@ -10,6 +10,7 @@ import { TiShoppingBag } from 'react-icons/ti';
 import { FaCheckCircle, FaTimesCircle } from 'react-icons/fa';
 import logoImg from "../../assets/logo.png";
 import Footer from "../../components/Footer/Footer";
+import { csrfJsonHeaders } from "../../utils/csrf";
 
 
 const OAuthCallback = () => {
@@ -77,10 +78,16 @@ const OAuthCallback = () => {
         const exchangeToken = hashParams.get('token');
 
         if (exchangeToken) {
+          // MUST send X-CSRF-Token: this POST travels with cookies, so any
+          // visitor already holding a csrf_token cookie (a previous session
+          // that expired — the cookie outlives the JWT) is rejected with 403
+          // "CSRF token missing" unless the header echoes it. Raw fetch does
+          // not go through the axios interceptor in main.tsx, so the header
+          // has to be built explicitly here.
           const exchangeRes = await fetch(`${API_BASE_URL}/api/auth/oauth/exchange`, {
             method: 'POST',
             credentials: 'include',
-            headers: { 'Content-Type': 'application/json' },
+            headers: await csrfJsonHeaders(),
             body: JSON.stringify({ token: exchangeToken })
           });
 

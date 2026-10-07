@@ -60,10 +60,22 @@ export const setCsrfCookie = (res) => {
  * read its CSRF token from this (via the /api/auth/csrf-token endpoint) —
  * document.cookie cannot see the cookie because it is host-only on the API
  * origin, while the SPA runs on a cross-site origin.
+ *
+ * A cookie that no longer verifies under the CURRENT JWT_SECRET (secret
+ * rotated after a leak, or a mangled/tossed value) is re-issued rather than
+ * echoed: csrfProtection demands a matching, validly signed pair, so handing
+ * back a dead token would 403 every state-changing request for the rest of
+ * the cookie's 30-day life — a self-inflicted lockout with no recovery short
+ * of manually clearing cookies. The fresh value leaves in BOTH the Set-Cookie
+ * header and the response body, so the SPA's in-memory cache and the cookie
+ * it must echo stay in sync.
  */
 export const getOrIssueCsrfToken = (req, res) => {
   const existing = req.cookies?.[CSRF_COOKIE_NAME];
-  if (existing) return existing;
+  if (existing) {
+    const [raw, signature] = String(existing).split('.', 2);
+    if (raw && signature && verifyCsrf(raw, signature)) return existing;
+  }
   const token = issueCsrfToken();
   res.cookie(CSRF_COOKIE_NAME, token, csrfCookieOptions(req));
   return token;

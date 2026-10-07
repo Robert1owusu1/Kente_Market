@@ -54,6 +54,7 @@ Where a prior report and the code disagreed, the code won (see §5).
 | A-6 | Let a locked-out victim try to self-recover with their correct password | victim of A-5 | `authenticate()` checked the lock **before** comparing, so even a successful reset left the account locked | **P1** | fixed + tested |
 | A-7 | **V-01:** apply a coupon during checkout, then pay | customer (no tricks needed) | charge used the stale pre-coupon cached total → Paystack collected the **gross** amount, server had booked **net** → `verify-paystack` rejected `paidKobo !== expectedKobo` → money captured, order never flips to `paid` | **P0** | **found and fixed this pass** + tested |
 | A-8 | **N-18:** 20 `POST /api/orders` landing in the same millisecond (an ordinary burst — no tricks) | customer / burst traffic | the `orders.orderNumber` (UNIQUE) race lost one INSERT → `ER_DUP_ENTRY` → **500 and the basket lost** (coupon slot and stock were rolled back correctly) | **P2** | **found and fixed this pass** + tested |
+| A-9 | **N-19:** ordinary Google login from `kente-market.vercel.app` in a browser that already holds a `csrf_token` cookie (any visitor whose session JWT expired while the 30-day CSRF cookie lived on) | customer (returning visitor — no tricks) | `POST /api/auth/oauth/exchange` answered **403 `CSRF token missing`** → no session cookie minted → the follow-up `GET /api/users/profile` answered 401 → **Google login dead**, console shows `OAuth profile fetch error: Not authenticated` | **P1** | **found and fixed this pass** + tested |
 
 ### A-7 (V-01) — the fix that did not close the finding
 
@@ -106,6 +107,7 @@ regression test that fails when either half is removed.
 | **V-04 / N-7** coupon cap on the money | atomic `UPDATE coupons SET usesUsed = usesUsed + 1 WHERE id = ? AND usesUsed < maxUses` claimed together with `orders.couponUseState 0→2` in one transaction; release on cancel/expiry/failure (`state 1→0`, conditional decrement); `couponMaxUses.test.js` 9 tests + **2 mutations (8/9 and 4/9 failed)** — see §6 |
 | **N-2** `tv:0` tokens rejected | `authRoutes.js:243` now checks `undefined`/`null` explicitly |
 | **N-4** shared `productionNote` clobber | vendor patch contains only `orderStatus`/`deliveredAt` |
+| **N-19** raw-`fetch` state-changing calls echo the CSRF token | live probe matrix against `kente-api.onrender.com` (cookie × header × origin) that isolated the failing layer; the fix itself is pinned by `src/utils/__tests__/csrf.test.ts` source guard over the whole SPA (3 mutations), `backend/tests/csrfToken.test.js` (11 tests, 1 mutation) and `src/store.csrfReset.test.ts` (5 tests, 1 mutation) |
 
 **Refuted claims from earlier reports**
 
@@ -126,7 +128,7 @@ regression test that fails when either half is removed.
 | N-8 | **Auth cookies can be issued without the `Secure` flag.** Every `secure:` option is `process.env.NODE_ENV === 'production'`, while the shipped `backend/.env` has `NODE_ENV` **empty** and `COOKIE_SAME_SITE=none`. Live: `Set-Cookie: csrf_token=…; Path=/; SameSite=None` with **no `Secure`**. `.deploy/DEPLOY.md` does set `NODE_ENV=production`, so this is a deployment footgun rather than a live breach — but nothing in the code detects it. | **P2 — FIXED this pass** | `server.js:162`, `middleware/csrfMiddleware.js:46`, `utils/generateToken.js:63`, `routes/authRoutes.js:47,61,130…` |
 | N-9 | **IP-keyed limiters are fully bypassable by rotating `X-Forwarded-For`** when the Node port is reachable without an appending reverse proxy. Measured live: fixed IP → `RateLimit-Remaining` 580→579→578; rotating XFF → frozen at 598 (a fresh bucket per request), and the access log records the attacker-supplied IP. `.deploy/DEPLOY.md`'s nginx *does* append, so rightmost = real client and production is safe — but the config ships `TRUST_PROXY=1` with no guard. The account-keyed limiters are unaffected by design. | **P2 — FIXED this pass** | live measurement above; `backend/.env` `TRUST_PROXY=1`; `middleware/rateLimitMiddleware.js:46-57` |
 | N-10 | **Rate-limit counters reset when Redis recovers from degraded mode.** While Redis is down the per-instance fallback counts correctly; the moment the TLS handshake lands the store switches to Redis, whose counter starts at 0 — the same 14-request probe then observed **8 allowed instead of 5**. Bounded by outage frequency, but it silently grants an extra allowance on every recovery. | **P3** | `utils/redisClient.js:129-141` (`viaRedis` switches source mid-window) |
-| N-11 | **CI does not exercise most of the security surface.** No database job (in CI's DB-less mode **50 of 127 tests skipped and 15 blocks skipped entirely** — measured at the time of the finding; with this pass's new suites it is 54 of 154), no secret scan, no `npm audit` gate, and the frontend suite (`npm run test:frontend`, 44 tests) is never invoked. | **P2 — FIXED this pass** | `.github/workflows/ci.yml` |
+| N-11 | **CI does not exercise most of the security surface.** No database job (in CI's DB-less mode **50 of 127 tests skipped and 15 blocks skipped entirely** — measured at the time of the finding; with this pass's new suites it is 54 of 165), no secret scan, no `npm audit` gate, and the frontend suite (`npm run test:frontend`, 44 tests at the time of the finding, 54 now) is never invoked. | **P2 — FIXED this pass** | `.github/workflows/ci.yml` |
 | N-12 | **Both CI gates were red before this pass.** `npm run lint` failed with **24 errors** (unused vars in `rb01/rb02/rb04`) and `npm run typecheck --prefix backend` exited **2** (3 implicit-`any` params in `orderController.js`) — added by the earlier rounds. Fixed here; both now exit 0. | **P2 — FIXED** (trust in CI) | reproduced before/after |
 | N-13 | **Frontend dependency advisory:** `axios@1.19.0` is the last vulnerable release of the 1.0.0–1.19.0 range (prototype-pollution gadgets, header injection, ReDoS, redirect-SSRF). It is a runtime dependency (`^1.11.0`); the backend already runs `1.20.0`. Frontend audit: 8 high, 2 moderate (only `axios` is runtime; the rest are `tailwindcss`/`typescript-eslint` build chain). Backend: 3 high, all in the dev-only `nodemon → chokidar → braces` chain (runtime deps audit clean). **FIXED this pass:** `axios` → `^1.20.0`, `source-map-js` → 1.2.2, and two criticals that surfaced mid-pass fixed rather than accepted (`shell-quote` → `^1.12.0` via `overrides`; `concurrently` has no fixed release and is accepted with a reason in the baseline). The remaining 5 highs are the unfixable `tailwindcss` 3.x chain — see the audit-ratchet note in §8. | **P2 — FIXED this pass** | `npm audit`, `package-lock.json:2506` |
 | N-14 | **The canonical schema is stale: a database built from the repo cannot run the app.** `branding_house.sql` lacked `users.legal_consent_at` (written by `usersModel.create` and `config/passPort.js` on every signup) and the `sessions` table (`express-mysql-session`). A fresh install failed registration with `ER_BAD_FIELD_ERROR`, and **5 test suites failed the same way** — only databases created while the dump still matched the code happened to work. Invisible to CI only because CI never built a database. | **P2** (new installs, CI) — **FIXED this pass** | column diff dump-vs-live on clean MySQL 8.4 → 4 missing columns; `Unknown column 'legal_consent_at' in 'field list'`. Now the dump is synced and `migrateSchemaSync.js` (existence-checked, idempotent) covers existing databases. |
@@ -134,6 +136,7 @@ regression test that fails when either half is removed.
 | N-16 | **Product search meant two different things on the two engines.** The FULLTEXT path (MySQL — i.e. production) used `IN NATURAL LANGUAGE MODE`, which **ORs** the words, while the LIKE fallback (TiDB — dev) ANDs them: `REDCLOTH nosuchwordxyz` returned the REDCLOTH row in production and nothing in dev, and the P1 contract test passed only because TiDB has no FULLTEXT index. Now every *indexable* word must match (one parameterised `MATCH` per word, ANDed), with words the engine cannot index **dropped rather than required** — measured on MySQL 8.4, `+the kente` and `+k kente` both return **0 rows**, so requiring them would have been a worse regression than the OR it replaced. | **P2** (a P1 control was green by accident) — **FIXED this pass** | `models/productModel.js`; `tests/productSearch.test.js` failed on MySQL before the fix, passes after. |
 | N-17 | **Test fixtures relied on TiDB not enforcing foreign keys.** `reservation` and `stockRace` inserted products/orders whose parent user did not exist; MySQL raises the FK error, `INSERT IGNORE` converts it into **0 affected rows**, and it surfaces later as a confusing assertion (`created > 0`) rather than as the real cause. In `redteam-final` the vendor was picked with `SELECT … LIMIT 1` — an arbitrary row another suite may delete mid-test, making it a genuine cross-suite race. All three now create their own never-deleted fixtures. | **P3** (test infrastructure) — **FIXED this pass** | 3 suites failing on MySQL → 0; `redteam-final` 10/10 in three consecutive runs. |
 | N-18 | **Two orders created in the same millisecond collide on the UNIQUE `orderNumber`, and checkout answers 500.** Both checkout paths minted the key from the wall clock — `"ORD-" + Date.now()` and `` `CUS-${Date.now()}` `` — against `orders.orderNumber VARCHAR(100) UNIQUE NOT NULL`, so any two orders inserted in the same millisecond ask for the *same* value. The loser throws `ER_DUP_ENTRY`; the catch block releases the coupon slot and restores stock (the N-7 economic invariant held throughout — no money moved, no slot leaked), but the customer still gets `500 Internal server error` and loses the basket. Reproduced **2/8 local runs** and in **CI runs 45 and 46** — on byte-identical code that *passed* the runs on either side (44 and 47), which is precisely why it presented as infrastructure flakiness and survived to this pass. Same class, fixed alongside: the regular checkout's SELECT-then-INSERT on `paymentReference` also answered 500 when the UNIQUE key won the race (the custom-request path already answered 400); both now answer 400 with the pre-check's wording. | **P2** (checkout availability under concurrency — no authorization or money impact, but P1-shaped during a burst) — **FIXED this pass** | `controllers/orderController.js`, `controllers/customRequestController.js`; failing log `Duplicate entry 'ORD-1791330964942' for key 'orders.orderNumber'`; now `utils/orderNumber.js` (`PREFIX-<epoch-ms>-<8 hex>`) + `tests/orderNumber.test.js` (6 tests, 2 mutations). |
+| N-19 | **Google login was dead in production: every raw `fetch` in the SPA bypassed the CSRF interceptor.** `main.tsx:28` attaches `X-CSRF-Token` through an **axios** request interceptor; the OAuth exchange (`OAuthCallback.tsx:87`) is a *raw* `fetch` carrying only `Content-Type`. `csrfProtection` layer 2 (`csrfMiddleware.js:117`) rejects any state-changing request that carries the `csrf_token` cookie without the matching header — and that cookie is set on every session issue and lives **30 days**, while the session JWT expires sooner, so "expired session + live CSRF cookie" is the ordinary state of a returning visitor. Live probe matrix against production (`POST /api/auth/oauth/exchange`, `kente-api.onrender.com`): allowed Origin with no cookie → **401** (CSRF passed, route reached); allowed Origin + cookie + no header → **403 `CSRF token missing`** ← the browser's case; cookie + wrong header → 403 `CSRF token mismatch`; foreign Origin → 403 `Cross-site request rejected`; Origin with a trailing slash → 403. Layer 1 was healthy and layer 2 was the killer. The 401 on `/api/users/profile` in the incident report is purely downstream: no session cookie was ever minted. Same class, found in the same sweep: `useLegalConsent.ts:45` (POST `/api/auth/consent` — the Google-**signup** consent) had the identical shape and would 403 the same users, while forgot-password and reset-password escaped only because they *omit* `credentials`, so the cookie never travels. The second half: `getOrIssueCsrfToken` (`csrfMiddleware.js:73`) echoed **any** existing cookie without re-checking its HMAC, so after a `JWT_SECRET` rotation every state-changing request from every returning visitor would 403 for the rest of the cookie's 30-day life, with no recovery short of clearing cookies by hand. And the third: session issuance rotates the cookie while the SPA's cache reset was keyed on the *signed-in boolean*, so a re-sign-in that never flips it (persisted `userInfo`, expired JWT) kept the pre-rotation token — the same 403 one step later, now on every state-changing request. | **P1** (Google login — and Google signup consent — dead in production for exactly the visitors who already had an account) — **FIXED this pass** | `src/main.tsx:28`, `src/Pages/Auth/OAuthCallback.tsx:87`, `src/hooks/useLegalConsent.ts:45`, `src/Pages/Auth/ForgotPassword.tsx:82`, `src/Pages/Auth/ResetPassword.tsx:151`; `backend/middleware/csrfMiddleware.js:73,117`; probe matrix above; now `csrfJsonHeaders()` + `tests/csrfToken.test.js` (11 tests) and `src/utils/__tests__/csrf.test.ts` (10 tests) + `src/store.csrfReset.test.ts` (5 tests) |
 
 ---
 
@@ -249,29 +252,86 @@ The end-to-end proof is `couponMaxUses.test.js` test 3 (20 concurrent
 checkouts, "no checkout may fail with a non-cap error"): it was the assertion
 that caught the 500 — 2 failures in 8 runs before the fix, 0 in the runs after.
 
+`src/utils/__tests__/csrf.test.ts` — **10 tests** (frontend, N-19):
+
+| # | Block | What it pins |
+|---|---|---|
+| 1 | helper unit | `csrfJsonHeaders()` returns `Content-Type` **and** `X-CSRF-Token` taken from `GET /api/auth/csrf-token`, fetched with `credentials: 'include'` (cross-origin: without it the cookie neither travels nor gets stored) |
+| 2–3 | degradation | token fetch rejects, or answers non-2xx → the call still succeeds with `Content-Type` only; it never throws and never echoes a stale value |
+| 4 | cache lifecycle | one fetch per session; `resetCsrfToken()` (login/logout) forces a fresh fetch |
+| 5 | `isSafeMethod` | GET/HEAD/OPTIONS are safe, everything else — including an unknown method — fails closed |
+| 6–8 | scanner self-tests | the source scanner **finds** a raw state-changing fetch with no header, **accepts** the same one once it uses the helper, and ignores `refetch()` / GET lookalikes — so a broken scanner cannot make the guard pass vacuously |
+| 9 | **whole-SPA source guard** | every raw state-changing `fetch(` under `src/` (≥4: exchange, consent, forgot-password, reset-password) echoes the token; `offenders` must be empty |
+| 10 | pin on the incident | `OAuthCallback.tsx`'s `/api/auth/oauth/exchange` call is state-changing, sends `credentials`, and builds its headers with the helper |
+
+**Mutation proof:**
+
+| Mutation | Result |
+|---|---|
+| revert the OAuth exchange header to `{ 'Content-Type': … }` — i.e. the exact shipped bug | **2 fail**: the whole-SPA guard **and** the incident pin |
+| revert the Google-signup consent header (`useLegalConsent.ts`) | **1 fail**: the whole-SPA guard |
+| *(both restored)* | **10/10 pass** |
+
+`backend/tests/csrfToken.test.js` — **11 tests** (pure, no database, so CI's
+DB-less job enforces them too):
+
+| # | Block | What it pins |
+|---|---|---|
+| 1–6 | `csrfProtection` | cookie with no header → 403 `CSRF token missing` (the production answer); matching-but-unverifiable pair → 403 `CSRF token mismatch`; a valid echoing pair passes; no cookie at all still passes (public endpoints, webhooks, first login); safe methods bypass; a foreign Origin is refused before the token layer |
+| 7–10 | `getOrIssueCsrfToken` | issues a signed token when absent; **echoes a healthy cookie unchanged** (no gratuitous rotation); **re-issues** a cookie that no longer verifies under today's `JWT_SECRET` — `Set-Cookie` and response body must agree, and the fresh value must verify; end-to-end: stale cookie → 403 → heal through the read channel → the echoed pair passes |
+| 11 | `setCsrfCookie` | session issue still writes a correctly signed value |
+
+**Mutation proof:**
+
+| Mutation | Result |
+|---|---|
+| heal reverted — `if (existing) return existing`, i.e. the shipped behaviour | **2 fail**: the RE-ISSUES test **and** the end-to-end recovery test |
+| *(restored)* | **11/11 pass** |
+
+`src/store.csrfReset.test.ts` — **5 tests** for the cache-lifecycle half of
+N-19. Session issuance always rotates the `csrf_token` cookie, so the
+in-memory token has to die with the auth object:
+
+| # | What it pins |
+|---|---|
+| 1 | signing in drops the cached token |
+| 2 | signing out drops it |
+| 3 | **a re-sign-in that never flips the signed-in flag** (persisted `userInfo`, expired JWT, no 401 seen yet) still drops it — this is the path the boolean comparison missed, and it is what would have 403'd the user's *next* state-changing request with `CSRF token mismatch` |
+| 4–5 | unrelated dispatches do **not** invalidate (no churn, no extra round trip per render) |
+
+**Mutation proof:** key the reset on `Boolean(userInfo)` again (the shipped
+logic) → **1 fail** (test 3); restored → **5/5 pass**.
+
 ---
 
 ## 7. Tests executed
 
 | Run | Command | Result |
 |---|---|---|
-| Full suite (sequential), **CI database** | `node --test --test-concurrency=1 "tests/**/*.test.js"` against MySQL 8.4 | **218/218 pass, 0 fail, 0 skipped, exit 0** |
-| CI invocation, **CI database** | `npm test` (`--test-concurrency=4`) against MySQL 8.4 | **218/218 pass, 0 fail, 0 skipped, exit 0** (3 consecutive idle runs) |
-| CI invocation, **dev database** | `npm test` against TiDB | **218/218 pass, 0 fail, 0 skipped, exit 0** |
+| Full suite (sequential), **CI database** *(pre-N-19)* | `node --test --test-concurrency=1 "tests/**/*.test.js"` against MySQL 8.4 | **218/218 pass, 0 fail, 0 skipped, exit 0** |
+| Full suite (sequential), **dev database** (N-19) | same command against TiDB | **229/229 pass, 0 fail, 0 skipped, exit 0** |
+| CI invocation, **CI database** *(pre-N-19)* | `npm test` (`--test-concurrency=4`) against MySQL 8.4 | **218/218 pass, 0 fail, 0 skipped, exit 0** (3 consecutive idle runs) |
+| CI invocation, **dev database** (N-19) | `npm test` against TiDB | **229/229 pass, 0 fail, 0 skipped, exit 0** (3 consecutive runs, all captured — plus one earlier run with 1 unattributed failure, see the flakiness note) |
 | **CI job, end to end (N-11)** | `npm run db:setup && npm test` with no `.env`, CI-style env, MySQL 8.4 service | **`db:setup` exit 0** (schema + all 21 migrations) **then 218/218, exit 0** |
 | **N-18 stability (repeated runs)** | 10 × `node --test tests/couponMaxUses.test.js`, then 8 × `db:setup && npm test` (before/after the fix) | **before:** 2/8 full-suite runs failed with `500 … Duplicate entry 'ORD-…'`; **after:** 10/10 targeted + 10/11 full-suite green (the 1 loss was the load-induced runner IPC error noted below) |
-| CI invocation (no database) | `DB_HOST=127.0.0.1 DB_PORT=1 … node --test "tests/**/*.test.js"` | **154 tests: 100 pass, 54 skipped, 0 fail, exit 0** (was 127/77/50) |
+| CI invocation (no database) | `DB_HOST=127.0.0.1 DB_PORT=1 … node --test "tests/**/*.test.js"` | **165 tests: 111 pass, 54 skipped, 0 fail, exit 0** (was 154/100/54, originally 127/77/50) |
 | **New P2 suite, with DB (TiDB)** | `node --test tests/loginLockout.test.js` | **21/21 pass, exit 0** |
 | **New P2 suite, with DB (MySQL 8.4)** | same, CI-style env | **21/21 pass, exit 0** |
 | **New coupon suite, with DB** | `node --test tests/couponMaxUses.test.js` | **9/9 pass, exit 0** (≈113 s) |
 | **New coupon suite, CI mode (no DB)** | `DB_HOST=127.0.0.1 DB_PORT=9 … node --test tests/couponMaxUses.test.js` | DB suite `SKIP`, source guard **1/1 pass, exit 0** |
 | New red-team test file, with DB | `node --test tests/redteam-final.test.js` | **10/10 pass, exit 0** (3 consecutive runs on MySQL after the fixture fix) |
 | New red-team test file, CI mode (no DB) | `DB_HOST=127.0.0.1 DB_PORT=1 … node --test tests/redteam-final.test.js` | **7 pass, 3 skipped, exit 0** (was exit 124) |
-| Frontend unit tests | `npx vitest run` (`npm run test:frontend`) | **6 files, 44/44 pass** |
+| **New CSRF suite, backend (N-19)** | `node --test tests/csrfToken.test.js` | **11/11 pass, exit 0** (pure — it also runs inside the no-DB row above) |
+| **New CSRF suite, backend, mutation** | revert the `getOrIssueCsrfToken` heal | **2 fail** (RE-ISSUES + end-to-end recovery); restored → 11/11 |
+| **New CSRF suite, frontend (N-19)** | `npx vitest run src/utils/__tests__/csrf.test.ts` | **10/10 pass, exit 0** |
+| **New CSRF suite, frontend, mutations** | revert the OAuth exchange header (the shipped bug) / revert the Google-signup consent header | **2 fail** / **1 fail**; restored → 10/10 |
+| **New CSRF cache suite (N-19)** | `npx vitest run src/store.csrfReset.test.ts` | **5/5 pass, exit 0**; mutation (reset keyed on `Boolean(userInfo)` again) → **1 fail**, restored → 5/5 |
+| **N-19 live probe matrix** | `POST /api/auth/oauth/exchange` on `kente-api.onrender.com`, cookie × header × origin | no cookie → `401` (CSRF layer passed, route reached); **cookie + no header → `403 CSRF token missing`** (the incident); cookie + wrong header → `403 CSRF token mismatch`; foreign Origin → `403 Cross-site request rejected` |
+| Frontend unit tests | `npx vitest run` (`npm run test:frontend`) | **8 files, 59/59 pass** (was 6 files, 44/44) |
 | Lint (CI gate) | `npm run lint` | **exit 0**, 0 errors / 13 warnings (was 24 errors) |
 | Frontend typecheck (CI gate) | `npx tsc --noEmit -p tsconfig.json` | **exit 0** |
 | Backend typecheck (CI gate) | `npm run typecheck --prefix backend` | **exit 0** (was exit 2; one regression caught and fixed while adding the portable column probe) |
-| Secret scan, CI command | `gitleaks detect --source . --redact --exit-code 1` (v8.24.3) | **exit 0 — 157 commits, no leaks** |
+| Secret scan, CI command | `gitleaks detect --source . --redact --exit-code 1` (v8.24.3) | **exit 0 — 158 commits, no leaks** |
 | Secret scan, changed files | `gitleaks dir` per path (all 59 changed/untracked files) | **0 findings** (a multi-path `gitleaks dir` call silently scans the *whole* directory and picks up the gitignored `backend/.env`; CI does not use that form) |
 | Audit gate (both workspaces) | `node .github/scripts/audit-gate.mjs <audit.json> <baseline.json>` | **exit 0** for frontend and backend |
 | Dependency audit, runtime only | `npm audit --omit=dev --audit-level=high` | **0 vulnerabilities** (both workspaces) |
@@ -289,7 +349,7 @@ through pipeline step by step"*) with `DB ping failed` in the log; that file
 passes **9/9 when run alone**, and the next full run was clean. The same
 signature reappeared in the first TiDB run of the P2 batch
 (`couponMaxUses` → *"settled payment keeps its slot"*, `DB ping failed`) — that
-file is green in both 218/218 runs above. Any suspect result was re-run
+file is green in every full-suite run above. Any suspect result was re-run
 per-file to separate infrastructure from regression.
 
 Two later runs were poisoned by a **DNS outage** (`getaddrinfo EAI_AGAIN
@@ -307,6 +367,17 @@ an OOM kill and load average 20 at that timestamp (the frontend vitest run,
 gitleaks and both audits were executing beside the suite on a 3.5 GB box).
 It did not recur in any idle run, and CI never shares a runner between jobs,
 so it is an artefact of this review machine, not a shipped defect.
+
+**This pass's own runs are recorded the same way, including the bad one.** The
+first full-suite run after the N-19 change reported **1 failure out of 229** —
+and I had piped that run through `tail`, so the failing test's name was gone
+before I could read it. The three full-suite runs after it (all captured to a
+log) and the sequential run were **229/229**. The only new code in that suite
+is `csrfToken.test.js`: pure, no database, no clock, no network, run in
+isolation four times green — so the shared TiDB remains the first suspect,
+exactly as for every other single-test failure in this section. It is written
+down rather than quietly dropped, because a report that lists only green runs
+is not evidence of stability.
 
 **Engine difference that only the second database exposed.** TiDB's `users.email`
 is `utf8mb4_bin` while MySQL 8.4's is `utf8mb4_0900_ai_ci`. The new lockout
@@ -340,7 +411,17 @@ root-caused and cleaned; that suite is green in all runs above.
 and V-01 are fixed, mutation-proven and covered by tests.
 
 ### P1 — public production blocker
-**None open.** N-7 / V-04 (coupon cap enforced only on the counter, not on
+**None open.** The last P1 found was **N-19**, and it did not come from
+reading code: it arrived as a production incident — Google login answering
+403 on `POST /api/auth/oauth/exchange`, then 401 on `/api/users/profile`, for
+every returning visitor who still held a `csrf_token` cookie while the session
+JWT had expired. The exchange was a raw `fetch` that bypassed the axios CSRF
+interceptor, so the header was simply never sent (§3 A-9, §5). It is fixed
+(`csrfJsonHeaders()` at all four raw state-changing call sites), the backend
+read channel can no longer hand back a dead token, and the SPA's cache is
+invalidated on every auth-object change rather than only on a sign-in flip.
+Pinned by a whole-SPA source guard (3 mutations), 11 backend middleware tests
+(1 mutation) and 5 cache-lifecycle tests (1 mutation) — §6. Before it, N-7 / V-04 (coupon cap enforced only on the counter, not on
 the money) was the last P1: it is now fixed with atomic reservation at booking
 time, mutation-proven and pinned by `couponMaxUses.test.js` (see §4 and §6).
 The previously-reported P1s (rate-limit bypass, reset-token log leak, vendor
@@ -509,13 +590,28 @@ V-07 claim allows one claim per order); V-07/V-09/V-05 have no *functional*
    pre-check's wording instead of a generic 500. The coupon slot and stock
    reservation were already released correctly on that path, so no money moved
    — only the basket. 6 tests, 2 mutations, §5/§6.
-7. **Rotate the leaked Paystack test key (hygiene, do it anyway).** This pass's
+7. **N-19 (P1)** — ~~make every state-changing raw `fetch` in the SPA echo
+   `X-CSRF-Token`, and stop `getOrIssueCsrfToken` from handing back a token
+   that no longer verifies.~~
+   **Done (this pass).** One shared `csrfJsonHeaders()` helper now builds the
+   headers for all four raw state-changing calls (OAuth exchange, Google-signup
+   consent, forgot-password, reset-password), and the read channel re-issues
+   any cookie that fails HMAC verification instead of echoing it — so a
+   `JWT_SECRET` rotation self-heals on the next token read rather than 403-ing
+   every state-changing request for 30 days — and the SPA's cached token is
+   invalidated on every auth-object change, not only when the signed-in
+   boolean flips. 26 tests (15 frontend + 11 backend), 5 mutations, §5/§6. **Deploy note:** the reported login failure is
+   fixed by the **frontend** deploy alone (the API's behaviour toward a correct
+   echo is unchanged); the API deploy only carries the rotation self-heal.
+   Until the frontend is out, a blocked browser recovers by clearing site data
+   for the API origin (or by password login).
+8. **Rotate the leaked Paystack test key (hygiene, do it anyway).** This pass's
    secret scan found a real-looking `sk_test_…` key committed in
    `backend/.env.example`; the file is fixed and its fingerprint is in
    `.gitleaksignore` (so the scanner cannot be poisoned into ignoring *other*
    findings), but the key itself is still valid until Paystack revokes it.
    Revoke it, then confirm `gitleaks detect --source .` stays at 0 findings.
-8. **P3 batch** — `/metrics` auth, `CHECK` constraints for stock, vendor-status
+9. **P3 batch** — `/metrics` auth, `CHECK` constraints for stock, vendor-status
    predicate on public product queries (`productModel.js:187-189` is bypassed
    because every public controller passes `approvalStatus='approved'`),
    escaping in `emailService.js`, price schema, negative functional tests for
@@ -553,8 +649,15 @@ V-07 claim allows one claim per order); V-07/V-09/V-05 have no *functional*
 * **No hardcoded secrets**, `.env` untracked, production boot refuses to start
   without `SESSION_SECRET`, `JWT_SECRET`, `FRONTEND_URL` and
   `PAYSTACK_SECRET_KEY`.
-* **CSRF coupling is asserted in code**: `COOKIE_SAME_SITE=none` without
-  `csrfProtection` mounted exits at boot.
+* **CSRF coupling is asserted in code** — and, after N-19, on both ends of the
+  wire: `COOKIE_SAME_SITE=none` without `csrfProtection` mounted exits at boot,
+  while the SPA now has exactly one `csrfJsonHeaders()` builder plus a
+  whole-SPA source guard that fails if any state-changing raw `fetch` stops
+  echoing the token. N-19 is the durable lesson underneath it: a server-side
+  guard being *correct* says nothing about whether every client path actually
+  *reaches* it — every axios caller was protected, the single raw `fetch` was
+  not, and the failure showed up as an authentication error rather than as a
+  CSRF error.
 * **Escrow lifecycle is genuinely defensive**: per-allocation reason states,
   allocation-scoped clawback keys, TOCTOU re-checks on retry, idempotent
   duplicate-webhook handling.
@@ -610,14 +713,29 @@ request per hour can no longer hold a victim's account locked — 21 tests (4 of
 them behavioural against a real database) and 3 reverted mutations prove it,
 including the exact mutation that made the lock permanent.
 
-**N-18, the last finding, was caught by re-running CI rather than by reading
-code**: both checkout paths minted `orders.orderNumber` (UNIQUE) from
-`Date.now()`, so two orders landing in the same millisecond collided and the
-loser answered **500 with its basket lost**. It survived two green reports
-precisely because it *looked* like flaky infrastructure — the failing CI runs
-were byte-identical to green ones on either side. Uniqueness now comes from
-entropy, not from the clock, and the catch path that releases the coupon slot
-and the stock was verified rather than assumed. 6 tests, 2 mutations.
+**N-18 was caught by re-running CI, and N-19 was caught by production itself.**
+Both checkout paths minted `orders.orderNumber` (UNIQUE) from `Date.now()`, so
+two orders landing in the same millisecond collided and the loser answered
+**500 with its basket lost**. It survived two green reports precisely because
+it *looked* like flaky infrastructure — the failing CI runs were byte-identical
+to green ones on either side. Uniqueness now comes from entropy, not from the
+clock, and the catch path that releases the coupon slot and the stock was
+verified rather than assumed. 6 tests, 2 mutations.
+
+N-19 is the one a test suite of that shape could not have found: it arrived
+from the live deployment as `oauth/exchange 403 → profile 401 → "Not
+authenticated"`, and the cause was a *raw* `fetch` in the OAuth callback that
+bypassed the axios interceptor carrying `X-CSRF-Token` — so every other call
+in the app was correctly protected while this one was not, and it 403'd any
+visitor whose session JWT had expired but whose 30-day CSRF cookie had not.
+The probe matrix in §5 shows the Origin check was healthy and the token layer
+was the killer. All four raw state-changing calls now build their headers
+through `csrfJsonHeaders()`, guarded by a whole-SPA source scan that fails if
+any of them stops, and the backend read channel can no longer return a token
+that would 403. 26 tests, 5 mutations. Note that this one is **fixed in
+`main` but not yet in front of users** — it ships when Vercel rebuilds the
+frontend (that alone restores Google login); the API deploy only carries the
+secret-rotation self-heal.
 
 **No P0 and no P1 remains open, and no P2 remains open either.** What is left
 before a pilot is operational rather than adversarial: watch the first runs of

@@ -10,6 +10,7 @@ import { toast } from 'react-toastify';
 import type { FormErrors } from "../../types/domain";
 import logoImg from "../../assets/logo.png";
 import Footer from "../../components/Footer/Footer";
+import { csrfJsonHeaders } from "../../utils/csrf";
 
 
 function PasswordInput({ children, placeholder, value, onChange, error, disabled }: {
@@ -149,9 +150,7 @@ const ResetPassword = () => {
     try {
       const response = await fetch(`${API_BASE_URL}/api/users/reset-password/${token}`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: await csrfJsonHeaders(),
         body: JSON.stringify({
           password: formData.password,
           confirmPassword: formData.confirmPassword

@@ -8,6 +8,7 @@ import { FaCheckCircle, FaArrowLeft } from 'react-icons/fa';
 import { toast } from 'react-toastify';
 import logoImg from "../../assets/logo.png";
 import Footer from "../../components/Footer/Footer";
+import { csrfJsonHeaders } from "../../utils/csrf";
 
 function IconInput({ children, placeholder, type, value, onChange, error, disabled }: {
   children: React.ReactNode;
@@ -80,9 +81,7 @@ const ForgotPassword = () => {
     try {
       const response = await fetch(`${API_BASE_URL}/api/users/forgot-password`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: await csrfJsonHeaders(),
         body: JSON.stringify({ email }),
       });
 

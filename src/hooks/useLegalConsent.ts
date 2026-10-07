@@ -4,6 +4,7 @@
 // for the browser session, and `requestConsentToken()` obtains the short-lived
 // signed token required by the backend before it will start Google OAuth.
 import { useState } from "react";
+import { csrfJsonHeaders } from "../utils/csrf";
 
 export type LegalDoc = "terms" | "privacy";
 
@@ -38,10 +39,13 @@ export function useLegalConsent() {
   // Ask the backend to certify this acceptance; the returned token is appended
   // to the Google signup start URL (/api/auth/google/signup?consent=<token>).
   const requestConsentToken = async (): Promise<string> => {
+    // Cookies are included, so the csrf_token cookie travels too — the header
+    // must echo it or the backend answers 403 for any visitor who already has
+    // one (csrfJsonHeaders handles that; raw fetch bypasses the interceptor).
     const res = await fetch(`${API_BASE_URL}/api/auth/consent`, {
       method: "POST",
       credentials: "include",
-      headers: { "Content-Type": "application/json" },
+      headers: await csrfJsonHeaders(),
       body: JSON.stringify({ accepted: true }),
     });
     if (!res.ok) {
