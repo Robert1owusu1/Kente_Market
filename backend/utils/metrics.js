@@ -2,6 +2,7 @@
 // DESCRIPTION: Prometheus metrics endpoint for observability
 // Mount at /metrics for Prometheus scraping
 
+import crypto from 'node:crypto';
 import { Registry, collectDefaultMetrics, Counter, Histogram, Gauge } from 'prom-client';
 
 const register = new Registry();
@@ -157,4 +158,52 @@ export const metricsHandler = async (req, res) => {
   } catch (err) {
     res.status(500).send(err.message);
   }
+};
+
+// ---------------------------------------------------------------------------
+// X4a — /metrics used to be readable by anyone.
+// ---------------------------------------------------------------------------
+// What it exposes: the whole endpoint and traffic inventory
+// (`http_requests_total`, `http_request_duration_seconds` labelled with
+// method/route/status_code — i.e. every route plus its traffic shape),
+// `db_pool_usage`, `rate_limit_hits_total` per limiter, and the order/escrow
+// business counters. No PII, but it is a reconnaissance-grade map of the
+// application, and it sat *outside* `/api/` so `apiLimiter` never covered it.
+//
+// The guard fails closed: with no `METRICS_TOKEN` configured the route answers
+// 404 as though it did not exist, so a deploy that forgets the secret cannot
+// quietly publish the dashboard. With a token set, a scraper must present it.
+//
+// Comparison is constant time over SHA-256 digests rather than raw buffers:
+// hashing first means both buffers are always 32 bytes, so `timingSafeEqual`
+// never returns early on a length mismatch — which is exactly the oracle a
+// naive `a.length !== b.length` short-circuit (the shape used for the
+// `x-paystack-signature` check) hands an attacker.
+const sha256 = (value) =>
+  crypto.createHash('sha256').update(String(value), 'utf8').digest();
+
+/** Constant-time token comparison with no length oracle. */
+export const safeTokenEqual = (a, b) => crypto.timingSafeEqual(sha256(a), sha256(b));
+
+const headerValue = (req, name) => {
+  if (typeof req.get === 'function') {
+    const viaGet = req.get(name);
+    if (viaGet !== undefined && viaGet !== null) return viaGet;
+  }
+  return req.headers?.[name] ?? '';
+};
+
+export const metricsTokenGuard = (req, res, next) => {
+  const expected = process.env.METRICS_TOKEN;
+  if (!expected) {
+    // Unconfigured => do not even acknowledge that the endpoint exists.
+    return res.status(404).type('text/plain').send('Not Found');
+  }
+  const provided = headerValue(req, 'x-metrics-token');
+  if (!safeTokenEqual(provided, expected)) {
+    // One 401 for "missing" and "wrong" alike — the response must not tell a
+    // scanner which half it got right.
+    return res.status(401).type('text/plain').send('Unauthorized');
+  }
+  return next();
 };
