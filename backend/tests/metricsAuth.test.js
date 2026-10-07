@@ -164,7 +164,7 @@ describe('X4a: the guard is actually wired to the route', () => {
   // keeps URLs inside string literals intact.
   const codeLines = readFileSync(fileURLToPath(new URL('../server.js', import.meta.url)), 'utf8')
     .split('\n')
-    .map((line) => line.replace(/\/\/.*$/, ''))
+    .map((line) => line.replace(/\/\/[^\r\n]*/, ''))
     .filter((line) => !/^\s*\/\*/.test(line));
 
   const mountLine = codeLines.find((line) => /app\.get\(\s*['"]\/metrics['"]/.test(line));

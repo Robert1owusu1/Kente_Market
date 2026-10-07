@@ -207,6 +207,9 @@ class Product {
         maxPrice = null,
         approvalStatus = null,
         vendorId = null,
+        // Admin `?approvalStatus=all` only: show products regardless of vendor
+        // status, so a moderator can actually reach a suspended vendor's stock.
+        allVendors = false,
       } = options;
 
       // Validate and sanitize limit and offset
@@ -219,12 +222,31 @@ class Product {
                    WHERE 1=1`;
       const params = [];
 
-      // SECURITY FIX (N-6): Public product queries must require vendor status = 'approved'.
-      // Without this, suspended/unapproved vendors' products remain visible and purchasable.
-      // Only admin/moderation/vendor-inventory queries (which pass explicit approvalStatus
-      // or vendorId) can bypass this by not going through the public controllers.
-      if (!approvalStatus && !vendorId) {
-        query += " AND v.status = 'approved'";
+      // SECURITY FIX (N-6, revised): a suspended or unapproved vendor's
+      // products must not be visible or purchasable.
+      //
+      // The first version of this guard fired only on `!approvalStatus &&
+      // !vendorId`, which is the wrong test: the PUBLIC controller always
+      // passes approvalStatus='approved' (publicApprovalFilter defaults every
+      // non-admin caller to it), so the guard was skipped on precisely the
+      // path it was written for — while the admin view, which passes nothing,
+      // applied it. Suspended vendors' stock was the public storefront.
+      //
+      // `OR p.vendorId IS NULL` is load-bearing, not a loophole. The join is a
+      // LEFT JOIN, but a WHERE clause on the right-hand table collapses it
+      // back into an INNER JOIN, so without it every platform product
+      // (`vendorId IS NULL` — "NULL = platform product" per the column's own
+      // comment) would vanish from listings: the trap findById already fell
+      // into. A NULL vendor has no status that can be suspended.
+      //
+      // Bypassed only where visibility is not the question:
+      //   * vendorId   — one vendor's own inventory, already scoped to them
+      //   * moderation — the admin queue asking for pending/rejected, which
+      //                  must display these products in order to act on them
+      //   * allVendors — the admin `?approvalStatus=all` view
+      const moderationView = Boolean(approvalStatus) && approvalStatus !== 'approved';
+      if (!vendorId && !moderationView && !allVendors) {
+        query += " AND (v.status = 'approved' OR p.vendorId IS NULL)";
       }
 
       // Filter by approval status (public listing = 'approved' only)
@@ -367,6 +389,7 @@ class Product {
         limit = 5,
         offset = 0,
         approvalStatus = null,
+        allVendors = false,
       } = options;
 
       // Validate limit and offset
@@ -381,9 +404,13 @@ class Product {
         approvalClause = ' AND p.approvalStatus = ?';
         params.push(approvalStatus);
       }
-      // SECURITY FIX (N-6): Public trending queries must require vendor status = 'approved'.
-      if (!approvalStatus) {
-        approvalClause += " AND v.status = 'approved'";
+      // SECURITY FIX (N-6, revised): same predicate as findAll. The old test
+      // was `!approvalStatus`, but the public trending caller passes
+      // approvalStatus='approved' — so, exactly as in findAll, the guard never
+      // ran for the public and ran for the admin.
+      const moderationView = Boolean(approvalStatus) && approvalStatus !== 'approved';
+      if (!moderationView && !allVendors) {
+        approvalClause += " AND (v.status = 'approved' OR p.vendorId IS NULL)";
       }
       const query = `
         SELECT p.*, v.businessName AS vendorBusinessName, v.status AS vendorStatus
@@ -630,27 +657,42 @@ class Product {
     try {
       connection = await pool.getConnection();
 
-      let query = "SELECT COUNT(*) as count FROM product WHERE 1=1";
+      // N-6: count() had no vendors join at all, so once findAll starts
+      // hiding suspended vendors' products the pagination total would still
+      // include them — `hasMore` would stay true past the last real row and
+      // `includeCount` would over-report. Same predicate, same join.
+      // (uq_vendors_userId guarantees one vendors row per product, so the
+      // LEFT JOIN cannot duplicate rows and inflate the count.)
+      let query = `SELECT COUNT(*) as count
+                     FROM product p
+                     LEFT JOIN vendors v ON v.userId = p.vendorId
+                    WHERE 1=1`;
       const params = [];
 
+      const moderationView =
+        Boolean(options.approvalStatus) && options.approvalStatus !== 'approved';
+      if (!options.vendorId && !moderationView && !options.allVendors) {
+        query += " AND (v.status = 'approved' OR p.vendorId IS NULL)";
+      }
+
       if (options.category) {
-        query += " AND category = ?";
+        query += " AND p.category = ?";
         params.push(options.category);
       }
 
       if (options.featured !== null && options.featured !== undefined) {
-        query += " AND featured = ?";
+        query += " AND p.featured = ?";
         params.push(options.featured ? 1 : 0);
       }
 
       if (options.search) {
-        const pred = await searchPredicate(connection, options.search, '');
+        const pred = await searchPredicate(connection, options.search, 'p');
         query += pred.where;
         params.push(...pred.params);
       }
 
       if (options.approvalStatus) {
-        query += " AND approvalStatus = ?";
+        query += " AND p.approvalStatus = ?";
         params.push(options.approvalStatus);
       }
 
@@ -658,12 +700,12 @@ class Product {
       // bound does not inject `price >= NaN`, which matches zero rows and
       // broke every includeCount pagination total.
       if (options.minPrice !== null && options.minPrice !== undefined) {
-        query += " AND price >= ?";
+        query += " AND p.price >= ?";
         params.push(parseFloat(options.minPrice));
       }
 
       if (options.maxPrice !== null && options.maxPrice !== undefined) {
-        query += " AND price <= ?";
+        query += " AND p.price <= ?";
         params.push(parseFloat(options.maxPrice));
       }
 
@@ -683,25 +725,38 @@ class Product {
   }
 
  // Get unique categories
-  static async getCategories(approvalStatus = null) {
+  // `null` still means "every status" (the admin `?approvalStatus=all` view),
+  // but an OMITTED argument now means 'approved' rather than null. Anything
+  // that forgets to pass a filter gets the safe answer — N-6's whole lesson is
+  // that a visibility guard whose default is "show" fails open.
+  static async getCategories(approvalStatus = 'approved') {
     let connection;
     try {
       connection = await pool.getConnection();
 
       const params = [];
-      let clause = "WHERE category IS NOT NULL";
+      let clause = 'WHERE p.category IS NOT NULL';
+
+      // N-6: the category facet list is a public product query too — a
+      // suspended vendor's categories must not reach the storefront filter,
+      // because they name stock the shopper cannot buy. Only the 'approved'
+      // facet needs the guard; every other value (including null = "all") is a
+      // moderation view that has to see everything in order to act on it.
+      if (approvalStatus === 'approved') {
+        clause += " AND (v.status = 'approved' OR p.vendorId IS NULL)";
+      }
+
       if (approvalStatus) {
-        clause += " AND approvalStatus = ?";
+        clause += ' AND p.approvalStatus = ?';
         params.push(approvalStatus);
       }
+
+      const from = `FROM product p
+                      LEFT JOIN vendors v ON v.userId = p.vendorId
+                     ${clause}`;
       const [rows] = params.length > 0
-        ? await connection.execute(
-            `SELECT DISTINCT category FROM product ${clause} ORDER BY category`,
-            params
-          )
-        : await connection.query(
-            `SELECT DISTINCT category FROM product ${clause} ORDER BY category`
-          );
+        ? await connection.execute(`SELECT DISTINCT p.category ${from} ORDER BY p.category`, params)
+        : await connection.query(`SELECT DISTINCT p.category ${from} ORDER BY p.category`);
 
       return rows.map(row => row.category);
     } catch (err) {

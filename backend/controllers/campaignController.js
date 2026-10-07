@@ -176,6 +176,10 @@ export const getCampaign = async (req, res) => {
        JOIN product p ON p.id = cp.productId
        LEFT JOIN vendors v ON v.userId = p.vendorId
        WHERE cp.campaignId = ? AND p.approvalStatus = 'approved'
+         -- N-6: campaign pages are public and joined product independently of
+         -- findAll, so they kept showing a vendor's products after the vendor
+         -- was suspended. NULL vendorId = platform product, always allowed.
+         AND (v.status = 'approved' OR p.vendorId IS NULL)
        ORDER BY p.created_at DESC`,
       [campaignId]
     );

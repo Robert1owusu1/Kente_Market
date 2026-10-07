@@ -22,7 +22,13 @@ const publicApprovalFilter = (req) => {
 // Resolve the approval filter into a findAll-compatible option: null = no
 // predicate (admin "all"), undefined = caller sets explicitly, else the status.
 const withApproval = (options, filter) => {
-  if (filter === null) return options;
+  if (filter === null) {
+    // Admin `?approvalStatus=all`: every approval status AND every vendor.
+    // N-6 now hides suspended vendors' products from every other view by
+    // design, so without an explicit bypass the moderation queue could no
+    // longer reach them — which is the one place that has to.
+    return { ...options, allVendors: true };
+  }
   if (filter === undefined) return options;
   return { ...options, approvalStatus: filter };
 };
@@ -40,6 +46,10 @@ const getMuseumPieces = asyncHandler(async (req, res) => {
      FROM product p
      LEFT JOIN vendors v ON v.userId = p.vendorId
      WHERE p.approvalStatus = 'approved'
+       -- N-6: this endpoint never went through findAll, so it missed the
+       -- vendor-visibility guard entirely: a suspended vendor's pieces stayed
+       -- on the public showcase while their storefront went dark.
+       AND (v.status = 'approved' OR p.vendorId IS NULL)
        AND (p.patternName IS NOT NULL AND p.patternName <> '')
      ORDER BY p.updated_at DESC
      LIMIT ${limit}`

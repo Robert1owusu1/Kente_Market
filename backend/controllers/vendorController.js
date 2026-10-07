@@ -8,6 +8,7 @@ import { getAvailableAllocationsForVendor, payoutAllocation } from '../Services/
 import { PLATFORM_FEE_RATE } from '../config/businessConfig.js';
 import { hasInvalidYards, INVALID_YARDS_MESSAGE } from '../utils/yards.js';
 import { toNonNegativeInt } from '../utils/nonNegativeInt.js';
+import { clearCache } from '../middleware/cacheMiddleware.js';
 
 // Create a URL-safe slug from a business name (Ghanaian accents transliterated
 // to ASCII; everything else stripped).
@@ -197,6 +198,15 @@ export const updateVendorStatus = async (req, res) => {
     }
 
     const updatedVendor = await Vendor.update(req.params.id, { status });
+
+    // N-6: suspending a vendor now hides their products from every public
+    // query, but the product listing is served from the 'products' cache.
+    // Without this the storefront kept handing out the suspended vendor's
+    // stock until the TTL expired, and the database fix looked like it had
+    // done nothing. productController already clears this key on every
+    // product mutation; a vendor-status change moves all of their products at
+    // once and was the one path that forgot.
+    clearCache('products');
 
     // Keep the user's role in sync with their vendor status. Approving a
     // vendor promotes the user to 'vendor' so the vendor middleware lets them
