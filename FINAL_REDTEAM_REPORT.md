@@ -53,6 +53,7 @@ Where a prior report and the code disagreed, the code won (see §5).
 | A-5 | Rotate `X-Forwarded-For` while POSTing 14 passwords for one victim account | anonymous | every attempt reached the handler (401×8, forgot-password 200×8, staff 401×10) | **P1** | fixed + tested |
 | A-6 | Let a locked-out victim try to self-recover with their correct password | victim of A-5 | `authenticate()` checked the lock **before** comparing, so even a successful reset left the account locked | **P1** | fixed + tested |
 | A-7 | **V-01:** apply a coupon during checkout, then pay | customer (no tricks needed) | charge used the stale pre-coupon cached total → Paystack collected the **gross** amount, server had booked **net** → `verify-paystack` rejected `paidKobo !== expectedKobo` → money captured, order never flips to `paid` | **P0** | **found and fixed this pass** + tested |
+| A-8 | **N-18:** 20 `POST /api/orders` landing in the same millisecond (an ordinary burst — no tricks) | customer / burst traffic | the `orders.orderNumber` (UNIQUE) race lost one INSERT → `ER_DUP_ENTRY` → **500 and the basket lost** (coupon slot and stock were rolled back correctly) | **P2** | **found and fixed this pass** + tested |
 
 ### A-7 (V-01) — the fix that did not close the finding
 
@@ -125,13 +126,14 @@ regression test that fails when either half is removed.
 | N-8 | **Auth cookies can be issued without the `Secure` flag.** Every `secure:` option is `process.env.NODE_ENV === 'production'`, while the shipped `backend/.env` has `NODE_ENV` **empty** and `COOKIE_SAME_SITE=none`. Live: `Set-Cookie: csrf_token=…; Path=/; SameSite=None` with **no `Secure`**. `.deploy/DEPLOY.md` does set `NODE_ENV=production`, so this is a deployment footgun rather than a live breach — but nothing in the code detects it. | **P2 — FIXED this pass** | `server.js:162`, `middleware/csrfMiddleware.js:46`, `utils/generateToken.js:63`, `routes/authRoutes.js:47,61,130…` |
 | N-9 | **IP-keyed limiters are fully bypassable by rotating `X-Forwarded-For`** when the Node port is reachable without an appending reverse proxy. Measured live: fixed IP → `RateLimit-Remaining` 580→579→578; rotating XFF → frozen at 598 (a fresh bucket per request), and the access log records the attacker-supplied IP. `.deploy/DEPLOY.md`'s nginx *does* append, so rightmost = real client and production is safe — but the config ships `TRUST_PROXY=1` with no guard. The account-keyed limiters are unaffected by design. | **P2 — FIXED this pass** | live measurement above; `backend/.env` `TRUST_PROXY=1`; `middleware/rateLimitMiddleware.js:46-57` |
 | N-10 | **Rate-limit counters reset when Redis recovers from degraded mode.** While Redis is down the per-instance fallback counts correctly; the moment the TLS handshake lands the store switches to Redis, whose counter starts at 0 — the same 14-request probe then observed **8 allowed instead of 5**. Bounded by outage frequency, but it silently grants an extra allowance on every recovery. | **P3** | `utils/redisClient.js:129-141` (`viaRedis` switches source mid-window) |
-| N-11 | **CI does not exercise most of the security surface.** No database job (in CI's DB-less mode **50 of 127 tests skipped and 15 blocks skipped entirely** — measured at the time of the finding; with this pass's new suites it is 54 of 148), no secret scan, no `npm audit` gate, and the frontend suite (`npm run test:frontend`, 44 tests) is never invoked. | **P2 — FIXED this pass** | `.github/workflows/ci.yml` |
+| N-11 | **CI does not exercise most of the security surface.** No database job (in CI's DB-less mode **50 of 127 tests skipped and 15 blocks skipped entirely** — measured at the time of the finding; with this pass's new suites it is 54 of 154), no secret scan, no `npm audit` gate, and the frontend suite (`npm run test:frontend`, 44 tests) is never invoked. | **P2 — FIXED this pass** | `.github/workflows/ci.yml` |
 | N-12 | **Both CI gates were red before this pass.** `npm run lint` failed with **24 errors** (unused vars in `rb01/rb02/rb04`) and `npm run typecheck --prefix backend` exited **2** (3 implicit-`any` params in `orderController.js`) — added by the earlier rounds. Fixed here; both now exit 0. | **P2 — FIXED** (trust in CI) | reproduced before/after |
 | N-13 | **Frontend dependency advisory:** `axios@1.19.0` is the last vulnerable release of the 1.0.0–1.19.0 range (prototype-pollution gadgets, header injection, ReDoS, redirect-SSRF). It is a runtime dependency (`^1.11.0`); the backend already runs `1.20.0`. Frontend audit: 8 high, 2 moderate (only `axios` is runtime; the rest are `tailwindcss`/`typescript-eslint` build chain). Backend: 3 high, all in the dev-only `nodemon → chokidar → braces` chain (runtime deps audit clean). **FIXED this pass:** `axios` → `^1.20.0`, `source-map-js` → 1.2.2, and two criticals that surfaced mid-pass fixed rather than accepted (`shell-quote` → `^1.12.0` via `overrides`; `concurrently` has no fixed release and is accepted with a reason in the baseline). The remaining 5 highs are the unfixable `tailwindcss` 3.x chain — see the audit-ratchet note in §8. | **P2 — FIXED this pass** | `npm audit`, `package-lock.json:2506` |
 | N-14 | **The canonical schema is stale: a database built from the repo cannot run the app.** `branding_house.sql` lacked `users.legal_consent_at` (written by `usersModel.create` and `config/passPort.js` on every signup) and the `sessions` table (`express-mysql-session`). A fresh install failed registration with `ER_BAD_FIELD_ERROR`, and **5 test suites failed the same way** — only databases created while the dump still matched the code happened to work. Invisible to CI only because CI never built a database. | **P2** (new installs, CI) — **FIXED this pass** | column diff dump-vs-live on clean MySQL 8.4 → 4 missing columns; `Unknown column 'legal_consent_at' in 'field list'`. Now the dump is synced and `migrateSchemaSync.js` (existence-checked, idempotent) covers existing databases. |
 | N-15 | **`db:migrate` does not run on the database CI (and a new deploy) actually uses.** `migrateAdvanceRatio.js` used `ADD COLUMN IF NOT EXISTS` — TiDB/MariaDB syntax that **MySQL 8 rejects** — and `migrateOrderItems` / `migrateVendorOrderItems` passed `LIMIT ? OFFSET ?` to `connection.execute`, which mysql2 answers with `Incorrect arguments to LIMIT`. On stock MySQL the chain aborted at script #18, leaving half a schema. The local TiDB hid both because TiDB accepts them. | **P2** (new installs) — **FIXED this pass** | `npm run db:setup` on MySQL 8.4: exit 1 → exit 0 across all 22 steps (schema + migrations). |
 | N-16 | **Product search meant two different things on the two engines.** The FULLTEXT path (MySQL — i.e. production) used `IN NATURAL LANGUAGE MODE`, which **ORs** the words, while the LIKE fallback (TiDB — dev) ANDs them: `REDCLOTH nosuchwordxyz` returned the REDCLOTH row in production and nothing in dev, and the P1 contract test passed only because TiDB has no FULLTEXT index. Now every *indexable* word must match (one parameterised `MATCH` per word, ANDed), with words the engine cannot index **dropped rather than required** — measured on MySQL 8.4, `+the kente` and `+k kente` both return **0 rows**, so requiring them would have been a worse regression than the OR it replaced. | **P2** (a P1 control was green by accident) — **FIXED this pass** | `models/productModel.js`; `tests/productSearch.test.js` failed on MySQL before the fix, passes after. |
 | N-17 | **Test fixtures relied on TiDB not enforcing foreign keys.** `reservation` and `stockRace` inserted products/orders whose parent user did not exist; MySQL raises the FK error, `INSERT IGNORE` converts it into **0 affected rows**, and it surfaces later as a confusing assertion (`created > 0`) rather than as the real cause. In `redteam-final` the vendor was picked with `SELECT … LIMIT 1` — an arbitrary row another suite may delete mid-test, making it a genuine cross-suite race. All three now create their own never-deleted fixtures. | **P3** (test infrastructure) — **FIXED this pass** | 3 suites failing on MySQL → 0; `redteam-final` 10/10 in three consecutive runs. |
+| N-18 | **Two orders created in the same millisecond collide on the UNIQUE `orderNumber`, and checkout answers 500.** Both checkout paths minted the key from the wall clock — `"ORD-" + Date.now()` and `` `CUS-${Date.now()}` `` — against `orders.orderNumber VARCHAR(100) UNIQUE NOT NULL`, so any two orders inserted in the same millisecond ask for the *same* value. The loser throws `ER_DUP_ENTRY`; the catch block releases the coupon slot and restores stock (the N-7 economic invariant held throughout — no money moved, no slot leaked), but the customer still gets `500 Internal server error` and loses the basket. Reproduced **2/8 local runs** and in **CI runs 45 and 46** — on byte-identical code that *passed* the runs on either side (44 and 47), which is precisely why it presented as infrastructure flakiness and survived to this pass. Same class, fixed alongside: the regular checkout's SELECT-then-INSERT on `paymentReference` also answered 500 when the UNIQUE key won the race (the custom-request path already answered 400); both now answer 400 with the pre-check's wording. | **P2** (checkout availability under concurrency — no authorization or money impact, but P1-shaped during a burst) — **FIXED this pass** | `controllers/orderController.js`, `controllers/customRequestController.js`; failing log `Duplicate entry 'ORD-1791330964942' for key 'orders.orderNumber'`; now `utils/orderNumber.js` (`PREFIX-<epoch-ms>-<8 hex>`) + `tests/orderNumber.test.js` (6 tests, 2 mutations). |
 
 ---
 
@@ -224,17 +226,41 @@ against MySQL 8.4, then reverted):
 | **M2** — reply becomes `user ? FORGOT_PASSWORD_REPLY : 'No account here.'` | static | **1 fail**: forgot-password body guard |
 | *(all reverted)* | — | **21/21 pass** |
 
+`backend/tests/orderNumber.test.js` — **6 tests** for N-18, all pure (no
+database, so CI's DB-less job enforces them too):
+
+| # | Block | What it pins |
+|---|---|---|
+| 1–2 | source guards | checkout mints `newOrderNumber("ORD")` and the custom path `newOrderNumber("CUS")` — never a bare timestamp |
+| 3 | backend-wide sweep | **no** source under `controllers/ Services/ models/ routes/ utils/` declares an `orderNumber` from `Date.now()` |
+| 4 | frozen clock | with `Date.now()` pinned to a single value, 2 000 numbers are still all distinct: uniqueness comes from entropy, not from the clock (the pre-fix code returned the *same* string 2 000 times) |
+| 5 | format | `PREFIX-<epoch-ms>-<8 hex>`, always inside `VARCHAR(100)` |
+| 6 | volume | 20 000 consecutive numbers never repeat |
+
+**Mutation proof:**
+
+| Mutation | Result |
+|---|---|
+| helper loses its entropy (`` `${prefix}-${Date.now()}` `` — the original bug) | **3 fail**: frozen clock, format, 20 000 |
+| controller reverts to `"ORD-" + Date.now()` | **2 fail**: the checkout source guard + the backend-wide sweep |
+| *(both reverted)* | **6/6 pass** |
+
+The end-to-end proof is `couponMaxUses.test.js` test 3 (20 concurrent
+checkouts, "no checkout may fail with a non-cap error"): it was the assertion
+that caught the 500 — 2 failures in 8 runs before the fix, 0 in the runs after.
+
 ---
 
 ## 7. Tests executed
 
 | Run | Command | Result |
 |---|---|---|
-| Full suite (sequential), **CI database** | `node --test --test-concurrency=1 "tests/**/*.test.js"` against MySQL 8.4 | **212/212 pass, 0 fail, 0 skipped, exit 0** |
-| CI invocation, **CI database** | `npm test` (`--test-concurrency=4`) against MySQL 8.4 | **212/212 pass, 0 fail, 0 skipped, exit 0** |
-| CI invocation, **dev database** | `npm test` against TiDB | **212/212 pass, 0 fail, 0 skipped, exit 0** |
-| **CI job, end to end (N-11)** | `npm run db:setup && npm test` with no `.env`, CI-style env, MySQL 8.4 service | **`db:setup` exit 0** (schema + all 21 migrations) **then 212/212, exit 0** |
-| CI invocation (no database) | `DB_HOST=127.0.0.1 DB_PORT=1 … node --test "tests/**/*.test.js"` | **148 tests: 94 pass, 54 skipped, 0 fail, exit 0** (was 127/77/50) |
+| Full suite (sequential), **CI database** | `node --test --test-concurrency=1 "tests/**/*.test.js"` against MySQL 8.4 | **218/218 pass, 0 fail, 0 skipped, exit 0** |
+| CI invocation, **CI database** | `npm test` (`--test-concurrency=4`) against MySQL 8.4 | **218/218 pass, 0 fail, 0 skipped, exit 0** (3 consecutive idle runs) |
+| CI invocation, **dev database** | `npm test` against TiDB | **218/218 pass, 0 fail, 0 skipped, exit 0** |
+| **CI job, end to end (N-11)** | `npm run db:setup && npm test` with no `.env`, CI-style env, MySQL 8.4 service | **`db:setup` exit 0** (schema + all 21 migrations) **then 218/218, exit 0** |
+| **N-18 stability (repeated runs)** | 10 × `node --test tests/couponMaxUses.test.js`, then 8 × `db:setup && npm test` (before/after the fix) | **before:** 2/8 full-suite runs failed with `500 … Duplicate entry 'ORD-…'`; **after:** 10/10 targeted + 10/11 full-suite green (the 1 loss was the load-induced runner IPC error noted below) |
+| CI invocation (no database) | `DB_HOST=127.0.0.1 DB_PORT=1 … node --test "tests/**/*.test.js"` | **154 tests: 100 pass, 54 skipped, 0 fail, exit 0** (was 127/77/50) |
 | **New P2 suite, with DB (TiDB)** | `node --test tests/loginLockout.test.js` | **21/21 pass, exit 0** |
 | **New P2 suite, with DB (MySQL 8.4)** | same, CI-style env | **21/21 pass, exit 0** |
 | **New coupon suite, with DB** | `node --test tests/couponMaxUses.test.js` | **9/9 pass, exit 0** (≈113 s) |
@@ -245,7 +271,7 @@ against MySQL 8.4, then reverted):
 | Lint (CI gate) | `npm run lint` | **exit 0**, 0 errors / 13 warnings (was 24 errors) |
 | Frontend typecheck (CI gate) | `npx tsc --noEmit -p tsconfig.json` | **exit 0** |
 | Backend typecheck (CI gate) | `npm run typecheck --prefix backend` | **exit 0** (was exit 2; one regression caught and fixed while adding the portable column probe) |
-| Secret scan, CI command | `gitleaks detect --source . --redact --exit-code 1` (v8.24.3) | **exit 0 — 124 commits, no leaks** |
+| Secret scan, CI command | `gitleaks detect --source . --redact --exit-code 1` (v8.24.3) | **exit 0 — 157 commits, no leaks** |
 | Secret scan, changed files | `gitleaks dir` per path (all 59 changed/untracked files) | **0 findings** (a multi-path `gitleaks dir` call silently scans the *whole* directory and picks up the gitignored `backend/.env`; CI does not use that form) |
 | Audit gate (both workspaces) | `node .github/scripts/audit-gate.mjs <audit.json> <baseline.json>` | **exit 0** for frontend and backend |
 | Dependency audit, runtime only | `npm audit --omit=dev --audit-level=high` | **0 vulnerabilities** (both workspaces) |
@@ -263,13 +289,24 @@ through pipeline step by step"*) with `DB ping failed` in the log; that file
 passes **9/9 when run alone**, and the next full run was clean. The same
 signature reappeared in the first TiDB run of the P2 batch
 (`couponMaxUses` → *"settled payment keeps its slot"*, `DB ping failed`) — that
-file is green in both 212/212 runs above. Any suspect result was re-run
+file is green in both 218/218 runs above. Any suspect result was re-run
 per-file to separate infrastructure from regression.
 
 Two later runs were poisoned by a **DNS outage** (`getaddrinfo EAI_AGAIN
 gateway01…tidbcloud.com`, 21 connection errors in one `npm test`) and by the
 fixtures that outage's failed cleanups left behind; both were discarded and
 re-run from scratch.
+
+A third kind of noise is **not** application code: one full-suite run during
+the N-18 verification failed with `Unable to deserialize cloned data due to
+invalid or unsupported version` attributed to
+`rb04-inventory-double-restore` — a node:test *runner* IPC parse error
+(`failureType: uncaughtException` inside `#processRawBuffer`), not an
+assertion, so that file's results were simply lost. The kernel journal shows
+an OOM kill and load average 20 at that timestamp (the frontend vitest run,
+gitleaks and both audits were executing beside the suite on a 3.5 GB box).
+It did not recur in any idle run, and CI never shares a runner between jobs,
+so it is an artefact of this review machine, not a shipped defect.
 
 **Engine difference that only the second database exposed.** TiDB's `users.email`
 is `utf8mb4_bin` while MySQL 8.4's is `utf8mb4_0900_ai_ci`. The new lockout
@@ -310,7 +347,8 @@ The previously-reported P1s (rate-limit bypass, reset-token log leak, vendor
 PII/sibling-line leak) were already closed earlier in this pass.
 
 ### P2 — pilot hardening
-**All six closed this pass.** What each one was, and what now pins it:
+**All six closed this pass — plus a seventh, N-18, found and closed while
+investigating CI and listed last below.** What each one was, and what now pins it:
 
 * **V-10 — lockout maintenance DoS.** 10 wrong passwords over ~30 min locked a
   victim for 1 h and the DB counter never decayed, so **one request per hour**
@@ -353,6 +391,19 @@ PII/sibling-line leak) were already closed earlier in this pass.
   regression shows up by name.
 * **N-13 — frontend `axios@1.19.0`.** Bumped to `^1.20.0` (installed 1.20.0)
   plus a non-breaking `npm audit fix` (source-map-js → 1.2.2).
+* **N-18 — order-number collision on checkout** *(found while investigating
+  a "flaky" CI job, after this batch).* Both checkout paths minted
+  `orders.orderNumber` (UNIQUE) from `Date.now()`, so two orders inserted in
+  the same millisecond asked for the same key: the loser got `ER_DUP_ENTRY`
+  and answered **500 with the basket lost** — the coupon slot and the stock
+  reservation were released correctly, so no money moved and no slot leaked,
+  but a legitimate customer was turned away. It reproduced 2/8 local runs and
+  twice in CI on code that passed on either side, i.e. it presented as
+  infrastructure flakiness, which is exactly why it survived to this pass.
+  `utils/orderNumber.js` now mints `PREFIX-<epoch-ms>-<8 hex>`; the
+  same-class `paymentReference` check-then-insert race now answers 400 with
+  the pre-check's wording instead of 500. Pinned by `orderNumber.test.js`
+  (6 tests, 2 mutations, §6) and caught end-to-end by `couponMaxUses` test 3.
 
 **On the audit gate (why it is a ratchet, not `npm audit --audit-level=high`).**
 A raw gate cannot pass here: `braces` — reached from `tailwindcss` 3.x in the
@@ -448,13 +499,23 @@ V-07 claim allows one claim per order); V-07/V-09/V-05 have no *functional*
    **Done (this pass)** — `axios@^1.20.0`, `source-map-js` 1.2.2, and
    `shell-quote` pinned to `^1.12.0` through `overrides` (a critical that
    appeared mid-pass and was fixed rather than accepted).
-6. **Rotate the leaked Paystack test key (hygiene, do it anyway).** This pass's
+6. **N-18 (P2)** — ~~stop minting `orders.orderNumber` (UNIQUE) from
+   `Date.now()`, so two orders created in the same millisecond stop colliding
+   and 500-ing the loser's checkout.~~
+   **Done (this pass).** `utils/orderNumber.js` mints
+   `PREFIX-<epoch-ms>-<8 hex>` for both checkout paths (`ORD`, `CUS`), so
+   uniqueness comes from entropy rather than from the clock; the same-class
+   `paymentReference` check-then-insert race now answers 400 with the
+   pre-check's wording instead of a generic 500. The coupon slot and stock
+   reservation were already released correctly on that path, so no money moved
+   — only the basket. 6 tests, 2 mutations, §5/§6.
+7. **Rotate the leaked Paystack test key (hygiene, do it anyway).** This pass's
    secret scan found a real-looking `sk_test_…` key committed in
    `backend/.env.example`; the file is fixed and its fingerprint is in
    `.gitleaksignore` (so the scanner cannot be poisoned into ignoring *other*
    findings), but the key itself is still valid until Paystack revokes it.
    Revoke it, then confirm `gitleaks detect --source .` stays at 0 findings.
-7. **P3 batch** — `/metrics` auth, `CHECK` constraints for stock, vendor-status
+8. **P3 batch** — `/metrics` auth, `CHECK` constraints for stock, vendor-status
    predicate on public product queries (`productModel.js:187-189` is bypassed
    because every public controller passes `approvalStatus='approved'`),
    escaping in `emailService.js`, price schema, negative functional tests for
@@ -548,6 +609,15 @@ made permanent on settlement; 9 tests and 2 reverted mutations prove it.
 request per hour can no longer hold a victim's account locked — 21 tests (4 of
 them behavioural against a real database) and 3 reverted mutations prove it,
 including the exact mutation that made the lock permanent.
+
+**N-18, the last finding, was caught by re-running CI rather than by reading
+code**: both checkout paths minted `orders.orderNumber` (UNIQUE) from
+`Date.now()`, so two orders landing in the same millisecond collided and the
+loser answered **500 with its basket lost**. It survived two green reports
+precisely because it *looked* like flaky infrastructure — the failing CI runs
+were byte-identical to green ones on either side. Uniqueness now comes from
+entropy, not from the clock, and the catch path that releases the coupon slot
+and the stock was verified rather than assumed. 6 tests, 2 mutations.
 
 **No P0 and no P1 remains open, and no P2 remains open either.** What is left
 before a pilot is operational rather than adversarial: watch the first runs of

@@ -15,6 +15,7 @@ import {
 import { CUSTOM_ADVANCE_RATIO } from "../config/businessConfig.js";
 import { issueCertificateForOrder } from "../Services/certificateService.js";
 import PaystackService from "../Services/paystackservices.js";
+import { newOrderNumber } from "../utils/orderNumber.js";
 
 // Combine needed-for date + time into a contractually visible completion date.
 const completionFromRequest = (request) => {
@@ -321,7 +322,9 @@ export const checkoutRequest = async (req, res) => {
     try {
       order = await Order.create({
         userId: req.user.id,
-        orderNumber: `CUS-${Date.now()}`,
+        // N-18: same collision as the regular checkout path — `CUS-${Date.now()}`
+        // handed two same-millisecond custom orders the same UNIQUE key.
+        orderNumber: newOrderNumber("CUS"),
         items,
         totalAmount: price,
         shippingAddress: shippingAddress || {},

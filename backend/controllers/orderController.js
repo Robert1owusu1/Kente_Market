@@ -28,6 +28,7 @@ import { recordStockMove } from "../Services/stockMoves.js";
 import { sendOrderConfirmationEmail, sendEscrowReleasedEmail } from "../utils/orderEmailService.js";
 import { auditFromRequest } from "../utils/auditLog.js";
 import { recordFinancialEvent } from "../Services/ledgerService.js";
+import { newOrderNumber } from "../utils/orderNumber.js";
 
 // Client-supplied order-item images are stored and rendered to other users (e.g.
 // in the vendor's order view), so they must not be able to carry javascript: or
@@ -465,7 +466,10 @@ export const addOrderItems = async (req, res) => {
     // Paystack webhook or by an admin.
     const orderData = {
       userId: req.user.id,
-      orderNumber: "ORD-" + Date.now(),
+      // N-18: must NOT be a bare `Date.now()` — orders.orderNumber is UNIQUE
+      // and two checkouts in the same millisecond collided, giving the loser a
+      // 500 and losing their basket. See utils/orderNumber.js.
+      orderNumber: newOrderNumber("ORD"),
       items,
       totalAmount,
       shippingAddress: req.body.shippingAddress || {},
@@ -601,7 +605,20 @@ export const addOrderItems = async (req, res) => {
  console.warn(` Could not roll back reservation: ${restoreErr.message}`);
       }
     }
-    res.status(500).json({ message: "Internal server error" });
+    // The SELECT-then-INSERT on paymentReference above is not atomic: when two
+    // checkouts race the same reference, the DB UNIQUE key (asserted by
+    // paymentHardeningSchema.test.js) fires HERE rather than at the pre-check.
+    // Answer exactly like the pre-check does — 400 with the same wording —
+    // instead of a generic 500, so one charge can never create a second order
+    // and the client is told plainly. Every other failure stays a 500.
+    const duplicateReference =
+      error?.code === 'ER_DUP_ENTRY' &&
+      String(error?.message || '').includes('paymentReference');
+    res.status(duplicateReference ? 400 : 500).json({
+      message: duplicateReference
+        ? 'This payment reference has already been used'
+        : 'Internal server error',
+    });
   }
 };
 
