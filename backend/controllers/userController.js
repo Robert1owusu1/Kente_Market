@@ -419,7 +419,8 @@ const getVerificationStatus = asyncHandler(async (req, res) => {
 
   res.json({
     isEmailVerified: isVerified,
-    attemptsRemaining: Math.max(0, 5 - attempts.verification_attempts)
+    // M-1: same source as the WHERE clause that actually enforces the cap.
+    attemptsRemaining: Math.max(0, User.maxOtpAttempts() - attempts.verification_attempts)
   });
 });
 

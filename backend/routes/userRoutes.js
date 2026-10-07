@@ -20,7 +20,7 @@ import {
     getVerificationStatus
 } from '../controllers/userController.js';
 import { protect, admin } from "../middleware/authMiddleware.js";
-import { authLimiter, accountAuthLimiter, passwordResetLimiter, accountResetLimiter, registerLimiter, accountRegisterLimiter } from "../middleware/rateLimitMiddleware.js";
+import { authLimiter, accountAuthLimiter, otpResendLimiter, passwordResetLimiter, accountResetLimiter, registerLimiter, accountRegisterLimiter } from "../middleware/rateLimitMiddleware.js";
 import { validate, updateUserProfileSchema, changePasswordSchema } from "../middleware/validators.js";
 
 // ============================================
@@ -73,9 +73,13 @@ router.post('/reset-password/:token', passwordResetLimiter, resetPassword);
 // POST /api/users/verify-email
 router.post('/verify-email', protect, authLimiter, verifyEmail);
 
-// Resend OTP (rate-limited to prevent email spamming)
+// Resend OTP.
+// M-1: this used to carry `authLimiter`, which has `skipSuccessfulRequests:
+// true` — so successful resends were never counted, and the limiter that was
+// supposed to stop email spam did not count the spam. `otpResendLimiter`
+// counts every outcome and is keyed on the recipient address, not the IP.
 // POST /api/users/resend-otp
-router.post('/resend-otp', protect, authLimiter, resendOTP);
+router.post('/resend-otp', protect, otpResendLimiter, resendOTP);
 
 // Get verification status
 // GET /api/users/verification-status

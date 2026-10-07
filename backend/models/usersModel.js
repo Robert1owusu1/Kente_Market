@@ -620,6 +620,34 @@ class User {
     }
   }
 
+  // M-1 — the OTP attempt budget, defined in exactly one place.
+  //
+  // It used to exist twice and the two copies could not see each other:
+  // inside verifyEmail's WHERE clause as `parseInt(process.env.MAX_OTP_ATTEMPTS)
+  // || 5`, and as a literal `5` in getVerificationStatus's `attemptsRemaining`.
+  // Set MAX_OTP_ATTEMPTS to anything else and the API starts reporting a
+  // number the backend will not enforce — EmailVerification.tsx renders that
+  // figure straight to the user, so they could be told "4 attempts remaining"
+  // when the next attempt was their last, or "0" when plenty were left.
+  //
+  // Read per call rather than frozen at import: models are imported before
+  // dotenv has run on some entry points, and a constant captured at import
+  // time would silently ignore the setting.
+  //
+  // The old `|| 5` also let a negative value straight through. With
+  // MAX_OTP_ATTEMPTS=-3 the clause becomes `verification_attempts < -3`, which
+  // is never true, so no OTP would ever verify — while the status endpoint
+  // cheerfully reported 5 attempts left. The range check fails safe instead.
+  //
+  // Number() rather than parseInt(): parseInt stops at the first character it
+  // cannot read, so a stray `MAX_OTP_ATTEMPTS=3.7.1` silently became a budget
+  // of 3. A budget is a count, so the value has to be a whole number >= 1 or
+  // the default stands.
+  static maxOtpAttempts() {
+    const parsed = Number(process.env.MAX_OTP_ATTEMPTS);
+    return Number.isInteger(parsed) && parsed >= 1 ? parsed : 5;
+  }
+
   // Verify email with OTP
   static async verifyEmail(userId, otp) {
     let connection;
@@ -632,7 +660,7 @@ class User {
          AND email_verification_token = ? 
          AND email_verification_expires > NOW()
          AND verification_attempts < ?`,
-        [userId, otp, parseInt(process.env.MAX_OTP_ATTEMPTS) || 5]
+        [userId, otp, User.maxOtpAttempts()]
       );
 
       if (rows.length === 0) {

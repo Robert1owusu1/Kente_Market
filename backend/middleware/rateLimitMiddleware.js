@@ -107,6 +107,52 @@ export const accountAuthLimiter = rateLimit({
   },
 });
 
+// Per-recipient limiter for OTP resends.
+//
+// M-1: authLimiter was mounted on POST /resend-otp with
+// `skipSuccessfulRequests: true`, which is right for login — a user typing
+// their real password must not spend the bucket on the attempts that WORK —
+// and is exactly backwards here, because on this route a successful response
+// IS the harm. express-rate-limit decrements the counter once the response
+// finishes under 400, so every successful resend cancelled itself out and the
+// limiter was a no-op for the only case worth bounding: unlimited emails, one
+// per request, for as long as an unverified session keeps asking.
+//
+// That is reachable, not theoretical. Registration does not require a
+// verified address, so an attacker who registers with somebody else's
+// address holds a session that legitimately reaches /resend-otp (it only
+// demands `protect` and `!isEmailVerified`) and can flood that inbox at the
+// pace of the general 600-per-15-minute apiLimiter — roughly 600 emails per
+// window off one account, each one burning sender reputation with it.
+//
+// Keyed on the RECIPIENT ADDRESS rather than the IP: the resource actually
+// consumed is one inbox, `req.user.email` is read from the server-side record
+// rather than anything in the request, and keying on it holds up under
+// X-Forwarded-For rotation — the same reason accountAuthLimiter above exists
+// at all. Same shape as accountRegisterLimiter (V-10c): both outcomes count,
+// because a 400 and a 200 are both answers to someone asking for mail.
+export const otpResendLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  // 5 per 15 minutes is several times what a user who genuinely did not
+  // receive the code will ever need, and it is per recipient — one address
+  // cannot be hammered no matter how many sessions or source IPs ask.
+  max: 5,
+  keyGenerator: (req) => {
+    const recipient = (req.user?.email || req.user?.id || 'unknown')
+      .toString().trim().toLowerCase();
+    return `otp-resend:${recipient}`;
+  },
+  ...redisStore('rl:otpresend'),
+  // Deliberately ABSENT: `skipSuccessfulRequests` is what made the old
+  // limiter count nothing on the requests that succeeded.
+  handler: (req, res) => {
+    res.status(429).json({
+      message: 'Too many verification emails requested. Please try again in 15 minutes.',
+      retryAfter: req.rateLimit.resetTime,
+    });
+  },
+});
+
 // Per-account + IP rate limiter for staff login. Express-rate-limit's default
 // keying is IP-only, so an attacker rotating through the platform's staff
 // accounts could brute-force within one IP's allowance. Keying on email+IP
