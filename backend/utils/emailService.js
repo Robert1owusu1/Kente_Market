@@ -33,16 +33,44 @@ const maskResetUrl = (url) => {
 };
 
 // Create transporter - Fixed for nodemailer v7
-const createTransporter = () => {
+//
+// RED-TEAM (N-20): nodemailer's stock timeouts are 2 MINUTES to establish the
+// connection, 30 s for the SMTP greeting and 10 MINUTES of socket idle. Every
+// request that awaits a send therefore inherits an unbounded wait, while the
+// SPA gives up after 15 s (fetchBaseQuery `timeout: 15000`). In production a
+// stalled mail server turned a committed write into a "Failed ..." toast: the
+// vendor's order status was saved, but the response never arrived and RTK
+// answered TIMEOUT_ERROR with no body to quote. Cap every stage well inside
+// the client budget so a dead or filtered mail server degrades to a logged,
+// skipped email instead of a timed-out business request.
+const SMTP_TIMEOUTS = {
+  connectionTimeout: 5000,
+  greetingTimeout: 5000,
+  socketTimeout: 10000,
+};
+
+// Exported so the suite can assert the caps and point a send at a local
+// black-hole server (see tests/emailResponseBudget.test.js).
+export const createTransporter = () => {
   // Debug log
   console.log('Creating email transporter...');
-  
+
   const config = {
-    service: process.env.EMAIL_SERVICE || 'gmail',
+    // EMAIL_HOST/PORT/SECURE select a generic SMTP relay (opt-in; unset keeps
+    // the EMAIL_SERVICE well-known entry). Also what lets the test suite aim a
+    // send at a socket that never answers.
+    ...(process.env.EMAIL_HOST
+      ? {
+          host: process.env.EMAIL_HOST,
+          port: Number(process.env.EMAIL_PORT) || 587,
+          secure: process.env.EMAIL_SECURE === 'true',
+        }
+      : { service: process.env.EMAIL_SERVICE || 'gmail' }),
     auth: {
       user: process.env.EMAIL_USER,
       pass: process.env.EMAIL_PASSWORD,
     },
+    ...SMTP_TIMEOUTS,
   };
 
   try {

@@ -487,33 +487,53 @@ export const updateVendorOrderStatus = async (req, res) => {
     if (!advanced) {
       return res.json({ message: 'Progress saved', order: respondOrder, myStatus: isAdmin ? consensus : orderStatus, consensus });
     }
-    try {
-      const customerEmail = await getCustomerEmail(order.userId);
-      const statusLabel = consensus.charAt(0).toUpperCase() + consensus.slice(1);
-      let message = `Your order ${order.orderNumber} is now ${statusLabel}.`;
-      if (productionNote) message += ` Note from seller: "${productionNote}"`;
-      await Notification.create({
-        userId: order.userId,
-        type: "order",
-        title: `Order ${order.orderNumber} — ${statusLabel}`,
-        message,
-        link: `/order/${order.id}`,
-      });
-      if (customerEmail) {
-      try {
-        await sendOrderStatusEmail(order.id, {
-          statusLabel: consensus,
-          note: productionNote,
-        });
-      } catch (emailErr) {
- console.warn(` Could not email customer order update: ${emailErr.message}`);
-      }
-    }
-    } catch (notifyErr) {
- console.warn(` Could not notify customer: ${notifyErr.message}`);
-    }
 
+    // RED-TEAM (N-20): respond FIRST, notify SECOND. The write above is
+    // already committed, but the block below awaits a notification insert and
+    // an SMTP send whose stock nodemailer budgets are 2 MINUTES to connect and
+    // 30 s for the greeting. Holding the response open for that meant the
+    // SPA's 15 s fetch timeout fired while the update had already landed, so
+    // the vendor was shown "Failed to update order status" for a save that
+    // worked — reproduced live: Firefox recorded the POST as status 0 (no
+    // response ever arrived), the toast appeared at ~15 s, and the order row
+    // was already updated on reload.
     res.json({ message: "Order status updated", order: respondOrder, myStatus: isAdmin ? consensus : orderStatus, consensus });
+
+    const notifyStartedAt = Date.now();
+    void (async () => {
+      try {
+        const customerEmail = await getCustomerEmail(order.userId);
+        const statusLabel = consensus.charAt(0).toUpperCase() + consensus.slice(1);
+        let message = `Your order ${order.orderNumber} is now ${statusLabel}.`;
+        if (productionNote) message += ` Note from seller: "${productionNote}"`;
+        await Notification.create({
+          userId: order.userId,
+          type: "order",
+          title: `Order ${order.orderNumber} — ${statusLabel}`,
+          message,
+          link: `/order/${order.id}`,
+        });
+        if (customerEmail) {
+        try {
+          await sendOrderStatusEmail(order.id, {
+            statusLabel: consensus,
+            note: productionNote,
+          });
+        } catch (emailErr) {
+   console.warn(` Could not email customer order update: ${emailErr.message}`);
+        }
+      }
+      } catch (notifyErr) {
+   console.warn(` Could not notify customer: ${notifyErr.message}`);
+      } finally {
+        // Surfaces the real cost in the log stream: if this line shows seconds,
+        // the mail/notification path is what used to eat the client's budget.
+        const notifyMs = Date.now() - notifyStartedAt;
+        if (notifyMs > 1000) {
+          console.warn(`[vendor-order-status] customer notification completed in ${notifyMs}ms (after the response was sent)`);
+        }
+      }
+    })();
   } catch (error) {
     console.error("Error updating vendor order status:", error);
     res.status(500).json({ message: "Internal server error" });

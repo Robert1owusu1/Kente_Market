@@ -3,6 +3,7 @@ import { FaShoppingCart, FaSearch, FaEye, FaTrash, FaCheck, FaTimes, FaDownload,
 import { toast } from 'react-toastify';
 import { formatCurrency } from '../../../utils/formatCurrency';
 import { sanitizeString } from '../../../utils/sanitize';
+import { describeMutationError } from '../../../utils/mutationError';
 import { 
   useGetAllOrdersQuery, 
   useGetOrderByIdQuery,
@@ -405,8 +406,11 @@ const OrdersPage = () => {
       toast.success('Order status updated successfully');
       refetch();
     } catch (err) {
-      const e = err as { data?: { message?: string }; message?: string; error?: string } | undefined;
-      toast.error(e?.data?.message || 'Failed to update order status');
+      // N-20: transport failures carry no body, so the old fallback claimed
+      // failure even when the server had already applied the change.
+      const { message, uncertain } = describeMutationError(err, 'Failed to update order status');
+      toast.error(message);
+      if (uncertain) refetch();
     }
   }, [updateOrder, refetch]);
 
@@ -416,8 +420,9 @@ const OrdersPage = () => {
       toast.success('Order marked as delivered');
       refetch();
     } catch (err) {
-      const e = err as { data?: { message?: string }; message?: string; error?: string } | undefined;
-      toast.error(e?.data?.message || 'Failed to mark order as delivered');
+      const { message, uncertain } = describeMutationError(err, 'Failed to mark order as delivered');
+      toast.error(message);
+      if (uncertain) refetch();
     }
   }, [updateOrderToDelivered, refetch]);
 
@@ -428,8 +433,9 @@ const OrdersPage = () => {
       toast.success('Order deleted successfully');
       refetch();
     } catch (err) {
-      const e = err as { data?: { message?: string }; message?: string; error?: string } | undefined;
-      toast.error(e?.data?.message || 'Failed to delete order');
+      const { message, uncertain } = describeMutationError(err, 'Failed to delete order');
+      toast.error(message);
+      if (uncertain) refetch();
     }
   }, [deleteOrderMutation, refetch]);
 
@@ -439,8 +445,9 @@ const OrdersPage = () => {
       toast.success((res?.message as string) || 'Escrow payouts retried');
       refetch();
     } catch (err) {
-      const e = err as { data?: { message?: string }; message?: string; error?: string } | undefined;
-      toast.error(e?.data?.message || 'Failed to retry escrow payouts');
+      const { message, uncertain } = describeMutationError(err, 'Failed to retry escrow payouts');
+      toast.error(message);
+      if (uncertain) refetch();
     }
   }, [retryEscrowPayouts, refetch]);
 

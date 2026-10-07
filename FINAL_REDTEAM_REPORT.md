@@ -55,6 +55,7 @@ Where a prior report and the code disagreed, the code won (see §5).
 | A-7 | **V-01:** apply a coupon during checkout, then pay | customer (no tricks needed) | charge used the stale pre-coupon cached total → Paystack collected the **gross** amount, server had booked **net** → `verify-paystack` rejected `paidKobo !== expectedKobo` → money captured, order never flips to `paid` | **P0** | **found and fixed this pass** + tested |
 | A-8 | **N-18:** 20 `POST /api/orders` landing in the same millisecond (an ordinary burst — no tricks) | customer / burst traffic | the `orders.orderNumber` (UNIQUE) race lost one INSERT → `ER_DUP_ENTRY` → **500 and the basket lost** (coupon slot and stock were rolled back correctly) | **P2** | **found and fixed this pass** + tested |
 | A-9 | **N-19:** ordinary Google login from `kente-market.vercel.app` in a browser that already holds a `csrf_token` cookie (any visitor whose session JWT expired while the 30-day CSRF cookie lived on) | customer (returning visitor — no tricks) | `POST /api/auth/oauth/exchange` answered **403 `CSRF token missing`** → no session cookie minted → the follow-up `GET /api/users/profile` answered 401 → **Google login dead**, console shows `OAuth profile fetch error: Not authenticated` | **P1** | **found and fixed this pass** + tested |
+| A-10 | **N-20:** a vendor clicks a fulfilment pipeline button (`processing → packaging → shipped → arrived → delivered`) — an ordinary action, no tricks | vendor staff (logged in, authorized) | the handler **wrote the status change and then never answered**: it awaited a customer-notification insert and an SMTP send *before* `res.json`, the SPA aborted at 15 s (`fetchBaseQuery` `timeout: 15000`), and the UI reported **"Failed to update order status"** for an update that had already been saved. Firefox HAR for the failing POST: `status: 0` (no response ever reached the browser), toast at ~15 s, order row already `shipped`/`arrived` on reload | **P2** (the write always landed — no money, no authorization and no data impact, and the UI reconciles on refresh; the defect is a false failure report plus a stale view) | **found and fixed this pass** + tested |
 
 ### A-7 (V-01) — the fix that did not close the finding
 
@@ -108,6 +109,7 @@ regression test that fails when either half is removed.
 | **N-2** `tv:0` tokens rejected | `authRoutes.js:243` now checks `undefined`/`null` explicitly |
 | **N-4** shared `productionNote` clobber | vendor patch contains only `orderStatus`/`deliveredAt` |
 | **N-19** raw-`fetch` state-changing calls echo the CSRF token | live probe matrix against `kente-api.onrender.com` (cookie × header × origin) that isolated the failing layer; the fix itself is pinned by `src/utils/__tests__/csrf.test.ts` source guard over the whole SPA (3 mutations), `backend/tests/csrfToken.test.js` (11 tests, 1 mutation) and `src/store.csrfReset.test.ts` (5 tests, 1 mutation) |
+| **N-20** no request is ever held open by outbound mail | behavioural proof: a local black-hole SMTP endpoint (TCP handshake, no greeting) makes `sendEmailSafely` return in **5.0 s** instead of nodemailer's stock **30 s**, and the transporter's three stage caps are asserted to sit inside the SPA's 15 s budget; plus a source guard that the vendor status handler **responds before** it notifies, with self-tests proving the matcher rejects both wrong orderings (4 mutations — 3 backend, 1 frontend — §6) |
 
 **Refuted claims from earlier reports**
 
@@ -137,6 +139,7 @@ regression test that fails when either half is removed.
 | N-17 | **Test fixtures relied on TiDB not enforcing foreign keys.** `reservation` and `stockRace` inserted products/orders whose parent user did not exist; MySQL raises the FK error, `INSERT IGNORE` converts it into **0 affected rows**, and it surfaces later as a confusing assertion (`created > 0`) rather than as the real cause. In `redteam-final` the vendor was picked with `SELECT … LIMIT 1` — an arbitrary row another suite may delete mid-test, making it a genuine cross-suite race. All three now create their own never-deleted fixtures. | **P3** (test infrastructure) — **FIXED this pass** | 3 suites failing on MySQL → 0; `redteam-final` 10/10 in three consecutive runs. |
 | N-18 | **Two orders created in the same millisecond collide on the UNIQUE `orderNumber`, and checkout answers 500.** Both checkout paths minted the key from the wall clock — `"ORD-" + Date.now()` and `` `CUS-${Date.now()}` `` — against `orders.orderNumber VARCHAR(100) UNIQUE NOT NULL`, so any two orders inserted in the same millisecond ask for the *same* value. The loser throws `ER_DUP_ENTRY`; the catch block releases the coupon slot and restores stock (the N-7 economic invariant held throughout — no money moved, no slot leaked), but the customer still gets `500 Internal server error` and loses the basket. Reproduced **2/8 local runs** and in **CI runs 45 and 46** — on byte-identical code that *passed* the runs on either side (44 and 47), which is precisely why it presented as infrastructure flakiness and survived to this pass. Same class, fixed alongside: the regular checkout's SELECT-then-INSERT on `paymentReference` also answered 500 when the UNIQUE key won the race (the custom-request path already answered 400); both now answer 400 with the pre-check's wording. | **P2** (checkout availability under concurrency — no authorization or money impact, but P1-shaped during a burst) — **FIXED this pass** | `controllers/orderController.js`, `controllers/customRequestController.js`; failing log `Duplicate entry 'ORD-1791330964942' for key 'orders.orderNumber'`; now `utils/orderNumber.js` (`PREFIX-<epoch-ms>-<8 hex>`) + `tests/orderNumber.test.js` (6 tests, 2 mutations). |
 | N-19 | **Google login was dead in production: every raw `fetch` in the SPA bypassed the CSRF interceptor.** `main.tsx:28` attaches `X-CSRF-Token` through an **axios** request interceptor; the OAuth exchange (`OAuthCallback.tsx:87`) is a *raw* `fetch` carrying only `Content-Type`. `csrfProtection` layer 2 (`csrfMiddleware.js:117`) rejects any state-changing request that carries the `csrf_token` cookie without the matching header — and that cookie is set on every session issue and lives **30 days**, while the session JWT expires sooner, so "expired session + live CSRF cookie" is the ordinary state of a returning visitor. Live probe matrix against production (`POST /api/auth/oauth/exchange`, `kente-api.onrender.com`): allowed Origin with no cookie → **401** (CSRF passed, route reached); allowed Origin + cookie + no header → **403 `CSRF token missing`** ← the browser's case; cookie + wrong header → 403 `CSRF token mismatch`; foreign Origin → 403 `Cross-site request rejected`; Origin with a trailing slash → 403. Layer 1 was healthy and layer 2 was the killer. The 401 on `/api/users/profile` in the incident report is purely downstream: no session cookie was ever minted. Same class, found in the same sweep: `useLegalConsent.ts:45` (POST `/api/auth/consent` — the Google-**signup** consent) had the identical shape and would 403 the same users, while forgot-password and reset-password escaped only because they *omit* `credentials`, so the cookie never travels. The second half: `getOrIssueCsrfToken` (`csrfMiddleware.js:73`) echoed **any** existing cookie without re-checking its HMAC, so after a `JWT_SECRET` rotation every state-changing request from every returning visitor would 403 for the rest of the cookie's 30-day life, with no recovery short of clearing cookies by hand. And the third: session issuance rotates the cookie while the SPA's cache reset was keyed on the *signed-in boolean*, so a re-sign-in that never flips it (persisted `userInfo`, expired JWT) kept the pre-rotation token — the same 403 one step later, now on every state-changing request. | **P1** (Google login — and Google signup consent — dead in production for exactly the visitors who already had an account) — **FIXED this pass** | `src/main.tsx:28`, `src/Pages/Auth/OAuthCallback.tsx:87`, `src/hooks/useLegalConsent.ts:45`, `src/Pages/Auth/ForgotPassword.tsx:82`, `src/Pages/Auth/ResetPassword.tsx:151`; `backend/middleware/csrfMiddleware.js:73,117`; probe matrix above; now `csrfJsonHeaders()` + `tests/csrfToken.test.js` (11 tests) and `src/utils/__tests__/csrf.test.ts` (10 tests) + `src/store.csrfReset.test.ts` (5 tests) |
+| N-20 | **A write that committed was reported to the user as a failure, because the HTTP response waited on outbound mail.** `updateVendorOrderStatus` wrote the status change, then awaited `Notification.create` **and** `sendOrderStatusEmail` *before* `res.json` (`vendorOrderController.js:487-516` before the fix). nodemailer's stock budgets are **2 minutes to establish the connection, 30 s for the SMTP greeting and 10 minutes of socket idle**, while the SPA aborts every RTK call at **15 s** (`fetchBaseQuery({ timeout: 15000 })`). So in production the request simply never came back: RTK answered `{ status: 'TIMEOUT_ERROR', data: undefined }` — **no body at all** — the universal `err?.data?.message \|\| 'Failed …'` pattern had nothing to quote, and the vendor was told *"Failed to update order status"* for a save that had already landed. Evidence: Firefox HAR of the failing request (POST `status: 0`, zero response headers, while the `OPTIONS` preflight answered **204** — so CORS and the token layer were healthy); the toast arriving at **~15 s**, i.e. exactly the client timeout; the order row already `shipped`/`arrived` on reload; GETs on the same origin answering in **0.5–1.9 s** (the API was warm, so it was not general slowness); and **every** failing click having taken the `advanced` branch — the only branch that notifies before responding. *Honest limit:* the SMTP step itself was not observed in Render's log at click time (the window available was service startup, not the request), so mail is the **best-supported attribution, not a directly measured one** — which is why the fix does not depend on it: the entire notify block now runs **after** the response, so whichever step inside it was slow can no longer hold the request. Same class, **9 more sites** still hold a response open on a send: `updateOrderToPaid` (`orderController.js:1090`), `confirmOrderReceived` (`orderController.js:1277`), register OTP / forgot-password / welcome / two resend-OTP paths (`userController.js:132,232,364,401,490`) and the two payment sends (`paymentRoutes.js:221,495`). Two of those are reachable from RTK mutations with the same 15 s budget — the customer's **Confirm receipt** (`useConfirmOrderReceivedMutation`, `OrderDetails.tsx:96`) and the admin **Mark as paid** — so they could false-fail identically; they are now bounded by the SMTP caps below rather than reordered (reordering money-path handlers is tracked as P3). | **P2** (production defect in the vendor fulfilment flow — no authorization, money or data impact, since the write always landed) — **FIXED this pass** | `backend/controllers/vendorOrderController.js:500` responds first and `:503` detaches the notification (logging the notify duration whenever it exceeds 1 s, so the cost is visible in Render); `backend/utils/emailService.js:46-49,73` caps `connectionTimeout`/`greetingTimeout`/`socketTimeout` at **5/5/10 s** and adds an opt-in `EMAIL_HOST` relay; `src/utils/mutationError.ts` classifies transport failures and both order screens re-sync on an unknown outcome. Tests: `backend/tests/emailResponseBudget.test.js` (3) + `src/utils/__tests__/mutationError.test.ts` (10), **4 mutations** — §6. |
 
 ---
 
@@ -302,6 +305,38 @@ in-memory token has to die with the auth object:
 **Mutation proof:** key the reset on `Boolean(userInfo)` again (the shipped
 logic) → **1 fail** (test 3); restored → **5/5 pass**.
 
+`backend/tests/emailResponseBudget.test.js` — **3 tests** for N-20 (pure; no
+database, so CI's DB-less job enforces them too):
+
+| # | Block | What it pins |
+|---|---|---|
+| 1 | **behavioural** | a local black-hole SMTP endpoint (completes the TCP handshake, never sends a `220` greeting) must be abandoned **inside the client budget**: `sendEmailSafely` returns `false` in ~5.0 s. Before the fix this is nodemailer's stock `GREETING_TIMEOUT` of **30 s** (and a refused connect is 120 s) — either way past the SPA's 15 s abort, which is what turned a committed write into a "failed" toast |
+| 2 | configuration | `createTransporter()` carries `connectionTimeout` / `greetingTimeout` / `socketTimeout`, each `> 0` **and** `≤ 15000`, so no stage can inherit an unbounded default |
+| 3 | source guard | in `vendorOrderController.js` the success `res.json` appears **before** `Notification.create` and `sendOrderStatusEmail`, **and** the notify block is detached (`void (async () => {`) rather than awaited. The matcher self-tests on two synthetic sources — notifies-first must be rejected, responds-but-still-awaits must be rejected — so a broken extractor cannot make the assertion pass vacuously |
+
+**Mutation proof:**
+
+| Mutation | Result |
+|---|---|
+| drop `...SMTP_TIMEOUTS` from the transporter config (the shipped behaviour) | **2 fail**: the black-hole test aborts at its own 10 s timeout instead of returning in 5, and the cap assertion finds `undefined` |
+| move `res.json` back below the notification block — i.e. restore the original bug | **1 fail**: `notification runs before the response` |
+| replace `void (async () => {` with an awaited call | **1 fail**: `notification is still awaited by the handler` |
+| *(all restored)* | **3/3 pass** |
+
+`src/utils/__tests__/mutationError.test.ts` — **10 tests** (frontend, N-20):
+7 unit tests of `describeMutationError` — the server's own message wins; a
+`TIMEOUT_ERROR` (the exact shape RTK produced here, with `data: undefined`) and
+a `FETCH_ERROR` are both reported as *unknown outcome*; a `PARSING_ERROR` is
+**not**, because a response did arrive; a blank server message falls back rather
+than toasting nothing; and unrecognisable shapes (`undefined`, a plain `Error`,
+an `AbortError`) fall back — plus 2 source guards per order screen (2 × 2),
+which require `VendorOrdersSection.tsx` and `OrdersPage.tsx` to route failures
+through `describeMutationError` and to `refetch()` when the outcome is unknown,
+and fail if the old `toast.error(x?.data?.message || '…')` pattern reappears.
+
+**Mutation proof:** restore the old catch in `VendorOrdersSection.tsx` → **1
+fail** (the classifier guard); restored → **10/10 pass**.
+
 ---
 
 ## 7. Tests executed
@@ -310,12 +345,14 @@ logic) → **1 fail** (test 3); restored → **5/5 pass**.
 |---|---|---|
 | Full suite (sequential), **CI database** *(pre-N-19)* | `node --test --test-concurrency=1 "tests/**/*.test.js"` against MySQL 8.4 | **218/218 pass, 0 fail, 0 skipped, exit 0** |
 | Full suite (sequential), **dev database** (N-19) | same command against TiDB | **229/229 pass, 0 fail, 0 skipped, exit 0** |
+| Full suite (concurrency 4), **dev database** (N-20) | `npm test` against TiDB | **232/232 pass, 0 fail, 0 skipped, exit 0** |
+| Full suite (sequential), **dev database** (N-20) | `node --test --test-concurrency=1 "tests/**/*.test.js"` against TiDB | **232/232 pass, 0 fail, 0 skipped, exit 0** |
 | CI invocation, **CI database** *(pre-N-19)* | `npm test` (`--test-concurrency=4`) against MySQL 8.4 | **218/218 pass, 0 fail, 0 skipped, exit 0** (3 consecutive idle runs) |
 | CI invocation, **dev database** (N-19) | `npm test` against TiDB | **229/229 pass, 0 fail, 0 skipped, exit 0** (3 consecutive runs, all captured — plus one earlier run with 1 unattributed failure, see the flakiness note) |
 | **CI job, end to end (N-11)** *(pre-N-19)* | `npm run db:setup && npm test` with no `.env`, CI-style env, MySQL 8.4 service | **`db:setup` exit 0** (schema + all 21 migrations) **then 218/218, exit 0** |
 | **CI job, end to end (N-19)** | GitHub Actions **run 49** on `852d213`, `mysql:8.4` service | `db:setup && npm test` **exit 0 → 229/229 on MySQL 8.4**; all 3 jobs green — Secret scan (4 s), Lint + tests + build (41 s), Backend tests (MySQL) (57 s) |
 | **N-18 stability (repeated runs)** | 10 × `node --test tests/couponMaxUses.test.js`, then 8 × `db:setup && npm test` (before/after the fix) | **before:** 2/8 full-suite runs failed with `500 … Duplicate entry 'ORD-…'`; **after:** 10/10 targeted + 10/11 full-suite green (the 1 loss was the load-induced runner IPC error noted below) |
-| CI invocation (no database) | `DB_HOST=127.0.0.1 DB_PORT=1 … node --test "tests/**/*.test.js"` | **165 tests: 111 pass, 54 skipped, 0 fail, exit 0** (was 154/100/54, originally 127/77/50) |
+| CI invocation (no database) | `DB_HOST=127.0.0.1 DB_PORT=1 … node --test "tests/**/*.test.js"` | **168 tests: 114 pass, 54 skipped, 0 fail, exit 0** (was 165/111/54, 154/100/54, originally 127/77/50) |
 | **New P2 suite, with DB (TiDB)** | `node --test tests/loginLockout.test.js` | **21/21 pass, exit 0** |
 | **New P2 suite, with DB (MySQL 8.4)** | same, CI-style env | **21/21 pass, exit 0** |
 | **New coupon suite, with DB** | `node --test tests/couponMaxUses.test.js` | **9/9 pass, exit 0** (≈113 s) |
@@ -328,12 +365,19 @@ logic) → **1 fail** (test 3); restored → **5/5 pass**.
 | **New CSRF suite, frontend, mutations** | revert the OAuth exchange header (the shipped bug) / revert the Google-signup consent header | **2 fail** / **1 fail**; restored → 10/10 |
 | **New CSRF cache suite (N-19)** | `npx vitest run src/store.csrfReset.test.ts` | **5/5 pass, exit 0**; mutation (reset keyed on `Boolean(userInfo)` again) → **1 fail**, restored → 5/5 |
 | **N-19 live probe matrix** | `POST /api/auth/oauth/exchange` on `kente-api.onrender.com`, cookie × header × origin | no cookie → `401` (CSRF layer passed, route reached); **cookie + no header → `403 CSRF token missing`** (the incident); cookie + wrong header → `403 CSRF token mismatch`; foreign Origin → `403 Cross-site request rejected` |
-| Frontend unit tests | `npx vitest run` (`npm run test:frontend`) | **8 files, 59/59 pass** (was 6 files, 44/44) |
+| **New mail-budget suite (N-20)** | `node --test tests/emailResponseBudget.test.js` | **3/3 pass, exit 0** (pure — it also runs in the no-DB row above) |
+| **New mail-budget suite, behavioural timing** | black-hole SMTP (accept, never greet) → `sendEmailSafely` | **returns `false` in 5041 ms**; nodemailer's stock `GREETING_TIMEOUT` is 30000 ms |
+| **New mail-budget suite, mutations** | drop `...SMTP_TIMEOUTS` / move `res.json` back below the notify block / await the notify block | **2 fail** / **1 fail** (`notification runs before the response`) / **1 fail** (`notification is still awaited by the handler`); all restored → 3/3 |
+| **New mutation-error suite, frontend (N-20)** | `npx vitest run src/utils/__tests__/mutationError.test.ts` | **10/10 pass, exit 0** |
+| **New mutation-error suite, mutation** | restore `toast.error(err?.data?.message \|\| '…')` in `VendorOrdersSection.tsx` | **1 fail** (the classifier source guard); restored → 10/10 |
+| **N-20 production evidence (Firefox HAR)** | `POST /api/vendors/orders/2040002/status` from `kente-market.vercel.app`, two attempts | both: preflight `OPTIONS` → **204** (CORS/token layer healthy), POST → **`status: 0`, no response headers**, toast at **~15 s**, and the order row already advanced on reload. A `GET /api/vendors/orders` on the same origin answered **200 in 1.1 s** immediately afterwards |
+| Frontend unit tests | `npx vitest run` (`npm run test:frontend`) | **9 files, 69/69 pass** (was 8 files/59, 6 files/44) |
 | Lint (CI gate) | `npm run lint` | **exit 0**, 0 errors / 13 warnings (was 24 errors) |
 | Frontend typecheck (CI gate) | `npx tsc --noEmit -p tsconfig.json` | **exit 0** |
 | Backend typecheck (CI gate) | `npm run typecheck --prefix backend` | **exit 0** (was exit 2; one regression caught and fixed while adding the portable column probe) |
-| Secret scan, CI command | `gitleaks detect --source . --redact --exit-code 1` (v8.24.3) | **exit 0 — 158 commits, no leaks** |
+| Secret scan, CI command | `gitleaks detect --source . --redact --exit-code 1` (v8.24.3) | **exit 0 — 160 commits, no leaks** (158 before this pass's two N-19 commits) |
 | Secret scan, changed files | `gitleaks dir` per path (all 59 changed/untracked files) | **0 findings** (a multi-path `gitleaks dir` call silently scans the *whole* directory and picks up the gitignored `backend/.env`; CI does not use that form) |
+| Secret scan, changed files (N-20) | `gitleaks dir` run once per path over the 7 files this finding touched (`vendorOrderController.js`, `emailService.js`, both order screens, `mutationError.ts` and its two new test files) | **0 findings, exit 0 for every path** |
 | Audit gate (both workspaces) | `node .github/scripts/audit-gate.mjs <audit.json> <baseline.json>` | **exit 0** for frontend and backend |
 | Dependency audit, runtime only | `npm audit --omit=dev --audit-level=high` | **0 vulnerabilities** (both workspaces) |
 | Live: DoS re-verify | `GET /?%=1`, `?%ZZ=1`, `?%` | all `200`, process stays up |
@@ -427,10 +471,16 @@ the money) was the last P1: it is now fixed with atomic reservation at booking
 time, mutation-proven and pinned by `couponMaxUses.test.js` (see §4 and §6).
 The previously-reported P1s (rate-limit bypass, reset-token log leak, vendor
 PII/sibling-line leak) were already closed earlier in this pass.
+A second production report arrived after N-19 — a vendor's order-status update
+always answered *"Failed to update order status"* — and was graded **P2**, not
+P1: the write itself committed every time, no authorization or money was
+affected, and the only casualties were a false failure report and a stale view
+(§3 A-10, §5 N-20).
 
 ### P2 — pilot hardening
 **All six closed this pass — plus a seventh, N-18, found and closed while
-investigating CI and listed last below.** What each one was, and what now pins it:
+investigating CI, and an eighth, N-20, found when a vendor reported a failed
+order-status update in production.** What each one was, and what now pins it:
 
 * **V-10 — lockout maintenance DoS.** 10 wrong passwords over ~30 min locked a
   victim for 1 h and the DB counter never decayed, so **one request per hour**
@@ -486,6 +536,22 @@ investigating CI and listed last below.** What each one was, and what now pins i
   same-class `paymentReference` check-then-insert race now answers 400 with
   the pre-check's wording instead of 500. Pinned by `orderNumber.test.js`
   (6 tests, 2 mutations, §6) and caught end-to-end by `couponMaxUses` test 3.
+* **N-20 — a committed write was reported as a failure.** `updateVendorOrderStatus`
+  wrote the new status and then awaited a customer notification **and** an SMTP
+  send before `res.json`; nodemailer's stock budgets (2 min connect / 30 s
+  greeting / 10 min socket) blew straight through the SPA's 15 s
+  `fetchBaseQuery` timeout, RTK returned `TIMEOUT_ERROR` with no body, and the
+  `err?.data?.message || 'Failed …'` pattern every call site used had nothing
+  to quote. Two independent fixes: the handler now **responds first** and
+  notifies in a detached block (logging the notify duration when it exceeds a
+  second, so the cost is visible in Render), and `createTransporter()` caps all
+  three SMTP stages at 5/5/10 s so the other nine sites that still sequence a
+  send before their response — including the customer's *Confirm receipt* and
+  the admin's *Mark as paid*, both RTK mutations — can no longer reach the
+  client budget either. The SPA side now distinguishes a transport failure from
+  a server answer and **re-syncs** when the outcome is unknown, instead of
+  asserting a failure it cannot know. Pinned by `emailResponseBudget.test.js`
+  (3 tests, 3 mutations) and `mutationError.test.ts` (10 tests, 1 mutation) — §6.
 
 **On the audit gate (why it is a ratchet, not `npm audit --audit-level=high`).**
 A raw gate cannot pass here: `braces` — reached from `tailwindcss` 3.x in the
@@ -526,7 +592,13 @@ try/catch; `F2` unanchored extension regex (magic-byte check is the real
 authority); `F4a` try-on URL validation is syntactic only; `N-10` limiter reset
 on Redis recovery; `R2` `refundedAmount` check-then-act (unreachable — the
 V-07 claim allows one claim per order); V-07/V-09/V-05 have no *functional*
-(negative) tests, only source assertions.
+(negative) tests, only source assertions; and — after N-20 — the **nine
+remaining sites that still *sequence* an awaited `send*Email` before their
+response** (`updateOrderToPaid`, `confirmOrderReceived`, the five
+`userController` OTP/reset/welcome sends and the two `paymentRoutes` sends),
+which are now *bounded* by the 5/5/10 s SMTP caps rather than reordered;
+moving them off the response path entirely is a design cleanup, not a
+security fix, because the caps already keep them inside the client budget.
 
 ---
 
@@ -606,13 +678,30 @@ V-07 claim allows one claim per order); V-07/V-09/V-05 have no *functional*
    echo is unchanged); the API deploy only carries the rotation self-heal.
    Until the frontend is out, a blocked browser recovers by clearing site data
    for the API origin (or by password login).
-8. **Rotate the leaked Paystack test key (hygiene, do it anyway).** This pass's
+8. **N-20 (P2)** — ~~answer the request before notifying the customer, and
+   stop nodemailer's multi-minute timeouts from reaching a caller that gives
+   up at 15 s.~~
+   **Done (this pass).** `updateVendorOrderStatus` now sends its `res.json`
+   **first** and runs the notification + email in a detached block behind it
+   (with a `> 1 s` warning logged so the cost shows up in Render), and
+   `createTransporter()` caps `connectionTimeout`/`greetingTimeout`/`socketTimeout`
+   at **5/5/10 s** — proven against a black-hole SMTP endpoint (5.0 s instead
+   of 30 s). The SPA classifies transport failures through
+   `describeMutationError()` and re-syncs when the outcome is unknown, so a
+   timeout can never again be reported as a definite failure. 13 tests,
+   4 mutations, §5/§6. **Deploy note:** the reported symptom is fixed by the
+   **backend** deploy alone; the **frontend** deploy supplies the honest toast
+   and the automatic refetch. Either way, confirm afterwards that advancing a
+   pipeline button shows the success toast immediately and that Render logs the
+   `[vendor-order-status] customer notification completed in …ms` line *after*
+   the response.
+9. **Rotate the leaked Paystack test key (hygiene, do it anyway).** This pass's
    secret scan found a real-looking `sk_test_…` key committed in
    `backend/.env.example`; the file is fixed and its fingerprint is in
    `.gitleaksignore` (so the scanner cannot be poisoned into ignoring *other*
    findings), but the key itself is still valid until Paystack revokes it.
    Revoke it, then confirm `gitleaks detect --source .` stays at 0 findings.
-9. **P3 batch** — `/metrics` auth, `CHECK` constraints for stock, vendor-status
+10. **P3 batch** — `/metrics` auth, `CHECK` constraints for stock, vendor-status
    predicate on public product queries (`productModel.js:187-189` is bypassed
    because every public controller passes `approvalStatus='approved'`),
    escaping in `emailService.js`, price schema, negative functional tests for
@@ -659,6 +748,17 @@ V-07 claim allows one claim per order); V-07/V-09/V-05 have no *functional*
   *reaches* it — every axios caller was protected, the single raw `fetch` was
   not, and the failure showed up as an authentication error rather than as a
   CSRF error.
+* **A response is never held open by an external service.** After N-20 the
+  fulfilment handler answers as soon as the write is committed and notifies
+  behind it, and all three SMTP stages are capped at 5/5/10 s against a client
+  that aborts at 15 s — proven against a black-hole mail server rather than
+  asserted in a comment. The lesson is the mirror image of N-19's: N-19 failed
+  because a client path never *reached* a correct server guard, while N-20
+  failed because a correct server path *reached the client too late* and the
+  client had no vocabulary for "I don't know" — `data.message` was undefined,
+  so the UI asserted a failure it had not observed. Both are now pinned at the
+  edges: source guards on the SPA side, a behavioural timeout test on the
+  server side.
 * **Escrow lifecycle is genuinely defensive**: per-allocation reason states,
   allocation-scoped clawback keys, TOCTOU re-checks on retry, idempotent
   duplicate-webhook handling.
@@ -738,9 +838,31 @@ that would 403. 26 tests, 5 mutations. Note that this one is **fixed in
 frontend (that alone restores Google login); the API deploy only carries the
 secret-rotation self-heal.
 
+**N-20 arrived from a user as well, and it is the mirror image of N-19.** A
+vendor clicked a fulfilment pipeline button in production and was told
+*"Failed to update order status"* — every time — while the order status
+advanced anyway. The handler wrote the row and then waited on a customer
+notification and an SMTP send before answering; nodemailer's stock budgets are
+2 minutes to connect, the SPA gives up at 15 s, and RTK's timeout returns
+`TIMEOUT_ERROR` with **no body**, so the `err?.data?.message || 'Failed …'`
+pattern every call site used had nothing to quote and simply asserted failure.
+Nothing was lost — no money, no authorization, no data — but the system told
+its operator something it could not know, which is its own kind of defect: the
+vendor would reasonably repeat work the server had already done. The evidence
+is recorded in §5 and §7 (preflight 204, POST `status: 0`, toast at ~15 s, row
+already updated, GETs on the same origin at 0.5–1.9 s), including the honest
+limit that the mail step was never observed in the log at click time — so the
+fix does not depend on which part of that tail was slow: the response now goes
+out **first**, the notification runs behind it, and the mail client is capped
+at 5/5/10 s so the nine other sites that still sequence a send cannot reach the
+budget either. 13 tests, 4 mutations.
+
 **No P0 and no P1 remains open, and no P2 remains open either.** What is left
-before a pilot is operational rather than adversarial: watch the first runs of
-the new CI database job (a green gate on day one is evidence, not a habit),
+before a pilot is operational rather than adversarial: **deploy what is already
+in `main`** — N-19 needs a Vercel rebuild (that alone restores Google login)
+and N-20 needs the **Render** deploy (the fix is server-side; the Vercel half
+supplies the honest toast and the automatic re-sync), then watch the first runs
+of the new CI database job (a green gate on day one is evidence, not a habit),
 rotate the legacy Paystack test key that this pass found pasted into an old
 version of `backend/.env.example` (the fingerprint is in `.gitleaksignore`, so
 the scanner will not flag it again, but the key itself should still be revoked),

@@ -8,6 +8,7 @@ import {
   useUpdateVendorOrderStatusMutation,
 } from '../../slices/vendorsApiSlice';
 import Loader from '../../components/loader/Loader';
+import { describeMutationError } from '../../utils/mutationError';
 import type { KeyedState, Order, OrderItem } from '../../types/domain';
 
 interface VendorOrderItem extends OrderItem {
@@ -81,8 +82,11 @@ const VendorOrdersSection = () => {
       toast.success(`Order ${order.orderNumber} updated to ${status}`);
       refetch();
     } catch (error) {
-      const err = (error as { data?: { message?: string }; message?: string; error?: string } | undefined);
-      toast.error(err?.data?.message || 'Failed to update order status');
+      // N-20: a transport failure has no body, so `data.message` is undefined
+      // and the old fallback claimed the update failed even when it landed.
+      const { message, uncertain } = describeMutationError(error, 'Failed to update order status');
+      toast.error(message);
+      if (uncertain) refetch(); // the server may have applied it — show the truth
     } finally {
       setBusyOrderId(null);
     }
@@ -104,8 +108,9 @@ const VendorOrdersSection = () => {
       setTrackingNumber((s) => ({ ...s, [String(order.id)]: '' }));
       refetch();
     } catch (error) {
-      const err = (error as { data?: { message?: string }; message?: string; error?: string } | undefined);
-      toast.error(err?.data?.message || 'Failed to save update');
+      const { message, uncertain } = describeMutationError(error, 'Failed to save update');
+      toast.error(message);
+      if (uncertain) refetch();
     } finally {
       setBusyOrderId(null);
     }
