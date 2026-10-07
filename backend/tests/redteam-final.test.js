@@ -36,15 +36,21 @@ import { redactUrl } from '../utils/logger.js';
 
 // Pin the rate limiters to their in-process store for this file.
 //
-// When REDIS_URL is configured, createRateLimitStore() first counts in its
-// per-instance fallback ("Redis not ready") and then switches to the real
-// Redis store a few seconds later, once the TLS handshake lands. That
+// This comment used to explain the symptom rather than the cause: "That
 // migration restarts the counter on the Redis side, so the same 14-request
-// probe can observe 8 "allowed" instead of 5 — the limiter is correct, the
-// transport switch is what is non-deterministic. The property under test
-// (the key is account-keyed, not IP-keyed) does not depend on the transport.
-// An empty string is used rather than `delete` because rateLimitMiddleware
-// re-runs dotenv.config() at import time and would otherwise restore the value.
+// probe can observe 8 'allowed' instead of 5." N-10 fixed the cause — counts
+// accumulated in the per-instance fallback are now carried into Redis on
+// recovery (max, not sum, and before the next request is counted) instead of
+// being abandoned, so switching transport no longer hands anyone back a fresh
+// allowance.
+//
+// The pin is kept regardless: this file asserts an exact number of attempts,
+// and that should not depend on whether a remote Redis happens to be
+// configured and reachable in the environment running the suite. The property
+// under test (the key is account-keyed, not IP-keyed) does not depend on the
+// transport either way. An empty string is used rather than `delete` because
+// rateLimitMiddleware re-runs dotenv.config() at import time and would
+// otherwise restore the value.
 process.env.REDIS_URL = '';
 
 // DB gate: probe at module load (top-level await) so `{ skip: !dbAvailable }`

@@ -46,6 +46,66 @@ export const getRedisClient = () => {
  * per-instance limits is strictly better than both alternatives: requests are
  * still served, and brute force is still capped.
  */
+/**
+ * N-10 — carry the per-instance counts into Redis when it comes back.
+ *
+ * While Redis is unreachable the fallback counts in a local Map, which is
+ * correct for the outage. The bug was the switch back: `viaRedis` simply
+ * started using Redis again and abandoned `local`, so every hit recorded
+ * during the outage evaporated. A caller who spent the whole outage grinding
+ * one account came out of it with a completely fresh allowance — and the
+ * in-code comment in redteam-final.test.js had already observed the symptom
+ * from the other side ("That migration restarts the counter on the Redis
+ * side, so the same 14-request probe can observe 8 allowed instead of 5").
+ *
+ * The merge is `max(redis, local)` rather than a sum, because the two counts
+ * can overlap: a request counted locally just before Redis became reachable
+ * may also have been counted by Redis. Adding them would let an attacker
+ * manufacture extra attempts by flapping the connection, and would also mean
+ * a limiter could exceed its own `max` through no fault of the client.
+ *
+ * It runs BEFORE the pending operation rather than after, so the very first
+ * request on the restored connection already sees the carried total —
+ * otherwise one more attempt slips past a limit that was already exhausted.
+ *
+ * @param {object}   options
+ * @param {(args: string[]) => Promise<unknown>} options.sendCommand
+ *        node-redis shaped: one array per command.
+ * @param {string}   options.prefix
+ *        MUST be the RedisStore's own `prefix` field. rate-limit-redis builds
+ *        keys as `${prefix}${key}`; anything else merges into orphan keys the
+ *        limiter will never read.
+ * @param {Iterable<[string, { totalHits: number, resetAt: number }]>} options.entries
+ * @param {number}   [options.now]
+ * @returns {Promise<number>} how many keys were carried forward
+ */
+export const carryLocalCountsForward = async ({ sendCommand, prefix, entries, now = Date.now() }) => {
+  let carried = 0;
+  for (const [key, entry] of entries) {
+    if (!entry || !(entry.resetAt > now)) continue; // window already closed locally
+    if (!(entry.totalHits > 0)) continue; // nothing spent — no key to create
+    const redisKey = `${prefix}${key}`;
+    const ttlSeconds = Math.max(1, Math.ceil((entry.resetAt - now) / 1000));
+
+    const current = Number(await sendCommand(['GET', redisKey])) || 0;
+    const delta = entry.totalHits - current;
+    if (delta > 0) {
+      await sendCommand(['INCRBY', redisKey, String(delta)]);
+    }
+
+    // Only a key with NO expiry gets one. Re-issuing EXPIRE on a key that
+    // already has a TTL restarts its window, handing out a fresh allowance
+    // for a counter that was about to expire — the opposite of what a
+    // recovery is supposed to do. -2 = absent, -1 = present without expiry.
+    const ttl = Number(await sendCommand(['TTL', redisKey]));
+    if (ttl < 0) {
+      await sendCommand(['EXPIRE', redisKey, String(ttlSeconds)]);
+    }
+    carried += 1;
+  }
+  return carried;
+};
+
 export const createRateLimitStore = (prefix) => {
   const client = getRedisClient();
   if (!client) return undefined;
@@ -133,6 +193,22 @@ export const createRateLimitStore = (prefix) => {
     }
     try {
       await ensureInit();
+      // N-10: anything counted in `local` while Redis was down has to land in
+      // Redis before this request is counted, or the switch restarts the
+      // counter and the outage was free. If the carry fails, this falls
+      // through to the catch below and the request is served from `local`
+      // with `local` still intact — safe (limits stay enforced) and
+      // self-healing, since the carry is retried on the next request.
+      // `redis.prefix` is the store's own key prefix, so the merged keys are
+      // the ones the limiter actually reads.
+      if (local.size > 0) {
+        await carryLocalCountsForward({
+          sendCommand: (args) => client.sendCommand(args),
+          prefix: redis.prefix,
+          entries: local,
+        });
+        local.clear();
+      }
       return await op();
     } catch (err) {
       reportDegraded(err.message);
