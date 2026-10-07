@@ -1,6 +1,7 @@
 // utils/emailService.js - FIXED FOR NODEMAILER V7
 import nodemailer from 'nodemailer';
 import crypto from 'crypto';
+import { escapeHtml } from './htmlEscape.js';
 
 /**
  * Mask an email address for logs: keep the first character of the local part
@@ -174,26 +175,26 @@ export const sendOTPEmail = async (email, firstName, otp) => {
             <p>Email Verification</p>
           </div>
           <div class="content">
-            <h2>Hello ${firstName}!</h2>
+            <h2>Hello ${escapeHtml(firstName)}!</h2>
             <p>Thank you for registering with Bonwire Kente. Please use the OTP below to verify your email address:</p>
             
             <div class="otp-box">
               <p style="margin: 0; color: #666; font-size: 14px;">Your OTP Code:</p>
-              <div class="otp-code">${otp}</div>
-              <p style="margin: 10px 0 0 0; color: #666; font-size: 12px;">Valid for ${process.env.OTP_EXPIRY_MINUTES || 10} minutes</p>
+              <div class="otp-code">${escapeHtml(otp)}</div>
+              <p style="margin: 10px 0 0 0; color: #666; font-size: 12px;">Valid for ${escapeHtml(process.env.OTP_EXPIRY_MINUTES || 10)} minutes</p>
             </div>
             
  <p><strong> Important:</strong></p>
             <ul>
               <li>Do not share this OTP with anyone</li>
               <li>Our team will never ask for your OTP</li>
-              <li>This code expires in ${process.env.OTP_EXPIRY_MINUTES || 10} minutes</li>
+              <li>This code expires in ${escapeHtml(process.env.OTP_EXPIRY_MINUTES || 10)} minutes</li>
             </ul>
             
             <p>If you didn't request this verification, please ignore this email.</p>
           </div>
           <div class="footer">
- <p>© ${new Date().getFullYear()} Bonwire Kente. All rights reserved.</p>
+ <p>© ${escapeHtml(new Date().getFullYear())} Bonwire Kente. All rights reserved.</p>
             <p>This is an automated email. Please do not reply.</p>
           </div>
         </div>
@@ -242,7 +243,7 @@ export const sendWelcomeEmail = async (email, firstName) => {
  <h1> Welcome to Bonwire Kente!</h1>
           </div>
           <div class="content">
-            <h2>Hi ${firstName}!</h2>
+            <h2>Hi ${escapeHtml(firstName)}!</h2>
             <p>Your email has been successfully verified. Welcome to the Bonwire Kente family!</p>
             <p>You can now enjoy:</p>
             <ul>
@@ -252,12 +253,12 @@ export const sendWelcomeEmail = async (email, firstName) => {
  <li> Special offers and discounts</li>
             </ul>
             <div style="text-align: center; margin: 30px 0;">
-              <a href="${process.env.FRONTEND_URL || 'http://localhost:5173'}" class="button">Start Shopping</a>
+              <a href="${escapeHtml(process.env.FRONTEND_URL || 'http://localhost:5173')}" class="button">Start Shopping</a>
             </div>
             <p>If you have any questions, feel free to contact our support team.</p>
           </div>
           <div class="footer">
- <p>© ${new Date().getFullYear()} Bonwire Kente. All rights reserved.</p>
+ <p>© ${escapeHtml(new Date().getFullYear())} Bonwire Kente. All rights reserved.</p>
             <p>This is an automated email. Please do not reply.</p>
           </div>
         </div>
@@ -314,18 +315,18 @@ export const sendPasswordResetEmail = async (email, firstName, resetToken) => {
  <h1> Password Reset Request</h1>
           </div>
           <div class="content">
-            <h2>Hello ${firstName},</h2>
+            <h2>Hello ${escapeHtml(firstName)},</h2>
             <p>We received a request to reset your password for your Bonwire Kente account.</p>
             
             <p>Click the button below to reset your password:</p>
             
             <div style="text-align: center;">
-              <a href="${resetUrl}" class="button">Reset Password</a>
+              <a href="${escapeHtml(resetUrl)}" class="button">Reset Password</a>
             </div>
             
             <p style="color: #666; font-size: 14px;">Or copy and paste this link into your browser:</p>
             <p style="background: white; padding: 10px; border-radius: 6px; word-break: break-all; font-size: 12px;">
-              ${resetUrl}
+              ${escapeHtml(resetUrl)}
             </p>
             
             <div class="warning-box">
@@ -343,7 +344,7 @@ export const sendPasswordResetEmail = async (email, firstName, resetToken) => {
             <p style="color: #666; font-size: 14px;">Best regards,<br>The Bonwire Kente Team</p>
           </div>
           <div class="footer">
- <p>© ${new Date().getFullYear()} Bonwire Kente. All rights reserved.</p>
+ <p>© ${escapeHtml(new Date().getFullYear())} Bonwire Kente. All rights reserved.</p>
             <p>This is an automated email. Please do not reply.</p>
           </div>
         </div>
@@ -400,26 +401,26 @@ export const sendPasswordResetConfirmation = async (email, firstName) => {
             <h1>Password Changed Successfully</h1>
           </div>
           <div class="content">
-            <h2>Hi ${firstName},</h2>
+            <h2>Hi ${escapeHtml(firstName)},</h2>
             <p>Your password has been changed successfully.</p>
             
             <p><strong>Details:</strong></p>
             <ul>
-              <li>Changed at: ${new Date().toLocaleString()}</li>
-              <li>Account: ${email}</li>
+              <li>Changed at: ${escapeHtml(new Date().toLocaleString())}</li>
+              <li>Account: ${escapeHtml(email)}</li>
             </ul>
             
  <p><strong> Didn't make this change?</strong></p>
             <p>If you didn't reset your password, please contact our support team immediately to secure your account.</p>
             
             <div style="text-align: center; margin: 30px 0;">
-              <a href="${process.env.FRONTEND_URL || 'http://localhost:5173'}/login" class="button">Login to Your Account</a>
+              <a href="${escapeHtml(process.env.FRONTEND_URL || 'http://localhost:5173')}/login" class="button">Login to Your Account</a>
             </div>
             
             <p style="color: #666; font-size: 14px;">Best regards,<br>The Bonwire Kente Team</p>
           </div>
           <div class="footer">
- <p>© ${new Date().getFullYear()} Bonwire Kente. All rights reserved.</p>
+ <p>© ${escapeHtml(new Date().getFullYear())} Bonwire Kente. All rights reserved.</p>
             <p>This is an automated email. Please do not reply.</p>
           </div>
         </div>
@@ -453,15 +454,15 @@ export const sendContactConfirmation = async (email, name) => {
     html: `
       <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
         <div style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
-          <h1>Thank You, ${name}</h1>
+          <h1>Thank You, ${escapeHtml(name)}</h1>
         </div>
         <div style="background: #f9fafb; padding: 30px; border-radius: 0 0 10px 10px;">
           <p>We have received your message and will get back to you within 1-2 business days.</p>
-          <p>If this is urgent, you can reach us directly at ${process.env.EMAIL_USER || 'kenterobert@gmail.com'} or +233 24 000 0000.</p>
+          <p>If this is urgent, you can reach us directly at ${escapeHtml(process.env.EMAIL_USER || 'kenterobert@gmail.com')} or +233 24 000 0000.</p>
           <p style="color:#666; font-size:14px;">Best regards,<br>The Bonwire Kente Team</p>
         </div>
         <div style="text-align:center; margin-top:20px; color:#666; font-size:12px;">
- <p>© ${new Date().getFullYear()} Bonwire Kente. All rights reserved.</p>
+ <p>© ${escapeHtml(new Date().getFullYear())} Bonwire Kente. All rights reserved.</p>
         </div>
       </div>
     `,
@@ -494,7 +495,7 @@ export const sendSubscribeConfirmation = async (email) => {
           <p style="color:#666; font-size:14px;">Best regards,<br>The Bonwire Kente Team</p>
         </div>
         <div style="text-align:center; margin-top:20px; color:#666; font-size:12px;">
- <p>© ${new Date().getFullYear()} Bonwire Kente. All rights reserved.</p>
+ <p>© ${escapeHtml(new Date().getFullYear())} Bonwire Kente. All rights reserved.</p>
         </div>
       </div>
     `,

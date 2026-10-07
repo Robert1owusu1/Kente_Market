@@ -9,6 +9,7 @@
 import pool from '../config/db.js';
 import Notification from '../models/notificationModel.js';
 import { sendEmailSafely } from '../utils/emailService.js';
+import { escapeHtml } from '../utils/htmlEscape.js';
 
 /**
  * Notify every wishlisted user for one product whose price has dropped below
@@ -57,7 +58,7 @@ export const processPriceDropsForProduct = async (productId) => {
         await sendEmailSafely(
           row.email,
           `Price drop: ${product.title}`,
-          `<p>Good news! <strong>${product.title}</strong> dropped from <strong>GH₵${savedPrice.toFixed(2)}</strong> to <strong>GH₵${livePrice.toFixed(2)}</strong> on Bonwire Kente.</p><p>Grab it from your wishlist before the price climbs back up.</p>`
+          `<p>Good news! <strong>${escapeHtml(product.title)}</strong> dropped from <strong>GH₵${escapeHtml(savedPrice.toFixed(2))}</strong> to <strong>GH₵${escapeHtml(livePrice.toFixed(2))}</strong> on Bonwire Kente.</p><p>Grab it from your wishlist before the price climbs back up.</p>`
         );
       }
       // Re-baseline so the buyer is only re-alerted on a further drop.

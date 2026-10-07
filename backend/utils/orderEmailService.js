@@ -7,6 +7,7 @@
 
 import pool from '../config/db.js';
 import { sendEmailSafely } from './emailService.js';
+import { escapeHtml } from './htmlEscape.js';
 
 const frontendUrl = () => process.env.FRONTEND_URL || 'http://localhost:5173';
 
@@ -39,13 +40,13 @@ const formatMoney = (value) => `GH₵ ${(Number(value) || 0).toFixed(2)}`;
 
 // Escape user/vendor-controlled text before interpolating into HTML email.
 // Prevents stored XSS via product names, colors, addresses, notes.
-export const escapeHtml = (value) =>
-  String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
+//
+// Implementation moved to ./htmlEscape.js and re-exported from here so the
+// existing `import { escapeHtml } from '../utils/orderEmailService.js'` keeps
+// working, while emailService.js and the wishlist services can share it too
+// without importing this file back (it already imports sendEmailSafely from
+// emailService — reaching the other way would close a cycle).
+export { escapeHtml };
 
 const renderItems = (items) => {
   if (!Array.isArray(items) || items.length === 0) {

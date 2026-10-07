@@ -12,6 +12,7 @@
 import pool from '../config/db.js';
 import Notification from '../models/notificationModel.js';
 import { sendEmailSafely } from '../utils/emailService.js';
+import { escapeHtml } from '../utils/htmlEscape.js';
 
 /**
  * Notify every wishlisted user for one product that it is back in stock.
@@ -54,7 +55,7 @@ export const processRestockForProduct = async (productId) => {
         await sendEmailSafely(
           row.email,
           `Back in stock: ${product.title}`,
-          `<p>Good news! <strong>${product.title}</strong> is back in stock at Bonwire Kente.</p><p>Visit your wishlist to grab it before it sells out again.</p>`
+          `<p>Good news! <strong>${escapeHtml(product.title)}</strong> is back in stock at Bonwire Kente.</p><p>Visit your wishlist to grab it before it sells out again.</p>`
         );
       }
       await pool.execute(
