@@ -723,8 +723,8 @@ suites, counts and mutation results are in §6, findings in §5:
 | A8 | any vendor staff — including one holding an **empty** permission object — could edit the storefront profile and read reviews | `storefrontPermission` 16, **6/6** |
 | I3 | absolute stock writes accepted any integer, and **no `CHECK` constraint existed anywhere** | `stockIntegrity` 19, **1/1** |
 | C2 | admin coupon uncapped above 100%, and the PUT path wrote an unclamped total — a negative `totalAmount` | `couponBounds` 19, **3/3** |
-| R2 / N-23 | `refundedAmount` check-then-act, plus a balance check that could not see prior refunds | `migrationSafety` + `partialRefunds` 25, **1/1** |
-| N-5 / N-5b | `db:migrate` had no per-row try/catch and no fatal-connection classification, so one dead connection either aborted the 21-script chain or was swallowed | `migrationSafety` 22, **1/1** |
+| R2 / N-23 | `refundedAmount` check-then-act, plus a balance check that could not see prior refunds | `migrationSafety` + `partialRefunds` 25 — **1/1** (the suite's other mutant is N-5, below) |
+| N-5 / N-5b | `db:migrate` had no per-row try/catch and no fatal-connection classification, so one dead connection either aborted the 21-script chain or was swallowed | `migrationSafety` 22 — **1/1** |
 | M-7 / M-8 | no product price schema; 2 `validate()` mounts across 31+ mutating routes | `productPriceValidation` 18, **2/2** |
 | M-1 | every OTP resend reset the attempt counter, so resending forever beat the 5-attempt cap | `otpResend` 13, **6/6** |
 | M-6 | four email renderers interpolated raw names, titles and URLs into HTML | `emailHtmlEscaping` 6, **8/8** |
