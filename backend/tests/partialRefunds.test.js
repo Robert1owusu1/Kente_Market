@@ -68,17 +68,29 @@ before(async () => {
 
 after(async () => {
   if (!dbAvailable || !pool) return;
-  try {
-    mock.restoreAll();
-    await pool.execute(`DELETE FROM escrow_allocations WHERE orderId = ?`, [state.orderId]);
-    await pool.execute(`DELETE FROM financial_events WHERE orderId = ?`, [state.orderId]);
-    await pool.execute(`DELETE FROM return_requests WHERE orderId = ?`, [state.orderId]);
-    await pool.execute(`DELETE FROM orders WHERE id = ?`, [state.orderId]);
-    await pool.execute(`DELETE FROM product WHERE id IN (?, ?)`, [state.prodA, state.prodB]);
-    await pool.execute(`DELETE FROM users WHERE id IN (?, ?, ?)`, [state.buyer, state.vendorA, state.vendorB]);
-  } finally {
-    await pool.end();
+  mock.restoreAll();
+  // Each statement gets its own try/catch: this file runs three tests against
+  // ONE fixture, and a failure in the first DELETE used to skip the remaining
+  // four — stranding a full generation of user/product/order rows on every
+  // flaked run. Orphaned `PARTIAL-` rows are what polluted refundReconcile
+  // before (§7), so a cleanup failure must cost one statement, not the rest.
+  const steps = [
+    ['escrow_allocations', `DELETE FROM escrow_allocations WHERE orderId = ?`, [state.orderId]],
+    ['financial_events', `DELETE FROM financial_events WHERE orderId = ?`, [state.orderId]],
+    ['return_requests', `DELETE FROM return_requests WHERE orderId = ?`, [state.orderId]],
+    ['orders', `DELETE FROM orders WHERE id = ?`, [state.orderId]],
+    ['product', `DELETE FROM product WHERE id IN (?, ?)`, [state.prodA, state.prodB]],
+    ['users', `DELETE FROM users WHERE id IN (?, ?, ?)`,
+      [state.buyer, state.vendorA, state.vendorB]],
+  ];
+  for (const [table, sql, params] of steps) {
+    try {
+      await pool.execute(sql, params);
+    } catch (err) {
+      console.error(`partialRefunds cleanup FAILED for ${table}: ${err.message}`);
+    }
   }
+  await pool.end();
 });
 
 const approvePartial = async (body, returnId = state.returnId) => {
