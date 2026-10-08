@@ -81,12 +81,12 @@ after(async () => {
   }
 });
 
-const approvePartial = async (body) => {
+const approvePartial = async (body, returnId = state.returnId) => {
   const { updateReturnStatus } = await import('../controllers/returnController.js');
   let status = 200;
   let payload = null;
   await updateReturnStatus(
-    { params: { id: String(state.returnId) }, body, user: { id: 1, role: 'admin' } },
+    { params: { id: String(returnId) }, body, user: { id: 1, role: 'admin' } },
     { status(c) { status = c; return this; }, json(p) { payload = p; return this; } }
   );
   return { status, payload };
@@ -135,5 +135,31 @@ describe('per-vendor partial refunds', () => {
       [`refund:${state.orderId}:${state.returnId}:partial:${state.vendorA}`]
     );
     assert.equal(Number(j.n), 1, 'partial journal recorded');
+  });
+
+  test('R2: balance refusal fires before the one-way approval, not after', { skip: !dbAvailable }, async () => {
+    // Replay A's exact share on a FRESH return: the amount still equals their
+    // lines to the pesewa (200), but only 160 of the 360 total is left. The
+    // balance check has to fire while the return is still pending — if it is
+    // deferred to the SQL write guard, the pending->approved flip is already
+    // spent with no money moved, and the return cannot be retried.
+    const ReturnRequest = (await import('../models/returnModel.js')).default;
+    const rr2 = await ReturnRequest.create({
+      orderId: state.orderId, userId: state.buyer, reason: 'damaged', description: 'replay',
+    });
+    const retryId = rr2.id ?? rr2.insertId;
+
+    const r = await approvePartial({ status: 'approved', vendorId: state.vendorA, amount: 200 }, retryId);
+    assert.equal(r.status, 400, JSON.stringify(r.payload));
+    assert.match(r.payload.message, /exceeds the remaining refundable/, 'the balance guard owns this refusal');
+
+    const [[rr]] = await pool.execute(`SELECT status FROM return_requests WHERE id = ?`, [retryId]);
+    assert.equal(rr.status, 'pending', 'a refused amount must not consume the one-way approval');
+
+    const [[order]] = await pool.execute(
+      `SELECT paymentStatus, refundedAmount FROM orders WHERE id = ?`, [state.orderId]
+    );
+    assert.equal(Number(order.refundedAmount), 200, 'no money moved by the refused attempt');
+    assert.equal(order.paymentStatus, 'paid', 'order untouched by the refused attempt');
   });
 });

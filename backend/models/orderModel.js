@@ -15,6 +15,15 @@ class Order {
     this.shippingCost = orderData.shippingCost;
     this.tax = orderData.tax;
     this.discount = orderData.discount;
+    // R2: this column must survive the constructor. `validatePartialRefund`
+    // computes `remaining = totalAmount - refundedAmount` so an over-refund is
+    // refused BEFORE the one-way pending->approved flip on the return. When it
+    // was dropped here, `Number(undefined) || 0` was 0, `remaining` always
+    // equalled the full total, and a REPLAYED partial refund passed the balance
+    // check — the refusal then came only from the SQL write guard, which runs
+    // after the flip, leaving the return approved with no money moved and no
+    // retry possible. Only `SELECT o.*` provides it; nothing else reads it.
+    this.refundedAmount = Number(orderData.refundedAmount ?? 0);
     this.notes = orderData.notes;
     this.paymentReference = orderData.paymentReference || orderData.payment_reference || null;
     this.couponId = orderData.couponId || null;
