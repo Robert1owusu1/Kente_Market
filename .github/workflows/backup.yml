@@ -43,6 +43,41 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
+      # Fail first, and by name. backup-db.sh stops at
+      # `: "${DB_HOST:?set DB_HOST (or backend/.env)}"` when DB_HOST is unset —
+      # a zero-second step failure with no output of its own. That is how all
+      # three runs of this workflow have ended: backend/.env is gitignored, so
+      # the checkout carries no configuration at all and the secrets below are
+      # the ONLY source of it. An unconfigured secret is the one failure a
+      # backup job cannot otherwise explain to itself, and the R2 values are
+      # worse — they read as an empty-but-valid rclone config and would only
+      # surface after a dump that never happened.
+      - name: Preflight — required secrets are present
+        env:
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: |
+          missing=""
+          for name in DB_HOST DB_USER DB_NAME BACKUP_PASSPHRASE \
+                      R2_ENDPOINT R2_BUCKET R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY; do
+            if [ -z "${!name}" ]; then missing="$missing $name"; fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error title=Backup secrets not configured::Missing:$missing"
+            echo "Repository → Settings → Secrets and variables → Actions."
+            echo "backup-db.sh hard-requires DB_HOST and DB_NAME, then"
+            echo "BACKUP_PASSPHRASE; the R2 values are needed by the upload step."
+            echo "Set them and re-run this workflow (workflow_dispatch)."
+            exit 1
+          fi
+          echo "required secrets present"
+
       - name: Install dependencies (mysql-client, gpg, rclone, openssl)
         run: |
           sudo apt-get update -y
