@@ -25,8 +25,16 @@ Method used throughout:
 3. Fix only what is proven exploitable, and prove each fix by **mutation**:
    revert the fix, watch the new test fail, restore.
 4. Re-run the whole suite plus the exact CI commands.
+5. **Never certify a guard by reading it.** The final batch added this rule after
+   V-07 came back certified — source assertions had counted
+   `refundReference IS NULL` and `affectedRows === 0` in the file while the
+   guard compared `undefined === 0` and never fired. Every fix since is pinned
+   by a test that drives the real router over a socket or the real model against
+   a real database, and by a mutation run recorded with its denominator: a
+   suite reporting `# pass 0` counts as **invalid**, not as a kill.
 
-Where a prior report and the code disagreed, the code won (see §5).
+Where a prior report and the code disagreed, the code won (see §5) — including
+when the prior report was this one (§10).
 
 ---
 
@@ -34,10 +42,10 @@ Where a prior report and the code disagreed, the code won (see §5).
 
 | Actor | Capabilities modelled | Findings raised against it |
 |---|---|---|
-| Anonymous | unlimited requests, rotating `X-Forwarded-For`, malformed URLs/paths, no session | `redactUrl` DoS (P0, fixed), rate-limit bypass (P1, fixed), lockout maintenance (P2, fixed), enumeration oracles (P3: registration 400-vs-201 bounded by a per-email limiter; coupon/username oracles open), unauthenticated `/metrics` (P3, open) |
-| Customer | owns orders/coupons, can replay and race their own checkout, can hit APIs directly | escrow under-allocation on multi-unit lines (P0, fixed), V-01 gross/net charge divergence (fixed this pass), V-04 coupon cap bypass (fixed this pass), refund double-spend (V-07, fixed) |
-| Malicious vendor / compromised vendor staff | vendor JWT, vendor-scoped routes, own products/orders | vendor order-status PII + sibling line leak (P1, fixed), fulfilment forward-jump (V-11, fixed), staff permission gaps (P3, open) |
-| Malicious admin / staff | privileged routes, mark-paid, cancel, coupon issuance | refund CAS on admin cancel (V-07, fixed), uncapped % coupon → negative `totalAmount` (P3, open) |
+| Anonymous | unlimited requests, rotating `X-Forwarded-For`, malformed URLs/paths, no session | `redactUrl` DoS (P0, fixed), rate-limit bypass (P1, fixed), lockout maintenance (P2, fixed), enumeration oracles (P3: registration 400-vs-201 bounded by a per-email limiter; coupon-existence oracle closed by X1; the "username oracle" could not be reproduced — see §10), unauthenticated `/metrics` (P3 → fixed, `metricsTokenGuard`) |
+| Customer | owns orders/coupons, can replay and race their own checkout, can hit APIs directly | escrow under-allocation on multi-unit lines (P0, fixed), V-01 gross/net charge divergence (fixed this pass), V-04 coupon cap bypass (fixed this pass), refund double-spend (V-07), **refund double-spend actually reachable because the V-07 guard was dead code (V-07b, P0, fixed)** |
+| Malicious vendor / compromised vendor staff | vendor JWT, vendor-scoped routes, own products/orders | vendor order-status PII + sibling line leak (P1, fixed), fulfilment forward-jump (V-11, fixed), suspended-vendor products still listed (N-6, fixed), pending applicant holding every vendor capability (C5, fixed), staff editing the storefront with an empty permission object (A8, fixed) |
+| Malicious admin / staff | privileged routes, mark-paid, cancel, coupon issuance | refund CAS on admin cancel (V-07 — **whose guard turned out to be dead code: V-07b, P0, fixed this pass**), uncapped % coupon → negative `totalAmount` (C2, fixed), partial-refund balance pre-check blind to prior refunds (N-23, fixed) |
 | Supply chain / CI maintainer | pushes to `main`, controls dependencies | missing secret scan / audit gate / DB job in CI (P2, **fixed this pass**), `axios@1.19.0` (P2, **fixed this pass**) |
 
 ---
@@ -56,6 +64,8 @@ Where a prior report and the code disagreed, the code won (see §5).
 | A-8 | **N-18:** 20 `POST /api/orders` landing in the same millisecond (an ordinary burst — no tricks) | customer / burst traffic | the `orders.orderNumber` (UNIQUE) race lost one INSERT → `ER_DUP_ENTRY` → **500 and the basket lost** (coupon slot and stock were rolled back correctly) | **P2** | **found and fixed this pass** + tested |
 | A-9 | **N-19:** ordinary Google login from `kente-market.vercel.app` in a browser that already holds a `csrf_token` cookie (any visitor whose session JWT expired while the 30-day CSRF cookie lived on) | customer (returning visitor — no tricks) | `POST /api/auth/oauth/exchange` answered **403 `CSRF token missing`** → no session cookie minted → the follow-up `GET /api/users/profile` answered 401 → **Google login dead**, console shows `OAuth profile fetch error: Not authenticated` | **P1** | **found and fixed this pass** + tested |
 | A-10 | **N-20:** a vendor clicks a fulfilment pipeline button (`processing → packaging → shipped → arrived → delivered`) — an ordinary action, no tricks | vendor staff (logged in, authorized) | the handler **wrote the status change and then never answered**: it awaited a customer-notification insert and an SMTP send *before* `res.json`, the SPA aborted at 15 s (`fetchBaseQuery` `timeout: 15000`), and the UI reported **"Failed to update order status"** for an update that had already been saved. Firefox HAR for the failing POST: `status: 0` (no response ever reached the browser), toast at ~15 s, order row already `shipped`/`arrived` on reload | **P2** (the write always landed — no money, no authorization and no data impact, and the UI reconciles on refresh; the defect is a false failure report plus a stale view) | **found and fixed this pass** + tested |
+| A-11 | **V-07b — the refund CAS guard was dead code.** Ask for a refund (partial or full) or cancel an order that already carries a refund marker, or issue two refund requests concurrently | malicious vendor staff / compromised customer / admin | the guard read `.affectedRows` **off the array** `pool.execute` returns (`[rows, fields]`), so the comparison evaluated `undefined === 0` → **always false** → the `refundReference IS NULL` claim never refused anything and every entry point proceeded to move money again. The V-07 report, the source assertions (`migrationSafety.test.js:214`, `redteam-final.test.js:591`) and a UNIQUE index that exists but does not block (the three paths write different marker strings) all certified this as fixed | **P0** | **found and fixed this pass** + tested |
+| A-12 | **V-09b — `reference: ".."` in `POST /api/payments/verify-paystack`** (and the same residue in the unattended recovery job) | authenticated customer | the character class `[A-Za-z0-9._-]` forbids `/` but permits `.`, so `..` passed the guard and WHATWG normalization rewrote `https://api.paystack.co/transaction/verify/..` to `https://api.paystack.co/transaction/` — the request left the verify prefix. Same host, no query string reachable (`?` is refused too), so nothing could be read elsewhere and the key never left Paystack: it defeated the **claim** that path injection was prevented rather than enabling a practical attack | **P3** | **found and fixed this pass** + tested |
 
 ### A-7 (V-01) — the fix that did not close the finding
 
@@ -99,11 +109,11 @@ regression test that fails when either half is removed.
 | `resetPassword` clears lockout | test asserting `failed_login_attempts = 0` and `locked_until = NULL` |
 | **V-02** `%2F` cross-tenant delete | `uploadRoute.js:121-132` / `:201-212`: `base !== filename \|\| '..' \|\| !/^\d+-(product\|reference)-…/` → 400 before ownership |
 | **V-03** reservation leak | `orderController.js:378-399` restores `reservedUnits` with `reason:'reserve-rollback'` before the 400; `reservationService` returns `{reserved, failures}` |
-| **V-05** OAuth state | signed `oauth_state` (HMAC, nonce, 10 min), httpOnly cookie, compared + signature-checked + cleared on callback (single use); Passport's own store disabled; **no Facebook route exists** |
+| **V-05** OAuth state | ~~source reading only~~ → **functional**. `tests/oauthStateGate.test.js` drives the real router over a socket: signed `oauth_state` (HMAC, nonce, 10 min), httpOnly cookie, compared + signature-checked + purpose-checked + cleared on callback; Passport's own store disabled (`state: false`); **no Facebook route exists**. 10 cases, 8 mutations (6 detected, 2 equivalent) |
 | **V-06** staff logout principal | branches on `decoded.role === 'vendor_staff'` → bumps `vendor_staff.tokenVersion`, enforced at `authMiddleware.js:219-225` |
-| **V-07** refund double-spend | all three entry points CAS-claim `refundReference IS NULL` and gate on `affectedRows === 0`, plus a UNIQUE index — **new test added** |
+| **V-07 / V-07b** refund double-spend | **the original verification of this row was wrong, and is retracted.** The three entry points *did* carry `refundReference IS NULL` and gate on `affectedRows === 0` — but `.affectedRows` was read off the **array** `pool.execute` returns (`[rows, fields]`), so the gate compared `undefined === 0`, which is false, and **never refused**. The source assertions that counted both strings (`migrationSafety.test.js:214`, `redteam-final.test.js:591`) passed anyway, and the UNIQUE index does not block because the three paths write different marker strings (`:cancel:` / `:partial:` / `:return:`). Fixed by destructuring at all three sites: `orderController.js` cancel, `returnController.js` partial and full. Now `tests/refundDoubleSpend.test.js` — 5 cases, one order each: 3 refusals assert **409 and a Paystack spy at zero calls**, 2 controls assert exactly one call against the order's own reference (a control is what keeps an unwired path from reading as a correct refusal); **9 mutations, 9 detected** |
 | **V-08** double stock restore | markers zeroed + `orderStatus='cancelled'` **before** the restore; sweeper only claims `pending` rows (CAS) — `rb01` tests 2 & 5, `rb04` |
-| **V-09** Paystack path injection | `/^[A-Za-z0-9._-]{1,100}$/` (and a stricter shape) before the URL is built, then `encodeURIComponent` — **new test added** |
+| **V-09 / V-09b** Paystack path injection | the character class + `encodeURIComponent` were **not sufficient**: the class forbids `/` but permits `.`, so a reference of `..` passed it and WHATWG normalization moved the URL off the verify prefix (A-12). Both wide-class sites now validate **the URL they build** — construct it, assert `origin` and that `pathname` is byte-for-byte the intended path, then send `verifyUrl.href`, so what was validated is what goes on the wire. `tests/paystackReferenceGuard.test.js`: 17 cases over a real socket, driving both the route and the unattended `recoverStuckPendingOrders`, discriminating on **whether axios was called at all** — because every rejection and several ordinary outcomes all answer 400; **8 mutations (5 detected, 3 equivalent)** |
 | **V-11** fulfilment forward jump | `nextIdx > ownIdx + 1 → 400`, covered by `vendorIsolation.test.js` |
 | **V-04 / N-7** coupon cap on the money | atomic `UPDATE coupons SET usesUsed = usesUsed + 1 WHERE id = ? AND usesUsed < maxUses` claimed together with `orders.couponUseState 0→2` in one transaction; release on cancel/expiry/failure (`state 1→0`, conditional decrement); `couponMaxUses.test.js` 9 tests + **2 mutations (8/9 and 4/9 failed)** — see §6 |
 | **N-2** `tv:0` tokens rejected | `authRoutes.js:243` now checks `undefined`/`null` explicitly |
@@ -114,7 +124,9 @@ regression test that fails when either half is removed.
 **Refuted claims from earlier reports**
 
 * *"RB-06 / V-05 OAuth state not addressed"* — **false**, it is properly
-  closed (evidence above). The residual is only a missing functional test.
+  closed (evidence above). The residual it named — no functional test — is
+  now closed too by `oauthStateGate.test.js`; what remains is only that
+  single-use is enforced client-side (§8 P3, item 5).
 * *"`refundReconcile.test.js` failure is pre-existing and unrelated"* —
   **false**. It was cross-suite fixture pollution: orphaned `PARTIAL-` rows
   matched `reconcileRefundedButPaid`'s global scan. Cleaning the orphans made
@@ -140,6 +152,9 @@ regression test that fails when either half is removed.
 | N-18 | **Two orders created in the same millisecond collide on the UNIQUE `orderNumber`, and checkout answers 500.** Both checkout paths minted the key from the wall clock — `"ORD-" + Date.now()` and `` `CUS-${Date.now()}` `` — against `orders.orderNumber VARCHAR(100) UNIQUE NOT NULL`, so any two orders inserted in the same millisecond ask for the *same* value. The loser throws `ER_DUP_ENTRY`; the catch block releases the coupon slot and restores stock (the N-7 economic invariant held throughout — no money moved, no slot leaked), but the customer still gets `500 Internal server error` and loses the basket. Reproduced **2/8 local runs** and in **CI runs 45 and 46** — on byte-identical code that *passed* the runs on either side (44 and 47), which is precisely why it presented as infrastructure flakiness and survived to this pass. Same class, fixed alongside: the regular checkout's SELECT-then-INSERT on `paymentReference` also answered 500 when the UNIQUE key won the race (the custom-request path already answered 400); both now answer 400 with the pre-check's wording. | **P2** (checkout availability under concurrency — no authorization or money impact, but P1-shaped during a burst) — **FIXED this pass** | `controllers/orderController.js`, `controllers/customRequestController.js`; failing log `Duplicate entry 'ORD-1791330964942' for key 'orders.orderNumber'`; now `utils/orderNumber.js` (`PREFIX-<epoch-ms>-<8 hex>`) + `tests/orderNumber.test.js` (6 tests, 2 mutations). |
 | N-19 | **Google login was dead in production: every raw `fetch` in the SPA bypassed the CSRF interceptor.** `main.tsx:28` attaches `X-CSRF-Token` through an **axios** request interceptor; the OAuth exchange (`OAuthCallback.tsx:87`) is a *raw* `fetch` carrying only `Content-Type`. `csrfProtection` layer 2 (`csrfMiddleware.js:117`) rejects any state-changing request that carries the `csrf_token` cookie without the matching header — and that cookie is set on every session issue and lives **30 days**, while the session JWT expires sooner, so "expired session + live CSRF cookie" is the ordinary state of a returning visitor. Live probe matrix against production (`POST /api/auth/oauth/exchange`, `kente-api.onrender.com`): allowed Origin with no cookie → **401** (CSRF passed, route reached); allowed Origin + cookie + no header → **403 `CSRF token missing`** ← the browser's case; cookie + wrong header → 403 `CSRF token mismatch`; foreign Origin → 403 `Cross-site request rejected`; Origin with a trailing slash → 403. Layer 1 was healthy and layer 2 was the killer. The 401 on `/api/users/profile` in the incident report is purely downstream: no session cookie was ever minted. Same class, found in the same sweep: `useLegalConsent.ts:45` (POST `/api/auth/consent` — the Google-**signup** consent) had the identical shape and would 403 the same users, while forgot-password and reset-password escaped only because they *omit* `credentials`, so the cookie never travels. The second half: `getOrIssueCsrfToken` (`csrfMiddleware.js:73`) echoed **any** existing cookie without re-checking its HMAC, so after a `JWT_SECRET` rotation every state-changing request from every returning visitor would 403 for the rest of the cookie's 30-day life, with no recovery short of clearing cookies by hand. And the third: session issuance rotates the cookie while the SPA's cache reset was keyed on the *signed-in boolean*, so a re-sign-in that never flips it (persisted `userInfo`, expired JWT) kept the pre-rotation token — the same 403 one step later, now on every state-changing request. | **P1** (Google login — and Google signup consent — dead in production for exactly the visitors who already had an account) — **FIXED this pass** | `src/main.tsx:28`, `src/Pages/Auth/OAuthCallback.tsx:87`, `src/hooks/useLegalConsent.ts:45`, `src/Pages/Auth/ForgotPassword.tsx:82`, `src/Pages/Auth/ResetPassword.tsx:151`; `backend/middleware/csrfMiddleware.js:73,117`; probe matrix above; now `csrfJsonHeaders()` + `tests/csrfToken.test.js` (11 tests) and `src/utils/__tests__/csrf.test.ts` (10 tests) + `src/store.csrfReset.test.ts` (5 tests) |
 | N-20 | **A write that committed was reported to the user as a failure, because the HTTP response waited on outbound mail.** `updateVendorOrderStatus` wrote the status change, then awaited `Notification.create` **and** `sendOrderStatusEmail` *before* `res.json` (`vendorOrderController.js:487-516` before the fix). nodemailer's stock budgets are **2 minutes to establish the connection, 30 s for the SMTP greeting and 10 minutes of socket idle**, while the SPA aborts every RTK call at **15 s** (`fetchBaseQuery({ timeout: 15000 })`). So in production the request simply never came back: RTK answered `{ status: 'TIMEOUT_ERROR', data: undefined }` — **no body at all** — the universal `err?.data?.message \|\| 'Failed …'` pattern had nothing to quote, and the vendor was told *"Failed to update order status"* for a save that had already landed. Evidence: Firefox HAR of the failing request (POST `status: 0`, zero response headers, while the `OPTIONS` preflight answered **204** — so CORS and the token layer were healthy); the toast arriving at **~15 s**, i.e. exactly the client timeout; the order row already `shipped`/`arrived` on reload; GETs on the same origin answering in **0.5–1.9 s** (the API was warm, so it was not general slowness); and **every** failing click having taken the `advanced` branch — the only branch that notifies before responding. *Honest limit:* the SMTP step itself was not observed in Render's log at click time (the window available was service startup, not the request), so mail is the **best-supported attribution, not a directly measured one** — which is why the fix does not depend on it: the entire notify block now runs **after** the response, so whichever step inside it was slow can no longer hold the request. Same class, **9 more sites** still hold a response open on a send: `updateOrderToPaid` (`orderController.js:1090`), `confirmOrderReceived` (`orderController.js:1277`), register OTP / forgot-password / welcome / two resend-OTP paths (`userController.js:132,232,364,401,490`) and the two payment sends (`paymentRoutes.js:221,495`). Two of those are reachable from RTK mutations with the same 15 s budget — the customer's **Confirm receipt** (`useConfirmOrderReceivedMutation`, `OrderDetails.tsx:96`) and the admin **Mark as paid** — so they could false-fail identically; they are now bounded by the SMTP caps below rather than reordered (reordering money-path handlers is tracked as P3). | **P2** (production defect in the vendor fulfilment flow — no authorization, money or data impact, since the write always landed) — **FIXED this pass** | `backend/controllers/vendorOrderController.js:500` responds first and `:503` detaches the notification (logging the notify duration whenever it exceeds 1 s, so the cost is visible in Render); `backend/utils/emailService.js:46-49,73` caps `connectionTimeout`/`greetingTimeout`/`socketTimeout` at **5/5/10 s** and adds an opt-in `EMAIL_HOST` relay; `src/utils/mutationError.ts` classifies transport failures and both order screens re-sync on an unknown outcome. Tests: `backend/tests/emailResponseBudget.test.js` (3) + `src/utils/__tests__/mutationError.test.ts` (10), **4 mutations** — §6. |
+| N-21 | **V-07b — the refund CAS guard was dead code, so V-07 was never actually fixed.** All three entry points read `.affectedRows` off the **array** `pool.execute()` returns (`[rows, fields]`), so the comparison evaluated `undefined === 0` → false, and the `refundReference IS NULL` claim refused nothing. The source assertions that counted both strings passed anyway (`migrationSafety.test.js`, `redteam-final.test.js`), and the UNIQUE index does not block because the three paths write *different* marker strings (`:cancel:` / `:partial:` / `:return:`). V-07's original verification therefore certified a guard that could not fire: the double-spend it reported as closed was still reachable by a vendor staff member, a compromised customer, or an admin cancel. This is the one finding in this report where the **evidence was wrong, not the code's intent** — §4 retracts it. | **P0 — FIXED this pass** | destructuring at `orderController.js` cancel and `returnController.js` partial + full; `tests/refundDoubleSpend.test.js` (5 cases, own order each): 3 refusals assert **409 and a Paystack spy at zero calls**, 2 controls assert **exactly one call against that order's own reference** — a control is what keeps an unwired path from reading as a correct refusal. **9 mutations, 9 detected.** |
+| N-22 | **V-09b — the Paystack reference guard accepted `..`.** `[A-Za-z0-9._-]{1,100}` forbids `/` but permits `.`, and WHATWG normalization collapsed `https://api.paystack.co/transaction/verify/..` → `https://api.paystack.co/transaction/`, so a request left the verify prefix — at **both** wide-class sites: `POST /api/payments/verify-paystack` and the unattended `recoverStuckPendingOrders` job. No secret could move (same host, `?` refused too so nothing elsewhere was readable, the key never leaves Paystack): it defeated the *claim* that path injection was prevented rather than enabling a practical attack, which is why it grades P3 and not higher. | **P3 — FIXED this pass** | both sites now validate **the URL they build** — construct it, assert `origin` and a byte-for-byte `pathname`, then send `verifyUrl.href`; `tests/paystackReferenceGuard.test.js` (17 cases over a real socket, discriminating on **whether axios was called at all**, since every rejection and several ordinary outcomes all answer 400). **8 mutations: 5 detected, 3 equivalent** (origin clause unreachable over the class; `encodeURIComponent` identity over the class; the raw template is the same string). |
+| N-23 | **The partial-refund balance pre-check could not see prior refunds.** `new Order(row)` never copied `refundedAmount`, so `validatePartialRefund` computed `remaining = totalAmount - 0` and compared the requested amount against the **whole total** instead of what was left — it could not tell a first attempt from a replay. Measured, not inferred: replay vendor A's exact share on a fresh return after their share is refunded → the balance check passes, `ReturnRequest.updateStatus` spends the one-way `pending→approved` flip, and only *then* does the SQL write guard or the refundReference CAS refuse (409) — leaving **a return marked approved with no money moved and no retry possible**, precisely the failure the P1 pre-validation comment exists to prevent. No funds can leave: the SQL guard `refundedAmount + ? <= totalAmount` was always correct and remains the backstop, so this is a workflow-integrity defect, not a fund-loss one. Found by mutation testing: the survivor came back `fail=0` because no test exercised a replay above the remaining balance. | **P2 — FIXED this pass** | the constructor now carries the column (its only reader); `partialRefunds.test.js` +1 asserts 400 **and** `return.status === 'pending'` **and** `refundedAmount` unchanged; part of the **14/14 mutation battery** in §6. |
 
 ---
 
@@ -337,6 +352,78 @@ and fail if the old `toast.error(x?.data?.message || '…')` pattern reappears.
 **Mutation proof:** restore the old catch in `VendorOrdersSection.tsx` → **1
 fail** (the classifier guard); restored → **10/10 pass**.
 
+### The final batch (batches ①–④): 18 suites, 245 tests
+
+Everything in the table below was added after the N-20 revision of this report,
+closing the P3 batch and the three functional-test gaps. All three HTTP suites
+share `tests/helpers/httpHarness.js` (`startServer`, `collectCookies`,
+`seeRedirect`) so they drive the **real router over a socket** — a request
+through Express, not a function call — because §3 A-11 is precisely what
+source-reading looked like while the guard it was reading could never fire.
+
+| Suite | Tests | Finding | Mutation result |
+|---|---|---|---|
+| `metricsAuth.test.js` | 13 | X4a `/metrics` public | **4/4** |
+| `stockIntegrity.test.js` | 19 | I3 absolute stock writes unclamped | **1/1** |
+| `couponBounds.test.js` | 19 | C2 % cap + negative `totalAmount` | **3/3** |
+| `migrationSafety.test.js` | 22 | N-5/N-5b, R2 | **2/2** |
+| `productPriceValidation.test.js` | 18 | M-7/M-8 price schema + mounts | **2/2** |
+| `vendorVisibility.test.js` | 13 | N-6 suspended vendors listed | **2/2** |
+| `vendorApprovalGate.test.js` | 20 | C5 pending applicant as vendor | **5/5** |
+| `storefrontPermission.test.js` | 16 | A8 storefront write ungated | **6/6** |
+| `redisRecovery.test.js` | 14 | N-10 allowance on Redis recovery | **6/6** |
+| `otpResend.test.js` | 13 | M-1 resend resets the counter | **6/6** |
+| `emailHtmlEscaping.test.js` | 6 | M-6 raw interpolation in mail | **8/8** |
+| `uploadGate.test.js` | 7 | F2 extension filter unanchored | **8/8** |
+| `tryOnSsrf.test.js` | 14 | F4a syntactic URL validation | **9/9** |
+| `loginTiming.test.js` | 14 | A5 login timing oracle | **12 detected, 1 equivalent** |
+| `couponOracle.test.js` | 5 | X1 coupon oracle answers | **7/7** |
+| `refundDoubleSpend.test.js` | 5 | V-07 / **V-07b** | **9/9** |
+| `paystackReferenceGuard.test.js` | 17 | V-09 / **V-09b** | **5 detected, 3 equivalent** |
+| `oauthStateGate.test.js` | 10 | V-05 functional | **6 detected, 2 equivalent** |
+| | **245** | | **100 kills / 106 mutants (6 equivalent)** |
+
+**What counts as a kill, here.** Every mutation is applied to a byte-snapshotted
+file, the suite runs, the file is restored from the snapshot and its sha256
+verified before the next mutant may start, and a run that reports `# pass 0` is
+treated as **invalid, never as a detection** — an all-skipped suite reads as a
+survivor's mirror image and would silently credit a kill that never happened.
+**Six** mutants are recorded as *equivalent* rather than detected, in three
+groups: `A5`'s `'timing-equaliser'` → `''` (bcryptjs prices both identically);
+`V-05`'s removal of `!queryState` and of `!cookieState` (each subsumed by
+`queryState !== cookieState`, which still catches a mismatch either way); and
+three over the Paystack character class, where the mutant produces a
+byte-identical string. They are listed instead of being quietly dropped,
+because a kill count only means something if the denominator was never edited.
+
+**Honest record of this battery.**
+
+* **Three commits had shipped with no mutation tally at all** — `5b277b4` (X4a),
+  `cac70be` (I3/C2/R2/N-5/M-7/M-8) and `f5804a7` (N-6) — so their suites were
+  *tested* but not *proven*. The battery above was run to close that gap rather
+  than to write a larger number: **14/14 detected, 0 survived.**
+* **The first run of that battery produced one survivor, and it was real.**
+  Mutant C1 (removing `refundable-balance > 0.005`) came back `24 pass, 0 fail`,
+  which could have been written up as "equivalent, subsumed by the SQL write
+  guard". It was not equivalent: the pre-check runs **before** the one-way
+  `pending→approved` flip, so without it a replay consumes the approval and then
+  fails. It survived because no test drove a replay above the remaining balance.
+  Adding that test (`partialRefunds.test.js`) exposed the second half of the
+  defect — the balance check never saw `refundedAmount` at all (N-23) — and only
+  then did the mutant turn into a kill. **The survivor is reported as a survivor
+  because that is what found the bug.**
+* **Two earlier runs of the V-07 batch were invalid and are not counted.** The
+  mutation script's 6-space anchor matched as a substring of a 10-space one, so
+  three mutants reported `fail=0` with the tests never having executed — and at
+  the end of that run both controllers were **empty**. What truncated them was
+  never identified; the restore path read as correct and no test writes source.
+  Recovered with `git checkout` plus re-applying the three edits, and the script
+  was rewritten to refuse a file under 1000 bytes, snapshot as bytes, restore
+  from that snapshot, verify the digest before the next mutant, and flag any run
+  where the tests skipped. The clean re-run was 9/9 with both files
+  byte-identical before and after (77612 and 21390 bytes). The three original
+  "survivors" were phantoms and are excluded from every count in this report.
+
 ---
 
 ## 7. Tests executed
@@ -387,6 +474,18 @@ fail** (the classifier guard); restored → **10/10 pass**.
 | Live: escrow qty probe | `seclab/probe-escrow-qty.mjs` | `underpaidBy: 0, exploitable: false` |
 | Live: rate limiting | 14 attempts, rotating XFF, one account | before: unlimited; after: 5 allowed → `429`, unrelated account unaffected |
 | Dependency audit | `npm audit` (both workspaces) | frontend 8 high / 2 moderate, backend 3 high — all dev-chain except frontend `axios` |
+| **Full suite, dev DB (batch ①, X4a + data integrity)** | `npm test` | **323 tests, 0 fail** (232 + 91) |
+| **Full suite, dev DB (batch ② + ③)** | `npm test` | **445 tests, 0 fail** (323 + 13 + 63 + 46) |
+| **Full suite, dev DB (batch ④, V-07/V-09/V-05)** | `npm test` | **477 tests: 476 pass, 0 fail, 1 skipped, exit 0** (172.2 s) — 232 at N-20 + **245** |
+| **CI invocation (no database), batch ④** | `DB_HOST=127.0.0.1 DB_PORT=59999 … node --test "tests/**/*.test.js"` | **353 tests: 298 pass, 55 skipped, 0 fail, exit 0** |
+| **`redteam-final`, batch ④** | `node --test tests/redteam-final.test.js` | **10/10 pass, exit 0** |
+| CI, batches ①–③ | GitHub Actions runs **53–64** | all success: 53 `5b277b4`, 54 `f5804a7`, 55–58 batch ② (`2a1b95c`, `f0838e0`, `74953c1`, `21e0606`), 59–64 batch ③ (`1b972e6`, `42a788f`, `d6c1540`, `9dd392b`, `4aacfbb`, `1b37ab3`) |
+| CI, batch ④ | GitHub Actions runs **65** `5c27869`, **66** `9416087`, **67** `7d49981` | 65 and 66 success |
+| **Mutation battery, the three untallied commits** | `python3 /tmp/opencode/p3mut.py` + `p3mut2.py` | **14/14 detected, 0 survived, 0 invalid** — X4a 4/4, batch-1 8/8, N-6 2/2 |
+| **Bad run, batch ④ (V-05 first attempt)** | `npm test` against TiDB | **477 tests: 475 pass, 1 fail** — `P0-3 consensus fulfilment` (`vendorIsolation.test.js:211`) answered 500 after 10.5 s with `Error fetching order: DB ping failed` in the log, and the run took **223 s instead of 172 s**. Isolated re-run of that file: **9/9**. Full re-run: **477/476/0/1 exit 0 with zero ping failures.** Environmental, recorded rather than dropped |
+| **Bad run, batch ④ (V-09, hang)** | `node --test tests/paystackReferenceGuard.test.js` | printed every result and then **never exited** (exit 124, no `# tests` line). Root cause: the suite drives the real router, importing it runs `rateLimitMiddleware`, and `backend/.env` carries a live Upstash `REDIS_URL` — the module-scope client connects during import and its open socket holds the event loop. Fixed in the suite, not in production: `REDIS_URL` pinned empty before import (not `delete` — the limiter re-runs `dotenv.config()` and only keeps keys that still exist) plus a best-effort `quit()` in `after()` |
+| **Bad run, batch ④ (V-09, anchors)** | mutation runner | 7 `ANCHOR-FAIL count 0` before the cause was read: `routes/paymentRoutes.js` is **CRLF** (576 CRs; `escrowService.js` and `authRoutes.js` are LF), so LF anchors did not match — and a 6-space anchor had matched as a substring of a 10-space one earlier, producing phantom `fail=0` results. Anchors now carry the file's own line ending and must match exactly once |
+| **Final battery, whole gate, after N-23** | `lint → tsc ×2 → frontend → build → npm test → redteam-final → no-DB → 2× ratchet → gitleaks`, sequenced | **all 11 steps exit 0**: full suite **478 tests / 477 pass / 0 fail / 1 skipped, exit 0 (163 s)**; no-DB **354 / 298 pass / 56 skipped / 0 fail**; frontend **9 files, 69/69**; lint **0 errors, 13 warnings**; both typechecks exit 0; `redteam-final` **10/10**; both audit ratchets exit 0; gitleaks **179 commits, no leaks**; `dist/` built in 30.2 s |
 
 **Flakiness note.** The database used for this review is a shared TiDB and can
 return `DB ping failed` / `ETIMEDOUT` under sustained load. One sequential run
@@ -448,13 +547,31 @@ order"* flake.
 Fixture pollution in `refundReconcile.test.js` (orphaned `PARTIAL-` rows) was
 root-caused and cleaned; that suite is green in all runs above.
 
+**The batch-④ flake class is the same one, with one new member.** The recurring
+names are `rb01-inventory-sweeper`, `rb04-inventory-double-restore` and
+`couponMaxUses`: green every time they are run alone with
+`--test-concurrency=1`, and failing only inside a loaded full run. The V-05 run
+above added `vendorIsolation` to that set with the identical signature — a DB
+error in the log (`DB ping failed`) instead of an assertion, 10.5 s to fail, and
+a total run time 51 s slower than a clean one. The rule applied throughout: a
+failure whose log names a ping or packet error is re-run per file before it is
+believed; if the per-file run is green *and* the next full run is green, it is
+written down as environmental and left in this table. It is never dropped from
+the log, because a report containing only green runs is not evidence of
+stability.
+
 ---
 
 ## 8. Remaining issues by severity
 
 ### P0 — immediate financial/security blocker
-**None open.** The two P0s found in this pass (escrow `qty`, `redactUrl` crash)
-and V-01 are fixed, mutation-proven and covered by tests.
+**None open.** Four P0s were found *in this pass* and all four are fixed,
+mutation-proven and covered by tests: escrow `qty`, the `redactUrl` crash, V-01
+— and, in this final batch, **V-07b**, which was less a new defect than a
+retraction: the refund CAS that V-07 reported as closed could never refuse
+anything, because `.affectedRows` was read off the array `pool.execute` returns
+(§3 A-11, §5 N-21). It refuses now, and 9 mutations each fail when the guard is
+reverted — 9/9, not "the strings are present".
 
 ### P1 — public production blocker
 **None open.** The last P1 found was **N-19**, and it did not come from
@@ -479,9 +596,13 @@ affected, and the only casualties were a false failure report and a stale view
 (§3 A-10, §5 N-20).
 
 ### P2 — pilot hardening
-**All six closed this pass — plus a seventh, N-18, found and closed while
-investigating CI, and an eighth, N-20, found when a vendor reported a failed
-order-status update in production.** What each one was, and what now pins it:
+**Every P2 named in §5 is closed.** Six were in the original batch (V-10, N-8,
+N-9, N-11, N-12, N-13); three more were found while working on something else
+(N-14 stale canonical schema, N-15 migrations that do not run on MySQL, N-16
+search meaning two different things on the two engines); N-18 surfaced while
+investigating a "flaky" CI job; N-20 arrived when a vendor reported a failed
+order-status update in production; and **N-23** was found by mutation testing in
+this final batch. What each one was, and what now pins it:
 
 * **V-10 — lockout maintenance DoS.** 10 wrong passwords over ~30 min locked a
   victim for 1 h and the DB counter never decayed, so **one request per hour**
@@ -553,6 +674,22 @@ order-status update in production.** What each one was, and what now pins it:
   a server answer and **re-syncs** when the outcome is unknown, instead of
   asserting a failure it cannot know. Pinned by `emailResponseBudget.test.js`
   (3 tests, 3 mutations) and `mutationError.test.ts` (10 tests, 1 mutation) — §6.
+* **N-23 — the partial-refund balance pre-check could not see a prior refund.**
+  `validatePartialRefund` computes `remaining = totalAmount - refundedAmount` so
+  that an over-refund is refused *before* `ReturnRequest.updateStatus` spends the
+  one-way `pending→approved` flip — but `new Order(row)` never copied
+  `refundedAmount`, so the expression was always `totalAmount - 0`. The check
+  could not tell a first attempt from a replay. Measured: replaying vendor A's
+  exact share on a fresh return passes validation, flips the return to approved,
+  and only then does the SQL write guard refuse with 409 — **an approved return
+  with no money moved and no retry possible**, the exact failure the comment
+  above the check promises cannot happen. No funds can move incorrectly (the SQL
+  guard `refundedAmount + ? <= totalAmount` was always correct and remains the
+  backstop), so this is workflow integrity rather than fund loss. Found because
+  the mutation battery reported a survivor; adding the test that kills it
+  surfaced the constructor bug. Fixed by copying the column through, pinned by
+  `partialRefunds.test.js` test 3 (400 + still-pending + no money moved), and
+  counted inside the **14/14** battery in §6.
 
 **On the audit gate (why it is a ratchet, not `npm audit --audit-level=high`).**
 A raw gate cannot pass here: `braces` — reached from `tailwindcss` 3.x in the
@@ -573,33 +710,38 @@ including 10.x) and is dev-only, so it is accepted **with its reason recorded**
 in the frontend baseline — that is what the baseline is for.
 
 ### P3 — post-launch
-`X4a` unauthenticated `/metrics`; `N-6` suspended vendors stay in public
-listings/trending (purchase is blocked, display is not); `C5` pending vendor
-applicants get `role='vendor'` and pass the owner branch of `vendorOrStaff`;
-`A8` any vendor staff can edit the storefront profile/read reviews (self-scoped
-only); `I3` negative absolute stock accepted, **no `CHECK` constraint anywhere**;
-`M-1` OTP attempts reset on every resend; `M-6` raw name interpolation in
-`emailService.js` (the order-mail twin is escaped and tested); `M-7`/`M-8` no
-product price schema, only 2 `validate()` mounts across 31+ mutating routes;
-`C2` admin coupon has no ≤100% cap and the PUT path writes an unclamped total
-(possible negative `totalAmount`, integrity only); **the registration 400-vs-201
-existence oracle (V-10 residual)** — closed as far as rate limiting can close it
-(`accountRegisterLimiter`, 5/15 min keyed on the probed email, both outcomes
-counted) but the answer itself still differs, because fixing that means
-redesigning when the OTP token is issued; `X1` coupon-existence oracle
-behind an IP-keyed limiter; `A5` login timing oracle (no dummy bcrypt on the
-user-not-found branch); `N-5` `db:migrate` has no transaction/per-row
-try/catch; `F2` unanchored extension regex (magic-byte check is the real
-authority); `F4a` try-on URL validation is syntactic only; `N-10` limiter reset
-on Redis recovery; `R2` `refundedAmount` check-then-act (unreachable — the
-V-07 claim allows one claim per order); V-07/V-09/V-05 have no *functional*
-(negative) tests, only source assertions; and — after N-20 — the **nine
-remaining sites that still *sequence* an awaited `send*Email` before their
-response** (`updateOrderToPaid`, `confirmOrderReceived`, the five
-`userController` OTP/reset/welcome sends and the two `paymentRoutes` sends),
-which are now *bounded* by the 5/5/10 s SMTP caps rather than reordered;
-moving them off the response path entirely is a design cleanup, not a
-security fix, because the caps already keep them inside the client budget.
+
+**The P3 batch is closed.** Every item the previous revision listed as open has
+been fixed, given a functional test, and shown to fail when the fix is reverted —
+suites, counts and mutation results are in §6, findings in §5:
+
+| ID | What was open | Now pinned by |
+|---|---|---|
+| X4a | `/metrics` served a complete map of every route with no auth at all | `metricsAuth` 13 tests, **4/4** |
+| N-6 | suspended vendors stayed in public listings, search, categories and trending (purchase was blocked, display was not) — behind a guard that never ran, because `!vendorId` is true for exactly the public call it was written for | `vendorVisibility` 13, **2/2** |
+| C5 | a pending applicant held `role='vendor'` seconds after applying, passing the owner branch of `vendorOrStaff` | `vendorApprovalGate` 20, **5/5** |
+| A8 | any vendor staff — including one holding an **empty** permission object — could edit the storefront profile and read reviews | `storefrontPermission` 16, **6/6** |
+| I3 | absolute stock writes accepted any integer, and **no `CHECK` constraint existed anywhere** | `stockIntegrity` 19, **1/1** |
+| C2 | admin coupon uncapped above 100%, and the PUT path wrote an unclamped total — a negative `totalAmount` | `couponBounds` 19, **3/3** |
+| R2 / N-23 | `refundedAmount` check-then-act, plus a balance check that could not see prior refunds | `migrationSafety` + `partialRefunds` 25, **1/1** |
+| N-5 / N-5b | `db:migrate` had no per-row try/catch and no fatal-connection classification, so one dead connection either aborted the 21-script chain or was swallowed | `migrationSafety` 22, **1/1** |
+| M-7 / M-8 | no product price schema; 2 `validate()` mounts across 31+ mutating routes | `productPriceValidation` 18, **2/2** |
+| M-1 | every OTP resend reset the attempt counter, so resending forever beat the 5-attempt cap | `otpResend` 13, **6/6** |
+| M-6 | four email renderers interpolated raw names, titles and URLs into HTML | `emailHtmlEscaping` 6, **8/8** |
+| F2 | the upload extension filter was unanchored, and the *name* rather than the bytes decided the stored extension | `uploadGate` 7, **8/8** |
+| F4a | try-on image URL validation was syntactic only — no operator allow-list, no fail-closed default | `tryOnSsrf` 14, **9/9** |
+| A5 | login answered in measurably different time depending on whether the account existed | `loginTiming` 14, **12/13** (1 equivalent) |
+| X1 | the coupon-existence oracle answered differently for "no such code" and "code exists but is not for you" | `couponOracle` 5, **7/7** |
+| N-10 | a fresh rate-limit allowance the moment Redis recovered from degraded mode | `redisRecovery` 14, **6/6** |
+| V-07 / V-09 / V-05 | all three had **source assertions only** — greps for strings — which is exactly how V-07 shipped with a dead guard | `refundDoubleSpend` **9/9**, `paystackReferenceGuard` 8 (5 detected + 3 equivalent), `oauthStateGate` 8 (6 detected + 2 equivalent), all over a real socket |
+
+**What is genuinely still open at P3:**
+
+1. **Registration still answers 400 ("address taken") vs 201.** Closing it means redesigning when the OTP token is issued — it is minted inside that same request. It is *bounded*: `accountRegisterLimiter` (5 / 15 min, keyed on the probed email, counting **both** answers) makes a prober pay per address and `X-Forwarded-For` rotation buys nothing. Deliberately out of scope this pass (V-10 residual).
+2. **Nine sites still *sequence* an awaited `send*Email` before their response** — `updateOrderToPaid`, `confirmOrderReceived`, five OTP/reset/welcome sends in `userController`, two in `paymentRoutes`. They are now *bounded* by the 5/5/10 s SMTP caps, which hold them inside the SPA's 15 s budget; moving them off the response path is a design cleanup, not a security fix.
+3. **Two grantable staff permissions are inert.** `manage_staff` and `reply_reviews` are in `VALID_PERMISSIONS` and labelled in the UI, but no route consumes either: staff CRUD is gated `protect, vendor` (owner only, so a staff account cannot mint more staff), and `GET /api/vendors/reviews` is read-only — there is no reply endpoint to gate. Granting them grants nothing, so it fails closed; what it costs is *delegation* (an owner cannot hand staff management to a trusted employee), not security. Recorded rather than invented: wiring a permission to a route that does not exist would be theatre.
+4. **`tailwindcss` 3.x → 4.x.** Mechanically small, but a visual change with no safety net that can see pixels, and the only way to clear the five remaining frontend highs from the audit baseline. Post-launch by decision.
+5. **V-05's "single use" is enforced only client-side.** The state token stays cryptographically valid until its 10-minute expiry after the first exchange; what stops a replay is that an attacker cannot place the `oauth_state` cookie in the victim's browser. Written down as a residual of the design rather than "fixed", because the fix belongs to whoever next touches the OAuth flow.
 
 ---
 
@@ -702,11 +844,41 @@ security fix, because the caps already keep them inside the client budget.
    `.gitleaksignore` (so the scanner cannot be poisoned into ignoring *other*
    findings), but the key itself is still valid until Paystack revokes it.
    Revoke it, then confirm `gitleaks detect --source .` stays at 0 findings.
-10. **P3 batch** — `/metrics` auth, `CHECK` constraints for stock, vendor-status
+10. **P3 batch** — ~~`/metrics` auth, `CHECK` constraints for stock, vendor-status
    predicate on public product queries (`productModel.js:187-189` is bypassed
    because every public controller passes `approvalStatus='approved'`),
    escaping in `emailService.js`, price schema, negative functional tests for
-   V-05/V-07/V-09.
+   V-05/V-07/V-09.~~ **Done (batches ①–④).** All of it, plus everything the
+   batch was extended to cover: `metricsTokenGuard` (X4a, fail-closed 404 when
+   `METRICS_TOKEN` is unset), `toNonNegativeInt` at all four absolute stock
+   writes *and* a `CHECK` constraint (I3 — the clamp is authoritative, because
+   TiDB parses CHECK without enforcing it), the ≥100% cap and the
+   negative-`totalAmount` floor (C2), the `refundedAmount` refusal with
+   `affectedRows` gating and a `MANUAL RECONCILIATION REQUIRED` log (R2 — a
+   refusal must not 500, Paystack has already moved money), fatal-vs-row-level
+   error classification in the migration chain (N-5/N-5b), the suspended-vendor
+   predicate (N-6/N-6b, whose first fix collapsed to an INNER JOIN and hid
+   platform products), the price schema on all four product routes (M-7/M-8),
+   `requireApprovedStore` (C5, exactly one exemption: `GET /api/vendors/me`),
+   `manage_storefront` enforced on `PUT /api/vendors/profile` (A8),
+   `carryLocalCountsForward` before the Redis switch (N-10),
+   `otpResendLimiter` (M-1), the canonical HTML escaper (M-6), the anchored
+   upload gate (F2), `AI_TRYON_ALLOWED_HOSTS` (F4a), `burnPasswordTime` (A5),
+   the unified coupon refusal (X1) — and the three functional-test gaps
+   V-07/V-09/V-05, which is where the batch turned up **V-07b (P0)** and
+   **V-09b** and, through mutation testing, **N-23**. 18 suites, 245 tests,
+   **100 kills of 106 mutants** (6 equivalent); §6.
+11. **Deploy — user-owned, not verifiable from here.** **Render** carries the
+   backend half (N-20's detached notification, the refund guards, and every
+   batch ①–④ fix); **Vercel** carries the frontend half (`csrfJsonHeaders()`,
+   `describeMutationError()`, the CSRF cache reset). The per-finding deploy
+   notes are in items 7 and 8. Nothing here can be claimed as *live* until
+   both are out, which is one reason §12 does not say "production ready".
+12. **Backup job — user-owned, never run.** `.github/workflows/backup.yml` has
+   never completed: 0 of its first 3 scheduled attempts succeeded, and run 4
+   failed **as designed**, at its preflight, which names the **8 secrets that
+   must be configured**. Set those 8, trigger the workflow manually, and
+   confirm it goes green before trusting it.
 
 ---
 
@@ -721,16 +893,25 @@ security fix, because the caps already keep them inside the client budget.
 | "X3 — try-on without a limit" | **False positive** — daily limit enforced. |
 | "V-09 still open" (older draft) | **Closed** — but it had no test until this pass. |
 | Escrow still under-allocating multi-unit lines | **Disproven** — live probe returns `underpaidBy: 0`. |
+| "The username enumeration oracle" — carried by *this* report in §2 and §12 | **Disproven and withdrawn.** The product has no username: `branding_house.sql` declares no `username` column, no route reads one, and the three backend hits are `rateLimitMiddleware` keying a limiter bucket on `req.body.username` (which reveals nothing — it only names the bucket), `reviewController`'s echo of a **public** display name, and `url.username` inside a WHATWG `URL` parse. There is nothing to enumerate, so the finding is deleted rather than closed — the same rule §1 states for a disagreement between a prior report and the code: the code wins. |
+| "V-07 refund double-spend — fixed, all three entry points CAS-claim and gate on `affectedRows`" (previous revision of this report) | **Retracted.** The gate was dead code: `.affectedRows` was read off the **array** `pool.execute` returns, so the comparison was `undefined === 0`, always false. The assertions that certified it counted strings in the source, and a UNIQUE index that exists but cannot block (the three paths write different marker strings) completed the illusion. Retracted in §3 A-11 and §5 N-21, replaced by a functional test, and now proven by **9 mutations, 9 detected**. |
 
 ---
 
 ## 11. Verified security strengths
 
-* **Two-layer money invariants.** `releaseAllocation` uses a conditional
-  `held → available` update *and* a DB unique key
+* **Two-layer money invariants — with one honest exception.** `releaseAllocation`
+  uses a conditional `held → available` update *and* a DB unique key
   (`uq_wallet_credit_allocation`); only disabling both reproduces the duplicate
-  credit. Same pattern for refunds (`uq_orders_refundReference`), payment
-  idempotency and stock markers.
+  credit, which `redteam-final` test 8 proves. Payment idempotency and stock
+  markers have the same shape. **Refunds do not — and this report previously
+  claimed they did.** `uq_orders_refundReference` is real but cannot block the
+  cross-entry-point double-spend, because the cancel, partial and return paths
+  write *different* marker strings (`:cancel:` / `:partial:` / `:return:`); the
+  index only stops one path claiming twice with an identical value. The
+  application CAS is the layer that matters there, and it was dead code until
+  V-07b (§5 N-21). The index is worth keeping. It is not a second layer, and
+  calling it one is how a dead guard stayed invisible.
 * **Server-authoritative pricing.** Totals are recomputed from stored items and
   a server-validated coupon; Paystack verification demands an exact kobo match
   on both verify and webhook paths — which is exactly why V-01 mattered.
@@ -798,7 +979,9 @@ strongest part of the system.**
 The two P0s found in this pass (multi-unit escrow under-allocation, and an
 anonymous process-killing DoS) plus the V-01 charge/book divergence were real,
 reproducible and would have cost money on day one. All three are fixed,
-mutation-proven and pinned by tests that fail against the reverted code.
+mutation-proven and pinned by tests that fail against the reverted code — and
+in this final batch a **fourth** was found among them: V-07b, the refund CAS
+that had been reported fixed while it compared `undefined === 0`.
 
 Ten of the twelve prior-round findings I re-derived independently — V-02, V-03,
 V-05, V-06, V-07, V-08, V-09, V-11, N-2, N-4 — hold up under adversarial
@@ -806,7 +989,13 @@ re-reading, which is better than the earlier reports claimed for themselves.
 Two of the round-2 findings do not: **V-01 was still exploitable** (the "fix"
 added comments but kept a raw `axios.put`, so the charge used the stale
 pre-coupon total — closed in this pass), and **V-04 remained open** — the coupon
-cap was enforced on the counter rather than on the money. **V-04 is now closed
+cap was enforced on the counter rather than on the money. A third kind of
+failure appeared later, and it is the more instructive one: V-07 the *finding*
+held up perfectly while V-07's *certification* did not — the guard was there,
+the strings were there, and the code path that was supposed to refuse could not
+refuse. That is the difference between reading a file and exercising it, and it
+is why every fix added in this final batch is pinned by a test that drives the
+real router or the real database (§6). **V-04 is now closed
 too**: the slot is reserved atomically at booking (before Paystack ever charges
 a discounted amount), tied to the order, released on cancel/expiry/failure and
 made permanent on settlement; 9 tests and 2 reverted mutations prove it.
@@ -858,22 +1047,46 @@ out **first**, the notification runs behind it, and the mail client is capped
 at 5/5/10 s so the nine other sites that still sequence a send cannot reach the
 budget either. 13 tests, 4 mutations.
 
-**No P0 and no P1 remains open, and no P2 remains open either.** What is left
-before a pilot is operational rather than adversarial: **deploy what is already
-in `main`** — N-19 needs a Vercel rebuild (that alone restores Google login)
-and N-20 needs the **Render** deploy (the fix is server-side; the Vercel half
-supplies the honest toast and the automatic re-sync), then watch the first runs
-of the new CI database job (a green gate on day one is evidence, not a habit),
-rotate the legacy Paystack test key that this pass found pasted into an old
-version of `backend/.env.example` (the fingerprint is in `.gitleaksignore`, so
-the scanner will not flag it again, but the key itself should still be revoked),
-and take the `tailwindcss` 3.x → 4 migration out of the frontend baseline.
-Before general launch: the P3 batch — metrics auth, stock `CHECK` constraints,
-vendor-status predicate on public queries, and the enumeration oracles that are
-bounded but not closed (registration 400-vs-201, coupon and username oracles) —
-plus the operational items in §9.
+**No P0, no P1 and no P2 remains open — and that sentence costs more to write
+than it did in the previous revision, because this final batch found two more
+of them anyway.** V-07b (P0) was not so much a new defect as a retraction: the
+refund CAS the report previously certified as fixed could never refuse anything,
+and the assertions that certified it were counting strings rather than behaviour
+(§3 A-11, §5 N-21). N-23 (P2) came out of the mutation battery — a survivor,
+and the survivor was right: the partial-refund balance check could not see prior
+refunds, so a replay consumed the one-way approval and *then* failed (§5 N-23).
+Both are fixed, both have tests that fail against the reverted code, and both
+are recorded with the run that found them rather than folded quietly into a
+green table. What that says about method is worth more than the two findings:
+a source assertion can be satisfied by dead code, and a mutation reporting
+`fail=0` is either proof the guard is redundant or proof that nothing was
+testing it — and those two look identical until you go read the failure.
+
+What is left before a pilot is operational rather than adversarial: **deploy
+what is already in `main`** — N-19 needs a Vercel rebuild (that alone restores
+Google login), N-20 and every batch ①–④ fix need the **Render** deploy (§9
+items 7, 8 and 11), then watch the first runs of the new CI database job (a
+green gate on day one is evidence, not a habit), rotate the legacy Paystack test
+key this pass found pasted into an old version of `backend/.env.example` (its
+fingerprint is in `.gitleaksignore`, so the scanner will not flag it again, but
+the key itself should still be revoked), configure the **8 secrets `backup.yml`
+names and trigger it once by hand** — that workflow has never run — and take the
+`tailwindcss` 3.x → 4 migration out of the frontend baseline. The P3 batch that
+the previous revision left open is closed (§8); five P3s are genuinely open and
+each is written down with its bound: the registration 400-vs-201 oracle
+(bounded by `accountRegisterLimiter`), the nine sites that still sequence an
+email send (bounded by the 5/5/10 s SMTP caps), the two grantable staff
+permissions nothing enforces (fails closed), `tailwindcss` v4, and V-05's
+single-use state, which is client-side only.
 
 Confidence statement: every "fixed" verdict above is backed either by a test
 that was shown to fail when the fix is reverted, or by a live measurement
-recorded in §7. No finding is marked closed on the strength of a comment, a
+recorded in §7. Where no such test existed — X4a, the batch-1 data-integrity
+fixes, N-6 — the battery in §6 was run rather than assumed, ending at **14/14
+detected**, and the one survivor it produced is reported as a survivor because
+that is what led to N-23. The bad runs are in §7 with their causes: a TiDB ping
+failure that cost one test at 223 s, a live `REDIS_URL` that held the event loop
+and hung a suite at exit 124, CRLF anchors that matched nothing, and three
+phantom `fail=0` results from a script that emptied two controllers and never
+explained how. No finding is marked closed on the strength of a comment, a
 commit message or a previous report.
