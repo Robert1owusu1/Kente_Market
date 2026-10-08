@@ -226,7 +226,12 @@ export const updateReturnStatus = async (req, res) => {
       // Only the winner of this CAS proceeds to call Paystack. All paths share
       // the same dedupeKey: `refund:${orderId}`. The order-level refundReference
       // is used as the claim marker.
-      const claimResult = await pool.execute(
+      // V-07b: destructuring is load-bearing — pool.execute resolves to
+      // [rows, fields], so without the brackets `claimResult` is the ARRAY,
+      // `.affectedRows` is undefined, and `undefined === 0` is false: the guard
+      // refuses nothing while reading as correct in source. See the note in
+      // orderController.cancelOrder and tests/refundDoubleSpend.test.js.
+      const [claimResult] = await pool.execute(
         `UPDATE orders SET refundReference = ? WHERE id = ? AND refundReference IS NULL`,
         [`refund:${order.id}:partial:${partialVendorId}:${req.params.id}`, existing.orderId]
       );
@@ -343,7 +348,9 @@ export const updateReturnStatus = async (req, res) => {
         const order = await Order.findById(existing.orderId);
         if (order && order.paymentStatus === 'paid' && order.paymentReference) {
           // SECURITY FIX (V-07): Atomic claim with shared dedupeKey `refund:${orderId}`
-          const claimResult = await pool.execute(
+          // V-07b: brackets load-bearing, same reason as the other two sites —
+          // without them this guard compares `undefined === 0` and never fires.
+          const [claimResult] = await pool.execute(
             `UPDATE orders SET refundReference = ? WHERE id = ? AND refundReference IS NULL`,
             [`refund:${order.id}:${req.params.id}:${order.paymentReference}`, existing.orderId]
           );

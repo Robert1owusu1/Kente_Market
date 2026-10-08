@@ -96,11 +96,25 @@ describe('reconcileRefundedButPaid', () => {
     );
     assert.equal(Number(j.n), 1, 'reconcile journaled exactly once');
 
-    // Idempotent re-run: nothing left to do.
+    // Idempotent re-run. `n2` is the GLOBAL scan's output, so it counts every
+    // `paid + refundReference` row in the shared test database — including
+    // fixtures owned by suites running concurrently. refundDoubleSpend holds
+    // three of them on purpose while it proves the CAS refuses a second claim,
+    // and its cleanup can fail on a bad connection. Measuring the stuck set
+    // first turns this back into what it was always meant to check: that a
+    // re-run does not invent work — not that the database happens to be clean
+    // at this instant. The settled fixture's immunity is structural (it flips
+    // to `refunded`, which is outside the scan) and is asserted below.
+    const [[stuckBefore]] = await pool.execute(
+      `SELECT COUNT(*) AS n FROM orders WHERE paymentStatus = 'paid' AND refundReference IS NOT NULL`
+    );
     const n2 = await reconcileRefundedButPaid();
     const [[order2]] = await pool.execute(`SELECT paymentStatus FROM orders WHERE id = ?`, [state.journaledOrder]);
-    assert.equal(order2.paymentStatus, 'refunded');
-    assert.ok(n2 <= 1, 'second run only sees the unknown fixture (or nothing)');
+    assert.equal(order2.paymentStatus, 'refunded', 'the settled fixture is never re-settled');
+    assert.ok(
+      n2 <= Number(stuckBefore.n) + 1,
+      `re-run saw ${n2} against ${stuckBefore.n} stuck row(s); it must not invent work`
+    );
   });
 
   test('unknown outcome: money untouched, admin alerted', { skip: !dbAvailable }, async () => {

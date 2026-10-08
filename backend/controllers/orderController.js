@@ -1353,7 +1353,14 @@ export const cancelOrder = async (req, res) => {
       // Only the winner of this CAS proceeds to call Paystack. The order-level
       // refundReference is used as the claim marker. This prevents both the
       // return path and the cancel path from refunding the same order.
-      const claimResult = await pool.execute(
+      // V-07b: the brackets are load-bearing, and were missing until a
+      // FUNCTIONAL test looked for them rather than at them. pool.execute
+      // resolves to `[rows, fields]`, so `claimResult` without brackets is the
+      // ARRAY — `.affectedRows` on it is `undefined`, `undefined === 0` is
+      // false, and this guard declined to refuse anything while the source
+      // still read exactly as intended: the claim was written, the comparison
+      // was present, a regex over the file counted both and called V-07 fixed.
+      const [claimResult] = await pool.execute(
         `UPDATE orders SET refundReference = ? WHERE id = ? AND refundReference IS NULL`,
         [`refund:${order.id}:cancel:${order.paymentReference}`, req.params.id]
       );
