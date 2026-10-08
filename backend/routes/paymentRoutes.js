@@ -107,9 +107,26 @@ router.post('/verify-paystack', protect, async (req, res) => {
     }
     const encodedRef = encodeURIComponent(reference);
 
+    // V-09b: validate the URL we actually BUILD, not only the string we build
+    // it from. The character class above forbids `/` but permits `.`, so a
+    // reference of `..` still passed it — and WHATWG normalization collapsed
+    // the URL below to https://api.paystack.co/transaction/, one level off the
+    // verify prefix. Same host and no query string reachable (the class
+    // refuses `?` too), so nothing could be read or leaked elsewhere, but the
+    // "path injection prevented" claim was not true until this assertion:
+    // after normalization the request must be byte-for-byte the request we
+    // meant to make. A pattern over the input cannot see that; the URL can.
+    const verifyUrl = new URL(`https://api.paystack.co/transaction/verify/${encodedRef}`);
+    if (
+      verifyUrl.origin !== 'https://api.paystack.co'
+      || verifyUrl.pathname !== `/transaction/verify/${encodedRef}`
+    ) {
+      return res.status(400).json({ success: false, message: 'Invalid reference format' });
+    }
+
     // Verify payment with Paystack
     const response = await axios.get(
-      `https://api.paystack.co/transaction/verify/${encodedRef}`,
+      verifyUrl.href,
       {
         headers: {
           Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,

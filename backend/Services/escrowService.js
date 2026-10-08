@@ -1277,8 +1277,21 @@ export const recoverStuckPendingOrders = async () => {
         continue;
       }
       const encodedRef = encodeURIComponent(ref);
+      // V-09b: assert the built URL's shape, not just the reference's
+      // characters. The class above allows `.`, so `..` passed it and
+      // normalization moved this URL off the verify prefix. This job runs
+      // unattended an hour after checkout, so a path it should never have
+      // asked about would be answered and trusted without a human seeing it.
+      const verifyUrl = new URL(`https://api.paystack.co/transaction/verify/${encodedRef}`);
+      if (
+        verifyUrl.origin !== 'https://api.paystack.co'
+        || verifyUrl.pathname !== `/transaction/verify/${encodedRef}`
+      ) {
+        console.warn(` Stuck order ${order.id}: paymentReference does not survive URL normalization, skipping`);
+        continue;
+      }
       const resp = await axios.get(
-        `https://api.paystack.co/transaction/verify/${encodedRef}`,
+        verifyUrl.href,
         { headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` } }
       );
       const tx = resp.data?.data;
