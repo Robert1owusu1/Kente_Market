@@ -10,6 +10,7 @@ import pool from '../config/db.js';
 import Vendor from '../models/vendorModel.js';
 import { cookieSameSite, cookieSecure } from '../config/cookieConfig.js';
 import { setCsrfCookie } from '../middleware/csrfMiddleware.js';
+import { burnPasswordTime } from '../utils/authTiming.js';
 
 // A8: `manage_storefront` was missing from this list, and
 // requireVendorPermission was therefore never asked for it — so
@@ -95,6 +96,15 @@ export const staffLogin = async (req, res) => {
       [String(email).trim().toLowerCase()]
     );
     if (rows.length === 0) {
+      // A5 twin: unknown staff email and wrong staff password are answered
+      // with the SAME 401 body, so skipping the comparison here made the
+      // arrival time of that 401 the only difference between them. The
+      // branches below that distinguish themselves by status code (403 for a
+      // deactivated staff member or an unapproved store) already reveal that
+      // an account exists — deliberately, so staff are told why — and timing
+      // adds nothing to a difference the body already states. This one branch
+      // is where timing was the sole oracle.
+      await burnPasswordTime(password);
       return res.status(401).json({ message: 'Invalid credentials' });
     }
     const staff = rows[0];

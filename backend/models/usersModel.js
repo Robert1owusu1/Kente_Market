@@ -1,6 +1,7 @@
 // models/userModel.js - COMPLETE VERSION WITH PASSWORD RESET
 import pool from '../config/db.js';
 import bcrypt from 'bcryptjs';
+import { burnPasswordTime } from '../utils/authTiming.js';
 import crypto from 'crypto';
 
 // ---------------------------------------------------------------------------
@@ -500,6 +501,11 @@ class User {
   async comparePassword(candidatePassword) {
     try {
       if (!candidatePassword || !this.password) {
+        // A5: nothing to compare against, so this returned in ~0ms while
+        // every other branch spent a cost-12 bcrypt. A row with no password
+        // is precisely the case that should not be distinguishable, so the
+        // work is done anyway and the answer stays false.
+        await burnPasswordTime(candidatePassword);
         return false;
       }
       return await bcrypt.compare(candidatePassword, this.password);
@@ -518,7 +524,13 @@ class User {
 
       const user = await User.findByEmail(email);
       if (!user || !user.isActive) {
-        return null;
+        // A5: this is the oracle. Every branch below spends a cost-12
+        // bcrypt before answering with the same generic failure, so
+        // returning here made "no such account" measurably the fastest
+        // reply to POST /api/users/auth — one stopwatch separates the two
+        // and enumerates the whole user table. The work is spent regardless;
+        // the decision (no user, or inactive) does not change.
+        return burnPasswordTime(password);
       }
 
       // Check if account is locked due to too many failed attempts.
@@ -528,7 +540,12 @@ class User {
       // The lock is still enforced (no password check while locked); the
       // caller must return a generic 401 for both cases.
       if (user.lockedUntil && new Date(user.lockedUntil) > new Date()) {
-        return null;
+        // Still no password CHECK — the lock stays enforced exactly as RB-07
+        // requires, and the caller still gets a generic 401. But the same
+        // work is done: without it, "exists and locked" sorts into the fast
+        // bucket alongside "does not exist", and the fast bucket is the
+        // signal.
+        return burnPasswordTime(password);
       }
 
       const isMatch = await user.comparePassword(password);
