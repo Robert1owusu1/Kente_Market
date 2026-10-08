@@ -201,7 +201,7 @@ const TrendingProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void 
 
                   {/* Rating badge — only when the product actually has reviews */}
                   {Number(data.rating) > 0 && (
-                    <div className='absolute bottom-3 left-3 bg-white/90 backdrop-blur-sm text-gray-800 text-xs px-2 py-1 rounded-full flex items-center gap-1'>
+                    <div className='absolute bottom-3 left-3 bg-white/90 backdrop-blur-xs text-gray-800 text-xs px-2 py-1 rounded-full flex items-center gap-1'>
                       <FaStar className='text-yellow-400 text-[10px]' />
                       <span className="font-semibold">{Number(data.rating).toFixed(1)}</span>
                     </div>
@@ -267,14 +267,14 @@ const TrendingProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void 
                         (data.colors_available || data.colorsAvailable || data.colors)!.slice(0, 3).map((color, index) => (
                           <div 
                             key={index}
-                            className={`w-4 h-4 rounded-full border-2 border-white shadow-sm`}
+                            className={`w-4 h-4 rounded-full border-2 border-white shadow-xs`}
                             style={{ backgroundColor: color }}
                             title={color}
                           ></div>
                         ))
                       ) : (
                         <div 
-                          className='w-4 h-4 rounded-full border-2 border-white shadow-sm'
+                          className='w-4 h-4 rounded-full border-2 border-white shadow-xs'
                           style={{ backgroundColor: data.color?.toLowerCase() || '#gray' }}
                         ></div>
                       )}

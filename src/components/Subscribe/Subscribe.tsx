@@ -45,7 +45,7 @@ const Subscribe = () => {
       className="mb-20 bg-gray-100 dark:bg-gray-800 text-white"
       style={BannerImg}
     >
-      <div className="container backdrop-blur-sm py-10">
+      <div className="container backdrop-blur-xs py-10">
         <div className="space-y-6 max-w-xl mx-auto text-center">
           <h2 className="text-2xl sm:text-4xl font-semibold">
             Get Notified About New Kente Collections
@@ -64,7 +64,7 @@ const Subscribe = () => {
                 placeholder="Enter your email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full p-3 rounded-md text-gray-700 dark:text-white bg-white/90 dark:bg-gray-700/90 focus:outline-none focus:ring-2 focus:ring-orange-400"
+                className="w-full p-3 rounded-md text-gray-700 dark:text-white bg-white/90 dark:bg-gray-700/90 focus:outline-hidden focus:ring-2 focus:ring-orange-400"
               />
               <button
                 type="submit"

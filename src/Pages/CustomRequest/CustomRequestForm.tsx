@@ -167,7 +167,7 @@ export default function CustomRequestForm() {
   };
 
   const fieldClass = (hasError: boolean, extra = "") =>
-    `w-full px-4 py-3 rounded-xl border-2 bg-transparent focus:outline-none transition ${
+    `w-full px-4 py-3 rounded-xl border-2 bg-transparent focus:outline-hidden transition ${
       hasError ? "border-red-500" : "border-gray-300 dark:border-gray-600 focus:border-primary"
     } ${extra}`;
 

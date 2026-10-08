@@ -1,12 +1,16 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
 
 // Dev proxy target — override with API_PROXY_TARGET when the local API can't
 // run on 5000 (e.g. another dev project already owns the port).
 const apiTarget = process.env.API_PROXY_TARGET || 'http://localhost:5000'
 
 export default defineConfig({
-  plugins: [react()],
+  // Tailwind v4 runs as a Vite plugin, which is what replaces the old
+  // postcss.config.js + tailwind.config.js pair (the theme now lives in
+  // src/index.css as `@theme`, and content is auto-detected).
+  plugins: [react(), tailwindcss()],
   build: {
     target: 'es2020',
     sourcemap: false,

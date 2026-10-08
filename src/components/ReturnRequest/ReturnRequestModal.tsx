@@ -38,7 +38,7 @@ const ReturnRequestModal = ({ orderId, onClose, onSuccess }: {
 
   return (
     <div
-      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto"
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto"
       onClick={onClose}
     >
       <div
@@ -66,7 +66,7 @@ const ReturnRequestModal = ({ orderId, onClose, onSuccess }: {
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               required
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#92400e]"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-[#92400e]"
             >
               <option value="">Select a reason</option>
               {REASONS.map((r) => (
@@ -84,7 +84,7 @@ const ReturnRequestModal = ({ orderId, onClose, onSuccess }: {
               onChange={(e) => setDescription(e.target.value)}
               rows={4}
               placeholder="Please provide more details about your return request (optional)..."
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#92400e]"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-[#92400e]"
             />
           </div>
 

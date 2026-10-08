@@ -21,7 +21,7 @@ const LegalConsentModal: React.FC<LegalConsentModalProps> = ({
   if (!activeDoc) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-xs p-4">
       <div className="w-full max-w-2xl h-[85vh] flex flex-col">
         <div className="flex items-center justify-between mb-2">
           <h2 className="text-white font-semibold">

@@ -109,12 +109,12 @@ const ImageUpload = ({ currentImage, onImageChange, isLoading }: ImageUploadProp
             alt="Product preview" 
             className="w-full h-64 object-cover rounded-lg border-2 border-gray-300 dark:border-gray-600 transition-all"
           />
-          <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all rounded-lg flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-all rounded-lg flex items-center justify-center">
             <button
               type="button"
               onClick={handleRemove}
               disabled={isLoading || uploading}
-              className="opacity-0 group-hover:opacity-100 transition-opacity p-3 bg-red-600 text-white rounded-full hover:bg-red-700 disabled:opacity-50 transform hover:scale-110"
+              className="opacity-0 group-hover:opacity-100 disabled:group-hover:opacity-100 transition-opacity p-3 bg-red-600 text-white rounded-full hover:bg-red-700 disabled:opacity-50 transform hover:scale-110"
               title="Remove image"
             >
               <FaTrash size={20} />
@@ -286,7 +286,7 @@ const ProductFormModal = ({ product, onClose, onSubmit, isLoading }: ProductForm
 
   return (
     <div 
-      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto"
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto"
       onClick={onClose}
     >
       <div 
@@ -334,7 +334,7 @@ const ProductFormModal = ({ product, onClose, onSubmit, isLoading }: ProductForm
                   value={formData.title}
                   onChange={handleChange}
                   required
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#92400e]"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-[#92400e]"
                   placeholder="e.g., Custom Printed T-Shirt"
                 />
               </div>
@@ -348,7 +348,7 @@ const ProductFormModal = ({ product, onClose, onSubmit, isLoading }: ProductForm
                   value={formData.category}
                   onChange={handleChange}
                   required
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#92400e]"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-[#92400e]"
                 >
                   <option value="">Select category</option>
                   {categories.map(cat => (
@@ -366,7 +366,7 @@ const ProductFormModal = ({ product, onClose, onSubmit, isLoading }: ProductForm
                   name="tag"
                   value={formData.tag}
                   onChange={handleChange}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#92400e]"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-[#92400e]"
                   placeholder="e.g., Best Seller, New Arrival"
                 />
               </div>
@@ -383,7 +383,7 @@ const ProductFormModal = ({ product, onClose, onSubmit, isLoading }: ProductForm
                   required
                   step="0.01"
                   min="0"
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#92400e]"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-[#92400e]"
                   placeholder="0.00"
                 />
               </div>
@@ -399,7 +399,7 @@ const ProductFormModal = ({ product, onClose, onSubmit, isLoading }: ProductForm
                   onChange={handleChange}
                   step="0.01"
                   min="0"
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#92400e]"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-[#92400e]"
                   placeholder="0.00"
                 />
               </div>
@@ -414,7 +414,7 @@ const ProductFormModal = ({ product, onClose, onSubmit, isLoading }: ProductForm
                   value={formData.productionTime}
                   onChange={handleChange}
                   min="0"
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#92400e]"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-[#92400e]"
                   placeholder="3-5 days"
                 />
               </div>
@@ -427,7 +427,7 @@ const ProductFormModal = ({ product, onClose, onSubmit, isLoading }: ProductForm
                   name="vendorId"
                   value={formData.vendorId}
                   onChange={handleChange}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#92400e]"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-[#92400e]"
                 >
                   <option value="">Platform (no vendor)</option>
                   {approvedVendors.map(v => (
@@ -458,7 +458,7 @@ const ProductFormModal = ({ product, onClose, onSubmit, isLoading }: ProductForm
                   name="colors"
                   value={formData.colors}
                   onChange={handleChange}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#92400e]"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-[#92400e]"
                   placeholder="Red, Blue, Green, Black, White"
                 />
               </div>
@@ -472,7 +472,7 @@ const ProductFormModal = ({ product, onClose, onSubmit, isLoading }: ProductForm
                   name="sizes"
                   value={formData.sizes}
                   onChange={handleChange}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#92400e]"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-[#92400e]"
                   placeholder="2, 4, 6, 8, 10, 12"
                 />
               </div>
@@ -486,7 +486,7 @@ const ProductFormModal = ({ product, onClose, onSubmit, isLoading }: ProductForm
                   name="threadTypes"
                   value={formData.threadTypes}
                   onChange={handleChange}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#92400e]"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-[#92400e]"
                   placeholder="Cotton, Rayon, Silk"
                 />
               </div>
@@ -500,7 +500,7 @@ const ProductFormModal = ({ product, onClose, onSubmit, isLoading }: ProductForm
                   name="dominantThread"
                   value={formData.dominantThread}
                   onChange={handleChange}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#92400e]"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-[#92400e]"
                   placeholder="e.g., Cotton"
                 />
               </div>
@@ -514,7 +514,7 @@ const ProductFormModal = ({ product, onClose, onSubmit, isLoading }: ProductForm
                   name="material"
                   value={formData.material}
                   onChange={handleChange}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#92400e]"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-[#92400e]"
                   placeholder="e.g., 100% Cotton, Ceramic, Plastic"
                 />
               </div>
@@ -528,7 +528,7 @@ const ProductFormModal = ({ product, onClose, onSubmit, isLoading }: ProductForm
                   name="printType"
                   value={formData.printType}
                   onChange={handleChange}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#92400e]"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-[#92400e]"
                   placeholder="e.g., Screen Print, DTG, Embroidery, Sublimation"
                 />
               </div>

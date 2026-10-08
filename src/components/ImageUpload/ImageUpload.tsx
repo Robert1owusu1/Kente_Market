@@ -134,12 +134,12 @@ const ImageUpload = ({ currentImage, onImageChange, isLoading }: {
             alt="Product preview" 
             className="w-full h-64 object-cover rounded-lg border-2 border-gray-300 dark:border-gray-600 transition-all"
           />
-          <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all rounded-lg flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-all rounded-lg flex items-center justify-center">
             <button
               type="button"
               onClick={handleRemove}
               disabled={isLoading || uploading}
-              className="opacity-0 group-hover:opacity-100 transition-opacity p-3 bg-red-600 text-white rounded-full hover:bg-red-700 disabled:opacity-50 transform hover:scale-110"
+              className="opacity-0 group-hover:opacity-100 disabled:group-hover:opacity-100 transition-opacity p-3 bg-red-600 text-white rounded-full hover:bg-red-700 disabled:opacity-50 transform hover:scale-110"
               title="Remove image"
             >
               <FaTrash size={20} />

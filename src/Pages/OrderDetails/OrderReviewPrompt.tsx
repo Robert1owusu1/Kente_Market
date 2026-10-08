@@ -109,7 +109,7 @@ export default function OrderReviewPrompt({ orderId, items }: { orderId: number 
             <select
               value={productId}
               onChange={(e) => setProductId(e.target.value)}
-              className="w-full max-w-xs px-4 py-2.5 rounded-xl border-2 border-gray-300 dark:border-gray-600 bg-transparent focus:outline-none focus:border-primary"
+              className="w-full max-w-xs px-4 py-2.5 rounded-xl border-2 border-gray-300 dark:border-gray-600 bg-transparent focus:outline-hidden focus:border-primary"
             >
               {reviewable.map((p) => (
                 <option key={String(p.product)} value={String(p.product)}>{p.name}</option>
@@ -137,7 +137,7 @@ export default function OrderReviewPrompt({ orderId, items }: { orderId: number 
             rows={3}
             required
             placeholder="Colours, finish, punctuality, packaging — what should the next buyer know?"
-            className="w-full px-4 py-3 rounded-xl border-2 border-gray-300 dark:border-gray-600 bg-transparent focus:outline-none focus:border-primary"
+            className="w-full px-4 py-3 rounded-xl border-2 border-gray-300 dark:border-gray-600 bg-transparent focus:outline-hidden focus:border-primary"
           />
         </div>
 
@@ -149,7 +149,7 @@ export default function OrderReviewPrompt({ orderId, items }: { orderId: number 
             value={suggestion}
             onChange={(e) => setSuggestion(e.target.value)}
             placeholder="e.g. a live progress tracker for woven orders"
-            className="w-full px-4 py-2.5 rounded-xl border-2 border-gray-300 dark:border-gray-600 bg-transparent focus:outline-none focus:border-primary"
+            className="w-full px-4 py-2.5 rounded-xl border-2 border-gray-300 dark:border-gray-600 bg-transparent focus:outline-hidden focus:border-primary"
           />
         </div>
 

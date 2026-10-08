@@ -137,7 +137,7 @@ export default function CustomRequestCheckout() {
     setShipping((s) => ({ ...s, [key]: e.target.value }));
 
   const inputClass =
-    "w-full px-4 py-3 rounded-xl border-2 border-gray-300 dark:border-gray-600 bg-transparent focus:outline-none focus:border-primary transition";
+    "w-full px-4 py-3 rounded-xl border-2 border-gray-300 dark:border-gray-600 bg-transparent focus:outline-hidden focus:border-primary transition";
 
   const validate = (): boolean => {
     const missing = Object.entries(shipping)

@@ -186,7 +186,7 @@ const EmailVerification = () => {
                     onKeyDown={(e) => handleKeyDown(index, e)}
                     onPaste={index === 0 ? handlePaste : undefined}
                     disabled={isVerifying}
-                    className="w-12 h-14 text-center text-2xl font-bold bg-white/10 border-2 border-white/20 rounded-xl text-white focus:border-amber-400 focus:bg-white/20 transition-all outline-none disabled:opacity-50"
+                    className="w-12 h-14 text-center text-2xl font-bold bg-white/10 border-2 border-white/20 rounded-xl text-white focus:border-amber-400 focus:bg-white/20 transition-all outline-hidden disabled:opacity-50"
                   />
                 ))}
               </div>

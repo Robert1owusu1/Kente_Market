@@ -193,7 +193,7 @@ const WishlistPage = () => {
 
                 {/* Rating badge — only when the product actually has reviews */}
                 {Number(data.rating) > 0 && (
-                  <div className="absolute bottom-3 left-3 bg-white/90 backdrop-blur-sm text-gray-800 text-xs px-2 py-1 rounded-full flex items-center gap-1">
+                  <div className="absolute bottom-3 left-3 bg-white/90 backdrop-blur-xs text-gray-800 text-xs px-2 py-1 rounded-full flex items-center gap-1">
                     <FaStar className="text-yellow-400 text-[10px]" />
                     <span className="font-semibold">{Number(data.rating).toFixed(1)}</span>
                   </div>
@@ -203,7 +203,7 @@ const WishlistPage = () => {
               {/* Content section */}
               <div className="p-4 space-y-3">
                 <div>
-                  <h3 className="font-bold text-lg text-gray-800 dark:text-white group-hover:text-primary transition-colors duration-300">
+                  <h3 className="font-bold text-lg text-gray-800 dark:text-white group-hover:text-primary dark:group-hover:text-primary transition-colors duration-300">
                     {data.title}
                   </h3>
                   <p className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">

@@ -43,7 +43,7 @@ const TestingModePopup = () => {
 
   return (
     <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm transition-opacity duration-200"
+      className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs transition-opacity duration-200"
       style={{ opacity: leaving ? 0 : 1 }}
       onClick={() => !navigating && close()}
     >

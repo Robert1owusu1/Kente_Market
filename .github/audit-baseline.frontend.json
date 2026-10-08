@@ -1,16 +1,5 @@
 {
-  "accepted": {
-    "braces": "high",
-    "chokidar": "high",
-    "fast-glob": "high",
-    "micromatch": "high",
-    "tailwindcss": "high"
-  },
-  "reasons": {
-    "braces": "Advisory covers every published version (npm's only fix is `npm audit fix --force` -> tailwindcss v4). Build/dev chain, never shipped to users.",
-    "chokidar": "Same chain: chokidar -> braces, reachable only from tailwindcss 3.x. Fixed only by the breaking tailwindcss v4 migration.",
-    "fast-glob": "Reachable only through tailwindcss 3.x -> micromatch. Build/dev chain.",
-    "micromatch": "Reachable only through tailwindcss 3.x. Build/dev chain.",
-    "tailwindcss": "Root of the chain above. Upgrading to v4 changes the build config (@theme / @tailwindcss/postcss) and is tracked separately as a post-launch item; it is a build-time DoS risk, not a shipped runtime one."
-  }
+  "accepted": {},
+  "reasons": {},
+  "note": "Tightened to empty after the Tailwind v4 migration (package.json/package-lock.json): braces, chokidar, fast-glob, micromatch and tailwindcss advisories all disappeared because the whole chain was rooted in tailwindcss 3.x. Frontend now audits 0 vulnerabilities. Entries may only shrink; any future high/critical advisory fails CI. Backend keeps its own accepted entries (nodemon dev-chain, still current)."
 }

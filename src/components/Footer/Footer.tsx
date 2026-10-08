@@ -86,7 +86,7 @@ const FooterLinkList = ({
         <li key={link.link}>
           <Link
             to={link.link}
-            className="block w-full py-3 sm:py-1.5 text-gray-300 text-sm hover:text-primary focus-visible:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded transition-colors duration-200"
+            className="block w-full py-3 sm:py-1.5 text-gray-300 text-sm hover:text-primary focus-visible:text-primary focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary rounded transition-colors duration-200"
           >
             {link.title}
           </Link>
@@ -149,12 +149,12 @@ const FooterNewsletter = () => {
             placeholder="you@example.com"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full px-3 py-2.5 rounded-md bg-white/10 text-white placeholder-gray-400 border border-white/20 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+            className="w-full px-3 py-2.5 rounded-md bg-white/10 text-white placeholder-gray-400 border border-white/20 focus:outline-hidden focus:ring-2 focus:ring-primary focus:border-transparent"
           />
           <button
             type="submit"
             disabled={isLoading}
-            className="px-4 py-2.5 rounded-md bg-primary text-white font-medium shrink-0 transition-colors duration-200 hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-transparent disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
+            className="px-4 py-2.5 rounded-md bg-primary text-white font-medium shrink-0 transition-colors duration-200 hover:opacity-90 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-transparent disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
           >
             {isLoading ? (
               <>
@@ -185,7 +185,7 @@ const SocialTiles = () => (
               target="_blank"
               rel="noopener noreferrer"
               aria-label={`Bonwire Kente on ${label}`}
-              className="flex items-center justify-center w-11 h-11 sm:w-9 sm:h-9 rounded-full bg-white/10 text-gray-300 hover:bg-primary hover:text-white transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              className="flex items-center justify-center w-11 h-11 sm:w-9 sm:h-9 rounded-full bg-white/10 text-gray-300 hover:bg-primary hover:text-white transition-colors duration-200 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary"
             >
               {tile}
             </a>
@@ -230,7 +230,7 @@ const Footer = ({ className = '' }: { className?: string }) => {
           <div className="lg:col-span-4 sm:col-span-2">
             <Link
               to="/"
-              className="inline-flex items-center gap-3 mb-4 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              className="inline-flex items-center gap-3 mb-4 rounded focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary"
             >
               <img
                 src={footerLogo}

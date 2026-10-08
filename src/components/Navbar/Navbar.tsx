@@ -71,7 +71,7 @@ const DarkMode = React.memo(function DarkMode() {
     <div className="relative">
       <button
         onClick={() => setTheme(theme === "light" ? "dark" : "light")}
-        className="w-12 h-6 rounded-full p-1 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 dark:focus:ring-offset-gray-800"
+        className="w-12 h-6 rounded-full p-1 transition-colors duration-300 focus:outline-hidden focus:ring-2 focus:ring-primary focus:ring-offset-2 dark:focus:ring-offset-gray-800"
         style={{ backgroundColor: theme === "dark" ? "#374151" : "#e5e7eb" }}
         aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`}
       >
@@ -329,7 +329,7 @@ const Navbar = () => {
                       if (searchQuery.trim()) setShowSearchResults(true);
                     }}
                     maxLength={100}
-                    className={`w-[200px] sm:w-[200px] transition-all duration-300 rounded-full border border-gray-300 dark:bg-gray-800 px-4 py-2 pr-20 focus:outline-none focus:border-2 focus:border-primary ${isSearchFocused || searchQuery ? 'sm:w-[300px]' : ''}`}
+                    className={`w-[200px] sm:w-[200px] transition-all duration-300 rounded-full border border-gray-300 dark:bg-gray-800 px-4 py-2 pr-20 focus:outline-hidden focus:border-2 focus:border-primary ${isSearchFocused || searchQuery ? 'sm:w-[300px]' : ''}`}
                   />
                   
                   {searchQuery && (
@@ -433,7 +433,7 @@ const Navbar = () => {
               >
                 <span className='hidden lg:block transition-all duration-200'>Order</span>
                 <div className="relative">
-                  <FaCartShopping className='text-lg sm:text-xl text-white drop-shadow-sm cursor-pointer' />
+                  <FaCartShopping className='text-lg sm:text-xl text-white drop-shadow-xs cursor-pointer' />
                   {cartCount > 0 && (
                     <span className="absolute -top-2 -right-2 bg-red-700 text-white text-xs w-5 h-5 flex items-center justify-center rounded-full font-semibold">
                       {cartCount > 99 ? '99+' : cartCount}
@@ -544,7 +544,7 @@ const Navbar = () => {
 
  {/* Mobile Menu Button */}
               <button 
-                className="lg:hidden block text-3xl focus:outline-none" 
+                className="lg:hidden block text-3xl focus:outline-hidden" 
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
                 aria-label="Toggle mobile menu"
               >
@@ -571,7 +571,7 @@ const Navbar = () => {
                   if (searchQuery.trim()) setShowSearchResults(true);
                 }}
                 maxLength={100}
-                className='w-full bg-transparent text-gray-800 dark:text-white placeholder:text-gray-400 outline-none text-sm'
+                className='w-full bg-transparent text-gray-800 dark:text-white placeholder:text-gray-400 outline-hidden text-sm'
               />
               {searchQuery && (
                 <button type="button" onClick={clearSearch} className="text-gray-400 hover:text-gray-600" aria-label="Clear search">

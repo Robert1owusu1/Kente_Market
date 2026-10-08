@@ -8,7 +8,7 @@ import Footer from '../../components/Footer/Footer';
 import { FaStore, FaShieldAlt, FaCheckCircle, FaUniversity, FaMobileAlt } from 'react-icons/fa';
 
 const inputCls =
-  'w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:border-primary text-gray-900 dark:text-white';
+  'w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 focus:outline-hidden focus:border-primary text-gray-900 dark:text-white';
 
 const labelCls = 'block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5';
 

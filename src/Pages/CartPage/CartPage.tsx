@@ -452,7 +452,7 @@ const CartPage = () => {
         {/* Remove Confirmation Modal */}
         {showRemoveModal && itemToRemove && (
           <div 
-            className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+            className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs"
             role="dialog"
             aria-modal="true"
             aria-labelledby="modal-title"

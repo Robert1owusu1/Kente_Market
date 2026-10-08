@@ -726,7 +726,7 @@ export default function CheckoutPage() {
 
   const renderShippingStep = () => (
     <div className="space-y-6">
-      <div className="bg-white dark:bg-gray-800 dark:border dark:border-gray-700 rounded-xl p-6 shadow-sm border">
+      <div className="bg-white dark:bg-gray-800 dark:border dark:border-gray-700 rounded-xl p-6 shadow-xs border">
         <h3 className="text-xl font-semibold mb-4 flex items-center">
           <FaTruck className="mr-3 text-blue-600" /> Delivery Method
         </h3>
@@ -786,7 +786,7 @@ export default function CheckoutPage() {
         )}
       </div>
 
-      <div className="bg-white dark:bg-gray-800 dark:border dark:border-gray-700 rounded-xl p-6 shadow-sm border">
+      <div className="bg-white dark:bg-gray-800 dark:border dark:border-gray-700 rounded-xl p-6 shadow-xs border">
         {deliveryMethod === 'pickup' ? (
           <h3 className="text-xl font-semibold mb-6 flex items-center">
             <FaUser className="mr-3 text-blue-600" /> Your Contact Details
@@ -947,7 +947,7 @@ export default function CheckoutPage() {
         </div>
       </div>
 
-      <div className="bg-white dark:bg-gray-800 dark:border dark:border-gray-700 rounded-xl p-6 shadow-sm border">
+      <div className="bg-white dark:bg-gray-800 dark:border dark:border-gray-700 rounded-xl p-6 shadow-xs border">
         <h3 className="text-xl font-semibold mb-4 flex items-center">
           <FaMapMarkerAlt className="mr-3 text-green-600" /> Billing Address
         </h3>
@@ -1032,7 +1032,7 @@ export default function CheckoutPage() {
 
   const renderPaymentStep = () => (
     <div className="space-y-6">
-      <div className="bg-white dark:bg-gray-800 dark:border dark:border-gray-700 rounded-xl p-6 shadow-sm border">
+      <div className="bg-white dark:bg-gray-800 dark:border dark:border-gray-700 rounded-xl p-6 shadow-xs border">
         <h3 className="text-xl font-semibold mb-6 flex items-center">
           <FaShieldAlt className="mr-3 text-[#92400e]" /> Payment Method
         </h3>
@@ -1135,7 +1135,7 @@ export default function CheckoutPage() {
 
   const renderReviewStep = () => (
     <div className="space-y-6">
-      <div className="bg-white dark:bg-gray-800 dark:border dark:border-gray-700 rounded-xl p-6 shadow-sm border">
+      <div className="bg-white dark:bg-gray-800 dark:border dark:border-gray-700 rounded-xl p-6 shadow-xs border">
         <h3 className="text-xl font-semibold mb-4">Review Your Order</h3>
         <div className="space-y-4">
           <div>
@@ -1389,7 +1389,7 @@ export default function CheckoutPage() {
                         value={couponCode}
                         onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
                         placeholder="Coupon code"
-                        className="flex-1 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="flex-1 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-blue-500"
                       />
                       <button
                         onClick={handleApplyCoupon}

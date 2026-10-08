@@ -144,7 +144,7 @@ regression test that fails when either half is removed.
 | N-10 | **Rate-limit counters reset when Redis recovers from degraded mode.** While Redis is down the per-instance fallback counts correctly; the moment the TLS handshake lands the store switches to Redis, whose counter starts at 0 — the same 14-request probe then observed **8 allowed instead of 5**. Bounded by outage frequency, but it silently grants an extra allowance on every recovery. | **P3** | `utils/redisClient.js:129-141` (`viaRedis` switches source mid-window) |
 | N-11 | **CI does not exercise most of the security surface.** No database job (in CI's DB-less mode **50 of 127 tests skipped and 15 blocks skipped entirely** — measured at the time of the finding; with this pass's new suites it is 54 of 165), no secret scan, no `npm audit` gate, and the frontend suite (`npm run test:frontend`, 44 tests at the time of the finding, 54 now) is never invoked. | **P2 — FIXED this pass** | `.github/workflows/ci.yml` |
 | N-12 | **Both CI gates were red before this pass.** `npm run lint` failed with **24 errors** (unused vars in `rb01/rb02/rb04`) and `npm run typecheck --prefix backend` exited **2** (3 implicit-`any` params in `orderController.js`) — added by the earlier rounds. Fixed here; both now exit 0. | **P2 — FIXED** (trust in CI) | reproduced before/after |
-| N-13 | **Frontend dependency advisory:** `axios@1.19.0` is the last vulnerable release of the 1.0.0–1.19.0 range (prototype-pollution gadgets, header injection, ReDoS, redirect-SSRF). It is a runtime dependency (`^1.11.0`); the backend already runs `1.20.0`. Frontend audit: 8 high, 2 moderate (only `axios` is runtime; the rest are `tailwindcss`/`typescript-eslint` build chain). Backend: 3 high, all in the dev-only `nodemon → chokidar → braces` chain (runtime deps audit clean). **FIXED this pass:** `axios` → `^1.20.0`, `source-map-js` → 1.2.2, and two criticals that surfaced mid-pass fixed rather than accepted (`shell-quote` → `^1.12.0` via `overrides`; `concurrently` has no fixed release and is accepted with a reason in the baseline). The remaining 5 highs are the unfixable `tailwindcss` 3.x chain — see the audit-ratchet note in §8. | **P2 — FIXED this pass** | `npm audit`, `package-lock.json:2506` |
+| N-13 | **Frontend dependency advisory:** `axios@1.19.0` is the last vulnerable release of the 1.0.0–1.19.0 range (prototype-pollution gadgets, header injection, ReDoS, redirect-SSRF). It is a runtime dependency (`^1.11.0`); the backend already runs `1.20.0`. Frontend audit: 8 high, 2 moderate (only `axios` is runtime; the rest are `tailwindcss`/`typescript-eslint` build chain). Backend: 3 high, all in the dev-only `nodemon → chokidar → braces` chain (runtime deps audit clean). **FIXED this pass:** `axios` → `^1.20.0`, `source-map-js` → 1.2.2, and two criticals that surfaced mid-pass fixed rather than accepted (`shell-quote` → `^1.12.0` via `overrides`; `concurrently` has no fixed release and is accepted with a reason in the baseline). The remaining 5 highs were the `tailwindcss` 3.x chain — cleared by the v4 migration in this revision, so `audit-baseline.frontend.json` is now an empty `accepted` (see the audit-ratchet note in §8). | **P2 — FIXED this pass** | `npm audit`, `package-lock.json:2506` |
 | N-14 | **The canonical schema is stale: a database built from the repo cannot run the app.** `branding_house.sql` lacked `users.legal_consent_at` (written by `usersModel.create` and `config/passPort.js` on every signup) and the `sessions` table (`express-mysql-session`). A fresh install failed registration with `ER_BAD_FIELD_ERROR`, and **5 test suites failed the same way** — only databases created while the dump still matched the code happened to work. Invisible to CI only because CI never built a database. | **P2** (new installs, CI) — **FIXED this pass** | column diff dump-vs-live on clean MySQL 8.4 → 4 missing columns; `Unknown column 'legal_consent_at' in 'field list'`. Now the dump is synced and `migrateSchemaSync.js` (existence-checked, idempotent) covers existing databases. |
 | N-15 | **`db:migrate` does not run on the database CI (and a new deploy) actually uses.** `migrateAdvanceRatio.js` used `ADD COLUMN IF NOT EXISTS` — TiDB/MariaDB syntax that **MySQL 8 rejects** — and `migrateOrderItems` / `migrateVendorOrderItems` passed `LIMIT ? OFFSET ?` to `connection.execute`, which mysql2 answers with `Incorrect arguments to LIMIT`. On stock MySQL the chain aborted at script #18, leaving half a schema. The local TiDB hid both because TiDB accepts them. | **P2** (new installs) — **FIXED this pass** | `npm run db:setup` on MySQL 8.4: exit 1 → exit 0 across all 22 steps (schema + migrations). |
 | N-16 | **Product search meant two different things on the two engines.** The FULLTEXT path (MySQL — i.e. production) used `IN NATURAL LANGUAGE MODE`, which **ORs** the words, while the LIKE fallback (TiDB — dev) ANDs them: `REDCLOTH nosuchwordxyz` returned the REDCLOTH row in production and nothing in dev, and the P1 contract test passed only because TiDB has no FULLTEXT index. Now every *indexable* word must match (one parameterised `MATCH` per word, ANDed), with words the engine cannot index **dropped rather than required** — measured on MySQL 8.4, `+the kente` and `+k kente` both return **0 rows**, so requiring them would have been a worse regression than the OR it replaced. | **P2** (a P1 control was green by accident) — **FIXED this pass** | `models/productModel.js`; `tests/productSearch.test.js` failed on MySQL before the fix, passes after. |
@@ -480,12 +480,20 @@ because a kill count only means something if the denominator was never edited.
 | **CI invocation (no database), batch ④** | `DB_HOST=127.0.0.1 DB_PORT=59999 … node --test "tests/**/*.test.js"` | **353 tests: 298 pass, 55 skipped, 0 fail, exit 0** |
 | **`redteam-final`, batch ④** | `node --test tests/redteam-final.test.js` | **10/10 pass, exit 0** |
 | CI, batches ①–③ | GitHub Actions runs **53–64** | all success: 53 `5b277b4`, 54 `f5804a7`, 55–58 batch ② (`2a1b95c`, `f0838e0`, `74953c1`, `21e0606`), 59–64 batch ③ (`1b972e6`, `42a788f`, `d6c1540`, `9dd392b`, `4aacfbb`, `1b37ab3`) |
-| CI, batch ④ + the N-23 fix + this rewrite | GitHub Actions runs **65** `5c27869`, **66** `9416087`, **67** `7d49981`, **68** `00e39dc` | **all four success.** Run 68 is the one that carried `63430f7` (N-23) and this report |
+| CI, batch ④ + the N-23 fix + this rewrite | GitHub Actions runs **65** `5c27869`, **66** `9416087`, **67** `7d49981`, **68** `00e39dc`, **69** `04c934e`, **70** `351316d` | **all six success.** Runs 66–68 are batch ⑤; run 68 carried `63430f7` (N-23) and this report; 69–70 the last batch-⑤ pushes. The Tailwind v4 migration commit that follows is run **71**, verified after push |
 | **Mutation battery, the three untallied commits** | `python3 /tmp/opencode/p3mut.py` + `p3mut2.py` | **14/14 detected, 0 survived, 0 invalid** — X4a 4/4, batch-1 8/8, N-6 2/2 |
 | **Bad run, batch ④ (V-05 first attempt)** | `npm test` against TiDB | **477 tests: 475 pass, 1 fail** — `P0-3 consensus fulfilment` (`vendorIsolation.test.js:211`) answered 500 after 10.5 s with `Error fetching order: DB ping failed` in the log, and the run took **223 s instead of 172 s**. Isolated re-run of that file: **9/9**. Full re-run: **477/476/0/1 exit 0 with zero ping failures.** Environmental, recorded rather than dropped |
 | **Bad run, batch ④ (V-09, hang)** | `node --test tests/paystackReferenceGuard.test.js` | printed every result and then **never exited** (exit 124, no `# tests` line). Root cause: the suite drives the real router, importing it runs `rateLimitMiddleware`, and `backend/.env` carries a live Upstash `REDIS_URL` — the module-scope client connects during import and its open socket holds the event loop. Fixed in the suite, not in production: `REDIS_URL` pinned empty before import (not `delete` — the limiter re-runs `dotenv.config()` and only keeps keys that still exist) plus a best-effort `quit()` in `after()` |
 | **Bad run, batch ④ (V-09, anchors)** | mutation runner | 7 `ANCHOR-FAIL count 0` before the cause was read: `routes/paymentRoutes.js` is **CRLF** (576 CRs; `escrowService.js` and `authRoutes.js` are LF), so LF anchors did not match — and a 6-space anchor had matched as a substring of a 10-space one earlier, producing phantom `fail=0` results. Anchors now carry the file's own line ending and must match exactly once |
 | **Final battery, whole gate, after N-23** | `lint → tsc ×2 → frontend → build → npm test → redteam-final → no-DB → 2× ratchet → gitleaks`, sequenced | **all 11 steps exit 0**: full suite **478 tests / 477 pass / 0 fail / 1 skipped, exit 0 (163 s)**; no-DB **354 / 298 pass / 56 skipped / 0 fail**; frontend **9 files, 69/69**; lint **0 errors, 13 warnings**; both typechecks exit 0; `redteam-final` **10/10**; both audit ratchets exit 0; gitleaks **179 commits, no leaks**, and **180 commits, no leaks** re-run after this report was committed; `dist/` built in 30.2 s |
+| **v4 migration battery (state after palette + font pins)** | same 11 steps, sequenced | **all 11 exit 0** — lint 62 s (0 errors/13 warnings), tsc front 37 s + back 12 s, frontend **69/69**, build 33 s, full-db exit 0 (104 s), `redteam-final` 10/10 (4 s), no-DB exit 0 (45 s), ratchets 5 s + 6 s, gitleaks 7 s |
+| **v4 migration battery (state this report certifies, bad run)** | same 11 steps after the `indigo-600` pin | **10/11**: lint, both typechecks, frontend 69/69, build, `redteam-final` 10/10, no-DB, both ratchets and gitleaks all exit 0; **`full-db` exit 1 at 272 s** — `couponMaxUses` (133 s), RB-01, RB-02, RB-03 subtests failed and every failure was `connect ETIMEDOUT`, hooks included, with `cleanup … skipped: connect ETIMEDOUT` lines. The TiDB-under-load signature above, not an assertion. Isolated re-run in the next row |
+| **`full-db` isolated re-run #1 (same battery step)** | `npm test --prefix backend`, re-run alone | **red — 473 tests / 457 pass / 8 fail / 8 skipped, 340 s**: `couponMaxUses`, `rb01`, `rb04`, the `redteam-final` escrow hooks and `vendorIsolation` again — and again every failure's log carried the DB signature (`DB ping failed`, `connect ETIMEDOUT`, controller 500s), never an assertion. Second consecutive environmental failure, so the suite was decomposed rather than re-run blind |
+| **Per-file decomposition of run #1's failures** | the five implicated files, `--test-concurrency=1`, **from `backend/`** (repo-root cwd misses `backend/.env` and skips with *no database configured* — an invalid green that was observed and rejected) | **37/37 pass, 0 fail, 0 skipped** — nothing fails when the shared connection load is removed |
+| **`full-db` isolated re-run #2** | same battery step after quiescence | **green — 478 tests / 477 pass / 0 fail / 1 skipped, exit 0, 222 s**, zero ping/timeout lines; the 1 skip is the suite's deliberate `# SKIP engine parses but does not enforce CHECK` (application clamp is the documented sole defence), not a config skip |
+| **Final coherent battery, whole gate (the state this report certifies)** | same 11 steps, sequenced, after all of the above | **all 11 exit 0** — lint 43 s (0 errors, 13 warnings); tsc front 67 s + back 16 s; frontend **69/69** (9 files, 30 s); build 32 s; **full-db 478 tests / 477 pass / 0 fail / 1 deliberate skip, exit 0 (208 s)**; `redteam-final` 10 tests / 0 fail in the battery's repo-root no-DB invocation (7 pass + 3 `no database configured` skips) **and 10/10, 0 skip re-run from `backend/` with the database** — CI's `npm test --prefix backend` covers it inside the full suite either way; no-DB forced path **354 / 298 pass / 56 skipped / 0 fail**; both audit ratchets exit 0 (frontend **0 accepted / 0 vulns**, backend 3 accepted); gitleaks **183 commits, no leaks** |
+| **Built-CSS declaration diff, v3 vs v4** | `python3 /tmp/opencode/decl-diff.py` over both built stylesheets (v3 baseline: worktree at `351316d`, rebuilt **byte-identical, 113 472 B**) | **1407 vs 1420 selectors, 1315 common, 1693 classified declaration differences, 0 unexplained** — every difference lands in a bucket with a reason; full table below |
+| **Live A/B probes, both builds in one browser** | identical fixture page served from each `dist`, `getComputedStyle` A/B | **identical on both builds**: font stacks, border colour/width, placeholder, `cursor: pointer`, line-height 32 px / 16 px, `transition` 0.15 s, `blur`/`backdrop-blur`/`drop-shadow`, indigo `rgb(79,70,229)`, dark toggle both ways, and the synthetic `space-y-4` cascade — details below |
 
 **Flakiness note.** The database used for this review is a shared TiDB and can
 return `DB ping failed` / `ETIMEDOUT` under sustained load. One sequential run
@@ -556,9 +564,121 @@ error in the log (`DB ping failed`) instead of an assertion, 10.5 s to fail, and
 a total run time 51 s slower than a clean one. The rule applied throughout: a
 failure whose log names a ping or packet error is re-run per file before it is
 believed; if the per-file run is green *and* the next full run is green, it is
-written down as environmental and left in this table. It is never dropped from
+written down as environmental and left in this table. That exact sequence
+occurred in this revision — two bad full runs, per-file **37/37**, then rerun #2
+and the final battery both green — and all three rows are above. It never dropped from
 the log, because a report containing only green runs is not evidence of
 stability.
+
+**Tailwind v3 → v4 equivalence evidence (this revision).** The migration's
+objection was pixel-blindness, so it was closed with a diff instead of a
+review. A parser normalised both built stylesheets (variable resolution with
+per-rule scope, `calc()` evaluation, colour canonicalisation, vendor prefixes,
+zero/quote/ratio formatting) and compared **every declaration of every shared
+selector** — 1407 selectors in the v3 build, 1420 in v4, 1315 common, 1693
+differing declarations, **0 unexplained**. The v3 baseline itself was rebuilt
+from `351316d` and came out byte-identical (113 472 B, same asset hash), so
+the diff measures the framework change and nothing else.
+
+| Bucket | n | What it is, and why it renders the same |
+|---|---:|---|
+| `vardef` | 1367 | `--color-*` / `--text-*` / `--tw-*` custom-property declarations — v4's theme architecture. The values are pinned (below), not trusted |
+| `opacity-mix` | 113 | v3 `rgba(R,G,B,a)` vs v4 `color-mix(in oklab, rgba(R,G,B,1) X%, transparent)`: same RGB by construction, `|Δa| ≤ 1/255` (v3 quantised the alpha to 8 bits), and premultiplied mixing against transparent black leaves the colour exact while alpha ramps linearly |
+| `preflight` | 92 | universal/element preflight rewrites (font shorthand, `*` reset) — same computed boxes; several re-verified live |
+| `v4-transform-architecture` | 56 | `transform: translate/scale/rotate(…)` split into the individual `translate:`/`scale:`/`rotate:` properties — the same matrices, now individually animatable |
+| `lh-unitless` | 19 | line-height `2rem` vs ratio `1.33333`: verified `ratio × font-size = 2rem` (tolerance 1e-4 for 6-sig-fig printing). Live: **32 px on both builds** |
+| `shadow-layers` | 15 | v4 shadows carry transparent zero-layers (`inset 0 0 #0000`) so rings can be animated in — identical visible shadow |
+| `vendor-prefix-dropped` | 9 | v3 shipped `-moz-appearance`, `-webkit-appearance`, `-o-object-fit`, `-moz-user-select`, `-moz-column-gap`; v4 relies on the unprefixed property — each unprefixed sibling is present and equal in both |
+| `vendor-prefix-added` | 4 | v4 emits `-webkit-backdrop-filter` where v3 emitted nothing — a superset |
+| `gradient-cross-rule` | 4 | stops come from sibling `from-*`/`to-*` utilities in both builds; direction text is identical (`to right` vs `--tw-gradient-position: to right in oklab`). The real change is interpolation defaulting to oklab — measured at the midpoint: footer `#1a1611` alpha-fade **0.00**, grays 50→100 **0.00** and 900→800 **0.15**, hero amber→orange **4.58/255 worst channel at the exact midpoint**, endpoints exact everywhere |
+| `transition-superset` | 3 | v4's `transition-property` list adds `outline-color`, gradient vars, `translate/scale/rotate`, `display`, `content-visibility`, `overlay`, `pointer-events` on top of v3's — a superset |
+| `rounded-full` | 2 | v3 `9999px` vs v4 `calc(infinity * 1px)` → `3.40282e38px`: both clamp to half the box, so any element is a pill either way |
+| `numeric-rounding` | 2 | `33.333333%` vs `33.3333%` — 6-significant-digit printing |
+| `sr-only` | 2 | v4 keeps the `clip-path` longhand where v3 used the legacy `clip` |
+| `default-opacity` | 2 | v3 declares `opacity: 1` on placeholder; v4 omits it — 1 is the default |
+| `aspect-ratio` | 1 | `1/1` vs `1` — identical per spec |
+| `px-format` | 1 | `max-width: 1536px` vs `96rem` — 96 × 16 = 1536 at the default root |
+| `alpha-quantisation` | 1 | `drop-shadow(… rgba(0,0,0,0.15))` vs `0.14902` (= 38/255) — inside 1/255; the browser displays both as `0.15` (live probe) |
+| `flex-shorthand` | 1 | `flex: 1` vs `1 1 0%` — the same values by spec |
+| `preflight-derivable` | 1 | one side declares `border-style: solid`, the other derives it from the universal preflight |
+| `unused-rule` | 1 | bare `.outline` (v3 `outline-style: solid` vs v4 `outline-width: 1px`) — no `outline` class token exists anywhere in `src/` (only JS object keys named `outline`), a dead utility in both builds |
+| `hidden-important` | 1 | `[hidden] { display: none !important }` — no source rule combines `hidden` with a display class |
+
+Honest limits of the tool, not of the equivalence: the evaluator refuses mixed
+units (`calc(100vh - 200px)` — vh and px cannot be summed without a known
+length context) and one shadow-var edge (`calc( * 1px)` after an empty
+substitution); both texts are identical on both sides in every instance, so
+they produce no diff either way. The diff's parser also merges repeated
+selectors, so v4's `@supports`-guarded `color-mix` fallbacks (rgba rules that
+mirror the modern ones) are invisible to it — they were inspected directly
+instead: same selector, value equal to v3, emitted before the `color-mix`
+version, which is exactly the intended progressive-upgrade order. And because
+the bucketing skips `--`-prefixed declarations, **custom palette values were
+not left to the diff**: all five families from the v3 `tailwind.config.js`
+were compared line-by-line against the `@theme` block — `primary`
+(`#fea928`/`#ffc25c`/`#ed8900`/`#f59e0b`), `gold`, `sand`, `night`, `royal`
+— every hex identical; the only non-primary class in use, `bg-sand-50`,
+resolves `#faf7f0` on both builds, and `royal`/`gold` produce no classes in
+either build (unused in v3 too, so no utility was lost).
+
+**What the diff found and what was fixed in source.**
+
+* **Palette drift:** of the 95 default-palette shades the app uses, **65 had
+  silently changed** under v4's oklch palette (worst: `green-400`, Δ69/255).
+  All 95 are now pinned to their v3 hexes in `@theme`; `--font-sans` is pinned
+  to the v3 stack (`font-mono`/`font-serif` were byte-identical, no pin
+  needed). One shade escaped the first pass — `border-t-indigo-600` (the
+  `-t-` infix defeated the prefix scan) — caught by a loose re-scan of every
+  `-(family)-(N)` token and pinned to `#4f46e5`; live-probed `rgb(79,70,229)`
+  on both builds.
+* **Font resolution was a false alarm, then a real fix:** v4's `html` rule
+  reads `font-family: var(--default-font-family, -apple-system…)` — the apple
+  stack is a fallback only; `--default-font-family` resolves to the pinned
+  `--font-sans`, and the live computed stack on both builds is exactly
+  `ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", …`.
+* **`space-y`/`divide` cascade conflicts:** v4's `:where()`-weighted spacing
+  lost to 27 real JSX axis conflicts (12 FIRST, 11 MIDDLE, 4 LAST — all
+  y-axis, zero divide cases, e.g. `space-y-4` on a child that carries its own
+  `mt-*`/`mb-*`). Fixed per class: each conflicting utility gets a zero-rule
+  with v4's exact selector (ties at specificity 0,0,0, wins by source order,
+  still loses to child margins) plus a v3-form rule with v3's direction —
+  **16 rules** in `@layer utilities`. Verified in the built CSS and live: the
+  four-child cascade computes `mt/mb = 0/8, 16/0, 16/0, 16/0` **on both
+  builds** — v3's semantics (gap on the start edge of all-but-first, opposite
+  axis zeroed, child gap-axis margins overridden, off-axis margins preserved)
+  reproduced exactly.
+* **Renames, order-sensitive cases included:** `shadow-sm`→`shadow-xs` (30),
+  `drop-shadow-sm`→`drop-shadow-xs` (1), `backdrop-blur-sm`→`backdrop-blur-xs`
+  (13), `outline-none`→`outline-hidden` (75), 9 `bg-opacity-*` sites to slash
+  syntax, `border-3` (a no-op in v3) removed, the shimmer keyframe
+  re-expressed with `translate`, the dark variant declared as
+  `@custom-variant dark &:is(.dark *)`, and five compound/peer-variant sites
+  where v4's recomputed variants (`dark:group-hover:*`,
+  `disabled:group-hover:opacity-100`, `peer-*` overrides) needed restoring.
+* **v4 dropped preflight behaviours**, both restored verbatim in
+  `@layer base`: `button, [role=button] { cursor: pointer }` and
+  `:disabled { cursor: default }` — live-probed `cursor: pointer` on both
+  builds rather than trusted from the CSS text.
+
+**Live probes, recorded as run.** Both builds were served side by side and
+probed through one browser session: font stacks (identical, v3 stack),
+`border` → `rgb(229, 231, 235) 1px solid` on both, placeholder white/50 equal
+(default placeholder `#9ca3af` via the pinned `--color-gray-400`),
+`text-2xl` 24/32 px and `text-xs` 12/16 px on both (which also proves v4's
+`@property --tw-leading { syntax: "*" }` + `* { --tw-leading: initial }`
+sentinel resolves through to the theme value instead of clobbering it),
+`transition` 0.15 s `cubic-bezier(.4,0,.2,1)` on both, `blur-xl` `blur(24px)`
+and `backdrop-blur-md` `blur(12px)` on both, `drop-shadow-2xl` displayed as
+`0.15` on both, indigo pin `rgb(79, 70, 229)` on both, and the dark toggle
+flipping white/70 ↔ gray-800/70 on both (v3 serialises rgba, v4 oklab — same
+colour). One probe artifact is worth writing down: the first dark-toggle
+reads showed no change *on both builds* because
+`* { transition-property: background-color…; transition-duration: 0.2s }`
+was being measured at t≈0 of its transition; with transitions pinned to 0 s
+the toggle flips immediately on both. The fixture's `shadow-xs` correctly
+computes to `none` in the v3 build — the token does not exist there; the
+`shadow-xs ≡ v3 shadow-sm` value identity (`rgba(0,0,0,0.05) 0 1px 2px`) was
+probed separately before the rebuild.
 
 ---
 
@@ -692,11 +812,11 @@ this final batch. What each one was, and what now pins it:
   counted inside the **14/14** battery in §6.
 
 **On the audit gate (why it is a ratchet, not `npm audit --audit-level=high`).**
-A raw gate cannot pass here: `braces` — reached from `tailwindcss` 3.x in the
-frontend and from `nodemon` in the backend — is advisory-affected in *every*
-published version, and npm's only offered fix is `npm audit fix --force`, i.e.
-the breaking tailwindcss v4 migration (tracked as a post-launch item). A gate
-that is red on day one gets ignored and then deleted. So `.github/scripts/audit-gate.mjs`
+A raw gate could not pass when this gate was built: `braces` — reached from
+`tailwindcss` 3.x in the frontend and from `nodemon` in the backend — is
+advisory-affected in *every* published version, and npm's only offered fix is
+`npm audit fix --force`. A gate that is red on day one gets ignored and then
+deleted. So `.github/scripts/audit-gate.mjs`
 compares `npm audit --json` against `.github/audit-baseline.{frontend,backend}.json`
 and fails only on a **new** high/critical advisory, on an accepted one **getting
 worse** (baseline "high" must not silently accept "critical"), or on an audit
@@ -705,9 +825,13 @@ that **did not run** — while printing a notice when a baseline entry disappear
 clean: `npm audit --omit=dev` exits 0 in both workspaces. Two criticals that
 appeared mid-pass were fixed rather than baselined: `shell-quote` (command
 injection in `quote()`) via an `overrides` entry to `^1.12.0`, and `axios`
-above; `concurrently` has no fixed release (its advisory range is `>=9.2.3`,
-including 10.x) and is dev-only, so it is accepted **with its reason recorded**
-in the frontend baseline — that is what the baseline is for.
+above. The ratchet then did what ratchets are for: the Tailwind v4 migration
+(this revision) removed the whole `braces / chokidar / fast-glob / micromatch /
+tailwindcss` chain, so `audit-baseline.frontend.json` was tightened to **an
+empty `accepted`** — the frontend now audits **0 vulnerabilities**, and any
+future high/critical frontend advisory fails CI outright. The backend keeps its
+three entries (`nodemon → chokidar → braces`, dev-only, still current when last
+measured): runtime deps there audit clean, and entries may only shrink.
 
 ### P3 — post-launch
 
@@ -740,7 +864,7 @@ suites, counts and mutation results are in §6, findings in §5:
 1. **Registration still answers 400 ("address taken") vs 201.** Closing it means redesigning when the OTP token is issued — it is minted inside that same request. It is *bounded*: `accountRegisterLimiter` (5 / 15 min, keyed on the probed email, counting **both** answers) makes a prober pay per address and `X-Forwarded-For` rotation buys nothing. Deliberately out of scope this pass (V-10 residual).
 2. **Nine sites still *sequence* an awaited `send*Email` before their response** — `updateOrderToPaid`, `confirmOrderReceived`, five OTP/reset/welcome sends in `userController`, two in `paymentRoutes`. They are now *bounded* by the 5/5/10 s SMTP caps, which hold them inside the SPA's 15 s budget; moving them off the response path is a design cleanup, not a security fix.
 3. **Two grantable staff permissions are inert.** `manage_staff` and `reply_reviews` are in `VALID_PERMISSIONS` and labelled in the UI, but no route consumes either: staff CRUD is gated `protect, vendor` (owner only, so a staff account cannot mint more staff), and `GET /api/vendors/reviews` is read-only — there is no reply endpoint to gate. Granting them grants nothing, so it fails closed; what it costs is *delegation* (an owner cannot hand staff management to a trusted employee), not security. Recorded rather than invented: wiring a permission to a route that does not exist would be theatre.
-4. **`tailwindcss` 3.x → 4.x.** Mechanically small, but a visual change with no safety net that can see pixels, and the only way to clear the five remaining frontend highs from the audit baseline. Post-launch by decision.
+4. ~~**`tailwindcss` 3.x → 4.x.** Mechanically small, but a visual change with no safety net that can see pixels, and the only way to clear the five remaining frontend highs from the audit baseline. Post-launch by decision.~~ **Closed this revision, and closed by taking the "no pixels" objection seriously rather than waving it away.** The migration is backed by a declaration-level diff of the built CSS: every selector present in both builds (1315 of them) compared declaration-by-declaration after normalising variable resolution, `calc()` evaluation, colour formatting and vendor prefixes — **0 unexplained differences**; the known classes of difference are enumerated with their reasoning in §7 (v4 `color-mix` alpha inside 1/255, line-heights re-verified as `ratio × font-size`, shadow zero-layers, `@property` sentinel resolution, …). That diff is what *found* the regressions: 65 of 95 used palette shades had silently drifted (worst Δ69), the font stack had drifted, the v3→v4 `space-y` cascade now zeroed child margins differently, v4 dropped the cursor-pointer preflight, and the rename table (`outline-none`→`outline-hidden`, `shadow-sm`→`shadow-xs`, …) had order-sensitive cases — each fixed in source and re-proved, then probed live in a browser on both builds (fonts, borders, placeholders, line-height, transitions, filters, gradients, dark toggle, synthetic `space-y-4` cascade). The five frontend audit highs it blocked are gone: the frontend baseline is now an empty `accepted`.
 5. **V-05's "single use" is enforced only client-side.** The state token stays cryptographically valid until its 10-minute expiry after the first exchange; what stops a replay is that an attacker cannot place the `oauth_state` cookie in the victim's browser. Written down as a residual of the design rather than "fixed", because the fix belongs to whoever next touches the OAuth flow.
 
 ---
@@ -1070,14 +1194,15 @@ green gate on day one is evidence, not a habit), rotate the legacy Paystack test
 key this pass found pasted into an old version of `backend/.env.example` (its
 fingerprint is in `.gitleaksignore`, so the scanner will not flag it again, but
 the key itself should still be revoked), configure the **8 secrets `backup.yml`
-names and trigger it once by hand** — that workflow has never run — and take the
-`tailwindcss` 3.x → 4 migration out of the frontend baseline. The P3 batch that
-the previous revision left open is closed (§8); five P3s are genuinely open and
-each is written down with its bound: the registration 400-vs-201 oracle
-(bounded by `accountRegisterLimiter`), the nine sites that still sequence an
-email send (bounded by the 5/5/10 s SMTP caps), the two grantable staff
-permissions nothing enforces (fails closed), `tailwindcss` v4, and V-05's
-single-use state, which is client-side only.
+names and trigger it once by hand** — that workflow has never run. The P3 batch
+that the previous revision left open is closed (§8); four P3s are genuinely
+open and each is written down with its bound: the registration 400-vs-201
+oracle (bounded by `accountRegisterLimiter`), the nine sites that still
+sequence an email send (bounded by the 5/5/10 s SMTP caps), the two grantable
+staff permissions nothing enforces (fails closed), and V-05's single-use state,
+which is client-side only. The `tailwindcss` v4 migration that used to stand
+beside them is closed too, with its equivalence proof recorded in §7 rather
+than asserted from a green build.
 
 Confidence statement: every "fixed" verdict above is backed either by a test
 that was shown to fail when the fix is reverted, or by a live measurement

@@ -42,19 +42,19 @@ const Banner = () => {
             {/* Features List */}
             <div className="flex flex-col gap-4">
               <div data-aos="fade-up" className="flex items-center gap-4">
-                <FaHistory className="text-4xl h-12 w-12 shadow-sm p-4 rounded-full bg-[#fbeacb] dark:bg-[#431407]/30 dark:text-[#f2c169]" />
+                <FaHistory className="text-4xl h-12 w-12 shadow-xs p-4 rounded-full bg-[#fbeacb] dark:bg-[#431407]/30 dark:text-[#f2c169]" />
                 <p>Authentic Handwoven Kente</p>
               </div>
               <div data-aos="fade-up" className="flex items-center gap-4">
-                <GrSecure className="text-4xl h-12 w-12 shadow-sm p-4 rounded-full bg-orange-100 dark:bg-orange-900/30 dark:text-orange-300" />
+                <GrSecure className="text-4xl h-12 w-12 shadow-xs p-4 rounded-full bg-orange-100 dark:bg-orange-900/30 dark:text-orange-300" />
                 <p>Certified from Approved Kente Weaving Communities</p>
               </div>
               <div data-aos="fade-up" className="flex items-center gap-4">
-                <IoCardSharp className="text-4xl h-12 w-12 shadow-sm p-4 rounded-full bg-green-100 dark:bg-green-900/30 dark:text-green-300" />
+                <IoCardSharp className="text-4xl h-12 w-12 shadow-xs p-4 rounded-full bg-green-100 dark:bg-green-900/30 dark:text-green-300" />
                 <p>Secure Mobile Money & Card Payments</p>
               </div>
               <div data-aos="fade-up" className="flex items-center gap-4">
-                <IoGift className="text-4xl h-12 w-12 shadow-sm p-4 rounded-full bg-yellow-100 dark:bg-yellow-900/30 dark:text-yellow-300" />
+                <IoGift className="text-4xl h-12 w-12 shadow-xs p-4 rounded-full bg-yellow-100 dark:bg-yellow-900/30 dark:text-yellow-300" />
                 <p>Slow Fashion - Each Piece Made on Order</p>
               </div>
             </div>

@@ -63,7 +63,7 @@ export default function CustomRequestsAdmin() {
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {statCards.map((s) => (
-          <div key={s.label} className={`bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 ${s.alert ? 'ring-2 ring-red-500/60' : ''}`}>
+          <div key={s.label} className={`bg-white dark:bg-gray-800 rounded-xl shadow-xs p-4 ${s.alert ? 'ring-2 ring-red-500/60' : ''}`}>
             <p className="text-xs text-gray-500 dark:text-gray-400">{s.label}</p>
             <p className={`text-2xl font-bold mt-1 ${s.alert ? 'text-red-600 dark:text-red-400 animate-pulse' : 'text-gray-900 dark:text-white'}`}>{s.value}</p>
           </div>
@@ -71,7 +71,7 @@ export default function CustomRequestsAdmin() {
       </div>
 
       {cancelReasons.length > 0 && (
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4">
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xs p-4">
           <h3 className="font-semibold text-gray-700 dark:text-gray-300 mb-2">Why custom requests fall through</h3>
           <div className="flex flex-wrap gap-2">
             {cancelReasons.map((r, i) => (
@@ -106,7 +106,7 @@ export default function CustomRequestsAdmin() {
 
       <div className="space-y-3">
         {list.map((r: CustomRequest) => (
-          <div key={String(r.id)} className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4">
+          <div key={String(r.id)} className="bg-white dark:bg-gray-800 rounded-xl shadow-xs p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="space-y-1 text-sm">
                 <p className="font-semibold text-gray-900 dark:text-white">

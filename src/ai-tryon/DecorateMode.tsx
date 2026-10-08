@@ -228,7 +228,7 @@ const DecorateMode = ({ product, onProductChange }: DecorateModeProps) => {
                 const p = decorProducts.find((x) => x.id === parseInt(e.target.value));
                 onProductChange((p as unknown as Product) ?? null);
               }}
-              className="w-full bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-white px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary"
+              className="w-full bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-white px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-600 focus:outline-hidden focus:ring-2 focus:ring-primary"
             >
               <option value="">Select a Kente piece...</option>
               {decorProducts.map((p) => (

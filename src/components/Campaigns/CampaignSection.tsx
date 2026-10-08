@@ -88,7 +88,7 @@ const CampaignSection = () => {
                 key={String(c.id)}
                 to="/products"
                 data-aos="fade-up"
-                className="group bg-white dark:bg-gray-900 rounded-2xl overflow-hidden border border-gray-100 dark:border-gray-800 shadow-sm hover:shadow-lg hover:-translate-y-1 duration-300 flex flex-col"
+                className="group bg-white dark:bg-gray-900 rounded-2xl overflow-hidden border border-gray-100 dark:border-gray-800 shadow-xs hover:shadow-lg hover:-translate-y-1 duration-300 flex flex-col"
               >
                 <div className="relative aspect-[16/10] overflow-hidden">
                   {img ? (

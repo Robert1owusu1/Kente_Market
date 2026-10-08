@@ -41,7 +41,7 @@ function IconInput({ children, placeholder, type, value, onChange, error, disabl
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
           disabled={disabled}
-          className="bg-transparent outline-none text-white placeholder:text-white/50 w-full disabled:opacity-50"
+          className="bg-transparent outline-hidden text-white placeholder:text-white/50 w-full disabled:opacity-50"
         />
       </div>
       {error && (

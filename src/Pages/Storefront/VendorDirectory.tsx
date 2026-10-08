@@ -103,7 +103,7 @@ const VendorDirectory = () => {
                 <div className="p-5 pt-8">
                   <div className="flex items-start justify-between gap-2">
                     <div>
-                      <h3 className="font-bold text-gray-900 dark:text-white group-hover:text-amber-600 transition-colors">
+                      <h3 className="font-bold text-gray-900 dark:text-white group-hover:text-amber-600 dark:group-hover:text-amber-600 transition-colors">
                         {v.businessName}
                       </h3>
                       {v.location && (

@@ -26,6 +26,11 @@
 // must not turn the build red. The note is printed so the baseline gets
 // tightened afterwards (entries can only shrink, never grow).
 //
+// Tightened once already: the Tailwind v4 migration removed the braces/
+// chokidar/fast-glob/micromatch/tailwindcss chain from the frontend, so
+// audit-baseline.frontend.json now has an empty `accepted` — every future
+// high/critical frontend advisory fails CI from here on.
+//
 // Usage: node .github/scripts/audit-gate.mjs <npm-audit.json> <baseline.json>
 
 import { readFileSync } from 'node:fs';

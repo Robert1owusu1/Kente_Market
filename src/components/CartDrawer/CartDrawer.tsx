@@ -60,7 +60,7 @@ const CartDrawer = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
   return (
     <>
       <div
-        className={`fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm transition-opacity duration-300 ${
+        className={`fixed inset-0 z-[60] bg-black/50 backdrop-blur-xs transition-opacity duration-300 ${
           isVisible ? "opacity-100" : "opacity-0"
         }`}
         onClick={onClose}
@@ -136,7 +136,7 @@ const CartDrawer = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
                 {cartItems.map((item, index) => (
                   <div
                     key={`cart-item-${item.id}-${index}`}
-                    className="relative rounded-3xl border border-gray-200 bg-gray-50 p-4 shadow-sm transition hover:shadow-md dark:border-gray-700 dark:bg-gray-800/60 sm:p-5"
+                    className="relative rounded-3xl border border-gray-200 bg-gray-50 p-4 shadow-xs transition hover:shadow-md dark:border-gray-700 dark:bg-gray-800/60 sm:p-5"
                   >
                     <div className="flex gap-4 pr-10">
                       <div className="h-20 w-20 flex-shrink-0 overflow-hidden rounded-2xl bg-white dark:bg-gray-700 sm:h-24 sm:w-24">
@@ -167,7 +167,7 @@ const CartDrawer = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
                         </p>
 
                         <div className="mt-4 flex flex-wrap items-center gap-3">
-                          <div className="inline-flex items-center rounded-xl bg-white p-1 shadow-sm dark:bg-gray-700">
+                          <div className="inline-flex items-center rounded-xl bg-white p-1 shadow-xs dark:bg-gray-700">
                             <button
                               type="button"
                               onClick={() =>

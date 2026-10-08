@@ -113,7 +113,7 @@ function RequestRow({ req, onQuote, onDecline }: {
     referenceImageUrl && /^https?:\/\//i.test(referenceImageUrl) ? referenceImageUrl : null;
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4">
+    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xs p-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="space-y-1">
           <p className="font-semibold text-gray-900 dark:text-white">
@@ -201,7 +201,7 @@ function QuoteModal({ req, onClose }: { req: CustomRequest; onClose: () => void 
             value={price}
             onChange={(e) => setPrice(e.target.value)}
             placeholder="e.g. 450"
-            className="w-full px-4 py-3 rounded-xl border-2 border-gray-300 dark:border-gray-600 bg-transparent focus:outline-none focus:border-primary"
+            className="w-full px-4 py-3 rounded-xl border-2 border-gray-300 dark:border-gray-600 bg-transparent focus:outline-hidden focus:border-primary"
           />
         </div>
 
@@ -223,7 +223,7 @@ function QuoteModal({ req, onClose }: { req: CustomRequest; onClose: () => void 
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Message to the customer</label>
           <textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={3}
             placeholder="Deposit rule, finish details, delivery estimate…"
-            className="w-full px-4 py-3 rounded-xl border-2 border-gray-300 dark:border-gray-600 bg-transparent focus:outline-none focus:border-primary" />
+            className="w-full px-4 py-3 rounded-xl border-2 border-gray-300 dark:border-gray-600 bg-transparent focus:outline-hidden focus:border-primary" />
         </div>
 
         {error && <p className="text-xs text-red-500">{error}</p>}
@@ -260,7 +260,7 @@ function DeclineModal({ req, onClose }: { req: CustomRequest; onClose: () => voi
         <p className="text-xs text-gray-500 dark:text-gray-400">A short note helps the buyer (and our team) understand why.</p>
         <textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={3}
           placeholder="e.g. Loom booked through the end of the month"
-          className="w-full px-4 py-3 rounded-xl border-2 border-gray-300 dark:border-gray-600 bg-transparent focus:outline-none focus:border-primary" />
+          className="w-full px-4 py-3 rounded-xl border-2 border-gray-300 dark:border-gray-600 bg-transparent focus:outline-hidden focus:border-primary" />
         <div className="flex gap-2">
           <button onClick={handleDecline} disabled={isLoading}
             className="flex-1 px-4 py-2 bg-red-600 text-white rounded-xl font-semibold disabled:opacity-50 flex items-center justify-center gap-2">

@@ -175,7 +175,7 @@ function IconInput({
           onBlur={() => setIsFocused(false)}
           disabled={disabled}
           required={required}
-          className="bg-transparent outline-none text-white placeholder:text-white/50 w-full disabled:opacity-50"
+          className="bg-transparent outline-hidden text-white placeholder:text-white/50 w-full disabled:opacity-50"
           aria-invalid={error ? 'true' : 'false'}
           aria-describedby={error ? `${placeholder}-error` : undefined}
           autoComplete={type === "password" ? "new-password" : "on"}
@@ -444,7 +444,7 @@ const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
   return (
     <>
       <div className="min-h-screen w-full flex items-center justify-center bg-gradient-to-br from-slate-900 via-[#431407] to-slate-800 bg-[length:400%_400%] animate-gradient-cycle px-4">
-        <div className="form-container flex flex-col w-full max-w-md mx-auto shadow-2xl overflow-hidden rounded-3xl backdrop-blur-sm bg-white/5 border border-white/10">
+        <div className="form-container flex flex-col w-full max-w-md mx-auto shadow-2xl overflow-hidden rounded-3xl backdrop-blur-xs bg-white/5 border border-white/10">
           
           {/* Form Section */}
           <div className="w-full px-6 sm:px-8 py-10 bg-gradient-to-br from-slate-800/90 to-slate-700/90 backdrop-blur-xl">

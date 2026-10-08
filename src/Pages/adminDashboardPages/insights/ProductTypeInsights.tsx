@@ -56,7 +56,7 @@ export default function ProductTypeInsights() {
           </div>
 
           {tab === "types" && (
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-5">
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xs p-5">
               <p className="mb-4 text-sm text-gray-600 dark:text-gray-400">
                 Total revenue: <span className="font-bold">GHS {fmt(view.totalRevenue)}</span> · {view.totalQty} items across {catRows.length} type(s)
               </p>
@@ -122,7 +122,7 @@ export default function ProductTypeInsights() {
           )}
 
           {tab === "products" && (
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-5 overflow-x-auto">
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xs p-5 overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
@@ -159,7 +159,7 @@ export default function ProductTypeInsights() {
                       { label: "Avg. weaver rating", value: rv.avgVendorRating },
                       { label: "Verified (purchase)", value: rv.verifiedCount },
                     ].map((s) => (
-                      <div key={s.label} className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4">
+                      <div key={s.label} className="bg-white dark:bg-gray-800 rounded-xl shadow-xs p-4">
                         <p className="text-xs text-gray-500 dark:text-gray-400">{s.label}</p>
                         <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{s.value}</p>
                       </div>
@@ -167,7 +167,7 @@ export default function ProductTypeInsights() {
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-5">
+                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xs p-5">
                       <h3 className="font-semibold text-gray-700 dark:text-gray-300 mb-3">Weaver satisfaction</h3>
                       {(rv.vendorRatings ?? []).length === 0 && <p className="text-gray-400 text-sm">No vendor ratings yet.</p>}
                       {(rv.vendorRatings ?? []).map((v) => (
@@ -177,7 +177,7 @@ export default function ProductTypeInsights() {
                         </div>
                       ))}
                     </div>
-                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-5">
+                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xs p-5">
                       <h3 className="font-semibold text-gray-700 dark:text-gray-300 mb-3">Platform-suggestions ({rv.suggestionCount})</h3>
                       {(rv.suggestions ?? []).length === 0 && <p className="text-gray-400 text-sm">No suggestions yet.</p>}
                       <div className="space-y-2 max-h-56 overflow-y-auto">

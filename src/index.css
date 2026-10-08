@@ -1,6 +1,224 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+/* v4 defaults `dark:` to `prefers-color-scheme`; this app toggles `.dark` on
+   <html>, so restore the class-based variant that darkMode: "class" gave us.
+   Written as `:is(.dark *)` — the exact selector v3 emitted for all 148 dark
+   rules — rather than v4's suggested `:where(.dark, .dark *)`: `:where` has zero
+   specificity, which would drop every dark utility one level and let an
+   equal-specificity `hover:`/`focus:` utility outrank it (v3 resolved those by
+   source order at equal specificity). `:is(.dark *)` also matches descendants
+   only, like v3, instead of also styling the `.dark` element itself. */
+@custom-variant dark (&:is(.dark *));
+
+/* Same specificity parity for v4's peer variants: v4 wraps the trigger in
+   `:where()`, which costs one specificity level against v3 — and measured
+   conflicts show it would flip `peer-checked:bg-[#92400e]` vs
+   `dark:bg-gray-700` (AdminDashboard toggles), which v3 resolved to the
+   checked state at (0,3,0)-(0,2,0). `group-hover` is deliberately NOT
+   overridden: v4's static custom variants cannot carry the `/name` modifier,
+   so overriding it would silently kill `group-hover/button` (it did — the rule
+   vanished from the build). Its ties are handled at the call sites instead. */
+@custom-variant peer-focus (&:is(.peer:focus ~ *));
+@custom-variant peer-checked (&:is(.peer:checked ~ *));
+
+/* Kente theme — ported name-for-name from tailwind.config.js (v3), so every
+   existing `bg-primary`, `text-gold-dark`, `bg-sand-50`, `bg-night-800`,
+   `xs:` breakpoint and `ring-2` keeps resolving to the same thing. */
+@theme {
+  --color-primary: #fea928;
+  --color-primary-light: #ffc25c;
+  --color-primary-dark: #ed8900;
+  --color-primary-hover: #f59e0b;
+  --color-secondary: #ed8900;
+
+  --color-gold: #d4a017;
+  --color-gold-light: #e8c44a;
+  --color-gold-dark: #b8860b;
+
+  --color-sand-50: #faf7f0;
+  --color-sand-100: #f4eee1;
+  --color-sand-200: #e8dcc4;
+  --color-sand-900: #1a1611;
+
+  --color-night-800: #1f2937;
+  --color-night-900: #111827;
+  --color-night-950: #0b1120;
+
+  --color-royal: #1f2937;
+  --color-royal-dark: #111827;
+
+  --breakpoint-xs: 475px;
+
+  /* v3's default ring colour was blue-500 at 50%; v4 falls back to
+     currentColor. 52 call sites write a ring width with no ring colour and
+     would silently inherit the text colour instead. */
+  --default-ring-color: rgb(59 130 246 / 0.5);
+
+  /* v3's default palette, pinned hex-for-hex. Tailwind v4 re-tuned its default
+     colors in OKLCH: 65 of the 78 default-palette shades this app actually uses
+     render as different RGB than v3 (worst: green-400 #4ade80 -> rgb(5,223,114),
+     delta 69; red-600 #dc2626 -> rgb(231,0,11), delta 38). Every surface, border
+     and text colour in this app was designed against the v3 values, so pin them
+     instead of inheriting v4's retuned palette. Values taken verbatim from
+     v3.4.19's tailwindcss/colors (the exact version this app shipped with). */
+  --color-amber-50: #fffbeb;
+  --color-amber-100: #fef3c7;
+  --color-amber-200: #fde68a;
+  --color-amber-300: #fcd34d;
+  --color-amber-400: #fbbf24;
+  --color-amber-500: #f59e0b;
+  --color-amber-600: #d97706;
+  --color-amber-700: #b45309;
+  --color-amber-800: #92400e;
+  --color-amber-900: #78350f;
+  --color-blue-50: #eff6ff;
+  --color-blue-100: #dbeafe;
+  --color-blue-200: #bfdbfe;
+  --color-blue-300: #93c5fd;
+  --color-blue-400: #60a5fa;
+  --color-blue-500: #3b82f6;
+  --color-blue-600: #2563eb;
+  --color-blue-700: #1d4ed8;
+  --color-blue-800: #1e40af;
+  --color-blue-900: #1e3a8a;
+  --color-cyan-100: #cffafe;
+  --color-cyan-400: #22d3ee;
+  --color-cyan-500: #06b6d4;
+  --color-cyan-800: #155e75;
+  --color-cyan-900: #164e63;
+  --color-emerald-50: #ecfdf5;
+  --color-emerald-100: #d1fae5;
+  --color-emerald-300: #6ee7b7;
+  --color-emerald-400: #34d399;
+  --color-emerald-500: #10b981;
+  --color-emerald-600: #059669;
+  --color-emerald-700: #047857;
+  --color-emerald-900: #064e3b;
+  --color-gray-50: #f9fafb;
+  --color-gray-100: #f3f4f6;
+  --color-gray-200: #e5e7eb;
+  --color-gray-300: #d1d5db;
+  --color-gray-400: #9ca3af;
+  --color-gray-500: #6b7280;
+  --color-gray-600: #4b5563;
+  --color-gray-700: #374151;
+  --color-gray-800: #1f2937;
+  --color-gray-900: #111827;
+  --color-gray-950: #030712;
+  --color-green-50: #f0fdf4;
+  --color-green-100: #dcfce7;
+  --color-green-200: #bbf7d0;
+  --color-green-300: #86efac;
+  --color-green-400: #4ade80;
+  --color-green-500: #22c55e;
+  --color-green-600: #16a34a;
+  --color-green-700: #15803d;
+  --color-green-800: #166534;
+  --color-green-900: #14532d;
+  --color-indigo-600: #4f46e5;
+  --color-orange-100: #ffedd5;
+  --color-orange-300: #fdba74;
+  --color-orange-400: #fb923c;
+  --color-orange-500: #f97316;
+  --color-orange-600: #ea580c;
+  --color-orange-700: #c2410c;
+  --color-orange-800: #9a3412;
+  --color-orange-900: #7c2d12;
+  --color-pink-100: #fce7f3;
+  --color-pink-500: #ec4899;
+  --color-pink-700: #be185d;
+  --color-red-50: #fef2f2;
+  --color-red-100: #fee2e2;
+  --color-red-200: #fecaca;
+  --color-red-300: #fca5a5;
+  --color-red-400: #f87171;
+  --color-red-500: #ef4444;
+  --color-red-600: #dc2626;
+  --color-red-700: #b91c1c;
+  --color-red-800: #991b1b;
+  --color-red-900: #7f1d1d;
+  --color-slate-50: #f8fafc;
+  --color-slate-700: #334155;
+  --color-slate-800: #1e293b;
+  --color-slate-900: #0f172a;
+  --color-teal-100: #ccfbf1;
+  --color-teal-300: #5eead4;
+  --color-teal-400: #2dd4bf;
+  --color-teal-600: #0d9488;
+  --color-teal-700: #0f766e;
+  --color-teal-900: #134e4a;
+  --color-yellow-50: #fefce8;
+  --color-yellow-100: #fef9c3;
+  --color-yellow-200: #fef08a;
+  --color-yellow-300: #fde047;
+  --color-yellow-400: #facc15;
+  --color-yellow-500: #eab308;
+  --color-yellow-600: #ca8a04;
+  --color-yellow-700: #a16207;
+  --color-yellow-800: #854d0e;
+  --color-yellow-900: #713f12;
+  /* v3's default sans stack. v4 changed --font-sans to an -apple-system stack
+     (measured: body font-family ui-sans-serif,... on v3 vs -apple-system,...     on v4), which resolves to a different family on Linux and older systems. */
+  --font-sans:
+    ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji",
+    "Segoe UI Symbol", "Noto Color Emoji";
+}
+
+/* v3 parity — the things v4 changed that this codebase depends on.
+   This is the whole reason the migration is invisible rather than a recolour. */
+@layer base {
+  /* v3 preflight painted every element's border gray-200. v4 leaves
+     border-color at currentColor, which would turn the 297 bare `border`
+     utilities in this app into "the text colour". */
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200);
+  }
+
+  /* v4's preflight dropped both of v3's cursor rules. Without them every bare
+     `<button>` (and the navbar's div[role=button]) reverts to the UA arrow
+     cursor, and `:disabled` no longer forces the default cursor. Declared in
+     `base` so `cursor-pointer` / `cursor-not-allowed` / `disabled:cursor-*`
+     utilities still outrank them exactly as they did in v3. */
+  button,
+  [role=button] {
+    cursor: pointer;
+  }
+  :disabled {
+    cursor: default;
+  }
+}
+
+@layer components {
+  /* v3's container was `{ center: true, padding: {1rem, 1.5rem, 2rem, 3rem} }`.
+     v4's core container keeps width + per-breakpoint max-width but not the
+     centring or the padding, and there is no theme key for either. Declared
+     in `components` (not `@utility`) so the core width/max-width rules still
+     apply, and so an explicit `mx-auto`/`px-*` on the element still wins —
+     utilities outrank components, as they did in v3. */
+  .container {
+    margin-inline: auto;
+    padding-inline: 1rem;
+  }
+  @media (min-width: 40rem) {
+    .container {
+      padding-inline: 1.5rem;
+    }
+  }
+  @media (min-width: 48rem) {
+    .container {
+      padding-inline: 2rem;
+    }
+  }
+  @media (min-width: 64rem) {
+    .container {
+      padding-inline: 3rem;
+    }
+  }
+}
 
 @layer base {
   html {
@@ -50,6 +268,26 @@
   ::-webkit-scrollbar-thumb:hover {
     @apply bg-gray-400 dark:bg-gray-600;
   }
+
+  /* v4's `@apply` silently drops a `dark:` variant when the selector contains a
+     pseudo-element, so these four rules — all present in the v3 build — are
+     missing from v4's output: dark-mode placeholder text and the dark scrollbar
+     track/thumb/hover. Declared as plain CSS with the values v3 emitted, placed
+     after the light rules so the cascade resolves exactly as it did in v3
+     (`.dark …` outranks the unscoped pseudo-element rules). */
+  .dark input::placeholder,
+  .dark textarea::placeholder {
+    color: var(--color-gray-500);
+  }
+  .dark ::-webkit-scrollbar-track {
+    background-color: var(--color-night-900);
+  }
+  .dark ::-webkit-scrollbar-thumb {
+    background-color: var(--color-gray-700);
+  }
+  .dark ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--color-gray-600);
+  }
 }
 
 @layer utilities {
@@ -81,7 +319,12 @@
   }
   @keyframes shimmer {
     100% {
-      transform: translateX(100%);
+      /* v4's `-translate-x-full` drives the individual `translate` property,
+         not `transform`. Animating `transform` here would compose with it and
+         stop the sweep at the resting position (−100% + 100% = 0) instead of
+         travelling across the card, so animate `translate` — the implicit 0%
+         keyframe picks up the utility's −100% and reproduces v3's sweep. */
+      translate: 100% 0;
     }
   }
 }
@@ -90,4 +333,75 @@
   .safe-bottom {
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
+}
+
+/* v3 parity — space / divide specificity and direction.
+
+   v4 wraps these utilities in :where(.cls > :not(:last-child)), which drops
+   the selector to ZERO specificity (v3 measured (0,3,0)), and mirrors the
+   set/direction: v3 put the gap on the START edge of all-but-FIRST children,
+   v4 puts it on the END edge of all-but-LAST. In this app 27 direct children
+   inside space-y containers carry their own mt-/mb- utilities (12 first,
+   11 middle, 4 last): v3 silently overrode the middle/last ones and let the
+   first ones through — v4 would do the opposite at every one of them.
+
+   Each pair below was generated from v4's own emitted rule:
+     1. zero-rule using v4's exact selector — ties with v4 and wins by source
+        order, but still loses to a child's own margin utilities (0,1,0),
+        which is exactly v3's behaviour for first children;
+     2. v3's selector (all-but-first, (0,3,0)) with v3's direction, so middle
+        and last children get their margins overridden again as in v3.
+
+   Adding a NEW space-y/space-x/divide class later without its pair here is
+   safe: the class still spaces correctly (v4 rule untouched), only the v3
+   child-margin precedence is missing. */
+@layer utilities {
+  :where(.space-y-0\.5>:not(:last-child)) { margin-block-start:0;margin-block-end:0; }
+  .space-y-0\.5 > :not([hidden]) ~ :not([hidden]) { --tw-space-y-reverse:0;margin-block-start:calc(calc(var(--spacing) * .5) * calc(1 - var(--tw-space-y-reverse)));margin-block-end:calc(calc(var(--spacing) * .5) * var(--tw-space-y-reverse)); }
+
+  :where(.space-y-1>:not(:last-child)) { margin-block-start:0;margin-block-end:0; }
+  .space-y-1 > :not([hidden]) ~ :not([hidden]) { --tw-space-y-reverse:0;margin-block-start:calc(var(--spacing) * calc(1 - var(--tw-space-y-reverse)));margin-block-end:calc(var(--spacing) * var(--tw-space-y-reverse)); }
+
+  :where(.space-y-2>:not(:last-child)) { margin-block-start:0;margin-block-end:0; }
+  .space-y-2 > :not([hidden]) ~ :not([hidden]) { --tw-space-y-reverse:0;margin-block-start:calc(calc(var(--spacing) * 2) * calc(1 - var(--tw-space-y-reverse)));margin-block-end:calc(calc(var(--spacing) * 2) * var(--tw-space-y-reverse)); }
+
+  :where(.space-y-2\.5>:not(:last-child)) { margin-block-start:0;margin-block-end:0; }
+  .space-y-2\.5 > :not([hidden]) ~ :not([hidden]) { --tw-space-y-reverse:0;margin-block-start:calc(calc(var(--spacing) * 2.5) * calc(1 - var(--tw-space-y-reverse)));margin-block-end:calc(calc(var(--spacing) * 2.5) * var(--tw-space-y-reverse)); }
+
+  :where(.space-y-3>:not(:last-child)) { margin-block-start:0;margin-block-end:0; }
+  .space-y-3 > :not([hidden]) ~ :not([hidden]) { --tw-space-y-reverse:0;margin-block-start:calc(calc(var(--spacing) * 3) * calc(1 - var(--tw-space-y-reverse)));margin-block-end:calc(calc(var(--spacing) * 3) * var(--tw-space-y-reverse)); }
+
+  :where(.space-y-4>:not(:last-child)) { margin-block-start:0;margin-block-end:0; }
+  .space-y-4 > :not([hidden]) ~ :not([hidden]) { --tw-space-y-reverse:0;margin-block-start:calc(calc(var(--spacing) * 4) * calc(1 - var(--tw-space-y-reverse)));margin-block-end:calc(calc(var(--spacing) * 4) * var(--tw-space-y-reverse)); }
+
+  :where(.space-y-5>:not(:last-child)) { margin-block-start:0;margin-block-end:0; }
+  .space-y-5 > :not([hidden]) ~ :not([hidden]) { --tw-space-y-reverse:0;margin-block-start:calc(calc(var(--spacing) * 5) * calc(1 - var(--tw-space-y-reverse)));margin-block-end:calc(calc(var(--spacing) * 5) * var(--tw-space-y-reverse)); }
+
+  :where(.space-y-6>:not(:last-child)) { margin-block-start:0;margin-block-end:0; }
+  .space-y-6 > :not([hidden]) ~ :not([hidden]) { --tw-space-y-reverse:0;margin-block-start:calc(calc(var(--spacing) * 6) * calc(1 - var(--tw-space-y-reverse)));margin-block-end:calc(calc(var(--spacing) * 6) * var(--tw-space-y-reverse)); }
+
+  :where(.space-y-8>:not(:last-child)) { margin-block-start:0;margin-block-end:0; }
+  .space-y-8 > :not([hidden]) ~ :not([hidden]) { --tw-space-y-reverse:0;margin-block-start:calc(calc(var(--spacing) * 8) * calc(1 - var(--tw-space-y-reverse)));margin-block-end:calc(calc(var(--spacing) * 8) * var(--tw-space-y-reverse)); }
+
+  :where(.space-x-2>:not(:last-child)) { margin-inline-start:0;margin-inline-end:0; }
+  .space-x-2 > :not([hidden]) ~ :not([hidden]) { --tw-space-x-reverse:0;margin-inline-start:calc(calc(var(--spacing) * 2) * calc(1 - var(--tw-space-x-reverse)));margin-inline-end:calc(calc(var(--spacing) * 2) * var(--tw-space-x-reverse)); }
+
+  :where(.space-x-3>:not(:last-child)) { margin-inline-start:0;margin-inline-end:0; }
+  .space-x-3 > :not([hidden]) ~ :not([hidden]) { --tw-space-x-reverse:0;margin-inline-start:calc(calc(var(--spacing) * 3) * calc(1 - var(--tw-space-x-reverse)));margin-inline-end:calc(calc(var(--spacing) * 3) * var(--tw-space-x-reverse)); }
+
+  :where(.space-x-4>:not(:last-child)) { margin-inline-start:0;margin-inline-end:0; }
+  .space-x-4 > :not([hidden]) ~ :not([hidden]) { --tw-space-x-reverse:0;margin-inline-start:calc(calc(var(--spacing) * 4) * calc(1 - var(--tw-space-x-reverse)));margin-inline-end:calc(calc(var(--spacing) * 4) * var(--tw-space-x-reverse)); }
+
+  :where(.divide-y>:not(:last-child)) { border-top-width:0;border-bottom-width:0; }
+  .divide-y > :not([hidden]) ~ :not([hidden]) { --tw-divide-y-reverse:0;border-bottom-style:var(--tw-border-style);border-top-style:var(--tw-border-style);border-top-width:calc(1px * calc(1 - var(--tw-divide-y-reverse)));border-bottom-width:calc(1px * var(--tw-divide-y-reverse)); }
+
+  .divide-gray-100 > :not([hidden]) ~ :not([hidden]) { border-color:var(--color-gray-100); }
+
+  @media(min-width:64rem) {
+    :where(.lg\:space-y-6>:not(:last-child)) { margin-block-start:0;margin-block-end:0; }
+    .lg\:space-y-6 > :not([hidden]) ~ :not([hidden]) { --tw-space-y-reverse:0;margin-block-start:calc(calc(var(--spacing) * 6) * calc(1 - var(--tw-space-y-reverse)));margin-block-end:calc(calc(var(--spacing) * 6) * var(--tw-space-y-reverse)); }
+
+  }
+  .dark\:divide-gray-700:is(.dark *) > :not([hidden]) ~ :not([hidden]) { border-color:var(--color-gray-700); }
+
 }

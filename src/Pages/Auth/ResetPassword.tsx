@@ -44,7 +44,7 @@ function PasswordInput({ children, placeholder, value, onChange, error, disabled
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
           disabled={disabled}
-          className="bg-transparent outline-none text-white placeholder:text-white/50 w-full disabled:opacity-50"
+          className="bg-transparent outline-hidden text-white placeholder:text-white/50 w-full disabled:opacity-50"
         />
         <button
           type="button"

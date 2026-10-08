@@ -97,7 +97,7 @@ export default function BuybackAdmin() {
 
       <div className="space-y-3">
         {list.map((r) => (
-          <div key={String(r.id)} className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 flex flex-wrap items-start gap-4">
+          <div key={String(r.id)} className="bg-white dark:bg-gray-800 rounded-xl shadow-xs p-4 flex flex-wrap items-start gap-4">
             {r.productImage ? (
               <img
                 src={resolveImageUrl(r.productImage)}

@@ -195,7 +195,7 @@ function RequestCard({ request }: { request: CustomRequest }) {
               onChange={(e) => setCancelReason(e.target.value)}
               rows={3}
               placeholder="Why are you cancelling? (e.g. found another weaver, timeline, price…)"
-              className="w-full px-4 py-3 rounded-xl border-2 border-gray-300 dark:border-gray-600 bg-transparent focus:outline-none focus:border-primary"
+              className="w-full px-4 py-3 rounded-xl border-2 border-gray-300 dark:border-gray-600 bg-transparent focus:outline-hidden focus:border-primary"
             />
             <div className="flex gap-2">
               <button

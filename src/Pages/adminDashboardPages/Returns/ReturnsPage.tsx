@@ -154,7 +154,7 @@ const ReturnsPage = () => {
                             onChange={(e) => setNotes((prev) => ({ ...prev, [ret.id as string]: e.target.value }))}
                             placeholder="Admin notes (optional)"
                             rows={2}
-                            className="w-full px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-[#92400e] resize-none"
+                            className="w-full px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-hidden focus:ring-1 focus:ring-[#92400e] resize-none"
                           />
                           <div className="flex gap-2">
                             <button

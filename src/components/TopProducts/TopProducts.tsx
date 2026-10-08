@@ -195,7 +195,7 @@ const TopProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
                   type="button"
                   onClick={() => saveToFavorites(product.id)}
                   aria-label={`Favorite ${product.title}`}
-                  className="absolute top-4 right-4 z-20 p-2 bg-white/20 backdrop-blur-sm rounded-full hover:bg-white/30 transition-all duration-300 opacity-0 group-hover:opacity-100"
+                  className="absolute top-4 right-4 z-20 p-2 bg-white/20 backdrop-blur-xs rounded-full hover:bg-white/30 transition-all duration-300 opacity-0 group-hover:opacity-100"
                 >
                   <FaHeart className="text-red-500 hover:text-red-600" />
                 </button>
@@ -241,7 +241,7 @@ const TopProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
 
                   {/* Floating Rating — hidden while the product has no reviews */}
                   {Number(product.rating) > 0 && (
-                    <div className="absolute bottom-4 left-4 bg-white/90 backdrop-blur-sm rounded-full px-3 py-1 shadow-lg">
+                    <div className="absolute bottom-4 left-4 bg-white/90 backdrop-blur-xs rounded-full px-3 py-1 shadow-lg">
                       <div className="flex items-center gap-1">
                         <FaStar className="text-yellow-400 text-sm" />
                         <span className="text-sm font-bold text-gray-800">{Number(product.rating).toFixed(1)}</span>
@@ -304,7 +304,7 @@ const TopProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
                         {productColors.slice(0, 5).map((color, colorIndex) => (
                           <div
                             key={colorIndex}
-                            className="w-6 h-6 rounded-full border-3 border-gray-200 dark:border-gray-600 shadow-sm hover:scale-110 transition-transform duration-200 cursor-pointer"
+                            className="w-6 h-6 rounded-full border-gray-200 dark:border-gray-600 shadow-xs hover:scale-110 transition-transform duration-200 cursor-pointer"
                             style={{ backgroundColor: color.toLowerCase() }}
                             title={color}
                           />

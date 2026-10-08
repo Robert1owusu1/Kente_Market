@@ -283,7 +283,7 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
         <button
           onClick={() => saveToFavorites(product.id)}
           aria-label={`Add ${product.title} to wishlist`}
-          className="absolute top-3 right-3 z-10 p-2 bg-white/20 backdrop-blur-sm rounded-full hover:bg-white/30 transition-all duration-300 opacity-0 group-hover:opacity-100"
+          className="absolute top-3 right-3 z-10 p-2 bg-white/20 backdrop-blur-xs rounded-full hover:bg-white/30 transition-all duration-300 opacity-0 group-hover:opacity-100"
         >
           <FaHeart className="text-red-500 hover:text-red-600" />
         </button>
@@ -545,7 +545,7 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
                 <select
                   value={sortBy}
                   onChange={(e) => setSortBy(e.target.value)}
-                  className="appearance-none bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-white px-3 md:px-4 py-2 pr-8 rounded-lg border border-gray-200 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary w-full"
+                  className="appearance-none bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-white px-3 md:px-4 py-2 pr-8 rounded-lg border border-gray-200 dark:border-gray-600 focus:outline-hidden focus:ring-2 focus:ring-primary w-full"
                 >
                   <option value="featured">Featured</option>
                   <option value="newest">Newest</option>
@@ -593,7 +593,7 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
                     }
                   }}
                   placeholder="Search kente cloth by name, category, or weaving style..."
-                  className="w-full bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-white px-4 py-2 pr-10 rounded-lg border border-gray-200 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary"
+                  className="w-full bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-white px-4 py-2 pr-10 rounded-lg border border-gray-200 dark:border-gray-600 focus:outline-hidden focus:ring-2 focus:ring-primary"
                 />
                 {searchQuery && (
                   <button
@@ -616,7 +616,7 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
                 <select
                   value={selectedCategory}
                   onChange={(e) => setSelectedCategory(e.target.value)}
-                  className="w-full bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-white px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary"
+                  className="w-full bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-white px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 focus:outline-hidden focus:ring-2 focus:ring-primary"
                 >
                   {categories.map(category => (
                     <option key={category} value={category}>{category}</option>
@@ -630,7 +630,7 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
                   <select
                     value={selectedPrintType}
                     onChange={(e) => setSelectedPrintType(e.target.value)}
-                    className="w-full bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-white px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary"
+                    className="w-full bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-white px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 focus:outline-hidden focus:ring-2 focus:ring-primary"
                   >
                     {printTypes.map(type => (
                       <option key={type} value={type}>{type}</option>
@@ -645,7 +645,7 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
                   <select
                     value={selectedMaterial}
                     onChange={(e) => setSelectedMaterial(e.target.value)}
-                    className="w-full bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-white px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary"
+                    className="w-full bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-white px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 focus:outline-hidden focus:ring-2 focus:ring-primary"
                   >
                     {materials.map(material => (
                       <option key={material} value={material}>{material}</option>
