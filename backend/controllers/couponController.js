@@ -138,6 +138,12 @@ export const deleteCoupon = async (req, res) => {
   }
 };
 
+// X1: the body every refused code gets. Coupon.validate knows WHY a code was
+// refused, and on this endpoint — public, unauthenticated, the one an attacker
+// points at a wordlist — that knowledge is exactly what must not leave the
+// building. The reason is chosen here rather than passed through.
+const REFUSED = 'This coupon cannot be applied to this order';
+
 export const validateCoupon = async (req, res) => {
   try {
     const { code, cartTotal, items } = req.body || {};
@@ -171,7 +177,30 @@ export const validateCoupon = async (req, res) => {
     const result = await Coupon.validate(code.trim(), parseFloat(cartTotal), { vendorIds });
     const safeCoupon = Coupon.toPublic(result.coupon);
     if (!result.valid) {
-      return res.status(400).json({ message: result.message, coupon: safeCoupon });
+      // X1: one response for all six refusals — unknown, inactive, expired,
+      // exhausted, below the minimum, wrong store.
+      //
+      // Each used to arrive as its own sentence, which let a wordlist probe
+      // sort the whole coupon namespace from the text alone: "Coupon not
+      // found" against "Coupon has expired" is a binary search over every
+      // code an admin ever minted, including ones that have since died —
+      // information no caller needs, because the only decision this endpoint
+      // informs is whether to attempt the order. Two reasons volunteered more
+      // than existence while they were at it: the minimum-purchase figure and
+      // the issuing store's id, read straight off the response.
+      //
+      // The `coupon` field was the quieter half of the same leak: null when
+      // the code matched nothing, a populated row when it did, so a caller
+      // who ignored the words entirely still had the answer. It goes too.
+      //
+      // What survives is the one distinction the feature cannot drop — a code
+      // supplied correctly still returns 200 with its discount, so a USABLE
+      // code remains separable from every other answer. That residual is the
+      // product working rather than a channel, and couponValidateLimiter
+      // (IP-keyed, both outcomes counted) is what caps how fast it can be
+      // farmed. Both answers cost the same single findByCode lookup, so there
+      // is no cheaper version of this channel running underneath.
+      return res.status(400).json({ message: REFUSED, coupon: null });
     }
 
     res.json({ message: result.message, coupon: safeCoupon });
