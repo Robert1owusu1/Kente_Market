@@ -27,6 +27,9 @@ import {
 import { useGetOrderByIdQuery } from '../../slices/ordersApiSlice';
 import axios from 'axios';
 import type { FormErrors } from "../../types/domain";
+import InternationalAddressForm, { emptyInternationalAddress } from '../../components/Address/InternationalAddressForm';
+import type { InternationalAddress } from '../../components/Address/InternationalAddressForm';
+import { normalizeDestinationCode, isValidPhoneForDestination, hasPayableAmountChanged, DESTINATION_NAMES } from '../../utils/internationalCheckout';
 
 interface AppliedCoupon {
   code: string;
@@ -112,6 +115,17 @@ export default function CheckoutPage() {
   const [appliedCoupon, setAppliedCoupon] = useState<AppliedCoupon | null>(null);
   const [couponLoading, setCouponLoading] = useState(false);
 
+  // 🌍 Checkout workstream: international destination. Ghana stays the
+  // default so the existing flow is unchanged; other supported countries
+  // use the InternationalAddressForm + backend validation below.
+  const [intlAddress, setIntlAddress] = useState<InternationalAddress>(() => emptyInternationalAddress());
+  const destinationCode = normalizeDestinationCode(intlAddress.countryCode) ?? 'GH';
+  const isInternational = deliveryMethod === 'home' && destinationCode !== 'GH';
+  const [shippingEligibility, setShippingEligibility] = useState<{ supported: boolean; message?: string; mock?: boolean } | null>(null);
+  // Payment-amount freeze: the first finite payable total is captured and
+  // any silent change afterwards blocks payment instead of charging anew.
+  const initialPayableRef = useRef<number | null>(null);
+
   // ✅ Secure environment variable handling
   const paystackPublicKey = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY;
 
@@ -163,6 +177,30 @@ export default function CheckoutPage() {
 
   const [momoNumber, setMomoNumber] = useState('');
 
+  // 🌍 Effective shipping address: Ghana uses the legacy form above;
+  // international home delivery maps the InternationalAddressForm fields onto
+  // the legacy order payload shape (address/addressLine1 + countryCode) so the
+  // backend validator sees one consistent contract.
+  const effectiveShippingAddress = useMemo(() => {
+    if (isInternational) {
+      return {
+        firstName: intlAddress.firstName,
+        lastName: intlAddress.lastName,
+        email: intlAddress.email,
+        phone: intlAddress.phone,
+        address: intlAddress.addressLine1,
+        addressLine1: intlAddress.addressLine1,
+        addressLine2: intlAddress.addressLine2,
+        city: intlAddress.city,
+        region: intlAddress.region,
+        postalCode: intlAddress.postalCode,
+        country: intlAddress.countryCode,
+        countryCode: intlAddress.countryCode,
+      };
+    }
+    return { ...shippingAddress, countryCode: 'GH' as const };
+  }, [isInternational, intlAddress, shippingAddress]);
+
   // Redirect if cart is empty
   useEffect(() => {
     if (cartItems.length === 0) {
@@ -203,6 +241,43 @@ export default function CheckoutPage() {
   const serverTotal = serverOrder ? Number(serverOrder.totalAmount) : NaN;
   const payableTotal = Number.isFinite(serverTotal) && serverTotal > 0 ? serverTotal : total;
   const payableAmountInPesewas = Math.round(payableTotal * 100);
+
+  // Freeze the initialized payment amount: capture once, never silently move.
+  useEffect(() => {
+    if (Number.isFinite(payableTotal) && payableTotal > 0 && initialPayableRef.current === null) {
+      initialPayableRef.current = payableTotal;
+    }
+  }, [payableTotal]);
+
+  // Refresh/retry guard: once initialized, the payable total must not move.
+  // A changed total blocks payment until the customer refreshes the order.
+  const payableAmountChanged = hasPayableAmountChanged(initialPayableRef.current, payableTotal);
+
+  // Shipping eligibility for the selected destination (mock rates until the
+  // shipping workstream provides real carrier rates). Fail-closed: any
+  // unsupported destination or lookup failure blocks payment.
+  useEffect(() => {
+    if (deliveryMethod !== 'home') {
+      setShippingEligibility(null);
+      return;
+    }
+    let cancelled = false;
+    setShippingEligibility(null);
+    axios
+      .post('/api/checkout/international/shipping-options', { countryCode: destinationCode, subtotal })
+      .then(({ data }) => {
+        if (!cancelled) setShippingEligibility({ supported: Boolean(data?.supported), mock: Boolean(data?.mock) });
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          const message = err?.response?.data?.message || 'Shipping not available to this destination';
+          setShippingEligibility({ supported: false, message });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [deliveryMethod, destinationCode, subtotal]);
 
   // Validate total amount
   useEffect(() => {
@@ -300,7 +375,13 @@ export default function CheckoutPage() {
         }
         break;
       case 'phone':
-        if (!validateGhanaPhone(value)) {
+        if (isInternational) {
+          if (!isValidPhoneForDestination(value, destinationCode)) {
+            errors.phone = `Invalid phone number for ${DESTINATION_NAMES[destinationCode] ?? destinationCode}`;
+          } else {
+            delete errors.phone;
+          }
+        } else if (!validateGhanaPhone(value)) {
           errors.phone = 'Invalid phone number (use +233 XX XXX XXXX or 0XX XXX XXXX)';
         } else {
           delete errors.phone;
@@ -350,6 +431,29 @@ export default function CheckoutPage() {
   };
 
   const validateShippingForm = () => {
+    // 🌍 Fail-closed: an unsupported destination or failed shipping lookup
+    // blocks checkout before any address validation runs.
+    if (deliveryMethod === 'home' && shippingEligibility && !shippingEligibility.supported) {
+      toast.error(shippingEligibility.message || 'Shipping is not available to this destination');
+      return false;
+    }
+    if (isInternational) {
+      const v = intlAddress;
+      if (!v.firstName.trim() || !v.lastName.trim() || !v.email.trim() || !v.phone.trim()
+        || !v.addressLine1.trim() || !v.city.trim() || !v.postalCode.trim()) {
+        toast.error('Please complete all required international address fields');
+        return false;
+      }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.email.trim())) {
+        toast.error('Invalid email format');
+        return false;
+      }
+      if (!isValidPhoneForDestination(v.phone, destinationCode)) {
+        toast.error(`Invalid phone number for ${DESTINATION_NAMES[destinationCode] ?? destinationCode}`);
+        return false;
+      }
+      return true;
+    }
     if (deliveryMethod === 'pickup') {
       if (!pickupStation.trim()) {
         toast.error('Please select a pickup station');
@@ -401,6 +505,13 @@ export default function CheckoutPage() {
       return false;
     }
 
+    // 🌍 Mobile Money is Ghana-only. International orders pay by card
+    // through the same Paystack popup (charge currency stays GHS).
+    if (isInternational && paymentMethod === 'momo') {
+      toast.error('Mobile Money is available for Ghana only. Please use Card Payment for international orders.');
+      return false;
+    }
+
     if (paymentMethod === 'momo') {
       if (!selectedMomoProvider) {
         toast.error('Please select a mobile money provider');
@@ -433,6 +544,16 @@ export default function CheckoutPage() {
 
   // 💳 Improved Paystack payment handler
   const payWithPaystack = () => {
+    // 🌍 Fail-closed + amount-freeze guards: never initialize a charge for an
+    // unsupported destination, and never silently charge a moved total.
+    if (deliveryMethod === 'home' && shippingEligibility && !shippingEligibility.supported) {
+      toast.error(shippingEligibility.message || 'Shipping is not available to this destination');
+      return;
+    }
+    if (payableAmountChanged) {
+      toast.error('Order total changed. Please refresh the page to re-initialize payment safely.');
+      return;
+    }
     // Validate Paystack is loaded
     if (!hasPaystack()) {
       toast.error('Payment system not loaded. Please refresh the page.');
@@ -459,7 +580,7 @@ export default function CheckoutPage() {
       
       const config = {
         key: paystackPublicKey,
-        email: shippingAddress.email,
+        email: effectiveShippingAddress.email,
         // Charge the order's server-side total, never raw localStorage prices.
         amount: payableAmountInPesewas,
         currency: "GHS",
@@ -475,12 +596,12 @@ export default function CheckoutPage() {
             {
               display_name: 'Customer Name',
               variable_name: 'customer_name',
-              value: `${shippingAddress.firstName} ${shippingAddress.lastName}`
+              value: `${effectiveShippingAddress.firstName} ${effectiveShippingAddress.lastName}`
             },
             {
               display_name: 'Phone Number',
               variable_name: 'phone_number',
-              value: shippingAddress.phone
+              value: effectiveShippingAddress.phone
             },
             {
               display_name: 'Mobile Money Number',
@@ -549,11 +670,11 @@ export default function CheckoutPage() {
         })),
         totalAmount: parseFloat(total.toFixed(2)),
         shippingAddress: {
-          ...shippingAddress,
+          ...effectiveShippingAddress,
           deliveryMethod,
           pickupStation: deliveryMethod === 'pickup' ? pickupStation : '',
         },
-        billingAddress: sameAsShipping ? shippingAddress : billingAddress,
+        billingAddress: sameAsShipping ? { ...effectiveShippingAddress } : billingAddress,
         paymentMethod: paymentMethod === 'momo' 
           ? `Mobile Money (${selectedMomoProvider?.toUpperCase()})` 
           : 'Card Payment',
@@ -562,7 +683,7 @@ export default function CheckoutPage() {
           id: reference,
           status: response.status || 'success',
           update_time: new Date().toISOString(),
-          email_address: shippingAddress.email
+          email_address: effectiveShippingAddress.email
         },
         shippingCost: parseFloat(shipping.toFixed(2)),
         tax: parseFloat(tax.toFixed(2)),
@@ -737,6 +858,31 @@ export default function CheckoutPage() {
         )}
       </div>
 
+      {deliveryMethod === 'home' && (
+        <div className="bg-white dark:bg-gray-800 dark:border dark:border-gray-700 rounded-xl p-6 shadow-sm border">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Destination country *</label>
+          <select
+            value={destinationCode}
+            onChange={(e) => setIntlAddress((prev) => ({ ...prev, countryCode: normalizeDestinationCode(e.target.value) ?? 'GH', region: '', postalCode: '' }))}
+            className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
+            aria-label="Destination country"
+          >
+            {(Object.keys(DESTINATION_NAMES) as Array<keyof typeof DESTINATION_NAMES>).map((code) => (
+              <option key={code} value={code}>{DESTINATION_NAMES[code]}</option>
+            ))}
+          </select>
+          {isInternational ? (
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+              International delivery — charged in GHS via Paystack. Shipping rates shown are estimates until carrier rates land.
+            </p>
+          ) : (
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+              Ghana delivery — choose another destination to use the international address form.
+            </p>
+          )}
+        </div>
+      )}
+
       <div className="bg-white dark:bg-gray-800 dark:border dark:border-gray-700 rounded-xl p-6 shadow-sm border">
         {deliveryMethod === 'pickup' ? (
           <h3 className="text-xl font-semibold mb-6 flex items-center">
@@ -747,6 +893,17 @@ export default function CheckoutPage() {
             <FaTruck className="mr-3 text-blue-600" /> Shipping Address
           </h3>
         )}
+        {isInternational ? (
+          <div>
+            <InternationalAddressForm value={intlAddress} onChange={setIntlAddress} />
+            {shippingEligibility && !shippingEligibility.supported && (
+              <p className="text-red-500 text-sm mt-3" role="alert">{shippingEligibility.message || 'Shipping is not available to this destination'}</p>
+            )}
+            {shippingEligibility?.supported && shippingEligibility.mock && (
+              <p className="text-xs text-gray-500 mt-2">International shipping rates are estimated. The final amount is confirmed in GHS at payment.</p>
+            )}
+          </div>
+        ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">First Name *</label>
@@ -896,6 +1053,7 @@ export default function CheckoutPage() {
             />
           </div>
         </div>
+        )}
       </div>
 
       <div className="bg-white dark:bg-gray-800 dark:border dark:border-gray-700 rounded-xl p-6 shadow-sm border">
@@ -987,7 +1145,15 @@ export default function CheckoutPage() {
         <h3 className="text-xl font-semibold mb-6 flex items-center">
           <FaShieldAlt className="mr-3 text-purple-600" /> Payment Method
         </h3>
-        
+
+        {isInternational && (
+          <div className="bg-blue-50 rounded-xl p-4 border border-blue-200 mb-4">
+            <p className="text-sm text-blue-800">
+              International order — Mobile Money is Ghana-only. Please pay by card; you will be charged in GHS via Paystack.
+            </p>
+          </div>
+        )}
+
         <div className="space-y-4">
           <div
             onClick={() => setPaymentMethod('card')}
@@ -1099,6 +1265,15 @@ export default function CheckoutPage() {
                   {shippingAddress.phone}<br />
                   <span className="font-medium text-blue-600 dark:text-blue-400">Pickup at: {pickupStation}</span>
                 </>
+              ) : isInternational ? (
+                <>
+                  {effectiveShippingAddress.firstName} {effectiveShippingAddress.lastName}<br />
+                  {effectiveShippingAddress.email}<br />
+                  {effectiveShippingAddress.phone}<br />
+                  {intlAddress.addressLine1}<br />
+                  {intlAddress.city}{intlAddress.region ? `, ${intlAddress.region}` : ''} {intlAddress.postalCode}<br />
+                  {DESTINATION_NAMES[destinationCode] ?? destinationCode}
+                </>
               ) : (
                 <>
                   {shippingAddress.firstName} {shippingAddress.lastName}<br />
@@ -1155,11 +1330,25 @@ export default function CheckoutPage() {
           </div>
         </div>
         
+        {payableAmountChanged && (
+          <div className="bg-red-50 rounded-xl p-4 border border-red-200 mb-4">
+            <p className="text-sm text-red-800">
+              Order total changed after payment was initialized. Please refresh the page to re-initialize payment safely — the previous amount will not be charged.
+            </p>
+          </div>
+        )}
+        {deliveryMethod === 'home' && shippingEligibility && !shippingEligibility.supported && (
+          <div className="bg-red-50 rounded-xl p-4 border border-red-200 mb-4">
+            <p className="text-sm text-red-800">
+              {shippingEligibility.message || 'Shipping is not available to this destination.'}
+            </p>
+          </div>
+        )}
         <button
           onClick={payWithPaystack}
-          disabled={isProcessing || !isPaystackLoaded}
+          disabled={isProcessing || !isPaystackLoaded || payableAmountChanged || Boolean(deliveryMethod === 'home' && shippingEligibility && !shippingEligibility.supported)}
           className={`w-full py-4 rounded-lg font-semibold text-white transition-all ${
-            isProcessing || !isPaystackLoaded
+            isProcessing || !isPaystackLoaded || payableAmountChanged || Boolean(deliveryMethod === 'home' && shippingEligibility && !shippingEligibility.supported)
               ? 'bg-gray-400 cursor-not-allowed'
               : 'bg-green-600 hover:bg-green-700 transform hover:scale-[1.02]'
           }`}

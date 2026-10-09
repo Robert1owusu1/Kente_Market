@@ -72,7 +72,8 @@ import commissionRoutes from './routes/commissionRoutes.js';  // ⭐ NEW - Commi
 import moderationRoutes from './routes/moderationRoutes.js';  // ⭐ NEW - Product moderation
 import adminOpsRoutes from './routes/adminOpsRoutes.js';  // 🛡️ Audit log + scheduler status
 import suggestionRoutes from './routes/suggestionRoutes.js';
-import customRequestRoutes from './routes/customRequestRoutes.js';  // 🆕 Custom orders  // ⭐ NEW - User suggestions
+import customRequestRoutes from './routes/customRequestRoutes.js';  // 🆕 Custom orders
+import internationalCheckoutRoutes from './routes/internationalCheckoutRoutes.js';  // 🌍 Checkout workstream: international destinations  // ⭐ NEW - User suggestions
 import buybackRoutes from './routes/buybackRoutes.js';  // 🆕 Sell-back / borrow-back loop  // ⭐ NEW - User suggestions
 import { startCleanupSchedule } from './utils/cleanupJobs.js';
 
@@ -340,6 +341,7 @@ app.use('/api/admin/moderation', moderationRoutes);
 app.use('/api/admin/ops', adminOpsRoutes);
 app.use('/api/suggestions', suggestionRoutes);
 app.use('/api/custom-requests', customRequestRoutes);  // 🆕 Custom orders
+app.use('/api/checkout/international', internationalCheckoutRoutes);  // 🌍 Checkout workstream: countries/address/shipping-eligibility (mock rates until shipping workstream lands)
 
 // ============================================
 // ERROR HANDLING - Must be LAST
