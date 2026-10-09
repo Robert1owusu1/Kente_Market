@@ -23,10 +23,28 @@ import {
 } from "../utils/destinationValidation.js";
 
 /**
+ * Per-country address field requirements and validation patterns.
+ * @typedef {Object} CountryConfig
+ * @property {string} name
+ * @property {string} currency
+ * @property {string} phonePattern
+ * @property {string} phoneExample
+ * @property {string[]} requiredFields
+ * @property {string[]} optionalFields
+ * @property {string[]} regions
+ * @property {string} zipPattern
+ * @property {string} zipLabel
+ */
+
+/**
  * Supported countries with their address field requirements and validation patterns.
  * This is the single source of truth for international address forms.
+ * Exported (string-keyed map) so shipping-side code can validate destinations
+ * against the exact same table.
+ *
+ * @type {Record<string, CountryConfig>}
  */
-const COUNTRY_CONFIG = {
+export const COUNTRY_CONFIG = {
   GH: {
     name: "Ghana",
     currency: "GHS",
@@ -116,8 +134,11 @@ const COUNTRY_CONFIG = {
 
 /**
  * Get list of supported countries for checkout
+ *
+ * @param {import("express").Request} _req
+ * @param {import("express").Response} res
  */
-export const getSupportedCountries = async (req, res) => {
+export const getSupportedCountries = async (_req, res) => {
   try {
     const countries = Object.entries(COUNTRY_CONFIG).map(([code, config]) => ({
       code,
@@ -135,6 +156,9 @@ export const getSupportedCountries = async (req, res) => {
 
 /**
  * Get address field configuration for a specific country
+ *
+ * @param {import("express").Request} req
+ * @param {import("express").Response} res
  */
 export const getAddressConfig = async (req, res) => {
   try {
@@ -166,6 +190,9 @@ export const getAddressConfig = async (req, res) => {
 
 /**
  * Validate an international address
+ *
+ * @param {import("express").Request} req
+ * @param {import("express").Response} res
  */
 export const validateAddress = async (req, res) => {
   try {
@@ -173,7 +200,7 @@ export const validateAddress = async (req, res) => {
     const code = normalizeDestinationCode(countryCode === "Ghana" ? "GH" : countryCode);
     const config = code ? COUNTRY_CONFIG[code] : null;
 
-    if (!config) {
+    if (!config || !code) {
       return res.status(400).json({
         valid: false,
         errors: { countryCode: "Unsupported country" }
@@ -188,7 +215,9 @@ export const validateAddress = async (req, res) => {
       });
     }
 
+    /** @type {Record<string, string>} */
     const errors = {};
+    /** @type {Record<string, any>} */
     const normalized = { ...addressData, country: code, countryCode: code };
 
     // Validate required fields
@@ -294,6 +323,10 @@ export const validateAddress = async (req, res) => {
 
 /**
  * Normalize phone number to E.164 format
+ *
+ * @param {string} phone
+ * @param {string} countryCode
+ * @returns {string}
  */
 function normalizePhone(phone, countryCode) {
   const cleaned = phone.replace(/\s/g, "");
@@ -358,6 +391,9 @@ function normalizePhone(phone, countryCode) {
  * MOCK until the shipping workstream provides real carrier rates.
  * Amounts are informational; the order total remains server-authoritative
  * in GHS via shared/pricing.js in orderController.
+ *
+ * @param {import("express").Request} req
+ * @param {import("express").Response} res
  */
 export const getShippingOptions = async (req, res) => {
   try {
@@ -365,7 +401,7 @@ export const getShippingOptions = async (req, res) => {
     const code = normalizeDestinationCode(countryCode);
     const config = code ? COUNTRY_CONFIG[code] : null;
 
-    if (!config) {
+    if (!config || !code) {
       return res.status(400).json({
         message: "Shipping not available to this country",
         supported: false
@@ -391,9 +427,14 @@ export const getShippingOptions = async (req, res) => {
 /**
  * Default shipping options per country (MOCK placeholder until the shipping
  * workstream replaces it with real carrier integration).
+ *
+ * @param {string} countryCode
+ * @param {number|string} subtotal
+ * @returns {Array<{id: string, name: string, amount: number, currency: string, transitDaysMin: number, transitDaysMax: number, freeThreshold: number, isFree: boolean}>}
  */
 function getDefaultShippingOptions(countryCode, subtotal) {
   // Placeholder rates. The shipping workstream will replace with real rates.
+  /** @type {Record<string, {standard: number, freeThreshold: number, currency: string, transitDays: string}>} */
   const rates = {
     GH: { standard: 15, freeThreshold: 200, currency: "GHS", transitDays: "2-5" },
     GB: { standard: 12, freeThreshold: 100, currency: "GBP", transitDays: "5-10" },
@@ -425,6 +466,9 @@ function getDefaultShippingOptions(countryCode, subtotal) {
  * Check if a vendor can ship to a destination country.
  * Permissive until the shipping workstream adds the
  * vendor_shipping_destinations table checks.
+ *
+ * @param {import("express").Request} req
+ * @param {import("express").Response} res
  */
 export const checkVendorShippingEligibility = async (req, res) => {
   try {

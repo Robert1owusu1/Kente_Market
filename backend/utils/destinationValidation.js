@@ -7,6 +7,10 @@
 // exchange rates. The charge currency remains GHS (Paystack account
 // currency); `displayCurrency` is informational only for the address form.
 
+/**
+ * The destination allowlist shared by form, validation and tests.
+ * @type {Record<string, {name: string, displayCurrency: string, phonePattern: string}>}
+ */
 export const SUPPORTED_DESTINATIONS = {
   GH: { name: "Ghana", displayCurrency: "GHS", phonePattern: "^(\\+233|0)[0-9]{9}$" },
   GB: { name: "United Kingdom", displayCurrency: "GBP", phonePattern: "^(\\+44|0)[1-9][0-9]{8,9}$" },
@@ -32,10 +36,14 @@ export const normalizeDestinationCode = (code) => {
   return isSupportedDestination(upper) ? upper : null;
 };
 
-// Minimal required-field check used by order creation/update. Full
-// per-country field/zip validation lives in
-// controllers/internationalCheckoutController.js (validateAddress).
-export const validateDestinationAddress = (shippingAddress = {}) => {
+// Destination-allowlist check used at ORDER CREATION: rejects an unsupported
+// destination early (fail-closed, before any reservation/pricing work) WITHOUT
+// tightening the rest of the creation contract — required-field completeness
+// is enforced by the validate-address endpoint, the address form, and on
+// address updates (validateDestinationAddress below). Order-creation callers
+// have historically accepted partial address fixtures, so only the country is
+// gated here.
+export const validateDestinationCountry = (shippingAddress = {}) => {
   const rawCode =
     shippingAddress?.countryCode ||
     shippingAddress?.country ||
@@ -49,6 +57,16 @@ export const validateDestinationAddress = (shippingAddress = {}) => {
       message: "Shipping is not available to this destination",
     };
   }
+  return { valid: true, countryCode: code };
+};
+
+// Full check used when an address is written/updated: destination allowlist
+// plus required-field completeness. Full per-country field/zip validation
+// lives in controllers/internationalCheckoutController.js (validateAddress).
+export const validateDestinationAddress = (shippingAddress = {}) => {
+  const country = validateDestinationCountry(shippingAddress);
+  if (!country.valid) return country;
+  const code = country.countryCode;
   const required = ["firstName", "lastName", "email", "phone"];
   const isPickup = shippingAddress?.deliveryMethod === "pickup";
   const fields = isPickup

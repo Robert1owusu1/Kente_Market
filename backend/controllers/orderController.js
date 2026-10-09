@@ -29,7 +29,7 @@ import { sendOrderConfirmationEmail, sendEscrowReleasedEmail } from "../utils/or
 import { auditFromRequest } from "../utils/auditLog.js";
 import { recordFinancialEvent } from "../Services/ledgerService.js";
 import { newOrderNumber } from "../utils/orderNumber.js";
-import { validateDestinationAddress } from "../utils/destinationValidation.js";
+import { validateDestinationAddress, validateDestinationCountry } from "../utils/destinationValidation.js";
 
 // Client-supplied order-item images are stored and rendered to other users (e.g.
 // in the vendor's order view), so they must not be able to carry javascript: or
@@ -278,12 +278,15 @@ export const addOrderItems = async (req, res) => {
       return res.status(400).json({ message: "Order must contain at least one item" });
     }
 
-    // 🌍 Checkout workstream: server-side destination validation. Unsupported
-    // destinations are rejected safely BEFORE any reservation/pricing work.
-    // Totals remain server-authoritative below; client shipping/tax/total
-    // fields are never trusted (see updateOrder stripping + recompute).
+    // 🌍 Checkout workstream: server-side destination allowlist check.
+    // Unsupported destinations are rejected safely BEFORE any
+    // reservation/pricing work. Field completeness is deliberately NOT
+    // enforced here (order-creation contract; full checks run at the
+    // validate-address endpoint and on address updates) — totals remain
+    // server-authoritative below; client shipping/tax/total fields are
+    // never trusted (see updateOrder stripping + recompute).
     if (req.body.shippingAddress && typeof req.body.shippingAddress === "object") {
-      const dest = validateDestinationAddress(req.body.shippingAddress);
+      const dest = validateDestinationCountry(req.body.shippingAddress);
       if (!dest.valid) {
         return res.status(400).json({ message: dest.message, code: dest.code });
       }
