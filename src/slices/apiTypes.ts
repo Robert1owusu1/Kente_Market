@@ -261,3 +261,17 @@ export interface NotificationList {
   count?: number;
   [key: string]: unknown;
 }
+
+export interface VendorShippingDestination {
+  id?: number | string;
+  countryCode?: string;
+  region?: string | null;
+  isActive?: boolean;
+  createdAt?: string;
+  [key: string]: unknown;
+}
+
+export interface VendorShippingDestinationsResponse {
+  destinations?: VendorShippingDestination[];
+  [key: string]: unknown;
+}

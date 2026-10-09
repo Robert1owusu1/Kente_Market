@@ -7,6 +7,11 @@ import { getWallet } from '../Services/walletService.js';
 import { getAvailableAllocationsForVendor, payoutAllocation } from '../Services/escrowService.js';
 import { PLATFORM_FEE_RATE } from '../config/businessConfig.js';
 import { hasInvalidYards, INVALID_YARDS_MESSAGE } from '../utils/yards.js';
+<<<<<<< HEAD
+=======
+import { toNonNegativeInt } from '../utils/nonNegativeInt.js';
+import { clearCache } from '../middleware/cacheMiddleware.js';
+>>>>>>> 37559fdb66a254f1db22b9be260383cbb25cc62d
 
 // Create a URL-safe slug from a business name (Ghanaian accents transliterated
 // to ASCII; everything else stripped).
@@ -66,16 +71,17 @@ export const applyVendor = async (req, res) => {
         recipientType = 'nuban';
       }
     } catch (e) {
-      console.error(`❌ Recipient creation failed for vendor ${req.user.id}: ${e.message}`);
+ console.error(` Recipient creation failed for vendor ${req.user.id}: ${e.message}`);
+      // The Paystack error text can echo back submitted account details and
+      // provider internals, so it is logged but not returned.
       return res.status(400).json({
         message: `Could not create a payout recipient with your ${type === 'momo' ? 'mobile money' : 'bank'} details. Please verify the information and try again.`,
-        detail: e.message,
       });
     }
 
     // Paystack responded but did not return a recipient code — treat as failure.
     if (!recipientCode) {
-      console.error(`❌ Paystack returned no recipient_code for vendor ${req.user.id}`);
+ console.error(` Paystack returned no recipient_code for vendor ${req.user.id}`);
       return res.status(400).json({
         message: 'Payment provider did not confirm a payout recipient. Please try again later.',
       });
@@ -91,13 +97,26 @@ export const applyVendor = async (req, res) => {
 
     let vendor;
     if (existing) {
+      // C5: do NOT reset `status` here. The old payload always wrote
+      // status='pending' on a re-application, which had two consequences once
+      // vendor paths started enforcing approval:
+      //
+      //   * an APPROVED store re-pended itself — its products then disappear
+      //     from the storefront (N-6 hides everything not 'approved') and the
+      //     owner is locked out of their own dashboard until an admin notices;
+      //   * a SUSPENDED store re-pended itself, silently erasing the
+      //     sanction. Suspension is the administrator's decision to lift, not
+      //     the vendor's to reset by submitting a form again.
+      //
+      // A re-application from an existing store is a payout-detail update, not
+      // a new application. Vendor.update skips `undefined`, so omitting the
+      // field leaves whatever state the store is in untouched.
       vendor = await Vendor.update(existing.id, {
         businessName,
         contactPhone: contactPhone || existing.contactPhone,
         ...payoutFields,
         recipientCode: recipientCode || existing.recipientCode,
         recipientType: recipientType || existing.recipientType,
-        status: 'pending',
       });
     } else {
       vendor = await Vendor.create({
@@ -196,6 +215,15 @@ export const updateVendorStatus = async (req, res) => {
 
     const updatedVendor = await Vendor.update(req.params.id, { status });
 
+    // N-6: suspending a vendor now hides their products from every public
+    // query, but the product listing is served from the 'products' cache.
+    // Without this the storefront kept handing out the suspended vendor's
+    // stock until the TTL expired, and the database fix looked like it had
+    // done nothing. productController already clears this key on every
+    // product mutation; a vendor-status change moves all of their products at
+    // once and was the one path that forgot.
+    clearCache('products');
+
     // Keep the user's role in sync with their vendor status. Approving a
     // vendor promotes the user to 'vendor' so the vendor middleware lets them
     // in; suspending (or un-approving) drops them back to 'customer'.
@@ -289,7 +317,11 @@ export const createVendorProduct = async (req, res) => {
       patternName, patternMeaning, culturalSignificance, origin, weavingTechnique,
       yards, occasions, designStory, careInstructions, weight, wholesalePrice,
       retailPrice, madeToOrder, video, gallery, sku, stock, lowStockThreshold,
+<<<<<<< HEAD
       isRentable, rentPricePerDay, threadTypes, dominantThread,
+=======
+      isRentable, rentPricePerDay, threadTypes, dominantThread, advanceRatio,
+>>>>>>> 37559fdb66a254f1db22b9be260383cbb25cc62d
     } = req.body;
 
     if (!title || !img || !price || !category) {
@@ -317,8 +349,13 @@ export const createVendorProduct = async (req, res) => {
          yards, occasions, designStory, careInstructions, weight, wholesalePrice,
          retailPrice, madeToOrder, video, gallery,
          approvalStatus, approvalNote, approvedAt, stock, sku, lowStockThreshold,
+<<<<<<< HEAD
          isRentable, rentPricePerDay, threadTypes, dominantThread)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+=======
+         isRentable, rentPricePerDay, threadTypes, dominantThread, advanceRatio)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+>>>>>>> 37559fdb66a254f1db22b9be260383cbb25cc62d
       [
         title,
         img,
@@ -351,13 +388,21 @@ export const createVendorProduct = async (req, res) => {
         approvalStatus,
         isAdmin ? null : 'Awaiting review by the platform team.',
         approvedAt,
-        parseInt(stock) || 0,
+        toNonNegativeInt(stock),
         autoSku,
+<<<<<<< HEAD
         parseInt(lowStockThreshold) || 0,
+=======
+        toNonNegativeInt(lowStockThreshold),
+>>>>>>> 37559fdb66a254f1db22b9be260383cbb25cc62d
         isRentable ? 1 : 0,
         rentPricePerDay != null && rentPricePerDay !== '' ? parseFloat(rentPricePerDay) : null,
         threadTypes && threadTypes.length ? JSON.stringify(threadTypes) : null,
         dominantThread || null,
+<<<<<<< HEAD
+=======
+        advanceRatio !== undefined && advanceRatio !== '' ? parseFloat(advanceRatio) : null,
+>>>>>>> 37559fdb66a254f1db22b9be260383cbb25cc62d
       ]
     );
     const [product] = await pool.execute(`SELECT * FROM product WHERE id = ?`, [result.insertId]);
@@ -400,6 +445,10 @@ export const updateVendorProduct = async (req, res) => {
       'retailPrice', 'madeToOrder', 'video', 'gallery', 'stock', 'sku', 'lowStockThreshold',
       'isRentable', 'rentPricePerDay',
       'threadTypes', 'dominantThread',
+<<<<<<< HEAD
+=======
+      'advanceRatio',
+>>>>>>> 37559fdb66a254f1db22b9be260383cbb25cc62d
     ];
     const sets = [];
     const values = [];
@@ -416,7 +465,7 @@ export const updateVendorProduct = async (req, res) => {
           values.push(req.body[key] !== '' && req.body[key] != null ? parseFloat(req.body[key]) : null);
         } else if (['stock', 'lowStockThreshold'].includes(key)) {
           sets.push(`${key} = ?`);
-          values.push(parseInt(req.body[key]) || 0);
+          values.push(toNonNegativeInt(req.body[key]));
         } else {
           sets.push(`${key} = ?`);
           values.push(req.body[key]);
@@ -434,7 +483,11 @@ export const updateVendorProduct = async (req, res) => {
       const { processRestockForProduct } = await import('../Services/wishlistRestockService.js');
       await processRestockForProduct(productId);
     } catch (alertErr) {
+<<<<<<< HEAD
       console.warn(`⚠️ Restock alert skipped: ${alertErr.message}`);
+=======
+ console.warn(` Restock alert skipped: ${alertErr.message}`);
+>>>>>>> 37559fdb66a254f1db22b9be260383cbb25cc62d
     }
 
     // Fast path for price-drop alerts — notify wishlisted buyers who see a
@@ -443,7 +496,11 @@ export const updateVendorProduct = async (req, res) => {
       const { processPriceDropsForProduct } = await import('../Services/wishlistPriceDropService.js');
       await processPriceDropsForProduct(productId);
     } catch (alertErr) {
+<<<<<<< HEAD
       console.warn(`⚠️ Price-drop alert skipped: ${alertErr.message}`);
+=======
+ console.warn(` Price-drop alert skipped: ${alertErr.message}`);
+>>>>>>> 37559fdb66a254f1db22b9be260383cbb25cc62d
     }
 
     res.json({ message: 'Product updated', product: updated });
@@ -633,27 +690,100 @@ export const getVendorReviews = async (req, res) => {
 // @access  Private (vendor)
 export const getVendorReturns = async (req, res) => {
   try {
-    const vendorUserId = req.user.id;
+    const vendorUserId = parseInt(req.user.id, 10);
+    // Candidate returns: inline item.vendorId match (new orders) OR any of
+    // the vendor's products referenced by the order lines (legacy orders that
+    // predate the inline field — the same LIKE prefilter technique as the
+    // vendor orders list; the JS ownership check below stays authoritative).
+    const clauses = [];
+    const params = [];
+    const pushLikes = (key, value) => {
+      for (const pattern of [`%"${key}":${value}%`, `%"${key}": ${value}%`]) {
+        clauses.push(`o.items LIKE ?`);
+        params.push(pattern);
+      }
+    };
+    if (Number.isFinite(vendorUserId)) {
+      pushLikes('vendorId', vendorUserId);
+      try {
+        const [owned] = await pool.execute(
+          `SELECT id FROM product WHERE vendorId = ? LIMIT 300`,
+          [vendorUserId]
+        );
+        for (const prod of owned) {
+          pushLikes('product', prod.id);
+          pushLikes('productId', prod.id);
+        }
+      } catch {
+        // product table unavailable — inline match only
+      }
+    }
+    const where = clauses.length > 0 ? `WHERE (${clauses.join(' OR ')})` : 'WHERE 1=0';
     const [rows] = await pool.execute(
-      `SELECT rr.*, o.orderNumber, o.totalAmount,
-              u.firstName, u.lastName, u.email
+      `SELECT rr.*, o.orderNumber, o.items, u.firstName
        FROM return_requests rr
        LEFT JOIN orders o ON o.id = rr.orderId
        LEFT JOIN users u ON u.id = rr.userId
-       WHERE EXISTS (
-         SELECT 1
-         FROM JSON_TABLE(
-           o.items,
-           '$[*]' COLUMNS (
-             vendorId INT PATH '$.vendorId'
-           )
-         ) AS jt
-         WHERE jt.vendorId = ?
-       )
+       ${where}
        ORDER BY rr.created_at DESC`,
-      [vendorUserId]
+      params
     );
-    res.json(rows);
+    // Authoritative ownership: keep returns whose order holds at least one of
+    // the caller's lines (inline vendorId wins, else the product row).
+    const pids = [...new Set(
+      rows.flatMap((r) => {
+        let items = r.items;
+        if (typeof items === 'string') {
+          try { items = JSON.parse(items); } catch { return []; }
+        }
+        return Array.isArray(items) ? items : [];
+      }).map((it) => it.product ?? it.productId ?? it.id).filter((v) => v != null)
+    )];
+    const productVendor = new Map();
+    if (pids.length > 0) {
+      const placeholders = pids.map(() => '?').join(', ');
+      const [prows] = await pool.execute(
+        `SELECT id, vendorId FROM product WHERE id IN (${placeholders})`,
+        pids
+      );
+      for (const pr of prows) productVendor.set(String(pr.id), parseInt(pr.vendorId, 10));
+    }
+    const parseItems = (raw) => {
+      let items = raw;
+      if (typeof items === 'string') {
+        try { items = JSON.parse(items); } catch { return []; }
+      }
+      return Array.isArray(items) ? items : [];
+    };
+    const projected = [];
+    for (const r of rows) {
+      const items = parseItems(r.items);
+      const own = items.filter((it) => {
+        if (it.vendorId != null && parseInt(it.vendorId, 10) === vendorUserId) return true;
+        return productVendor.get(String(it.product ?? it.productId ?? it.id)) === vendorUserId;
+      });
+      if (own.length === 0) continue;
+      // P0-2-class redaction (same policy as the vendor orders list): own
+      // lines only, no order total, no buyer surname/email/addresses.
+      projected.push({
+        id: r.id,
+        orderId: r.orderId,
+        orderNumber: r.orderNumber,
+        firstName: r.firstName || null,
+        reason: r.reason,
+        description: r.description,
+        status: r.status,
+        adminNotes: r.adminNotes || null,
+        created_at: r.created_at,
+        items: own.map((it) => ({
+          product: it.product ?? it.productId ?? it.id ?? null,
+          name: it.name || it.title || 'Product',
+          qty: parseInt(it.qty ?? it.quantity, 10) || 1,
+          price: Number(it.price) || 0,
+        })),
+      });
+    }
+    res.json(projected);
   } catch (error) {
     console.error('Error fetching vendor returns:', error);
     res.status(500).json({ message: 'Failed to fetch vendor returns' });
@@ -667,7 +797,7 @@ export const getVendorCoupons = async (req, res) => {
   try {
     const vendorUserId = req.user.id;
     const [rows] = await pool.execute(
-      `SELECT * FROM coupons WHERE vendorId = ? OR vendorId IS NULL ORDER BY created_at DESC`,
+      `SELECT * FROM coupons WHERE vendorId = ? ORDER BY created_at DESC`,
       [vendorUserId]
     );
     res.json(rows);
@@ -1074,7 +1204,11 @@ export const getAdminVendorScorecard = async (req, res) => {
           const f = await getVendorFulfilment(v.userId);
           onTimeRate = f && f.withDeadline > 0 ? f.onTimeRate : null;
         } catch (err) {
+<<<<<<< HEAD
           console.warn(`⚠️ Fulfilment scorecard failed for ${v.userId}: ${err.message}`);
+=======
+ console.warn(` Fulfilment scorecard failed for ${v.userId}: ${err.message}`);
+>>>>>>> 37559fdb66a254f1db22b9be260383cbb25cc62d
         }
 
         const [[ratingRow]] = await pool.execute(
@@ -1135,5 +1269,57 @@ export const getVendorInsights = async (req, res) => {
   } catch (error) {
     console.error('Error fetching vendor insights:', error);
     res.status(500).json({ message: 'Failed to fetch demand insights' });
+  }
+};
+
+// @desc    Get vendor's shipping destinations
+// @route   GET /api/vendors/shipping/destinations
+// @access  Private (vendor, manage_orders)
+export const getVendorShippingDestinations = async (req, res) => {
+  try {
+    const { getVendorShippingDestinations } = await import('../Services/shippingService.js');
+    const destinations = await getVendorShippingDestinations(req.user.id);
+    res.json({ destinations });
+  } catch (error) {
+    console.error('Error fetching vendor shipping destinations:', error);
+    res.status(500).json({ message: 'Failed to fetch shipping destinations' });
+  }
+};
+
+// @desc    Add or update a vendor shipping destination
+// @route   POST /api/vendors/shipping/destinations
+// @access  Private (vendor, manage_orders)
+export const addVendorShippingDestination = async (req, res) => {
+  try {
+    const { countryCode, region, isActive } = req.body;
+    if (!countryCode) {
+      return res.status(400).json({ message: 'countryCode is required' });
+    }
+    const { setVendorShippingDestination, COUNTRY_CONFIG } = await import('../Services/shippingService.js');
+    const destination = await setVendorShippingDestination(req.user.id, countryCode, region, isActive);
+    res.status(201).json({ message: 'Shipping destination added', destination });
+  } catch (error) {
+    console.error('Error adding vendor shipping destination:', error);
+    if (error.message.startsWith('Unsupported country') || error.message.startsWith('Invalid region')) {
+      return res.status(400).json({ message: error.message });
+    }
+    res.status(500).json({ message: 'Failed to add shipping destination' });
+  }
+};
+
+// @desc    Remove a vendor shipping destination
+// @route   DELETE /api/vendors/shipping/destinations/:id
+// @access  Private (vendor, manage_orders)
+export const removeVendorShippingDestination = async (req, res) => {
+  try {
+    const { removeVendorShippingDestination } = await import('../Services/shippingService.js');
+    const deleted = await removeVendorShippingDestination(req.user.id, parseInt(req.params.id, 10));
+    if (!deleted) {
+      return res.status(404).json({ message: 'Destination not found' });
+    }
+    res.json({ message: 'Shipping destination removed' });
+  } catch (error) {
+    console.error('Error removing vendor shipping destination:', error);
+    res.status(500).json({ message: 'Failed to remove shipping destination' });
   }
 };

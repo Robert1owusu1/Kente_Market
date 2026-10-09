@@ -2,7 +2,10 @@
 import express from 'express';
 const router = express.Router();
 
-import { protect, admin, vendorOrStaff, requireVendorPermission } from '../middleware/authMiddleware.js';
+import { protect, admin, vendorOrStaff, requireVendorPermission, requireVerifiedEmail } from '../middleware/authMiddleware.js';
+// M-7/M-8: express-level price validation on the two vendor product write
+// paths, matching what the admin routes now do.
+import { validate, productPriceSchema } from '../middleware/validators.js';
 import {
   applyVendor,
   getMyVendorProfile,
@@ -31,6 +34,11 @@ import {
   getVendorOrders,
   updateVendorOrderStatus,
 } from '../controllers/vendorOrderController.js';
+import {
+  getVendorShippingDestinations,
+  addVendorShippingDestination,
+  removeVendorShippingDestination,
+} from '../controllers/vendorController.js';
 import { getVendorMessages } from '../controllers/messageController.js';
 import { getVendorFulfilment, getVendorInsights } from '../controllers/vendorController.js';
 
@@ -42,6 +50,18 @@ router.route('/directory').get(getVendorDirectory);
 
 // Public: GET /api/vendors/fulfillment/:vendorId → on-time delivery scorecard
 router.route('/fulfillment/:vendorId').get(getVendorFulfilment);
+<<<<<<< HEAD
+
+// GET /api/vendors/insights → demand-prediction digest (vendor)
+router.route('/insights').get(vendorOrStaff, requireVendorPermission('view_earnings'), getVendorInsights);
+
+// GET /api/vendors/admin-scorecard → on-time%, response time, rating (admin only)
+router.route('/admin-scorecard').get(protect, admin, getAdminVendorScorecard);
+
+// GET /api/vendors/messages → messages received by the vendor
+router.route('/messages').get(vendorOrStaff, requireVendorPermission('view_customers'), getVendorMessages);
+=======
+>>>>>>> 37559fdb66a254f1db22b9be260383cbb25cc62d
 
 // GET /api/vendors/insights → demand-prediction digest (vendor)
 router.route('/insights').get(vendorOrStaff, requireVendorPermission('view_earnings'), getVendorInsights);
@@ -52,14 +72,23 @@ router.route('/admin-scorecard').get(protect, admin, getAdminVendorScorecard);
 // GET /api/vendors/messages → messages received by the vendor
 router.route('/messages').get(vendorOrStaff, requireVendorPermission('view_customers'), getVendorMessages);
 
-// POST /api/vendors/apply → become/update vendor application (any logged-in user)
-router.route('/apply').post(protect, applyVendor);
+// POST /api/vendors/apply → become/update vendor application (any logged-in user with verified email)
+router.route('/apply').post(protect, requireVerifiedEmail, applyVendor);
 
 // GET /api/vendors/me → own vendor profile + escrow summary (vendor, staff w/ view_earnings, or admin)
 router.route('/me').get(vendorOrStaff, requireVendorPermission('view_earnings'), getMyVendorProfile);
 
+<<<<<<< HEAD
 // PUT /api/vendors/profile → update business/storefront profile
 router.route('/profile').put(vendorOrStaff, updateVendorProfile);
+=======
+// PUT /api/vendors/profile → update business/storefront profile.
+// A8: this was the ONE mutating vendor route with no requireVendorPermission
+// behind it, so a staff account holding no permissions at all could still
+// rename the store, move its /store/:slug URL and rewrite everything the
+// public storefront page renders.
+router.route('/profile').put(vendorOrStaff, requireVendorPermission('manage_storefront'), updateVendorProfile);
+>>>>>>> 37559fdb66a254f1db22b9be260383cbb25cc62d
 
 // GET /api/vendors/analytics → vendor analytics (financial)
 router.route('/analytics').get(vendorOrStaff, requireVendorPermission('view_earnings'), getVendorAnalytics);
@@ -83,11 +112,19 @@ router.route('/coupons/:id').delete(vendorOrStaff, requireVendorPermission('mana
 // GET /api/vendors/myproducts → vendor's own products
 // POST /api/vendors/products → vendor creates a product
 router.route('/myproducts').get(vendorOrStaff, requireVendorPermission('manage_products'), getMyProducts);
+<<<<<<< HEAD
 router.route('/products').post(vendorOrStaff, requireVendorPermission('manage_products'), createVendorProduct);
 
 // PUT /api/vendors/products/:id → vendor updates own product
 // DELETE /api/vendors/products/:id → vendor deletes own product
 router.route('/products/:id').put(vendorOrStaff, requireVendorPermission('manage_products'), updateVendorProduct);
+=======
+router.route('/products').post(vendorOrStaff, requireVendorPermission('manage_products'), validate(productPriceSchema), createVendorProduct);
+
+// PUT /api/vendors/products/:id → vendor updates own product
+// DELETE /api/vendors/products/:id → vendor deletes own product
+router.route('/products/:id').put(vendorOrStaff, requireVendorPermission('manage_products'), validate(productPriceSchema), updateVendorProduct);
+>>>>>>> 37559fdb66a254f1db22b9be260383cbb25cc62d
 router.route('/products/:id').delete(vendorOrStaff, requireVendorPermission('manage_products'), deleteVendorProduct);
 
 // POST /api/vendors/withdraw → vendor withdraws from available wallet balance
@@ -97,6 +134,15 @@ router.route('/withdraw').post(vendorOrStaff, requireVendorPermission('view_earn
 // POST /api/vendors/orders/:id/status → advance fulfilment / post progress
 router.route('/orders').get(vendorOrStaff, requireVendorPermission('view_customers'), getVendorOrders);
 router.route('/orders/:id/status').post(vendorOrStaff, requireVendorPermission('manage_orders'), updateVendorOrderStatus);
+
+// GET /api/vendors/shipping/destinations → vendor's shipping destinations
+// POST /api/vendors/shipping/destinations → add/update shipping destination
+// DELETE /api/vendors/shipping/destinations/:id → remove shipping destination
+router.route('/shipping/destinations')
+  .get(vendorOrStaff, requireVendorPermission('manage_orders'), getVendorShippingDestinations)
+  .post(vendorOrStaff, requireVendorPermission('manage_orders'), addVendorShippingDestination);
+router.route('/shipping/destinations/:id')
+  .delete(vendorOrStaff, requireVendorPermission('manage_orders'), removeVendorShippingDestination);
 
 // GET /api/vendors → list all vendors (admin only)
 router.route('/').get(protect, admin, listVendors);
