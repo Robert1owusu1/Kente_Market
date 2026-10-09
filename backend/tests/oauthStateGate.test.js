@@ -192,13 +192,28 @@ describe('V-05: the Google callback verifies state before it does anything else'
       'a legitimate callback was refused — this is the false positive that would break every Google login');
   });
 
+  test('refuses a replay of a state the server has already consumed', async () => {
+    // V-05 residual closed: the signed JWT alone stays valid for its full
+    // 10 minutes, and an attacker who captured the callback URL holds BOTH
+    // halves of the pair (query + cookie), so every client-side defence is
+    // theirs to ignore. Only server-side single-use stops the second
+    // delivery — the nonce is consumed at the first passing gate.
+    const state = signState();
+    const pair = { query: `?state=${encodeURIComponent(state)}`, cookie: `oauth_state=${state}` };
+    const first = await callback(pair);
+    assert.ok(String(first.location).startsWith(PROVIDER_PREFIX),
+      `the first delivery must pass the gate, got ${first.location}`);
+    const replay = await callback(pair);
+    assert.equal(replay.status, 302, `expected a redirect, got ${replay.status}`);
+    assert.equal(replay.location, REFUSED,
+      `a replayed state reached passport: ${replay.location}`);
+  });
+
   test('clears the state cookie once the gate passes', async () => {
-    // The single-use property is enforced by the browser dropping the
-    // cookie: the token itself stays cryptographically valid until its
-    // 10-minute expiry, because nothing server-side consumes it. Assert the
-    // mechanism that exists (epoch expiry on both state cookies), and keep
-    // the limitation in mind — a replay needs the cookie back in the
-    // victim's browser, which an attacker cannot place there.
+    // The browser half of single-use: epoch expiry on both state cookies,
+    // so the same device cannot replay without the cookie. The SERVER half
+    // — the nonce consume, which is what stops an attacker holding a
+    // captured pair — is pinned by the replay test above. Both are needed.
     const state = signState();
     const r = await callback({ query: `?state=${encodeURIComponent(state)}`, cookie: `oauth_state=${state}` });
     const cleared = r.setCookies.filter((c) => /^oauth_(state|mode)=/i.test(c));

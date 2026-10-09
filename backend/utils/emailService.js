@@ -215,6 +215,70 @@ export const sendOTPEmail = async (email, firstName, otp) => {
 };
 
 /**
+ * Out-of-band notice for an existing, ALREADY-VERIFIED address when someone
+ * attempts to register with it (V-10 residual: the wire reply to register is
+ * byte-identical on every branch, so this email — addressed to the mailbox
+ * itself — is the only channel that may explain what actually happened).
+ * No OTP is minted here: a code for an account that is already verified
+ * would open a verification path into it.
+ *
+ * Every interpolation is escaped: emailHtmlEscaping's rule is mechanical —
+ * every ${...} inside a template containing HTML tags must be escapeHtml(...),
+ * no judgement calls about which fields are "safe".
+ */
+export const sendRegistrationNoticeEmail = async (email, firstName) => {
+  const transporter = createTransporter();
+
+  const mailOptions = {
+    from: process.env.EMAIL_FROM || 'Bonwire Kente <noreply@bonwirekente.com>',
+    to: email,
+    subject: 'Account Registration Attempt - Bonwire Kente',
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background: linear-gradient(135deg, #f59e0b 0%, #ea580c 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+          .content { background: #f9fafb; padding: 30px; border-radius: 0 0 10px 10px; }
+          .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>Bonwire Kente</h1>
+            <p>Registration Notice</p>
+          </div>
+          <div class="content">
+            <h2>Hello ${escapeHtml(firstName)}!</h2>
+            <p>Someone (hopefully you) just tried to create a new Bonwire Kente account with this email address — but an account already exists.</p>
+            <p><strong>If it was you:</strong> sign in instead, or reset your password if you no longer remember it. Nothing else is needed — no second account was created.</p>
+            <p><strong>If it wasn't you:</strong> no action is required. No account was created and no changes were made. As always, our team will never ask you for a password or verification code.</p>
+          </div>
+          <div class="footer">
+            <p>&copy; ${escapeHtml(new Date().getFullYear())} Bonwire Kente. All rights reserved.</p>
+            <p>This is an automated email. Please do not reply.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `,
+  };
+
+  try {
+    console.log(` Sending registration notice email to ${maskEmail(email)}...`);
+    const info = await transporter.sendMail(mailOptions);
+    console.log(` Registration notice email sent: ${info.messageId}`);
+    return true;
+  } catch (error) {
+    console.error(' Error sending registration notice email:', error);
+    throw new Error(`Failed to send registration notice email: ${error.message}`);
+  }
+};
+
+/**
  * Send welcome email after email verification
  */
 export const sendWelcomeEmail = async (email, firstName) => {

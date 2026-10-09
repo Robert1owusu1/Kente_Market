@@ -12,7 +12,11 @@ const SyncUserRole = () => {
   const userInfo = useAppSelector((state) => state.auth.userInfo);
 
   const { data: profile } = useGetProfileQuery(undefined, {
-    skip: !userInfo,
+    // Pending verification (registration flow) has NO session cookie yet —
+    // a profile GET here would 401, log the visitor out mid-signup and
+    // bounce them off /verify-email. Sync resumes once verification issues
+    // the real session and clears the flag.
+    skip: !userInfo || userInfo.pendingVerification === true,
   });
 
   useEffect(() => {

@@ -42,7 +42,7 @@ when the prior report was this one (§10).
 
 | Actor | Capabilities modelled | Findings raised against it |
 |---|---|---|
-| Anonymous | unlimited requests, rotating `X-Forwarded-For`, malformed URLs/paths, no session | `redactUrl` DoS (P0, fixed), rate-limit bypass (P1, fixed), lockout maintenance (P2, fixed), enumeration oracles (P3: registration 400-vs-201 bounded by a per-email limiter; coupon-existence oracle closed by X1; the "username oracle" could not be reproduced — see §10), unauthenticated `/metrics` (P3 → fixed, `metricsTokenGuard`) |
+| Anonymous | unlimited requests, rotating `X-Forwarded-For`, malformed URLs/paths, no session | `redactUrl` DoS (P0, fixed), rate-limit bypass (P1, fixed), lockout maintenance (P2, fixed), enumeration oracles (P3: registration 400-vs-201 **closed** — uniform 202 on every branch; coupon-existence oracle closed by X1; the "username oracle" could not be reproduced — see §10), unauthenticated `/metrics` (P3 → fixed, `metricsTokenGuard`) |
 | Customer | owns orders/coupons, can replay and race their own checkout, can hit APIs directly | escrow under-allocation on multi-unit lines (P0, fixed), V-01 gross/net charge divergence (fixed this pass), V-04 coupon cap bypass (fixed this pass), refund double-spend (V-07), **refund double-spend actually reachable because the V-07 guard was dead code (V-07b, P0, fixed)** |
 | Malicious vendor / compromised vendor staff | vendor JWT, vendor-scoped routes, own products/orders | vendor order-status PII + sibling line leak (P1, fixed), fulfilment forward-jump (V-11, fixed), suspended-vendor products still listed (N-6, fixed), pending applicant holding every vendor capability (C5, fixed), staff editing the storefront with an empty permission object (A8, fixed) |
 | Malicious admin / staff | privileged routes, mark-paid, cancel, coupon issuance | refund CAS on admin cancel (V-07 — **whose guard turned out to be dead code: V-07b, P0, fixed this pass**), uncapped % coupon → negative `totalAmount` (C2, fixed), partial-refund balance pre-check blind to prior refunds (N-23, fixed) |
@@ -125,8 +125,9 @@ regression test that fails when either half is removed.
 
 * *"RB-06 / V-05 OAuth state not addressed"* — **false**, it is properly
   closed (evidence above). The residual it named — no functional test — is
-  now closed too by `oauthStateGate.test.js`; what remains is only that
-  single-use is enforced client-side (§8 P3, item 5).
+  now closed too by `oauthStateGate.test.js`; the further residual that
+  single-use was enforced client-side is closed as well: the state gate
+  consumes the nonce server-side (§8 P3 item 5).
 * *"`refundReconcile.test.js` failure is pre-existing and unrelated"* —
   **false**. It was cross-suite fixture pollution: orphaned `PARTIAL-` rows
   matched `reconcileRefundedButPaid`'s global scan. Cleaning the orphans made
@@ -151,7 +152,7 @@ regression test that fails when either half is removed.
 | N-17 | **Test fixtures relied on TiDB not enforcing foreign keys.** `reservation` and `stockRace` inserted products/orders whose parent user did not exist; MySQL raises the FK error, `INSERT IGNORE` converts it into **0 affected rows**, and it surfaces later as a confusing assertion (`created > 0`) rather than as the real cause. In `redteam-final` the vendor was picked with `SELECT … LIMIT 1` — an arbitrary row another suite may delete mid-test, making it a genuine cross-suite race. All three now create their own never-deleted fixtures. | **P3** (test infrastructure) — **FIXED this pass** | 3 suites failing on MySQL → 0; `redteam-final` 10/10 in three consecutive runs. |
 | N-18 | **Two orders created in the same millisecond collide on the UNIQUE `orderNumber`, and checkout answers 500.** Both checkout paths minted the key from the wall clock — `"ORD-" + Date.now()` and `` `CUS-${Date.now()}` `` — against `orders.orderNumber VARCHAR(100) UNIQUE NOT NULL`, so any two orders inserted in the same millisecond ask for the *same* value. The loser throws `ER_DUP_ENTRY`; the catch block releases the coupon slot and restores stock (the N-7 economic invariant held throughout — no money moved, no slot leaked), but the customer still gets `500 Internal server error` and loses the basket. Reproduced **2/8 local runs** and in **CI runs 45 and 46** — on byte-identical code that *passed* the runs on either side (44 and 47), which is precisely why it presented as infrastructure flakiness and survived to this pass. Same class, fixed alongside: the regular checkout's SELECT-then-INSERT on `paymentReference` also answered 500 when the UNIQUE key won the race (the custom-request path already answered 400); both now answer 400 with the pre-check's wording. | **P2** (checkout availability under concurrency — no authorization or money impact, but P1-shaped during a burst) — **FIXED this pass** | `controllers/orderController.js`, `controllers/customRequestController.js`; failing log `Duplicate entry 'ORD-1791330964942' for key 'orders.orderNumber'`; now `utils/orderNumber.js` (`PREFIX-<epoch-ms>-<8 hex>`) + `tests/orderNumber.test.js` (6 tests, 2 mutations). |
 | N-19 | **Google login was dead in production: every raw `fetch` in the SPA bypassed the CSRF interceptor.** `main.tsx:28` attaches `X-CSRF-Token` through an **axios** request interceptor; the OAuth exchange (`OAuthCallback.tsx:87`) is a *raw* `fetch` carrying only `Content-Type`. `csrfProtection` layer 2 (`csrfMiddleware.js:117`) rejects any state-changing request that carries the `csrf_token` cookie without the matching header — and that cookie is set on every session issue and lives **30 days**, while the session JWT expires sooner, so "expired session + live CSRF cookie" is the ordinary state of a returning visitor. Live probe matrix against production (`POST /api/auth/oauth/exchange`, `kente-api.onrender.com`): allowed Origin with no cookie → **401** (CSRF passed, route reached); allowed Origin + cookie + no header → **403 `CSRF token missing`** ← the browser's case; cookie + wrong header → 403 `CSRF token mismatch`; foreign Origin → 403 `Cross-site request rejected`; Origin with a trailing slash → 403. Layer 1 was healthy and layer 2 was the killer. The 401 on `/api/users/profile` in the incident report is purely downstream: no session cookie was ever minted. Same class, found in the same sweep: `useLegalConsent.ts:45` (POST `/api/auth/consent` — the Google-**signup** consent) had the identical shape and would 403 the same users, while forgot-password and reset-password escaped only because they *omit* `credentials`, so the cookie never travels. The second half: `getOrIssueCsrfToken` (`csrfMiddleware.js:73`) echoed **any** existing cookie without re-checking its HMAC, so after a `JWT_SECRET` rotation every state-changing request from every returning visitor would 403 for the rest of the cookie's 30-day life, with no recovery short of clearing cookies by hand. And the third: session issuance rotates the cookie while the SPA's cache reset was keyed on the *signed-in boolean*, so a re-sign-in that never flips it (persisted `userInfo`, expired JWT) kept the pre-rotation token — the same 403 one step later, now on every state-changing request. | **P1** (Google login — and Google signup consent — dead in production for exactly the visitors who already had an account) — **FIXED this pass** | `src/main.tsx:28`, `src/Pages/Auth/OAuthCallback.tsx:87`, `src/hooks/useLegalConsent.ts:45`, `src/Pages/Auth/ForgotPassword.tsx:82`, `src/Pages/Auth/ResetPassword.tsx:151`; `backend/middleware/csrfMiddleware.js:73,117`; probe matrix above; now `csrfJsonHeaders()` + `tests/csrfToken.test.js` (11 tests) and `src/utils/__tests__/csrf.test.ts` (10 tests) + `src/store.csrfReset.test.ts` (5 tests) |
-| N-20 | **A write that committed was reported to the user as a failure, because the HTTP response waited on outbound mail.** `updateVendorOrderStatus` wrote the status change, then awaited `Notification.create` **and** `sendOrderStatusEmail` *before* `res.json` (`vendorOrderController.js:487-516` before the fix). nodemailer's stock budgets are **2 minutes to establish the connection, 30 s for the SMTP greeting and 10 minutes of socket idle**, while the SPA aborts every RTK call at **15 s** (`fetchBaseQuery({ timeout: 15000 })`). So in production the request simply never came back: RTK answered `{ status: 'TIMEOUT_ERROR', data: undefined }` — **no body at all** — the universal `err?.data?.message \|\| 'Failed …'` pattern had nothing to quote, and the vendor was told *"Failed to update order status"* for a save that had already landed. Evidence: Firefox HAR of the failing request (POST `status: 0`, zero response headers, while the `OPTIONS` preflight answered **204** — so CORS and the token layer were healthy); the toast arriving at **~15 s**, i.e. exactly the client timeout; the order row already `shipped`/`arrived` on reload; GETs on the same origin answering in **0.5–1.9 s** (the API was warm, so it was not general slowness); and **every** failing click having taken the `advanced` branch — the only branch that notifies before responding. *Honest limit:* the SMTP step itself was not observed in Render's log at click time (the window available was service startup, not the request), so mail is the **best-supported attribution, not a directly measured one** — which is why the fix does not depend on it: the entire notify block now runs **after** the response, so whichever step inside it was slow can no longer hold the request. Same class, **9 more sites** still hold a response open on a send: `updateOrderToPaid` (`orderController.js:1090`), `confirmOrderReceived` (`orderController.js:1277`), register OTP / forgot-password / welcome / two resend-OTP paths (`userController.js:132,232,364,401,490`) and the two payment sends (`paymentRoutes.js:221,495`). Two of those are reachable from RTK mutations with the same 15 s budget — the customer's **Confirm receipt** (`useConfirmOrderReceivedMutation`, `OrderDetails.tsx:96`) and the admin **Mark as paid** — so they could false-fail identically; they are now bounded by the SMTP caps below rather than reordered (reordering money-path handlers is tracked as P3). | **P2** (production defect in the vendor fulfilment flow — no authorization, money or data impact, since the write always landed) — **FIXED this pass** | `backend/controllers/vendorOrderController.js:500` responds first and `:503` detaches the notification (logging the notify duration whenever it exceeds 1 s, so the cost is visible in Render); `backend/utils/emailService.js:46-49,73` caps `connectionTimeout`/`greetingTimeout`/`socketTimeout` at **5/5/10 s** and adds an opt-in `EMAIL_HOST` relay; `src/utils/mutationError.ts` classifies transport failures and both order screens re-sync on an unknown outcome. Tests: `backend/tests/emailResponseBudget.test.js` (3) + `src/utils/__tests__/mutationError.test.ts` (10), **4 mutations** — §6. |
+| N-20 | **A write that committed was reported to the user as a failure, because the HTTP response waited on outbound mail.** `updateVendorOrderStatus` wrote the status change, then awaited `Notification.create` **and** `sendOrderStatusEmail` *before* `res.json` (`vendorOrderController.js:487-516` before the fix). nodemailer's stock budgets are **2 minutes to establish the connection, 30 s for the SMTP greeting and 10 minutes of socket idle**, while the SPA aborts every RTK call at **15 s** (`fetchBaseQuery({ timeout: 15000 })`). So in production the request simply never came back: RTK answered `{ status: 'TIMEOUT_ERROR', data: undefined }` — **no body at all** — the universal `err?.data?.message \|\| 'Failed …'` pattern had nothing to quote, and the vendor was told *"Failed to update order status"* for a save that had already landed. Evidence: Firefox HAR of the failing request (POST `status: 0`, zero response headers, while the `OPTIONS` preflight answered **204** — so CORS and the token layer were healthy); the toast arriving at **~15 s**, i.e. exactly the client timeout; the order row already `shipped`/`arrived` on reload; GETs on the same origin answering in **0.5–1.9 s** (the API was warm, so it was not general slowness); and **every** failing click having taken the `advanced` branch — the only branch that notifies before responding. *Honest limit:* the SMTP step itself was not observed in Render's log at click time (the window available was service startup, not the request), so mail is the **best-supported attribution, not a directly measured one** — which is why the fix does not depend on it: the entire notify block now runs **after** the response, so whichever step inside it was slow can no longer hold the request. Same class, **9 more sites** held a response open on a send: `updateOrderToPaid` (`orderController.js:1090`), `confirmOrderReceived` (`orderController.js:1277`), register OTP / forgot-password / welcome / two resend-OTP paths (`userController.js:132,232,364,401,490`) and the two payment sends (`paymentRoutes.js:221,495`) — and a tenth, `sendPasswordResetConfirmation` at `userController.js:295`, which both earlier tallies missed (the "nine" in this finding was itself a miscount; the batch that closed this re-grepped every `await send*` in the tree). Two of those are reachable from RTK mutations with the same 15 s budget — the customer's **Confirm receipt** (`useConfirmOrderReceivedMutation`, `OrderDetails.tsx:96`) and the admin **Mark as paid** — so they could false-fail identically; **all ten are now detached in place** (fire-and-forget with logged failure, SMTP caps as the second layer), per §8 P3 item 2. | **P2** (production defect in the vendor fulfilment flow — no authorization, money or data impact, since the write always landed) — **FIXED this pass** | `backend/controllers/vendorOrderController.js:500` responds first and `:503` detaches the notification (logging the notify duration whenever it exceeds 1 s, so the cost is visible in Render); `backend/utils/emailService.js:46-49,73` caps `connectionTimeout`/`greetingTimeout`/`socketTimeout` at **5/5/10 s** and adds an opt-in `EMAIL_HOST` relay; `src/utils/mutationError.ts` classifies transport failures and both order screens re-sync on an unknown outcome. Tests: `backend/tests/emailResponseBudget.test.js` (3, now 4 — the whole-tree "no handler sequences its response on a send" guard added with the ten-site detach, §8 P3 item 2) + `src/utils/__tests__/mutationError.test.ts` (10), **4 mutations** (plus **2** on the new guard) — §6. |
 | N-21 | **V-07b — the refund CAS guard was dead code, so V-07 was never actually fixed.** All three entry points read `.affectedRows` off the **array** `pool.execute()` returns (`[rows, fields]`), so the comparison evaluated `undefined === 0` → false, and the `refundReference IS NULL` claim refused nothing. The source assertions that counted both strings passed anyway (`migrationSafety.test.js`, `redteam-final.test.js`), and the UNIQUE index does not block because the three paths write *different* marker strings (`:cancel:` / `:partial:` / `:return:`). V-07's original verification therefore certified a guard that could not fire: the double-spend it reported as closed was still reachable by a vendor staff member, a compromised customer, or an admin cancel. This is the one finding in this report where the **evidence was wrong, not the code's intent** — §4 retracts it. | **P0 — FIXED this pass** | destructuring at `orderController.js` cancel and `returnController.js` partial + full; `tests/refundDoubleSpend.test.js` (5 cases, own order each): 3 refusals assert **409 and a Paystack spy at zero calls**, 2 controls assert **exactly one call against that order's own reference** — a control is what keeps an unwired path from reading as a correct refusal. **9 mutations, 9 detected.** |
 | N-22 | **V-09b — the Paystack reference guard accepted `..`.** `[A-Za-z0-9._-]{1,100}` forbids `/` but permits `.`, and WHATWG normalization collapsed `https://api.paystack.co/transaction/verify/..` → `https://api.paystack.co/transaction/`, so a request left the verify prefix — at **both** wide-class sites: `POST /api/payments/verify-paystack` and the unattended `recoverStuckPendingOrders` job. No secret could move (same host, `?` refused too so nothing elsewhere was readable, the key never leaves Paystack): it defeated the *claim* that path injection was prevented rather than enabling a practical attack, which is why it grades P3 and not higher. | **P3 — FIXED this pass** | both sites now validate **the URL they build** — construct it, assert `origin` and a byte-for-byte `pathname`, then send `verifyUrl.href`; `tests/paystackReferenceGuard.test.js` (17 cases over a real socket, discriminating on **whether axios was called at all**, since every rejection and several ordinary outcomes all answer 400). **8 mutations: 5 detected, 3 equivalent** (origin clause unreachable over the class; `encodeURIComponent` identity over the class; the raw template is the same string). |
 | N-23 | **The partial-refund balance pre-check could not see prior refunds.** `new Order(row)` never copied `refundedAmount`, so `validatePartialRefund` computed `remaining = totalAmount - 0` and compared the requested amount against the **whole total** instead of what was left — it could not tell a first attempt from a replay. Measured, not inferred: replay vendor A's exact share on a fresh return after their share is refunded → the balance check passes, `ReturnRequest.updateStatus` spends the one-way `pending→approved` flip, and only *then* does the SQL write guard or the refundReference CAS refuse (409) — leaving **a return marked approved with no money moved and no retry possible**, precisely the failure the P1 pre-validation comment exists to prevent. No funds can leave: the SQL guard `refundedAmount + ? <= totalAmount` was always correct and remains the backstop, so this is a workflow-integrity defect, not a fund-loss one. Found by mutation testing: the survivor came back `fail=0` because no test exercised a replay above the remaining balance. | **P2 — FIXED this pass** | the constructor now carries the column (its only reader); `partialRefunds.test.js` +1 asserts 400 **and** `return.status === 'pending'` **and** `refundedAmount` unchanged; part of the **14/14 mutation battery** in §6. |
@@ -424,6 +425,59 @@ because a kill count only means something if the denominator was never edited.
   byte-identical before and after (77612 and 21390 bytes). The three original
   "survivors" were phantoms and are excluded from every count in this report.
 
+### The P3 fix batch (this revision): 3 new suites + 2 more tests, 13 mutations
+
+Everything the table below covers was open when this revision started; the
+findings are written up in §8's P3 list. The three new HTTP suites drive the
+real router over the socket through the same `httpHarness.js` as the batch
+above.
+
+| Suite | Tests | Finding | Mutation result |
+|---|---|---|---|
+| `registrationOracle.test.js` **(new)** | 10 | V-10 residual: register answered 400 ("address taken") vs 201 **+ Set-Cookie**, and the consent refusal wording itself branched on existence | **4/4** (taken→400, status-forced-true, consent moved after the branch, resend→400) |
+| `staffManagementGate.test.js` **(new)** | 11 | A8 residual: `manage_staff` was grantable but consumed by no route, and no ceiling stopped a staff caller granting anything — including `manage_staff` | **3/3** (route revert, update-ceiling removed, create-ceiling removed) |
+| `termsVersioning.test.js` **(new)** | 7 | consent unversioned: `legal_consent_at` cannot say *which* revision was accepted, so a Terms/Privacy update could never reach existing accounts | **3/3** (login flag dropped, accept no-op, backfill escaped its guard) |
+| `oauthStateGate.test.js` (+1 → 11) | 11 | V-05 residual: a consumed state stayed valid until expiry — single-use was client-side only | **1/1** (consumption disabled → replay succeeds) |
+| `emailResponseBudget.test.js` (+1 → 4) | 4 | N-20 residual: the ten send sites still sequenced a response on mail | **2/2** (re-awaited welcome send; sends deleted instead of detached — floor) |
+| | **43** | | **13/13** |
+
+28 of those 43 are brand-new tests; the other two were added to suites that
+already existed. Existing suites were *rewritten where they pinned the old
+world*: `storefrontPermission`'s "staff management stays owner-only" test now
+pins the wiring and the grant ceiling instead (its 16 tests and prior mutation
+results stand), `otpResend`'s route assertion moved from `protect` to
+`attachVerificationAuth` (with the comment explaining why auth must precede
+the limiter — the limiter keys on `req.user?.email`, which a `regToken` only
+produces after resolution), `loginLockout`'s V-10 note now says "closed" where
+it used to say "bounded", and `emailHtmlEscaping`'s mechanical rule picked up
+the new registration-notice renderer automatically (it passed first run —
+every interpolation escaped, no "safe field" judgement calls).
+
+**Honest record for this batch.**
+
+* **One mutation in this batch was a no-op, and the green run proved
+  nothing.** The first attempt at "consent moved after the existence branch"
+  actually placed the check immediately *before the lookup* — still before the
+  branch — so behaviour never changed and the suite's 10/10 was an invalid
+  mutant, not a survivor. Re-applied correctly (after the `if (existing)`
+  branch) it killed **2 tests**. Recorded because a survivor note here would
+  have been twice wrong.
+* **The versioning suite caught a real bug that review missed.**
+  `termsVersioning`'s profile assertion failed on its first run:
+  `findById` selects an **explicit column list** that did not include
+  `terms_version`, so `getUserProfile` would have answered
+  `needsReConsent: true` forever — the flag existed only on `SELECT *` paths
+  (login), and the OAuth/reload door would never have cleared. Fixed by
+  adding the column to the projection; 7/7 after.
+* **A fixture bug first:** the same suite's first run had 4 failures with one
+  cause — fixture rows stored the literal password while `User.authenticate`
+  bcrypt-compares. A cost-4 hash in the fixture, no product change.
+* **Timing parity is asserted structurally, not by the clock.**
+  `registrationOracle` pins that both branches pay `bcrypt.hash(password, 12)`
+  and that status/headers/body/message are uniform; it deliberately does not
+  assert wall-clock indistinguishability, because such assertions are flaky
+  by nature. The honest limit is written down in §8 alongside the fix.
+
 ---
 
 ## 7. Tests executed
@@ -494,6 +548,11 @@ because a kill count only means something if the denominator was never edited.
 | **Final coherent battery, whole gate (the state this report certifies)** | same 11 steps, sequenced, after all of the above | **all 11 exit 0** — lint 43 s (0 errors, 13 warnings); tsc front 67 s + back 16 s; frontend **69/69** (9 files, 30 s); build 32 s; **full-db 478 tests / 477 pass / 0 fail / 1 deliberate skip, exit 0 (208 s)**; `redteam-final` 10 tests / 0 fail in the battery's repo-root no-DB invocation (7 pass + 3 `no database configured` skips) **and 10/10, 0 skip re-run from `backend/` with the database** — CI's `npm test --prefix backend` covers it inside the full suite either way; no-DB forced path **354 / 298 pass / 56 skipped / 0 fail**; both audit ratchets exit 0 (frontend **0 accepted / 0 vulns**, backend 3 accepted); gitleaks **183 commits, no leaks** |
 | **Built-CSS declaration diff, v3 vs v4** | `python3 /tmp/opencode/decl-diff.py` over both built stylesheets (v3 baseline: worktree at `351316d`, rebuilt **byte-identical, 113 472 B**) | **1407 vs 1420 selectors, 1315 common, 1693 classified declaration differences, 0 unexplained** — every difference lands in a bucket with a reason; full table below |
 | **Live A/B probes, both builds in one browser** | identical fixture page served from each `dist`, `getComputedStyle` A/B | **identical on both builds**: font stacks, border colour/width, placeholder, `cursor: pointer`, line-height 32 px / 16 px, `transition` 0.15 s, `blur`/`backdrop-blur`/`drop-shadow`, indigo `rgb(79,70,229)`, dark toggle both ways, and the synthetic `space-y-4` cascade — details below |
+| **P3 fix-batch battery #1** (all five fixes + report draft) | 10-gate sequenced runner: `npm test` (DB) → no-DB forced path → frontend → lint → both typechecks → `redteam-final` → both audit ratchets → gitleaks → build | **all 10 exit 0** — full-db **507 / 506 pass / 0 fail / 1 deliberate skip**; no-DB **355 / 299 pass / 56 skipped / 0 fail**; frontend **69/69**; lint 0 errors / 13 warnings; both typechecks 0; `redteam-final` **7 pass + 3 no-DB skips**; ratchets 0; gitleaks 0; build 0 |
+| **P3 fix-batch battery #2 — the state this report certifies** (adds the N-20-class whole-tree guard) | same 10 gates, sequenced | **all 10 exit 0** — full-db **508 / 507 pass / 0 fail / 1 deliberate skip, 198 s**; no-DB **356 / 300 pass / 56 skipped / 0 fail**; frontend **9 files, 69/69 (14.9 s)**; lint **0 errors, 13 warnings**; both typechecks exit 0; `redteam-final` **7 pass + 3 `no database configured` skips** (its 3 DB-gated tests run inside the full suite, where the file is 10/10); audit ratchets **frontend 0 accepted / 0 vulns**, **backend 3 accepted (braces/chokidar/nodemon, dev-only)**, both rc 0; gitleaks **185 commits, no leaks**; `dist/` built in 20.3 s |
+| **Audit-gate step done honestly** | battery #1's step 08 passed **one** `audit.json` with both baselines — `audit-gate.mjs` takes exactly one baseline per call (ci.yml:95,101 run it twice), so the backend half was silently skipped | caught while writing §7, backend re-run by hand: `audit-gate.mjs /tmp/opencode/audit-backend.json …backend.json` → **rc 0**, `critical=0 high=3`, all 3 accepted. Battery script fixed to gate both workspaces explicitly; battery #2 used the fixed step |
+| **New P3 suites, with DB (TiDB), per file from `backend/`** | `registrationOracle` / `staffManagementGate` / `termsVersioning` / `emailResponseBudget` / `oauthStateGate` | **10/10, 11/11, 7/7, 4/4, 11/11** — and the whole set runs inside the full-suite rows above. Mutation runs (13 total, all killed, restores verified) are itemised in §6 |
+| **TiDB schema, versioning column applied** | `node migrateTermsVersion.js` — the single guarded script, run by hand (neither `db:setup` nor `db:migrate`, per the standing rule; CI applies it through the chain in `db:setup`) | column added once behind the `INFORMATION_SCHEMA` guard; the grandfather backfill ran inside that branch: **37 consented rows → v1, 80 never-consented rows correctly left at 0** (they will meet the consent gate at next login). Re-running is a no-op — proven by the suite's structure test, which fails if the backfill escapes the guard |
 
 **Flakiness note.** The database used for this review is a shared TiDB and can
 return `DB ping failed` / `ETIMEDOUT` under sustained load. One sequential run
@@ -503,7 +562,9 @@ passes **9/9 when run alone**, and the next full run was clean. The same
 signature reappeared in the first TiDB run of the P2 batch
 (`couponMaxUses` → *"settled payment keeps its slot"*, `DB ping failed`) — that
 file is green in every full-suite run above. Any suspect result was re-run
-per-file to separate infrastructure from regression.
+per-file to separate infrastructure from regression. The P3 fix batch's two
+batteries (above) needed none of this: **both were green on their first
+attempt**, no ping or timeout line in either log.
 
 Two later runs were poisoned by a **DNS outage** (`getaddrinfo EAI_AGAIN
 gateway01…tidbcloud.com`, 21 connection errors in one `npm test`) and by the
@@ -736,12 +797,15 @@ this final batch. What each one was, and what now pins it:
   byte-identical 200 (SMTP failure is logged, the unusable token is dropped,
   nothing is surfaced). Pinned by `loginLockout.test.js` (21 tests, 3
   mutations, §6).
-  *Residual, reclassified to P3:* **registration still answers 400 ("address
-  taken") vs 201**, because closing it needs OTP verification redesigned (the
-  token is issued inside that same request). It is now **bounded**: a new
-  `accountRegisterLimiter` (5 per 15 min, keyed on the probed email, counting
-  *both* answers) is mounted next to the existing IP limiter, so a prober pays
-  per address and rotating `X-Forwarded-For` buys nothing.
+  *Residual, reclassified to P3 — and now **closed** (§8 P3 item 1):*
+  **registration answered 400 ("address taken") vs 201**, because closing it
+  needed OTP verification redesigned (the token was issued inside that same
+  request). It is redesigned now: uniform **202** on every branch, no
+  `Set-Cookie`, consent settled before the existence branch, bcrypt timing
+  parity, and a purpose-bound `regToken` that carries the verification phase
+  until OTP possession proves mailbox control. `accountRegisterLimiter`
+  (5/15 min, keyed on the probed email, counting *both* answers) stays mounted
+  as defence in depth against grinding the endpoint itself.
 * **N-8 — cookies without `Secure`.** `cookieSecure(req)` now derives the flag
   per request: `SameSite=None` → always `Secure`; production → always
   `Secure`; otherwise the actual request scheme. All 12 call sites use it, the
@@ -787,10 +851,11 @@ this final batch. What each one was, and what now pins it:
   to quote. Two independent fixes: the handler now **responds first** and
   notifies in a detached block (logging the notify duration when it exceeds a
   second, so the cost is visible in Render), and `createTransporter()` caps all
-  three SMTP stages at 5/5/10 s so the other nine sites that still sequence a
-  send before their response — including the customer's *Confirm receipt* and
-  the admin's *Mark as paid*, both RTK mutations — can no longer reach the
-  client budget either. The SPA side now distinguishes a transport failure from
+  three SMTP stages at 5/5/10 s as a second layer — and (this revision, §8 P3
+  item 2) the other **ten** sites that used to sequence a send before their
+  response, including the customer's *Confirm receipt* and the admin's
+  *Mark as paid*, both RTK mutations, are detached in place too, so none of
+  them can reach the client budget at all. The SPA side now distinguishes a transport failure from
   a server answer and **re-syncs** when the outcome is unknown, instead of
   asserting a failure it cannot know. Pinned by `emailResponseBudget.test.js`
   (3 tests, 3 mutations) and `mutationError.test.ts` (10 tests, 1 mutation) — §6.
@@ -859,13 +924,100 @@ suites, counts and mutation results are in §6, findings in §5:
 | N-10 | a fresh rate-limit allowance the moment Redis recovered from degraded mode | `redisRecovery` 14, **6/6** |
 | V-07 / V-09 / V-05 | all three had **source assertions only** — greps for strings — which is exactly how V-07 shipped with a dead guard | `refundDoubleSpend` **9/9**, `paystackReferenceGuard` 8 (5 detected + 3 equivalent), `oauthStateGate` 8 (6 detected + 2 equivalent), all over a real socket |
 
-**What is genuinely still open at P3:**
+**What the previous revision listed as still open — all closed by this batch:**
 
-1. **Registration still answers 400 ("address taken") vs 201.** Closing it means redesigning when the OTP token is issued — it is minted inside that same request. It is *bounded*: `accountRegisterLimiter` (5 / 15 min, keyed on the probed email, counting **both** answers) makes a prober pay per address and `X-Forwarded-For` rotation buys nothing. Deliberately out of scope this pass (V-10 residual).
-2. **Nine sites still *sequence* an awaited `send*Email` before their response** — `updateOrderToPaid`, `confirmOrderReceived`, five OTP/reset/welcome sends in `userController`, two in `paymentRoutes`. They are now *bounded* by the 5/5/10 s SMTP caps, which hold them inside the SPA's 15 s budget; moving them off the response path is a design cleanup, not a security fix.
-3. **Two grantable staff permissions are inert.** `manage_staff` and `reply_reviews` are in `VALID_PERMISSIONS` and labelled in the UI, but no route consumes either: staff CRUD is gated `protect, vendor` (owner only, so a staff account cannot mint more staff), and `GET /api/vendors/reviews` is read-only — there is no reply endpoint to gate. Granting them grants nothing, so it fails closed; what it costs is *delegation* (an owner cannot hand staff management to a trusted employee), not security. Recorded rather than invented: wiring a permission to a route that does not exist would be theatre.
+1. ~~**Registration still answers 400 ("address taken") vs 201.**~~ **Closed:
+   the reply is now uniform on every observable.** `POST /api/users` answers
+   **202 `{message, email, regToken}`, no `Set-Cookie`** whether the address is
+   free, taken-unverified or taken-verified — same status, same fields, same
+   message. Consent is checked *before* the existence branch (its refusal
+   wording was itself a two-sided oracle: one message for taken addresses,
+   another for free ones). The taken-address paths pay the same cost-12
+   `bcrypt.hash` that `User.create` charges a fresh one, so response *time*
+   does not separate them either (SMTP never did, once sends were detached).
+   What differs happens only out of band, in the mailbox: OTP email for a
+   free address, OTP re-send for taken-unverified (so the real owner can
+   finish signing up), and for an already-verified address a "someone tried
+   to register" notice that mints **no** code into a verified account. The
+   verification phase authenticates with a purpose-bound, 15-minute `regToken`
+   issued identically on all branches — it carries only the address the
+   caller themselves submitted — and the session is issued at *verification*,
+   never at registration. The frontend stores a pending identity
+   (`{email, regToken}`) and `SyncUserRole` skips the profile fetch until
+   verification, so nothing 401s mid-signup. `registrationOracle` 10 tests,
+   **4/4 mutations** (taken-branch→400, status-forced-true, consent moved
+   after the branch, resend→400 — all killed, restore 10/10); the V-10(b)
+   pins in `loginLockout`/`otpResend` were rewritten to describe the closed
+   oracle rather than the old bounding. Residual noted honestly: timing parity
+   is bcrypt-dominated but not *proven* indistinguishable to the millisecond —
+   the suites do not assert timing (flaky by nature); the invariant tested is
+   status/headers/body/message and the source-level bcrypt parity.
+2. ~~**Nine sites still *sequence* an awaited `send*Email` before their response.**~~
+   **Closed — and the count in the old text was wrong: there were ten, not
+   nine.** The earlier tally missed `userController.js:295`
+   (`sendPasswordResetConfirmation`); the batch found it by grepping every
+   send-shaped call in the tree rather than trusting the number. All ten are now
+   detached in place (`void sendX(...).catch(err => console.error(...))`),
+   bounded by the same 5/5/10 s SMTP caps as a second layer — and pinned
+   structurally: `emailResponseBudget`'s new guard scans **every file under
+   `controllers/` + `routes/`** for an awaited send (pattern `send[A-Za-z]*`,
+   because the confirmation send has no `Email` suffix — the kind of name a
+   suffix-scoped grep misses, and the reason the old tally said nine),
+   allowlists only `vendorOrderController`'s response-detached block, and
+   keeps a floor on the detached count (13 present, floor 10) so *deleting*
+   the sends cannot pass either. **2/2 mutations** (re-await one send; delete
+   them instead). The only `await send*` left in the backend sits inside
+   `vendorOrderController`'s already-response-detached post-response block,
+   which `emailResponseBudget` also pins behaviourally (responds before it
+   notifies).
+3. ~~**Two grantable staff permissions are inert.**~~ **Closed, each in the
+   honest direction.** `reply_reviews` was *removed* from
+   `VALID_PERMISSIONS` and from the UI's permission list — there is no reply
+   endpoint, so keeping the label promised a capability that does not exist.
+   `manage_staff` was *wired*: all four staff routes now require
+   `vendorOrStaff` + `requireVendorPermission('manage_staff')` (previously
+   `protect, vendor`, i.e. owner-only — the permission was decorative), and
+   the part that matters for a compromised-staff actor, `grantCeiling()`:
+   a staff caller can never grant a permission it does not itself hold and
+   can never *add* `manage_staff` to anyone (keeping a row that already has
+   it is allowed, so ordinary edits do not silently demote). Owner callers
+   keep full grant authority. `storefrontPermission` 16 (source pins
+   rewritten to the new wiring) + new `staffManagementGate` 11, **3/3**.
 4. ~~**`tailwindcss` 3.x → 4.x.** Mechanically small, but a visual change with no safety net that can see pixels, and the only way to clear the five remaining frontend highs from the audit baseline. Post-launch by decision.~~ **Closed this revision, and closed by taking the "no pixels" objection seriously rather than waving it away.** The migration is backed by a declaration-level diff of the built CSS: every selector present in both builds (1315 of them) compared declaration-by-declaration after normalising variable resolution, `calc()` evaluation, colour formatting and vendor prefixes — **0 unexplained differences**; the known classes of difference are enumerated with their reasoning in §7 (v4 `color-mix` alpha inside 1/255, line-heights re-verified as `ratio × font-size`, shadow zero-layers, `@property` sentinel resolution, …). That diff is what *found* the regressions: 65 of 95 used palette shades had silently drifted (worst Δ69), the font stack had drifted, the v3→v4 `space-y` cascade now zeroed child margins differently, v4 dropped the cursor-pointer preflight, and the rename table (`outline-none`→`outline-hidden`, `shadow-sm`→`shadow-xs`, …) had order-sensitive cases — each fixed in source and re-proved, then probed live in a browser on both builds (fonts, borders, placeholders, line-height, transitions, filters, gradients, dark toggle, synthetic `space-y-4` cascade). The five frontend audit highs it blocked are gone: the frontend baseline is now an empty `accepted`.
-5. **V-05's "single use" is enforced only client-side.** The state token stays cryptographically valid until its 10-minute expiry after the first exchange; what stops a replay is that an attacker cannot place the `oauth_state` cookie in the victim's browser. Written down as a residual of the design rather than "fixed", because the fix belongs to whoever next touches the OAuth flow.
+5. ~~**V-05's "single use" is enforced only client-side.** The state token stays cryptographically valid until its 10-minute expiry after the first exchange; what stops a replay is that an attacker cannot place the `oauth_state` cookie in the victim's browser.~~ **Closed server-side.** The callback's state gate now *consumes* `oauth:state:<nonce>` through `consumeOnce(..., 600)` after every other check has passed (cookie presence → signature → audience/purpose → `state`/`nonce` match), fast-path Redis with in-process fallback and **fail-closed** behaviour if the store errors, the nonce pruned with a 10-minute TTL and 2000-entry cap. A replay of a state the server already exchanged fails the exchange even with the victim's cookie in hand. `oauthStateGate` +1 functional test (**11 total**), mutation (disable consumption) kills it, restore verified.
+6. **Terms/consent was unversioned** — not on the old list; closed as part of
+   this batch because the same question applies to it as to the others: what
+   would the fix have to prove? `legal_consent_at` is a timestamp that cannot
+   say *which* revision was accepted, so a future Terms/Privacy update could
+   never reach existing accounts — consent that cannot distinguish versions
+   is consent theatre after the first revision. Now: `users.terms_version` +
+   `TERMS_VERSION` (`config/legalTerms.js`); creation records it (email
+   `usersModel.create` and the OAuth signup INSERT); **both** surfaces the
+   frontend ever reads (`authUser` login and `getUserProfile` — password flow
+   learns it from the auth response, OAuth/reload from SyncUserRole's profile
+   fetch) answer `needsReConsent: terms_version < TERMS_VERSION`;
+   `POST /accept-terms` moves the caller forward with the **server** deciding
+   the version (the body is never read — a client cannot claim a revision it
+   was not shown) and re-stamping `legal_consent_at`; the OAuth consent JWT
+   carries a `termsVersion` claim checked by `isConsentTokenValid`, so a token
+   minted before a bump no longer opens signup under the new revision; and
+   `TermsReconsentGate` blocks the app until accepted — both documents must
+   be opened *in that sitting* (the signup-era sessionStorage flags are
+   deliberately not reused), the final accept is an explicit server-recording
+   action, and "Log out" clears the session server-side for a user who
+   declines. Migration `migrateTermsVersion.js` is wired into `db:migrate`,
+   guarded by `INFORMATION_SCHEMA`, with the grandfather backfill **inside
+   the add-column branch** so a re-run can never grant consent that never
+   happened. **Applied to the live TiDB by running that one guarded script
+   by hand** (not `db:setup`/`db:migrate` per the standing rule; CI's
+   `db:setup` applies it through the chain automatically): 37 consented rows
+   grandfathered to v1, 80 never-consented rows correctly left at 0 — they
+   will meet the gate at next login, which is the point. `termsVersioning`
+   7 tests, **3/3 mutations**, restore 7/7.
+
+**Nothing is open at P3 in the code.** What remains is deployment-owned and
+listed in §9/§12: Render deploy, Vercel rebuild, revoking the legacy Paystack
+test key, and the 8 `backup.yml` secrets.
 
 ---
 
@@ -892,9 +1044,10 @@ suites, counts and mutation results are in §6, findings in §5:
    `users.last_failed_at` column is added by `migrateLoginWindow.js`. Both
    forgot-password and reset-token validation answer a single byte-identical
    200 (SMTP failure and unknown/expired tokens included). Registration's
-   400-vs-201 cannot be closed without redesigning OTP verification, so it is
-   bounded by `accountRegisterLimiter` (5/15 min keyed on the probed email,
-   both outcomes counted) and tracked as P3. 21 tests, 3 mutations, §6.
+   400-vs-201 was tracked as P3 bounded by `accountRegisterLimiter` — and is
+   **closed** by this revision's redesign (§8 P3 item 1): uniform 202 on
+   every branch, no session issued at registration, the limiter kept as
+   defence in depth. 21 tests, 3 mutations, §6.
 3. **N-8 + N-9 (P2)** — ~~refuse to boot when `COOKIE_SAME_SITE=none` and
    `NODE_ENV !== 'production'`; warn when `TRUST_PROXY > 0` without a documented
    proxy; prefer deriving `secure` from the request scheme for auth cookies.~~
@@ -991,7 +1144,12 @@ suites, counts and mutation results are in §6, findings in §5:
    the unified coupon refusal (X1) — and the three functional-test gaps
    V-07/V-09/V-05, which is where the batch turned up **V-07b (P0)** and
    **V-09b** and, through mutation testing, **N-23**. 18 suites, 245 tests,
-   **100 kills of 106 mutants** (6 equivalent); §6.
+   **100 kills of 106 mutants** (6 equivalent); §6. This revision's P3 fix
+   batch adds the closing layer on top: 3 new suites + 2 tests in existing
+   ones (43 tests across the five suites it touched), **13/13 mutations**, §6
+   — registration oracle, OAuth single-use, detached sends, staff permission
+   wiring with a grant ceiling, and consent versioning, all five written up
+   in §8.
 11. **Deploy — user-owned, not verifiable from here.** **Render** carries the
    backend half (N-20's detached notification, the refund guards, and every
    batch ①–④ fix); **Vercel** carries the frontend half (`csrfJsonHeaders()`,
@@ -1168,8 +1326,9 @@ already updated, GETs on the same origin at 0.5–1.9 s), including the honest
 limit that the mail step was never observed in the log at click time — so the
 fix does not depend on which part of that tail was slow: the response now goes
 out **first**, the notification runs behind it, and the mail client is capped
-at 5/5/10 s so the nine other sites that still sequence a send cannot reach the
-budget either. 13 tests, 4 mutations.
+at 5/5/10 s — with this revision closing the residual properly, all **ten**
+other send sites detached in place rather than merely capped (§8 P3 item 2).
+13 tests, 4 mutations.
 
 **No P0, no P1 and no P2 remains open — and that sentence costs more to write
 than it did in the previous revision, because this final batch found two more
@@ -1194,22 +1353,30 @@ green gate on day one is evidence, not a habit), rotate the legacy Paystack test
 key this pass found pasted into an old version of `backend/.env.example` (its
 fingerprint is in `.gitleaksignore`, so the scanner will not flag it again, but
 the key itself should still be revoked), configure the **8 secrets `backup.yml`
-names and trigger it once by hand** — that workflow has never run. The P3 batch
-that the previous revision left open is closed (§8); four P3s are genuinely
-open and each is written down with its bound: the registration 400-vs-201
-oracle (bounded by `accountRegisterLimiter`), the nine sites that still
-sequence an email send (bounded by the 5/5/10 s SMTP caps), the two grantable
-staff permissions nothing enforces (fails closed), and V-05's single-use state,
-which is client-side only. The `tailwindcss` v4 migration that used to stand
-beside them is closed too, with its equivalence proof recorded in §7 rather
-than asserted from a green build.
+names and trigger it once by hand** — that workflow has never run. The P3
+batch the previous revision left open is closed (§8), and so are the four
+items it counted as "genuinely open": the registration 400-vs-201 oracle is
+now a uniform 202 on every branch; all **ten** sites that used to sequence a
+response on an email send (nine was the miscount) are detached; `reply_reviews`
+was removed as nonexistent and `manage_staff` wired with a grant ceiling; and
+V-05's single-use state is enforced server-side by nonce consumption. Added
+and closed in the same batch: terms/consent versioning, whose migration is
+already applied to the live database (37 rows grandfathered to v1, 80
+never-consented rows correctly flagged). The `tailwindcss` v4 migration that
+used to stand beside them is closed too, with its equivalence proof recorded
+in §7 rather than asserted from a green build. **Zero P3 findings remain open
+in the code** — what remains is deployment work: Render, Vercel, the Paystack
+key revocation, the backup secrets.
 
 Confidence statement: every "fixed" verdict above is backed either by a test
 that was shown to fail when the fix is reverted, or by a live measurement
 recorded in §7. Where no such test existed — X4a, the batch-1 data-integrity
 fixes, N-6 — the battery in §6 was run rather than assumed, ending at **14/14
 detected**, and the one survivor it produced is reported as a survivor because
-that is what led to N-23. The bad runs are in §7 with their causes: a TiDB ping
+that is what led to N-23. This revision's fix batch ends the same way: **13/13
+detected**, with its one invalid mutant (the no-op consent move) recorded as
+invalid rather than quietly counted or quietly dropped, and both of its
+10-gate batteries green on the first attempt. The bad runs are in §7 with their causes: a TiDB ping
 failure that cost one test at 223 s, a live `REDIS_URL` that held the event loop
 and hung a suite at exit 124, CRLF anchors that matched nothing, and three
 phantom `fail=0` results from a script that emptied two controllers and never

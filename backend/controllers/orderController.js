@@ -1090,12 +1090,12 @@ export const updateOrderToPaid = async (req, res) => {
         }
       }
 
-      // Receipt email — only when this call actually flipped the order to paid.
-      try {
-        await sendOrderConfirmationEmail(req.params.id);
-      } catch (emailErr) {
- console.warn(` Could not send order confirmation email: ${emailErr.message}`);
-      }
+      // Receipt email — only when this call actually flipped the order to
+      // paid. Detached (N-20 class): the paid flip is committed, and the
+      // audit write + response below must never wait on SMTP.
+      void sendOrderConfirmationEmail(req.params.id).catch((emailErr) => {
+        console.warn(` Could not send order confirmation email: ${emailErr.message}`);
+      });
     }
 
     const order = await Order.findById(req.params.id);
@@ -1277,12 +1277,12 @@ export const confirmOrderReceived = async (req, res) => {
     const updatedOrder = await Order.findById(req.params.id);
 
     // Escrow-release confirmation email — once, when allocations actually moved.
+    // Detached (N-20 class): the release is committed; SMTP must not
+    // sequence the completion write or the response below.
     if (result.released > 0 || result.available > 0) {
-      try {
-        await sendEscrowReleasedEmail(req.params.id);
-      } catch (emailErr) {
- console.warn(` Could not send escrow released email: ${emailErr.message}`);
-      }
+      void sendEscrowReleasedEmail(req.params.id).catch((emailErr) => {
+        console.warn(` Could not send escrow released email: ${emailErr.message}`);
+      });
     }
 
     // Mark any custom kente request tied to this order as completed — the

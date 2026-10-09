@@ -13,8 +13,11 @@ import {
   sendOTPEmail, 
   sendWelcomeEmail,
   sendPasswordResetEmail,
-  sendPasswordResetConfirmation 
+  sendPasswordResetConfirmation,
+  sendRegistrationNoticeEmail
 } from '../utils/emailService.js';
+import { signRegisterPendingToken } from '../utils/registerPendingToken.js';
+import { TERMS_VERSION } from '../config/legalTerms.js';
 
 // ============================================
 // AUTHENTICATION ROUTES
@@ -64,7 +67,12 @@ const authUser = asyncHandler(async (req, res) => {
     role: user.role,
     isAdmin: user.role === 'admin',
     isEmailVerified: user.isEmailVerified,
-    profilePicture: user.profilePicture
+    profilePicture: user.profilePicture,
+    // Terms/consent versioning: does this account still need to accept the
+    // CURRENT revision? Password logins learn it here (this response IS the
+    // credential the frontend stores); OAuth and app reloads learn it from
+    // getUserProfile below, so both doors carry the same gate.
+    needsReConsent: (user.termsVersion ?? 0) < TERMS_VERSION
   });
 });
 
@@ -90,34 +98,90 @@ const registerUser = asyncHandler(async (req, res) => {
     throw new Error('Password must contain at least one letter and one number');
   }
 
-  // Check if user already exists
-  const userExists = await User.findByEmail(email);
-
-  if (userExists) {
-    res.status(400);
-    throw new Error('Please check your details and try again');
-  }
-
+  // Consent is checked BEFORE any existence-dependent branch: the refusal
+  // must be byte-identical whatever the address state. (It used to run
+  // after the "address taken" check, so even the consent wording itself
+  // was a two-sided oracle: one message for taken addresses, another for
+  // free ones.)
   if (!legalConsentAccepted) {
     res.status(400);
     throw new Error('You must read and accept the Terms of Service and Privacy Policy before creating an account');
   }
 
-  // Create user
-  const user = await User.create({
-    firstName,
-    lastName,
-    email,
-    password,
-    phone,
-    address,
-    city,
-    state,
-    zipCode,
-    country,
-    role: 'customer',
-    legalConsentAccepted
-  });
+  // V-10 residual CLOSED — registration is uniform on EVERY observable:
+  // status 202, no Set-Cookie, and the same three fields (message, email,
+  // regToken), whatever the address state, so a prober learns nothing from
+  // status, body, headers or response shape. What differs happens out of
+  // band, in the mailbox:
+  //   - free address      -> account created (unverified) + OTP email;
+  //   - taken + unverified -> OTP re-sent (the real owner can finish
+  //     signing up — indistinguishable from the first case);
+  //   - taken + verified   -> a "someone tried to register" notice, and no
+  //     code is minted for an account that is already verified.
+  // The regToken authenticates the verification phase until OTP possession
+  // proves mailbox control; the session is issued THERE, never here, so no
+  // branch can hand out someone else's credentials.
+  const reply = () =>
+    res.status(202).json({
+      message: 'Check your email for a verification code to continue.',
+      email: String(email).toLowerCase().trim(),
+      regToken: signRegisterPendingToken(email),
+    });
+
+  // Timing parity: the create path pays a cost-12 bcrypt inside
+  // User.create, so the taken-address paths pay the SAME work here —
+  // response time must not distinguish "new address" from "address taken"
+  // either (SMTP no longer matters: every send below is detached).
+  const continueExistingAccount = async (existing) => {
+    await bcrypt.hash(password, 12);
+    if (existing.isEmailVerified) {
+      void sendRegistrationNoticeEmail(existing.email, existing.firstName).catch((emailError) => {
+        console.error('Failed to send registration notice email:', emailError);
+      });
+    } else {
+      const otp = generateOTP();
+      await User.setVerificationToken(existing.id, otp, getOTPExpiry());
+      void sendOTPEmail(existing.email, existing.firstName, otp).catch((emailError) => {
+        console.error('Failed to send OTP email (existing unverified):', emailError);
+      });
+    }
+  };
+
+  const existing = await User.findByEmail(email);
+  if (existing) {
+    await continueExistingAccount(existing);
+    return reply();
+  }
+
+  let user = null;
+  try {
+    user = await User.create({
+      firstName,
+      lastName,
+      email,
+      password,
+      phone,
+      address,
+      city,
+      state,
+      zipCode,
+      country,
+      role: 'customer',
+      legalConsentAccepted
+    });
+  } catch (createError) {
+    // Lost a concurrent-registration race: User.create itself answers
+    // "Email already exists". Take the exact same branch as above so the
+    // reply and side effects stay uniform even under racing.
+    if (/already exists/i.test(createError?.message || '')) {
+      const raced = await User.findByEmail(email);
+      if (raced) {
+        await continueExistingAccount(raced);
+      }
+      return reply();
+    }
+    throw createError;
+  }
 
   if (user) {
     // Generate OTP
@@ -127,26 +191,15 @@ const registerUser = asyncHandler(async (req, res) => {
     // Save OTP to database
     await User.setVerificationToken(user.id, otp, otpExpiry);
 
-    // Send OTP email
-    try {
-      await sendOTPEmail(user.email, user.firstName, otp);
-    } catch (emailError) {
+    // Send OTP email — detached (N-20 class): the OTP is already persisted,
+    // so nothing after this point may be sequenced by SMTP. A failure is
+    // logged loudly; the user's retry lever is the resend endpoint, and the
+    // caps in emailService bound the send itself.
+    void sendOTPEmail(user.email, user.firstName, otp).catch((emailError) => {
       console.error('Failed to send OTP email:', emailError);
-    }
-
-    // Generate token (no remember me on registration)
-    generateToken(res, user, false);
-
-    res.status(201).json({
-      id: user.id,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      email: user.email,
-      role: user.role,
-      isAdmin: false,
-      isEmailVerified: false,
-      message: 'Registration successful. Please check your email for verification code.'
     });
+
+    return reply();
   } else {
     res.status(400);
     throw new Error('Invalid user data');
@@ -225,11 +278,16 @@ const forgotPassword = asyncHandler(async (req, res) => {
 
   if (user) {
     try {
-      // Generate reset token
+      // Generate reset token — must be durable before the reply, so the
+      // link works the instant the user clicks it.
       const resetToken = await User.createPasswordResetToken(user.id);
 
-      // Send password reset email
-      await sendPasswordResetEmail(user.email, user.firstName, resetToken);
+      // Send password reset email — detached (N-20 class): SMTP must not
+      // sequence the response. Delivery failure is logged loudly here; a
+      // retry issues a fresh token over the old one.
+      void sendPasswordResetEmail(user.email, user.firstName, resetToken).catch((error) => {
+        console.error(' forgot-password: reset email could not be delivered:', error?.message);
+      });
 
       console.log(`Password reset email sent`);
     } catch (error) {
@@ -290,12 +348,11 @@ const resetPassword = asyncHandler(async (req, res) => {
     // Reset password
     await User.resetPassword(user.id, password);
 
-    // Send confirmation email
-    try {
-      await sendPasswordResetConfirmation(user.email, user.firstName);
-    } catch (emailError) {
+    // Send confirmation email — detached (N-20 class): the reset is
+    // committed; SMTP must not sequence the success response.
+    void sendPasswordResetConfirmation(user.email, user.firstName).catch((emailError) => {
       console.error('Failed to send confirmation email:', emailError);
-    }
+    });
 
     console.log(`Password reset successful`);
 
@@ -356,19 +413,37 @@ const verifyEmail = asyncHandler(async (req, res) => {
   const verifiedUser = await User.verifyEmail(userId, otp);
 
   if (!verifiedUser) {
+    // Identical on every branch (fresh address, taken-unverified,
+    // taken-verified — the last has no OTP row, so this answer is the only
+    // one it can ever give): "invalid code" says nothing about state.
     res.status(400);
     throw new Error('Invalid or expired OTP. Please request a new one.');
   }
 
-  try {
-    await sendWelcomeEmail(verifiedUser.email, verifiedUser.firstName);
-  } catch (emailError) {
+  // Detached (N-20 class): verification is committed; the welcome email
+  // must not sequence the response.
+  void sendWelcomeEmail(verifiedUser.email, verifiedUser.firstName).catch((emailError) => {
     console.error('Failed to send welcome email:', emailError);
+  });
+
+  // A registration-flow caller (regToken) has no session yet — the OTP
+  // possession WAS the credential, so the session is issued here. A
+  // session-mode caller (login flow) already holds one and keeps it.
+  if (req.authViaRegToken) {
+    generateToken(res, verifiedUser, false);
   }
 
+  // The profile in the reply lets a regToken caller replace its pending
+  // placeholder ({ email, regToken }) with real credentials; session-mode
+  // callers already have them and are unaffected by the extra fields.
   res.json({
     message: 'Email verified successfully',
-    isEmailVerified: true
+    isEmailVerified: true,
+    id: verifiedUser.id,
+    firstName: verifiedUser.firstName,
+    lastName: verifiedUser.lastName,
+    email: verifiedUser.email,
+    role: verifiedUser.role,
   });
 });
 
@@ -388,6 +463,21 @@ const resendOTP = asyncHandler(async (req, res) => {
   }
 
   if (user.isEmailVerified) {
+    // Session mode (login flow): the caller owns this session, so an
+    // honest 400 reveals nothing to anyone.
+    //
+    // RegToken mode (registration flow): "already verified" is exactly the
+    // "address taken" answer this endpoint must not give — the reply stays
+    // byte-identical to the unverified path. No OTP is minted for a
+    // verified account (that would open a verification path into it); the
+    // notice email carries the out-of-band explanation instead, and it is
+    // bounded by the same otpResendLimiter as a real resend.
+    if (req.authViaRegToken) {
+      void sendRegistrationNoticeEmail(user.email, user.firstName).catch((emailError) => {
+        console.error('Failed to send registration notice email (resend):', emailError);
+      });
+      return res.json({ message: 'New OTP has been sent to your email' });
+    }
     res.status(400);
     throw new Error('Email is already verified');
   }
@@ -397,13 +487,14 @@ const resendOTP = asyncHandler(async (req, res) => {
 
   await User.setVerificationToken(userId, otp, otpExpiry);
 
-  try {
-    await sendOTPEmail(user.email, user.firstName, otp);
-    res.json({ message: 'New OTP has been sent to your email' });
-  } catch {
-    res.status(500);
-    throw new Error('Failed to send OTP. Please try again.');
-  }
+  // Detached (N-20 class): the fresh OTP is already persisted, so the reply
+  // must not be sequenced by SMTP — a mail failure would otherwise 500 a
+  // request whose database half succeeded. The resend limiter (not this
+  // response) is what bounds retries either way.
+  void sendOTPEmail(user.email, user.firstName, otp).catch((emailError) => {
+    console.error('Failed to send OTP email (resend):', emailError);
+  });
+  res.json({ message: 'New OTP has been sent to your email' });
 });
 
 /**
@@ -418,7 +509,12 @@ const getVerificationStatus = asyncHandler(async (req, res) => {
   const attempts = await User.getVerificationAttempts(userId);
 
   res.json({
-    isEmailVerified: isVerified,
+    // RegToken mode (registration flow): ALWAYS report pending. Answering
+    // from the account here would tell a prober which branch registration
+    // took ("verified!" = the address was already taken). The real owner
+    // of a taken address is redirected by the notice email, not by this
+    // endpoint.
+    isEmailVerified: req.authViaRegToken ? false : isVerified,
     // M-1: same source as the WHERE clause that actually enforces the cap.
     attemptsRemaining: Math.max(0, User.maxOtpAttempts() - attempts.verification_attempts)
   });
@@ -437,7 +533,13 @@ const getUserProfile = asyncHandler(async (req, res) => {
   const user = await User.findById(req.user.id);
 
   if (user) {
-    res.json(user.getProfile());
+    // Computed here rather than stored: the profile response is what
+    // SyncUserRole rehydrates on every app load, so the re-consent flag
+    // reaches every session type (password, OAuth, refresh) from one place.
+    res.json({
+      ...user.getProfile(),
+      needsReConsent: (user.termsVersion ?? 0) < TERMS_VERSION,
+    });
   } else {
     res.status(404);
     throw new Error('User not found');
@@ -487,11 +589,9 @@ const updateUserProfile = asyncHandler(async (req, res) => {
       try {
         const otp = generateOTP();
         await User.setVerificationToken(updatedUser.id, otp, getOTPExpiry());
-        try {
-          await sendOTPEmail(updatedUser.email, updatedUser.firstName, otp);
-        } catch (emailError) {
+        void sendOTPEmail(updatedUser.email, updatedUser.firstName, otp).catch((emailError) => {
           console.error('Failed to send change-of-email OTP:', emailError);
-        }
+        });
         emailChangeNotice = 'Your email was changed. A new verification code was sent — please verify to continue ordering.';
       } catch (otpError) {
         console.error('Failed to issue change-of-email OTP:', otpError);
@@ -677,6 +777,30 @@ const updateUser = asyncHandler(async (req, res) => {
   }
 });
 
+/**
+ * @desc    Accept the current Terms/Privacy revision (re-consent gate)
+ * @route   POST /api/users/accept-terms
+ * @access  Private
+ */
+const acceptTerms = asyncHandler(async (req, res) => {
+  const userId = req.user.id;
+
+  // The SERVER decides which version was accepted — the request body is
+  // deliberately not read, so a client cannot claim a revision it was never
+  // shown. legal_consent_at is re-stamped because this IS a fresh
+  // acceptance, and it is what an auditor will pair with terms_version.
+  await pool.execute(
+    'UPDATE users SET terms_version = ?, legal_consent_at = NOW() WHERE id = ?',
+    [TERMS_VERSION, userId],
+  );
+
+  res.json({
+    message: 'Terms accepted',
+    termsVersion: TERMS_VERSION,
+    needsReConsent: false,
+  });
+});
+
 export {
   authUser,
   registerUser,
@@ -685,6 +809,7 @@ export {
   resetPassword,
   validateResetToken,
   verifyEmail,
+  acceptTerms,
   resendOTP,
   getVerificationStatus,
   getUserProfile,

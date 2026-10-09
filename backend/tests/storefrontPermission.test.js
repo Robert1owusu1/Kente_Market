@@ -254,13 +254,40 @@ describe('A8: no vendor route silently skips the permission layer', () => {
     );
   });
 
-  test('staff management stays owner-only rather than moving behind a grantable permission', () => {
-    // `manage_staff` is grantable but intentionally NOT wired to staffRoutes.
-    // Putting it there would let a staff member rewrite their own permission
-    // set — including granting themselves view_earnings. Owner-only is the
-    // correct posture; this test stops the permission from being "helpfully"
-    // connected later.
-    assert.ok(!staffRoutesSrc.includes('vendorOrStaff'), 'staffRoutes is no longer owner-only');
-    assert.ok(!staffRoutesSrc.includes('requireVendorPermission'), 'staffRoutes now trusts a self-grantable permission');
+  test('staff management is gated by manage_staff, and the grant ceiling is what makes that safe', () => {
+    // This used to pin staffRoutes as owner-only, because wiring the
+    // grantable `manage_staff` there would have let a staff member reach
+    // updateStaff on their OWN row and rewrite their permission set
+    // (granting themselves view_earnings). The wiring is now done — with
+    // the ceiling that answers that exact objection: grantCeiling refuses
+    // any permission the caller does not hold, and refuses to ADD
+    // manage_staff (owner-only promotion; keeping it on a row that has it
+    // stays allowed so edits never silently demote). Both halves must
+    // stay: routes without the ceiling is the escalation, the ceiling
+    // without the routes is theatre.
+    assert.ok(staffRoutesSrc.includes('vendorOrStaff'), 'staffRoutes lost vendorOrStaff — delegation no longer works');
+    assert.ok(
+      staffRoutesSrc.includes("requireVendorPermission('manage_staff')"),
+      'staffRoutes is no longer gated by manage_staff',
+    );
+    assert.ok(!staffRoutesSrc.includes('protect, vendor'), 'staffRoutes fell back to the owner-only pair');
+    const gated = staffRoutesSrc.match(/requireVendorPermission\('manage_staff'\)/g) || [];
+    assert.equal(gated.length, 4, `all four staff routes must carry the gate, found ${gated.length}`);
+
+    const ceilingSrc = staffControllerSrc.slice(
+      staffControllerSrc.indexOf('const grantCeiling'),
+      staffControllerSrc.indexOf('// @desc    Create a staff account'),
+    );
+    assert.ok(ceilingSrc.length > 0, 'grantCeiling is missing from staffController');
+    assert.match(ceilingSrc, /!req\.staff/, 'grantCeiling no longer bypasses owners/admins');
+    assert.match(ceilingSrc, /req\.staff\.permissions\[p\]/, 'grantCeiling no longer checks what the caller holds');
+    assert.match(ceilingSrc, /manage_staff/, 'grantCeiling no longer protects manage_staff itself');
+
+    // ...and BOTH write paths consult it (create AND update — update is the
+    // self-grant vector, since staff can edit their own row). Matched by
+    // prefix because update passes the target row's current permissions as
+    // a third argument.
+    const calls = staffControllerSrc.match(/grantCeiling\(req, permissions/g) || [];
+    assert.equal(calls.length, 2, `grantCeiling must guard both create and update, found ${calls.length} call(s)`);
   });
 });

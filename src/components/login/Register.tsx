@@ -338,20 +338,26 @@ const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
 
   try {
     const res = (await register(userData).unwrap()) as Record<string, unknown> & {
-      isEmailVerified?: boolean;
+      regToken?: string;
       message?: string;
     };
 
-    dispatch(setCredentials(res));
+    // Registration no longer signs a session: the reply is byte-identical
+    // whether or not the address was already taken (see the backend's
+    // registration-oracle work), so a cookie here would put the oracle in
+    // Set-Cookie. Store a PENDING identity instead — enough for
+    // PrivateRoute to admit us to /verify-email, carrying the regToken that
+    // authenticates verify/resend/status until the OTP proves mailbox
+    // control and the server issues the real session.
+    dispatch(setCredentials({
+      email: userData.email,
+      isEmailVerified: false,
+      pendingVerification: true,
+      regToken: res.regToken,
+    }));
 
- // Show appropriate success message based on verification status
-    if (res.isEmailVerified) {
-      toast.success("Account created successfully! Welcome to Bonwire Kente!");
-      navigate("/");
-    } else {
-      toast.success(res.message || "Account created! Please check your email for verification code.");
-      navigate("/verify-email");
-    }
+    toast.success(res.message || "Check your email for a verification code to continue.");
+    navigate("/verify-email");
 
   } catch (err) {
     // Enhanced error handling

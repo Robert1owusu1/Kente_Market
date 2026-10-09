@@ -1,5 +1,6 @@
 // routes/authRoutes.js
 import express from 'express';
+import { TERMS_VERSION } from '../config/legalTerms.js';
 import passport from 'passport';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
@@ -20,14 +21,18 @@ const COOKIE_MAX_AGE = 7 * 24 * 60 * 60 * 1000; // 7 days
 const CONSENT_COOKIE_MAX_AGE = 10 * 60 * 1000; // 10 minutes
 
 // Sign a short-lived token proving the user accepted the legal policies.
+// The TERMS_VERSION claim binds the proof to a REVISION: a consent token
+// minted before a Terms update no longer validates, so OAuth signup cannot
+// ride an old acceptance through a new version.
 const signConsentToken = () =>
-  jwt.sign({ purpose: 'legal_consent' }, process.env.JWT_SECRET, { expiresIn: '10m' });
+  jwt.sign({ purpose: 'legal_consent', termsVersion: TERMS_VERSION }, process.env.JWT_SECRET, { expiresIn: '10m' });
 
-// Verify a consent token; returns true if it is a valid legal_consent token.
+// Verify a consent token; returns true only for a genuine legal_consent
+// token issued for the CURRENT terms revision.
 const isConsentTokenValid = (token) => {
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    return decoded.purpose === 'legal_consent';
+    return decoded.purpose === 'legal_consent' && decoded.termsVersion === TERMS_VERSION;
   } catch {
     return false;
   }
@@ -106,12 +111,32 @@ const handleOAuthSuccess = (req, res) => {
 const signOAuthState = () =>
   jwt.sign({ purpose: 'oauth_state', nonce: crypto.randomUUID() }, process.env.JWT_SECRET, { expiresIn: '10m' });
 
-const isOAuthStateValid = (token) => {
+// Returns the claims of a genuine state token, or null. Callers need the
+// claims (specifically the nonce) — V-05's single-use is now enforced by
+// consuming that nonce server-side, not just by the browser dropping a cookie.
+const decodeOAuthState = (token) => {
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    return decoded.purpose === 'oauth_state';
+    return decoded.purpose === 'oauth_state' && decoded.nonce ? decoded : null;
   } catch {
-    return false;
+    return null;
+  }
+};
+
+// V-05: in-process fallback for consumed state nonces. Mirrors the
+// oauth:exchange consumer below: Redis is the durable, cross-instance store
+// (consumeOnce → SET NX); when Redis is unavailable the Map is the fallback,
+// so a replay is still refused within this process. Entries live exactly as
+// long as the token they mirror (10 minutes) — after that the JWT's own
+// expiry is the only remaining check and it still refuses.
+const consumedStateNonces = new Map();
+const pruneStateNonces = () => {
+  const now = Date.now();
+  for (const [nonce, at] of consumedStateNonces) {
+    if (now - at > 10 * 60 * 1000) consumedStateNonces.delete(nonce);
+  }
+  if (consumedStateNonces.size > 2000) {
+    for (const nonce of consumedStateNonces.keys()) consumedStateNonces.delete(nonce);
   }
 };
 
@@ -179,24 +204,46 @@ const googleCallbackMode = (req, res, next) => {
 };
 router.get('/google/callback',
   googleCallbackMode,
-  (req, res, next) => {
+  async (req, res, next) => {
     if (req.oauthMode === 'signup' && !isConsentTokenValid(req.cookies.oauth_consent)) {
       return res.redirect(`${process.env.FRONTEND_URL}/register?error=consent_required`);
     }
     // RB-06: Verify OAuth state parameter (login CSRF protection).
     // The state must be present in the query, match the httpOnly cookie, and
-    // be single-use (consumed here).
-    const queryState = req.query.state;
-    const cookieState = req.cookies?.oauth_state;
-    if (!queryState || !cookieState || queryState !== cookieState || !isOAuthStateValid(queryState)) {
-      return res.redirect(`${process.env.FRONTEND_URL}/login?error=invalid_oauth_state`);
-    }
-    // Clear the state cookie so it can't be replayed.
-    res.clearCookie('oauth_state', { path: '/', httpOnly: true, secure: cookieSecure(res.req), sameSite: cookieSameSite() }); // N-8
-    res.clearCookie('oauth_mode', { path: '/', httpOnly: true, secure: cookieSecure(res.req), sameSite: cookieSameSite() }); // N-8
+    // be single-use — enforced SERVER-SIDE by consuming its nonce (V-05
+    // residual closed: the signed JWT alone stays valid for its full 10
+    // minutes, and the browser dropping its cookie is not a defence that
+    // binds an attacker who already holds both halves of the pair).
+    const refuse = () =>
+      res.redirect(`${process.env.FRONTEND_URL}/login?error=invalid_oauth_state`);
+    try {
+      const queryState = req.query.state;
+      const cookieState = req.cookies?.oauth_state;
+      const stateClaims = typeof queryState === 'string' ? decodeOAuthState(queryState) : null;
+      if (!queryState || !cookieState || queryState !== cookieState || !stateClaims) {
+        return refuse();
+      }
+      // Burn the nonce ONLY after every other check has passed — a rejected
+      // attempt must not consume the legitimate browser's state. Same
+      // fast-path-then-Redis contract as the exchange consumer below.
+      if (consumedStateNonces.has(stateClaims.nonce)) return refuse();
+      const consumed = await consumeOnce(`oauth:state:${stateClaims.nonce}`, 10 * 60);
+      if (consumed === false) return refuse(); // Redis has seen this nonce already
+      if (consumed === null) {
+        consumedStateNonces.set(stateClaims.nonce, Date.now());
+        pruneStateNonces();
+      }
+      // Clear the state cookie so it can't be replayed by the browser either.
+      res.clearCookie('oauth_state', { path: '/', httpOnly: true, secure: cookieSecure(res.req), sameSite: cookieSameSite() }); // N-8
+      res.clearCookie('oauth_mode', { path: '/', httpOnly: true, secure: cookieSecure(res.req), sameSite: cookieSameSite() }); // N-8
 
-    req.consentAt = new Date();
-    next();
+      req.consentAt = new Date();
+      next();
+    } catch (err) {
+      // Fail closed: a gate that cannot decide must refuse.
+      console.error(' OAuth state gate error:', err.message);
+      return refuse();
+    }
   },
   (req, res, next) => {
     passport.authenticate('google', (err, user) => {

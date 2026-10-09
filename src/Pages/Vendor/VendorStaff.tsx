@@ -22,7 +22,8 @@ const ALL_PERMISSIONS = [
   'view_earnings',
   'manage_products',
   'manage_coupons',
-  'reply_reviews',
+  // `reply_reviews` removed with the backend list: no endpoint consumes it
+  // (reviews are read-only for vendors), so the checkbox granted nothing.
   'manage_staff',
   // A8: lets this staff account rewrite the PUBLIC store page — business
   // name, the /store/:slug URL, logo, cover, weaver story and social links.
@@ -37,7 +38,6 @@ const permLabels: Record<string, string> = {
   view_earnings: 'View earnings & payout',
   manage_products: 'Manage products',
   manage_coupons: 'Manage coupons',
-  reply_reviews: 'Reply to reviews',
   manage_staff: 'Manage staff',
   manage_storefront: 'Edit public storefront (name, URL, branding)',
 };

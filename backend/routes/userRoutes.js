@@ -17,9 +17,10 @@ import {
     updateUser,
     verifyEmail,
     resendOTP,
-    getVerificationStatus
+    getVerificationStatus,
+    acceptTerms
 } from '../controllers/userController.js';
-import { protect, admin } from "../middleware/authMiddleware.js";
+import { protect, admin, optionalAuth, attachVerificationAuth } from "../middleware/authMiddleware.js";
 import { authLimiter, accountAuthLimiter, otpResendLimiter, passwordResetLimiter, accountResetLimiter, registerLimiter, accountRegisterLimiter } from "../middleware/rateLimitMiddleware.js";
 import { validate, updateUserProfileSchema, changePasswordSchema } from "../middleware/validators.js";
 
@@ -71,7 +72,7 @@ router.post('/reset-password/:token', passwordResetLimiter, resetPassword);
 
 // Verify email with OTP (rate-limited to prevent OTP brute-force)
 // POST /api/users/verify-email
-router.post('/verify-email', protect, authLimiter, verifyEmail);
+router.post('/verify-email', authLimiter, optionalAuth, attachVerificationAuth, verifyEmail);
 
 // Resend OTP.
 // M-1: this used to carry `authLimiter`, which has `skipSuccessfulRequests:
@@ -79,11 +80,18 @@ router.post('/verify-email', protect, authLimiter, verifyEmail);
 // supposed to stop email spam did not count the spam. `otpResendLimiter`
 // counts every outcome and is keyed on the recipient address, not the IP.
 // POST /api/users/resend-otp
-router.post('/resend-otp', protect, otpResendLimiter, resendOTP);
+router.post('/resend-otp', optionalAuth, attachVerificationAuth, otpResendLimiter, resendOTP);
 
 // Get verification status
 // GET /api/users/verification-status
-router.get('/verification-status', protect, getVerificationStatus);
+router.get('/verification-status', optionalAuth, attachVerificationAuth, getVerificationStatus);
+
+// POST /api/users/accept-terms
+// Re-consent gate: moves the caller to the current TERMS_VERSION. Read-only
+// for the client — the server decides the version (see acceptTerms). Behind
+// protect like the profile routes; covered by the global /api CSRF check in
+// server.js like every other unsafe method.
+router.post('/accept-terms', protect, acceptTerms);
 
 // ============================================
 // USER PROFILE ROUTES (Protected)

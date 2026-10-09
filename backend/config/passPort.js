@@ -1,5 +1,6 @@
 // config/passport.js
 import passport from 'passport';
+import { TERMS_VERSION } from './legalTerms.js';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import { Strategy as FacebookStrategy } from 'passport-facebook';
 import bcrypt from 'bcryptjs';
@@ -98,9 +99,9 @@ const findOrCreateOAuthUser = async (provider, profile, opts = {}) => {
     const hashedPassword = await bcrypt.hash(randomPassword, 12);
 
     const [result] = await connection.execute(
-      `INSERT INTO users (firstName, lastName, email, ${providerId}, password, is_email_verified, profileImage, role, isActive, legal_consent_at)
-       VALUES (?, ?, ?, ?, ?, 1, ?, 'customer', 1, ?)`,
-      [firstName, lastName, email || `${provider}_${profile.id}@oauth.local`, profile.id, hashedPassword, profilePicture, consentAt]
+      `INSERT INTO users (firstName, lastName, email, ${providerId}, password, is_email_verified, profileImage, role, isActive, legal_consent_at, terms_version)
+       VALUES (?, ?, ?, ?, ?, 1, ?, 'customer', 1, ?, ?)`,
+      [firstName, lastName, email || `${provider}_${profile.id}@oauth.local`, profile.id, hashedPassword, profilePicture, consentAt, TERMS_VERSION]
     );
     
     console.log(`Created new user via ${provider} OAuth`);

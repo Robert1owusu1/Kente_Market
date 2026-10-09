@@ -61,17 +61,22 @@ export const usersApiSlice = apiSlice.injectEndpoints({
     }),
 
  // NEW: Resend OTP
-    resendOTP: builder.mutation<{ message?: string }, void>({
-      query: () => ({
+    // Arg: the registration flow's regToken (undefined in session mode —
+    // the cookie authenticates instead, and no body is sent at all).
+    resendOTP: builder.mutation<{ message?: string }, string | void>({
+      query: (regToken) => ({
         url: `${USERS_URL}/resend-otp`,
         method: "POST",
+        body: regToken ? { regToken } : undefined,
       }),
     }),
 
  // NEW: Get Verification Status
-    getVerificationStatus: builder.query<{ verified?: boolean; [key: string]: unknown }, void>({
-      query: () => ({
-        url: `${USERS_URL}/verification-status`,
+    getVerificationStatus: builder.query<{ verified?: boolean; [key: string]: unknown }, string | void>({
+      query: (regToken) => ({
+        url: regToken
+          ? `${USERS_URL}/verification-status?regToken=${encodeURIComponent(regToken)}`
+          : `${USERS_URL}/verification-status`,
         method: "GET",
       }),
       providesTags: ["User"],
@@ -85,6 +90,21 @@ export const usersApiSlice = apiSlice.injectEndpoints({
       }),
       providesTags: ["User"],
       keepUnusedDataFor: 5,
+    }),
+
+ // Accept the current Terms/Privacy revision (re-consent gate). The
+ // server answers with the version it recorded — the request carries no
+ // version of its own, by design (see acceptTerms in the backend).
+    acceptTerms: builder.mutation<
+      { message?: string; termsVersion?: number; needsReConsent?: boolean },
+      void
+    >({
+      query: () => ({
+        url: `${USERS_URL}/accept-terms`,
+        method: "POST",
+        body: {},
+      }),
+      invalidatesTags: ["User"],
     }),
 
  // Update user profile (authenticated user)
@@ -169,6 +189,7 @@ export const {
  useResendOTPMutation, // NEW
  useGetVerificationStatusQuery, // NEW
   useGetProfileQuery,
+  useAcceptTermsMutation,
   useUpdateProfileMutation,
   useChangePasswordMutation,
   useGetUsersQuery,

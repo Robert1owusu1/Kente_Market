@@ -16,10 +16,12 @@
 //            with one byte-identical 200 body, whatever the account/token
 //            state (the old 5xx-on-SMTP-failure and `valid: true|false` were
 //            precise existence oracles).
-//   register the 400-vs-201 registration oracle cannot be closed without
-//            redesigning OTP verification, so it is bounded instead: a
-//            per-email limiter that counts BOTH answers (residual P3 in the
-//            report).
+//   register the 400-vs-201 registration oracle is CLOSED, not merely
+//            bounded: registration now answers one uniform 202 on every
+//            branch (redesigned OTP issuance + regToken verification
+//            phase, pinned by registrationOracle.test.js). The per-email
+//            limiter that counts BOTH answers stays as defence in depth
+//            against grinding the endpoint itself.
 //   N-8      cookie Secure flag is derived per request (cookieSecure), and the
 //            server refuses to boot SameSite=None outside production.
 //   N-9      TRUST_PROXY > 0 must be called out loudly at boot.
@@ -211,7 +213,7 @@ describe('V-10(c): per-email registration limiter', () => {
     assert.match(block, /req\.body\?\.email/, 'key must be the probed email, not the source IP');
     assert.ok(
       !/skipSuccessfulRequests/.test(block),
-      'both outcomes must count: a 400 and a 201 are both answers to the prober'
+      'both outcomes must count: a rejection and the uniform 202 are both answers to the prober'
     );
   });
 

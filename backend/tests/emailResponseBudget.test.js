@@ -16,11 +16,16 @@
 //   (a) behavioural: a mail server that accepts the connection and never
 //       speaks must not stall the caller (stock greetingTimeout = 30 s);
 //   (b) the configured caps all sit inside the client's 15 s budget;
-//   (c) source guard: the vendor status handler answers before it notifies.
+//   (c) source guard: the vendor status handler answers before it notifies;
+//   (d) source guard: NO handler anywhere sequences its response on a send —
+//       the ten N-20-class sites (the old "nine" missed one) are all
+//       detached, checked over the whole backend tree, with a floor on the
+//       detached count so deleting the sends cannot fake a pass either.
 import { test, describe, after } from 'node:test';
 import assert from 'node:assert/strict';
 import net from 'node:net';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { sendEmailSafely, createTransporter } from '../utils/emailService.js';
@@ -129,6 +134,53 @@ describe('N-20: outbound mail cannot hold a request open', () => {
       { ok: false, reason: 'notification is still awaited by the handler' },
     );
   });
+
+  test('no handler sequences its response on an email send (the N-20-class sites)', () => {
+    // Whole-tree scan of controllers + routes: any `await send*(…)` there is
+    // a handler holding its response open on mail. Exactly one offender is
+    // allowed — vendorOrderController's post-response detached block, which
+    // the behavioural test above proves answers first. The pattern takes
+    // `send[A-Za-z]*`, not `send*Email`, because one of the ten sites is
+    // `sendPasswordResetConfirmation`, which has no `Email` suffix and is
+    // exactly the name a suffix-scoped grep would miss (the old "nine" tally
+    // did).
+    const offenders = awaitSitesInTree();
+    const unexpected = offenders.filter(
+      (site) => !site.startsWith('controllers/vendorOrderController.js'),
+    );
+    assert.deepEqual(
+      unexpected,
+      [],
+      'a handler awaits an email send before responding — SMTP can still eat ' +
+        'the SPA 15 s budget and report a committed write as a failure',
+    );
+    assert.ok(
+      offenders.length <= 1,
+      `vendorOrderController's detached block grew extra awaits: ${offenders.join(', ')}`,
+    );
+
+    // Deletion cannot fake this pass: the detached sends themselves must
+    // still exist. The tree currently holds 13 `void send*(…)` sites across
+    // the three files (9 + 2 + 2) — ten of them are the N-20-class sites
+    // this finding is about, the rest were detached earlier. If one is ever
+    // legitimately REMOVED, lower this consciously, the way a changed
+    // invariant should be changed.
+    const detached =
+      countDetached('../controllers/userController.js') +
+      countDetached('../controllers/orderController.js') +
+      countDetached('../routes/paymentRoutes.js');
+    assert.ok(
+      detached >= 10,
+      `only ${detached} detached send sites remain across the three files — ` +
+        'the sends were deleted rather than detached',
+    );
+
+    // Self-test the matcher so a broken regex cannot pass vacuously.
+    assert.deepEqual(collectAwaited('await sendOrderStatusEmail(1, {});'), [0]);
+    assert.deepEqual(collectAwaited('const info = await transporter.sendMail(o);'), [0]);
+    assert.deepEqual(collectAwaited('void sendOTPEmail(1, 2, 3).catch(() => {});'), []);
+    assert.deepEqual(collectAwaited('res.json({ message: "done" });'), []);
+  });
 });
 
 /**
@@ -153,4 +205,40 @@ function respondsBeforeNotifying(source) {
     return { ok: false, reason: 'notification is still awaited by the handler' };
   }
   return { ok: true };
+}
+
+// `await` of any send-shaped call — `sendOrderStatusEmail`, bare `sendOTP`,
+// or an inlined `transporter.sendMail` (a likely way to try to silence this
+// guard while keeping the await).
+const SEND_AWAIT_RE = /\bawait\s+[\w.$]*send[A-Za-z]*\s*\(/;
+
+/** 0-based indexes of lines in `source` that await a send. */
+function collectAwaited(source) {
+  const hits = [];
+  source.split(/\r?\n/).forEach((line, i) => {
+    if (SEND_AWAIT_RE.test(line)) hits.push(i);
+  });
+  return hits;
+}
+
+/** `dir/relative/path.js:line` for every awaited send under controllers/ + routes/. */
+function awaitSitesInTree() {
+  const sites = [];
+  for (const dir of ['controllers', 'routes']) {
+    const root = fileURLToPath(new URL(`../${dir}/`, import.meta.url));
+    for (const entry of readdirSync(root, { recursive: true })) {
+      const abs = join(root, String(entry));
+      if (!abs.endsWith('.js')) continue;
+      for (const i of collectAwaited(readFileSync(abs, 'utf8'))) {
+        sites.push(`${dir}/${entry}:${i + 1}`);
+      }
+    }
+  }
+  return sites.sort();
+}
+
+/** Count of fire-and-forget `void send*(…)` sites in one file. */
+function countDetached(relative) {
+  const source = readFileSync(fileURLToPath(new URL(relative, import.meta.url)), 'utf8');
+  return (source.match(/\bvoid\s+send[A-Za-z]*\s*\(/g) || []).length;
 }

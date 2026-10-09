@@ -22,9 +22,15 @@ const EmailVerification = () => {
   const [timeLeft, setTimeLeft] = useState(600); // 10 minutes in seconds
   const [canResend, setCanResend] = useState(false);
 
+  // PENDING identity (registration flow): no session exists yet — these
+  // three calls authenticate with the regToken the register reply handed
+  // out. Session mode (login flow) has no regToken and keeps using the
+  // cookie, exactly as before.
+  const regToken = typeof userInfo?.regToken === "string" ? userInfo.regToken : undefined;
+
   const [verifyEmail, { isLoading: isVerifying }] = useVerifyEmailMutation();
   const [resendOTP, { isLoading: isResending }] = useResendOTPMutation();
-  const { data: verificationStatus, refetch } = useGetVerificationStatusQuery();
+  const { data: verificationStatus, refetch } = useGetVerificationStatusQuery(regToken);
 
   // Redirect if already verified
   useEffect(() => {
@@ -104,12 +110,14 @@ const EmailVerification = () => {
     }
 
     try {
-      const result = await verifyEmail({ otp: code }).unwrap();
+      const result = await verifyEmail({ otp: code, regToken }).unwrap();
       
-      // Update user info in Redux
+      // Merge the server's reply (real profile + the session cookie it just
+      // set for regToken callers) over whatever pending placeholder we had.
       dispatch(setCredentials({
         ...userInfo,
-        isEmailVerified: true
+        ...result,
+        pendingVerification: false,
       }));
 
       toast.success((result as { message?: string }).message || 'Email verified successfully!');
@@ -135,7 +143,7 @@ const EmailVerification = () => {
     }
 
     try {
-      const result = await resendOTP().unwrap();
+      const result = await resendOTP(regToken).unwrap();
       toast.success((result as { message?: string }).message || 'OTP sent successfully!');
       setTimeLeft(600); // Reset timer
       setCanResend(false);

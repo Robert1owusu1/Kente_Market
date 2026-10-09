@@ -233,12 +233,12 @@ router.post('/verify-paystack', protect, async (req, res) => {
  console.warn(` Could not seed expected completion date: ${compErr.message}`);
           }
           // Receipt email — only when THIS call flipped the order, so a webhook
-          // that already handled payment never sends a duplicate.
-          try {
-            await sendOrderConfirmationEmail(orderId);
-          } catch (emailErr) {
- console.warn(` Could not send order confirmation email: ${emailErr.message}`);
-          }
+          // that already handled payment never sends a duplicate. Detached
+          // (N-20 class): the flip is committed and the audit event below
+          // must not be sequenced by SMTP.
+          void sendOrderConfirmationEmail(orderId).catch((emailErr) => {
+            console.warn(` Could not send order confirmation email: ${emailErr.message}`);
+          });
           orderMarkedPaid = true;
           // Immutable audit event (dedupe per reference; no-op if the webhook
           // already recorded it).
@@ -507,12 +507,12 @@ if (!orderFound) {
           } else if (orderId) {
             // Receipt email — fires only when the webhook itself performed the
             // paid flip. If the verify-paystack fallback already did it, the
-            // affected guard above means orderFound is false here.
-            try {
-              await sendOrderConfirmationEmail(orderId);
-            } catch (emailErr) {
- console.warn(` Could not send order confirmation email: ${emailErr.message}`);
-            }
+            // affected guard above means orderFound is false here. Detached
+            // (N-20 class): Paystack's webhook response and the durable
+            // processing_status write must never wait on SMTP.
+            void sendOrderConfirmationEmail(orderId).catch((emailErr) => {
+              console.warn(` Could not send order confirmation email: ${emailErr.message}`);
+            });
           }
           await pool.execute(
             `UPDATE webhook_events SET processing_status = 'processed', processed_at = CURRENT_TIMESTAMP

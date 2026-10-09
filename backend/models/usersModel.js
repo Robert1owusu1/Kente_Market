@@ -2,6 +2,7 @@
 import pool from '../config/db.js';
 import bcrypt from 'bcryptjs';
 import { burnPasswordTime } from '../utils/authTiming.js';
+import { TERMS_VERSION } from '../config/legalTerms.js';
 import crypto from 'crypto';
 
 // ---------------------------------------------------------------------------
@@ -49,6 +50,9 @@ class User {
     this.resetPasswordExpire = data.reset_password_expire || null;
     this.lastLogin = data.last_login || null;
     this.tokenVersion = data.tokenVersion ?? 0;
+    // Terms/consent versioning: which TERMS_VERSION this account accepted
+    // (0 = never — flagged for re-consent at next login).
+    this.termsVersion = data.terms_version ?? 0;
     // RB-07: lockout columns must survive model construction. findByEmail
     // aliases failed_login_attempts/locked_until to camelCase; without these
     // assignments authenticate() never sees them and lockout is dead code.
@@ -203,7 +207,7 @@ class User {
       connection = await pool.getConnection();
       
       const [rows] = await connection.execute(
-        'SELECT id, firstName, lastName, email, phone, address, city, state, zipCode, country, role, isActive, is_email_verified, profile_picture, tokenVersion, last_login, created_at, updated_at FROM users WHERE id = ?', 
+        'SELECT id, firstName, lastName, email, phone, address, city, state, zipCode, country, role, isActive, is_email_verified, profile_picture, tokenVersion, terms_version, last_login, created_at, updated_at FROM users WHERE id = ?', 
         [parseInt(id)]
       );
       
@@ -309,6 +313,11 @@ class User {
 
       if (sanitizedData.legalConsentAccepted === true) {
         allFields.legal_consent_at = new Date();
+        // Versioned consent: record WHICH terms were accepted
+        // (config/legalTerms.js), not just when — a future TERMS_VERSION
+        // bump is then able to flag this session for re-consent, which a
+        // bare timestamp can never do.
+        allFields.terms_version = TERMS_VERSION;
       }
       
       const fieldNames = Object.keys(allFields);

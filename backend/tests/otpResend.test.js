@@ -10,9 +10,13 @@
 //
 // Reachable, not theoretical: registration does not require a verified
 // address, so an attacker who registers with somebody else's address holds a
-// session that legitimately reaches /resend-otp (it only demands `protect`
-// and `!isEmailVerified`) and can flood that inbox at the pace of the general
-// 600/15min apiLimiter.
+// regToken that legitimately reaches /resend-otp (it demands a session OR
+// that token, and `!isEmailVerified`) and can flood that inbox at the pace of
+// the general 600/15min apiLimiter. That is why the route mounts
+// optionalAuth + attachVerificationAuth BEFORE otpResendLimiter: the limiter
+// keys on `req.user?.email`, and the recipient half of the key only exists
+// once the regToken has been resolved — mounting the limiter first would
+// fall back to source IP, which a rotating attacker walks away from.
 //
 // The second half of the finding is a number that disagreed with itself:
 // `getVerificationStatus` reported `5 - attempts` as a literal while the WHERE
@@ -196,7 +200,13 @@ describe('M-1: the resend limiter is configured to count', () => {
     assert.ok(line, '/resend-otp route not found');
     assert.match(line, /otpResendLimiter/, 'the resend route is not behind otpResendLimiter');
     assert.ok(!/authLimiter/.test(line), 'authLimiter is still on /resend-otp and still skipping successes');
-    assert.match(line, /protect/, 'the route lost its auth requirement');
+    // Auth moved from the route's `protect` into the session-or-regToken
+    // chain — it must precede the limiter or the per-recipient key has no
+    // email to bind to (see the header note). `attachVerificationAuth`
+    // 401s exactly where `protect` did when neither credential exists;
+    // registrationOracle.test.js pins that behaviour end to end.
+    assert.match(line, /attachVerificationAuth/, 'the route lost its auth requirement');
+    assert.match(line, /otpResendLimiter/, 'limiter must follow the auth that supplies its recipient key');
     assert.ok(
       routesSrc.includes('otpResendLimiter'),
       'otpResendLimiter is not imported into userRoutes',

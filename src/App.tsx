@@ -9,6 +9,7 @@ import PromotionPopup from './components/PromotionPopup/PromotionPopup';
 import TestingModePopup from './components/TestingModePopup/TestingModePopup';
 
 import SyncUserRole from './components/SyncUserRole/SyncUserRole';
+import TermsReconsentGate from './components/legal/TermsReconsentGate';
 import NotFound from './components/NotFound/NotFound';
 import PrivateRoute from './components/privateRoutes/PrivateRoute';
 import VerifiedRoute from './components/privateRoutes/VerifiedRoute';
@@ -210,6 +211,9 @@ const App = () => {
         <PromotionPopup />
         <TestingModePopup />
         <SyncUserRole />
+        {/* Terms/consent versioning: blocks any session that has not accepted
+            the current revision until it does (or logs out). */}
+        <TermsReconsentGate />
 
         {/* Global ToastContainer - Available on all pages */}
         <ToastContainer

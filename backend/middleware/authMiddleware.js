@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import asyncHandler from './asyncHandler.js';
 import User from '../models/usersModel.js';
 import pool from '../config/db.js';
+import { decodeRegisterPendingToken } from '../utils/registerPendingToken.js';
 
 // mysql2 auto-parses JSON columns to objects; tolerate both forms.
 const parsePermissions = (value) => {
@@ -36,6 +37,47 @@ const optionalAuth = asyncHandler(async (req, res, next) => {
     }
   }
   next();
+});
+
+/**
+ * Verification-phase authentication (V-10 residual: registration oracle).
+ *
+ * Mount AFTER `optionalAuth` on the three verification endpoints. Two modes,
+ * and the controller must know which one it got (`req.authViaRegToken`):
+ *
+ *  - Session mode (login flow: an unverified user signed in and was routed
+ *    to /verify-email): optionalAuth already set req.user — pass through.
+ *  - Pending mode (registration flow: the reply to POST /api/users carries
+ *    no session on EITHER branch any more, by design): accept the
+ *    purpose-bound regToken from body or query, resolve the account from
+ *    its claims, and mark the request so uniform-response rules apply.
+ *
+ * Neither credential → 401, exactly like `protect` did before: the
+ * frontend's existing expiry handling logs the visitor out, and a pending
+ * token that outlived its 15 minutes recovers by starting at register
+ * again (bounded there by accountRegisterLimiter).
+ */
+const attachVerificationAuth = asyncHandler(async (req, res, next) => {
+  if (req.user) {
+    req.authViaRegToken = false;
+    return next();
+  }
+
+  const pending = req.body?.regToken ?? req.query?.regToken;
+  if (typeof pending === 'string' && pending.length > 0) {
+    const claims = decodeRegisterPendingToken(pending);
+    if (claims) {
+      const user = await User.findByEmail(claims.email);
+      if (user && user.isActive) {
+        req.user = user.getProfile();
+        req.authViaRegToken = true;
+        return next();
+      }
+    }
+  }
+
+  res.status(401);
+  throw new Error('Not authorized');
 });
 
 /**
@@ -366,4 +408,4 @@ const requireVendorPermission = (permission) => (req, res, next) => {
     throw new Error(`Missing permission: ${permission}`);
 };
 
-export { protect, admin, vendor, vendorOrStaff, requireVendorPermission, optionalAuth, requireVerifiedEmail };
+export { protect, admin, vendor, vendorOrStaff, requireVendorPermission, optionalAuth, requireVerifiedEmail, attachVerificationAuth };

@@ -19,6 +19,10 @@ import { burnPasswordTime } from '../utils/authTiming.js';
 // links), ran behind vendorOrStaff alone. Any staff member could do it,
 // including one whose permission object was completely empty. The vendor's
 // own account is unaffected: requireVendorPermission always passes the owner.
+// `reply_reviews` was REMOVED from this list: no route anywhere consumed it
+// (there is no reply endpoint — GET /api/vendors/reviews is read-only), so
+// it was a checkbox that granted nothing while telling the owner it did.
+// Re-add it in the same change as the endpoint that reads it.
 const VALID_PERMISSIONS = [
   'manage_orders',
   'view_customers',
@@ -26,7 +30,6 @@ const VALID_PERMISSIONS = [
   'view_earnings',
   'manage_products',
   'manage_coupons',
-  'reply_reviews',
   'manage_staff',
   'manage_storefront',
 ];
@@ -206,12 +209,42 @@ export const listStaff = async (req, res) => {
   }
 };
 
+// The grant ceiling for a STAFF caller. Owners and admins bypass it
+// (requireVendorPermission already admitted them); for a staff member it
+// enforces the two rules that make the wired staff routes safe:
+//   1. never grant a permission the caller does not themselves hold —
+//      updateStaff can reach the caller's OWN row, so without this the
+//      route would be a ladder to view_earnings and beyond;
+//   2. never ADD `manage_staff` — promotion to manager is an owner-only
+//      decision, or one stolen manager key could mint managers forever.
+//      KEEPING it on a row that already holds it is fine: a rule that
+//      refused the key outright would make every ordinary edit by (or on)
+//      a manager silently DEMOTE them, which is data loss, not security.
+// `targetPermissions` is the row being written — null on create, where the
+// row does not exist yet, so a staff caller can never seed the key.
+// Returns an error message, or null when the grant is allowed.
+const grantCeiling = (req, permissions, targetPermissions = null) => {
+  if (!req.staff) return null;
+  const requested = VALID_PERMISSIONS.filter((p) => permissions && permissions[p]);
+  const escalated = requested.filter((p) => !req.staff.permissions[p]);
+  if (escalated.length > 0) {
+    return `You cannot grant a permission you do not hold: ${escalated.join(', ')}`;
+  }
+  if (permissions && permissions.manage_staff && !(targetPermissions && targetPermissions.manage_staff)) {
+    return 'manage_staff can only be granted by the store owner';
+  }
+  return null;
+};
+
 // @desc    Create a staff account
 // @route   POST /api/vendors/staff
-// @access  Private (vendor owner)
+// @access  Private (vendor owner or staff holding manage_staff)
 export const createStaff = async (req, res) => {
   try {
     const { name, email, password, permissions } = req.body;
+
+    const violation = grantCeiling(req, permissions);
+    if (violation) return res.status(403).json({ message: violation });
 
     if (!name || !email || !password) {
       return res.status(400).json({ message: 'Name, email and password are required' });
@@ -266,7 +299,7 @@ export const updateStaff = async (req, res) => {
   try {
     const staffId = parseInt(req.params.id);
     const [[existing]] = await pool.execute(
-      `SELECT id, vendorId, password FROM vendor_staff WHERE id = ?`,
+      `SELECT id, vendorId, password, permissions FROM vendor_staff WHERE id = ?`,
       [staffId]
     );
     if (!existing) return res.status(404).json({ message: 'Staff member not found' });
@@ -303,6 +336,8 @@ export const updateStaff = async (req, res) => {
       sets.push('failed_attempts = 0', 'locked_until = NULL');
     }
     if (permissions !== undefined) {
+      const violation = grantCeiling(req, permissions, parsePermissions(existing.permissions));
+      if (violation) return res.status(403).json({ message: violation });
       sets.push('permissions = ?'); vals.push(JSON.stringify(normalizePermissions(permissions)));
     }
 
