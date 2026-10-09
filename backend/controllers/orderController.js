@@ -29,6 +29,7 @@ import { sendOrderConfirmationEmail, sendEscrowReleasedEmail } from "../utils/or
 import { auditFromRequest } from "../utils/auditLog.js";
 import { recordFinancialEvent } from "../Services/ledgerService.js";
 import { newOrderNumber } from "../utils/orderNumber.js";
+import { validateDestinationAddress, validateDestinationCountry } from "../utils/destinationValidation.js";
 
 // Client-supplied order-item images are stored and rendered to other users (e.g.
 // in the vendor's order view), so they must not be able to carry javascript: or
@@ -275,6 +276,20 @@ export const addOrderItems = async (req, res) => {
     const rawItems = /** @type {Array<any>} */ (Array.isArray(req.body.items) ? req.body.items : []);
     if (rawItems.length === 0) {
       return res.status(400).json({ message: "Order must contain at least one item" });
+    }
+
+    // 🌍 Checkout workstream: server-side destination allowlist check.
+    // Unsupported destinations are rejected safely BEFORE any
+    // reservation/pricing work. Field completeness is deliberately NOT
+    // enforced here (order-creation contract; full checks run at the
+    // validate-address endpoint and on address updates) — totals remain
+    // server-authoritative below; client shipping/tax/total fields are
+    // never trusted (see updateOrder stripping + recompute).
+    if (req.body.shippingAddress && typeof req.body.shippingAddress === "object") {
+      const dest = validateDestinationCountry(req.body.shippingAddress);
+      if (!dest.valid) {
+        return res.status(400).json({ message: dest.message, code: dest.code });
+      }
     }
 
     // Normalize client items into {productId, quantity, ...}. We deliberately do
@@ -739,6 +754,22 @@ export const updateOrder = async (req, res) => {
     // Only admin or order owner can update
     if (req.user.role !== 'admin' && existingOrder.userId !== req.user.id) {
       return res.status(403).json({ message: "Not authorized to update this order" });
+    }
+
+    // 🌍 Checkout workstream: validate destination on address updates.
+    // Paid/refunded orders keep their financial snapshot immutable: a
+    // destination change after payment is rejected (would alter shipping).
+    if (req.body.shippingAddress && typeof req.body.shippingAddress === "object") {
+      const dest = validateDestinationAddress(req.body.shippingAddress);
+      if (!dest.valid) {
+        return res.status(400).json({ message: dest.message, code: dest.code });
+      }
+      if (existingOrder.paymentStatus === "paid" || existingOrder.paymentStatus === "refunded") {
+        return res.status(400).json({
+          message: "Destination cannot be changed after payment",
+          code: "PAID_SNAPSHOT_IMMUTABLE",
+        });
+      }
     }
 
     // Security: Order owners may only update non-payment, non-fulfillment fields.
