@@ -1,5 +1,6 @@
 // @ts-check
 import axios from 'axios';
+import { CHARGED_CURRENCY } from './paymentCurrency.js';
 
 /**
  * Standard Paystack API envelope. `data` carries endpoint-specific fields
@@ -36,7 +37,7 @@ class PaystackService {
         {
           email,
           amount: Math.round(amount * 100), // Convert to pesewas
-          currency: 'GHS',
+          currency: CHARGED_CURRENCY,
           metadata,
           callback_url: process.env.FRONTEND_URL 
             ? `${process.env.FRONTEND_URL}/order/success` 
@@ -92,7 +93,7 @@ class PaystackService {
           authorization_code: authorizationCode,
           email,
           amount: Math.round(amount * 100),
-          currency: 'GHS',
+          currency: CHARGED_CURRENCY,
         },
         { headers: this.headers }
       );
@@ -139,7 +140,7 @@ class PaystackService {
           name,
           account_number: accountNumber,
           bank_code: bankCode,
-          currency: 'GHS',
+          currency: CHARGED_CURRENCY,
         },
         { headers: this.headers }
       );
@@ -168,7 +169,7 @@ class PaystackService {
           amount: Math.round(amount * 100),
           recipient,
           reason,
-          currency: 'GHS',
+          currency: CHARGED_CURRENCY,
           // The reference is generated ONCE per payout attempt and persisted
           // in payout_attempts BEFORE this call (see escrowService), so if the
           // response is lost, reconciliation verifies this exact reference —
@@ -236,7 +237,7 @@ class PaystackService {
           name,
           account_number: phone,
           bank_code: telco,
-          currency: 'GHS',
+          currency: CHARGED_CURRENCY,
         },
         { headers: this.headers }
       );
