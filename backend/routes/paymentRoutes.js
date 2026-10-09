@@ -13,6 +13,7 @@ import { computeExpectedCompletion } from '../utils/computeExpectedCompletion.js
 import { decrementStockForOrder } from '../controllers/orderController.js';
 import { sendOrderConfirmationEmail } from '../utils/orderEmailService.js';
 import { recordFinancialEvent } from '../Services/ledgerService.js';
+import { CHARGED_CURRENCY, buildChargeSnapshot } from '../Services/paymentCurrency.js';
 import {
   settleTransferSuccess,
   settleTransferFailed,
@@ -165,7 +166,7 @@ router.post('/verify-paystack', protect, async (req, res) => {
         }
         const expectedKobo = Math.round(parseFloat(order.totalAmount) * 100);
         const paidKobo = parseInt(data.amount, 10);
-        if (data.currency !== 'GHS' || paidKobo !== expectedKobo) {
+        if (data.currency !== CHARGED_CURRENCY || paidKobo !== expectedKobo) {
           return res.status(400).json({
             success: false,
             message: 'Payment amount does not match the order total',
@@ -247,11 +248,16 @@ router.post('/verify-paystack', protect, async (req, res) => {
               eventType: 'charge.collected',
               direction: 'in',
               amount: order.totalAmount,
+              // Asserted equal to CHARGED_CURRENCY a few lines above, so
+              // booking in CHARGED_CURRENCY cannot diverge from what Paystack
+              // actually collected. The provider's own value is preserved
+              // verbatim in the snapshot below.
+              currency: CHARGED_CURRENCY,
               orderId,
               reference,
               providerReference: reference,
               dedupeKey: `charge.collected:${reference}`,
-              payload: { event: 'verify-paystack fallback' },
+              payload: buildChargeSnapshot(data, 'verify'),
             });
           } catch { /* journal is best-effort */ }
         }
@@ -363,13 +369,13 @@ router.post('/paystack-webhook', webhookLimiter, async (req, res) => {
                 const expectedKobo = Math.round(parseFloat(preRows[0].totalAmount) * 100);
                 const paidKobo = parseInt(event.data?.amount, 10);
                 if (
-                  event.data?.currency !== 'GHS' ||
+                  event.data?.currency !== CHARGED_CURRENCY ||
                   !Number.isFinite(paidKobo) ||
                   paidKobo !== expectedKobo
                 ) {
                   validationError =
                     `Amount/currency mismatch for ${reference}: ` +
-                    `paid ${paidKobo} ${event.data?.currency}, expected ${expectedKobo} GHS ` +
+                    `paid ${paidKobo} ${event.data?.currency}, expected ${expectedKobo} ${CHARGED_CURRENCY} ` +
                     `(order ${preRows[0].id})`;
                   break;
                 }
@@ -397,11 +403,15 @@ router.post('/paystack-webhook', webhookLimiter, async (req, res) => {
                       eventType: 'charge.collected',
                       direction: 'in',
                       amount: orderRows[0].totalAmount,
+                      // Currency was asserted equal to CHARGED_CURRENCY in the
+                      // validation above, which necessarily ran (preRows is
+                      // non-empty or the paid-flip UPDATE could not match).
+                      currency: CHARGED_CURRENCY,
                       orderId,
                       reference,
                       providerReference: reference,
                       dedupeKey: `charge.collected:${reference}`,
-                      payload: { event: 'charge.success' },
+                      payload: buildChargeSnapshot(event.data, 'webhook'),
                     });
                   } catch { /* journal is best-effort */ }
 

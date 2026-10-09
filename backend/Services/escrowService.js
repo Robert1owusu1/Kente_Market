@@ -8,6 +8,7 @@ import paystackServices from './paystackservices.js';
 import { creditVendorBalance, clawbackVendorBalance } from './walletService.js';
 import { recordFinancialEvent } from './ledgerService.js';
 import { PLATFORM_FEE_RATE, ESCROW_RELEASE_DAYS } from '../config/businessConfig.js';
+import { CHARGED_CURRENCY } from './paymentCurrency.js';
 import { resolveCommissionRate } from './commissionService.js';
 import Notification from '../models/notificationModel.js';
 import Coupon from '../models/couponModel.js';
@@ -1304,13 +1305,13 @@ export const recoverStuckPendingOrders = async () => {
         const expectedKobo = Math.round(parseFloat(order.totalAmount) * 100);
         const paidKobo = parseInt(tx.amount, 10);
         if (
-          tx.currency !== 'GHS' ||
+          tx.currency !== CHARGED_CURRENCY ||
           !Number.isFinite(paidKobo) ||
           paidKobo !== expectedKobo
         ) {
           console.warn(
 ` Stuck order ${order.id}: payment mismatch — paid ${paidKobo} ${tx.currency}, ` +
-            `expected ${expectedKobo} GHS (ref ${order.paymentReference}); NOT recovering`
+            `expected ${expectedKobo} ${CHARGED_CURRENCY} (ref ${order.paymentReference}); NOT recovering`
           );
           continue;
         }

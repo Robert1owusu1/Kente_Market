@@ -15,6 +15,7 @@ import {
 import { CUSTOM_ADVANCE_RATIO } from "../config/businessConfig.js";
 import { issueCertificateForOrder } from "../Services/certificateService.js";
 import PaystackService from "../Services/paystackservices.js";
+import { CHARGED_CURRENCY } from "../Services/paymentCurrency.js";
 import { newOrderNumber } from "../utils/orderNumber.js";
 
 // Combine needed-for date + time into a contractually visible completion date.
@@ -275,7 +276,7 @@ export const checkoutRequest = async (req, res) => {
     }
     const expectedKobo = Math.round(price * 100);
     const paidKobo = parseInt(tx.amount, 10);
-    if (tx.currency !== 'GHS' || !Number.isFinite(paidKobo) || paidKobo !== expectedKobo) {
+    if (tx.currency !== CHARGED_CURRENCY || !Number.isFinite(paidKobo) || paidKobo !== expectedKobo) {
       return res.status(400).json({ message: "Payment amount does not match the quoted price." });
     }
     const [[existingRef]] = await pool.execute(
