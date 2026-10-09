@@ -48,6 +48,7 @@ export const CHARGED_CURRENCY = 'GHS';
 // GHS is 100 (pesewas). This map exists so a second currency cannot be added
 // by typing a new name somewhere without also declaring its precision — a
 // missing entry is a hard error rather than a silent 100x overcharge.
+/** @type {Readonly<Record<string, number>>} */
 const MINOR_UNIT_SCALE = Object.freeze({ GHS: 100 });
 
 /**
@@ -122,6 +123,7 @@ export const toMinorUnits = (major, currency = CHARGED_CURRENCY) =>
 // financial_events.payload. Those columns are append-only and effectively
 // permanent, so a single careless spread of the raw provider object would be a
 // durable card/PII leak that no later migration could reliably scrub.
+/** @type {Readonly<Record<string, string>>} */
 const SNAPSHOT_FIELDS = Object.freeze({
   reference: 'reference',
   status: 'status',
@@ -147,13 +149,14 @@ const SNAPSHOT_FIELDS = Object.freeze({
  * @returns {ProviderChargeSnapshot}
  */
 export const buildChargeSnapshot = (tx, capturedBy) => {
+  /** @type {Record<string, any>} */
   const t = tx && typeof tx === 'object' ? tx : {};
-  /** @type {Record<string, unknown>} */
+  /** @type {Record<string, any>} */
   const snapshot = { capturedBy: String(capturedBy) };
   for (const [from, to] of Object.entries(SNAPSHOT_FIELDS)) {
     if (t[from] !== undefined) snapshot[to] = t[from];
   }
-  return Object.freeze(snapshot);
+  return /** @type {ProviderChargeSnapshot} */ (/** @type {unknown} */ (Object.freeze(snapshot)));
 };
 
 /**
@@ -174,9 +177,10 @@ export const buildChargeSnapshot = (tx, capturedBy) => {
  * @returns {{ ok: boolean, reason: string|null, paidMinorUnits: number, paidCurrency: string|null }}
  */
 export const verifyChargeMatchesOrder = (tx, expectedMinorUnits) => {
+  /** @type {Record<string, any>} */
   const t = tx && typeof tx === 'object' ? tx : {};
   const paidCurrency = t.currency ?? null;
-  const paidMinorUnits = parseInt(/** @type {string} */ (t.amount), 10);
+  const paidMinorUnits = parseInt(t.amount, 10);
 
   if (paidCurrency !== CHARGED_CURRENCY) {
     return { ok: false, reason: 'currency_mismatch', paidMinorUnits, paidCurrency };

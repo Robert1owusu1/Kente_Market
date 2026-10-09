@@ -73,7 +73,7 @@ import moderationRoutes from './routes/moderationRoutes.js'; // NEW - Product mo
 import adminOpsRoutes from './routes/adminOpsRoutes.js'; // Audit log + scheduler status
 import suggestionRoutes from './routes/suggestionRoutes.js';
 import customRequestRoutes from './routes/customRequestRoutes.js'; // Custom orders // NEW - User suggestions
-import internationalCheckoutRoutes from './routes/internationalCheckoutRoutes.js'; // Checkout workstream: international destinations (GH/GB/US/CA/DE/NL)
+import internationalCheckoutRoutes from './routes/internationalCheckoutRoutes.js'; // Intl checkout: country/address/ship-options (DB carrier rates + vendor destination checks); charge currency stays GHS
 import buybackRoutes from './routes/buybackRoutes.js'; // Sell-back / borrow-back loop // NEW - User suggestions
 import { startCleanupSchedule } from './utils/cleanupJobs.js';
 import { metricsMiddleware, metricsHandler, metricsTokenGuard } from './utils/metrics.js';
@@ -420,7 +420,7 @@ app.use('/api/admin/moderation', moderationRoutes);
 app.use('/api/admin/ops', adminOpsRoutes);
 app.use('/api/suggestions', suggestionRoutes);
 app.use('/api/custom-requests', customRequestRoutes); // Custom orders
-app.use('/api/checkout/international', internationalCheckoutRoutes); // Checkout workstream: countries/address/shipping-eligibility (mock rates until shipping workstream lands)
+app.use('/api/checkout/international', internationalCheckoutRoutes); // Intl checkout: country/address/ship-options (DB rates + vendor checks); charge currency stays GHS
 
 // ============================================
 // ERROR HANDLING - Must be LAST

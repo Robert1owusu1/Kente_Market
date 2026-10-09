@@ -17,7 +17,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { useCart } from '../../Context/CartContext';
 import { calcOrderTotals } from '../../utils/pricing';
-import { toPesewas, resolvePayableTotal } from '../../utils/payments';
+import { resolvePayableTotal } from '../../utils/payments';
 import { sanitizeInput } from '../../utils/sanitize';
 import {
   savePendingPaymentRef,
@@ -257,7 +257,6 @@ export default function CheckoutPage() {
     couponNetTotal,
     resolvePayableTotal(serverTotal, total)
   );
-  const payableAmountInPesewas = toPesewas(payableTotal);
 
   // Freeze the initialized payment amount: capture once, never silently move.
   useEffect(() => {
@@ -270,9 +269,10 @@ export default function CheckoutPage() {
   // A changed total blocks payment until the customer refreshes the order.
   const payableAmountChanged = hasPayableAmountChanged(initialPayableRef.current, payableTotal);
 
-  // Shipping eligibility for the selected destination (mock rates until the
-  // shipping workstream provides real carrier rates). Fail-closed: any
-  // unsupported destination or lookup failure blocks payment.
+  // Shipping eligibility for the selected destination (DB-backed carrier
+  // rates + per-vendor destination checks). Fail-closed: an unsupported
+  // destination, a vendor opt-out, or a lookup failure blocks payment; while
+  // the lookup is pending, international payment stays blocked too.
   useEffect(() => {
     if (deliveryMethod !== 'home') {
       setShippingEligibility(null);
@@ -281,7 +281,11 @@ export default function CheckoutPage() {
     let cancelled = false;
     setShippingEligibility(null);
     axios
-      .post('/api/checkout/international/shipping-options', { countryCode: destinationCode, subtotal })
+      .post('/api/checkout/international/shipping-options', {
+        countryCode: destinationCode,
+        subtotal,
+        region: isInternational ? intlAddress.region || undefined : undefined,
+      })
       .then(({ data }) => {
         if (!cancelled) setShippingEligibility({ supported: Boolean(data?.supported), mock: Boolean(data?.mock) });
       })
@@ -294,7 +298,7 @@ export default function CheckoutPage() {
     return () => {
       cancelled = true;
     };
-  }, [deliveryMethod, destinationCode, subtotal]);
+  }, [deliveryMethod, destinationCode, subtotal, isInternational, intlAddress.region]);
 
   // Validate total amount
   useEffect(() => {
@@ -343,6 +347,9 @@ export default function CheckoutPage() {
       const netTotal = Number(updated.order?.totalAmount);
       if (updated.order && Number.isFinite(netTotal) && netTotal > 0) {
         setCouponNetTotal(netTotal);
+        // Server-confirmed total: re-baseline the freeze so only silent
+        // moves (not this explicit coupon change) trip the guard.
+        initialPayableRef.current = netTotal;
         setAppliedCoupon({
           code: couponCode.trim(),
           discountType: updated.order.discountType,
@@ -484,10 +491,12 @@ export default function CheckoutPage() {
   };
 
   const validateShippingForm = () => {
-    // 🌍 Fail-closed: an unsupported destination or failed shipping lookup
-    // blocks checkout before any address validation runs.
-    if (deliveryMethod === 'home' && shippingEligibility && !shippingEligibility.supported) {
-      toast.error(shippingEligibility.message || 'Shipping is not available to this destination');
+    // 🌍 Fail-closed: an unsupported destination, a failed shipping lookup,
+    // or a still-pending lookup for an international destination blocks
+    // checkout before any address validation runs. (Domestic GH keeps the
+    // previous behavior; the server re-enforces eligibility at order write.)
+    if (deliveryMethod === 'home' && isInternational && shippingEligibility?.supported !== true) {
+      toast.error(shippingEligibility?.message || 'Checking shipping availability for this destination…');
       return false;
     }
     if (isInternational) {
@@ -596,11 +605,74 @@ export default function CheckoutPage() {
   };
 
  // Improved Paystack payment handler
-  const payWithPaystack = () => {
+  // Tracks an order created by the pre-charge sync when the page arrived
+  // without a pre-created order (direct /checkout navigation). The success
+  // handler below resolves through this so a second order is never created
+  // for the same charge.
+  const ensuredOrderIdRef = useRef<number | null>(null);
+
+  // Sync the destination address to the server BEFORE charging so the booked
+  // totalAmount already carries authoritative shipping (per-vendor
+  // eligibility + GHS carrier resolution) and quoted == charged == verified.
+  // Returns the authoritative total (GHS) or null when it cannot be
+  // established — the caller must not charge in that case.
+  const syncAddressTotals = async (): Promise<number | null> => {
+    const addressPayload = {
+      shippingAddress: {
+        ...effectiveShippingAddress,
+        deliveryMethod,
+        pickupStation: deliveryMethod === 'pickup' ? pickupStation : '',
+      },
+      billingAddress: sameAsShipping ? { ...effectiveShippingAddress } : billingAddress,
+    };
+    try {
+      const targetId = preOrderId ?? ensuredOrderIdRef.current;
+      if (targetId) {
+        // A charge already initiated for this order freezes its totals (the
+        // server rejects country changes past this point); charge the booked
+        // figure instead of re-syncing.
+        if (serverOrder?.paymentReference) {
+          const booked = Number(serverOrder.totalAmount);
+          return Number.isFinite(booked) && booked > 0 ? booked : null;
+        }
+        const updated = await updateOrder({ orderId: targetId, ...addressPayload }).unwrap() as unknown as {
+          order?: { id?: unknown; totalAmount?: unknown }; totalAmount?: unknown; id?: unknown;
+        };
+        const synced = Number(updated?.order?.totalAmount ?? updated?.totalAmount ?? NaN);
+        return Number.isFinite(synced) && synced > 0 ? synced : null;
+      }
+      if (cartItems.length === 0) return null;
+      const created = await createOrder({
+        ...addressPayload,
+        items: cartItems.map((item) => ({
+          name: (item as { title?: unknown; name?: unknown }).title ?? (item as { name?: unknown }).name,
+          qty: (item as { quantity?: unknown; qty?: unknown }).quantity ?? (item as { qty?: unknown }).qty ?? 1,
+          image: (item as { img?: unknown; image?: unknown }).img ?? (item as { image?: unknown }).image ?? null,
+          price: (item as { price?: unknown }).price,
+          product: (item as { id?: unknown; product?: unknown; productId?: unknown }).id
+            ?? (item as { product?: unknown }).product ?? (item as { productId?: unknown }).productId,
+        })),
+      } as unknown as Record<string, unknown>).unwrap() as unknown as {
+        order?: { id?: unknown; totalAmount?: unknown }; id?: unknown; totalAmount?: unknown;
+      };
+      const newId = Number(created?.order?.id ?? created?.id ?? NaN);
+      const synced = Number(created?.order?.totalAmount ?? created?.totalAmount ?? NaN);
+      if (!Number.isInteger(newId) || newId <= 0 || !Number.isFinite(synced) || synced <= 0) return null;
+      ensuredOrderIdRef.current = newId;
+      return synced;
+    } catch (err) {
+      const e = err as { data?: { message?: string; code?: string } } | undefined;
+      toast.error(e?.data?.message || 'Could not confirm the order total. Please check the destination and try again.');
+      return null;
+    }
+  };
+
+  const payWithPaystack = async () => {
     // 🌍 Fail-closed + amount-freeze guards: never initialize a charge for an
-    // unsupported destination, and never silently charge a moved total.
-    if (deliveryMethod === 'home' && shippingEligibility && !shippingEligibility.supported) {
-      toast.error(shippingEligibility.message || 'Shipping is not available to this destination');
+    // unsupported/unresolved international destination, and never silently
+    // charge a moved total.
+    if (deliveryMethod === 'home' && isInternational && shippingEligibility?.supported !== true) {
+      toast.error(shippingEligibility?.message || 'Checking shipping availability for this destination…');
       return;
     }
     if (payableAmountChanged) {
@@ -619,14 +691,20 @@ export default function CheckoutPage() {
       return;
     }
 
-    // Validate amount (server total once the order has loaded, otherwise the
-    // local cart fallback)
-    if (payableAmountInPesewas <= 0) {
-      toast.error('Invalid payment amount');
+    setIsProcessing(true);
+
+    // Authoritative pre-charge sync: the server re-books shipping/totals for
+    // the destination (and enforces vendor eligibility). Charge exactly that
+    // figure and re-baseline the freeze to it — the baseline always tracks
+    // the last server-confirmed total, so only SILENT moves trip the guard.
+    const syncedTotal = await syncAddressTotals();
+    if (syncedTotal === null || !Number.isFinite(syncedTotal) || syncedTotal <= 0) {
+      if (syncedTotal !== null) toast.error('Invalid payment amount');
+      setIsProcessing(false);
       return;
     }
-
-    setIsProcessing(true);
+    initialPayableRef.current = syncedTotal;
+    const syncedPesewas = Math.round(syncedTotal * 100);
 
     try {
       const paystack = makePaystackPopup();
@@ -634,8 +712,9 @@ export default function CheckoutPage() {
       const config = {
         key: paystackPublicKey,
         email: effectiveShippingAddress.email,
-        // Charge the order's server-side total, never raw localStorage prices.
-        amount: payableAmountInPesewas,
+        // Charge the pre-charge server sync total (authoritative shipping
+        // included), never raw localStorage prices.
+        amount: syncedPesewas,
         currency: "GHS",
         ref: `ORDER_${Date.now()}_${Math.random().toString(36).substring(7)}`,
         channels: paymentMethod === 'momo' 
@@ -707,7 +786,9 @@ export default function CheckoutPage() {
     savePendingPaymentRef(preOrderId, reference);
 
     // Hoisted so the catch block can still navigate/verify with it.
-    let orderId = preOrderId;
+    // Falls back to the order created by the pre-charge sync when the page
+    // arrived without a pre-created order — never create a second order.
+    let orderId = preOrderId ?? ensuredOrderIdRef.current;
 
     try {
       // SECURITY FIX (V-01): The coupon has already been applied to the server
@@ -758,6 +839,7 @@ export default function CheckoutPage() {
           order?: { id?: unknown; _id?: unknown }; id?: unknown; _id?: unknown;
         };
         orderId = Number(created.order?.id || created.order?._id || created.id || created._id) || orderId;
+        if (Number.isInteger(orderId) && (orderId as number) > 0) ensuredOrderIdRef.current = orderId;
       }
 
       // 2) Verify payment on backend. Now that the order carries the reference,
@@ -922,7 +1004,7 @@ export default function CheckoutPage() {
           </select>
           {isInternational ? (
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-              International delivery — charged in GHS via Paystack. Shipping rates shown are estimates until carrier rates land.
+              International delivery — charged in GHS via Paystack. The total is confirmed with the server before payment and includes the carrier shipping for your destination.
             </p>
           ) : (
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
@@ -948,8 +1030,8 @@ export default function CheckoutPage() {
             {shippingEligibility && !shippingEligibility.supported && (
               <p className="text-red-500 text-sm mt-3" role="alert">{shippingEligibility.message || 'Shipping is not available to this destination'}</p>
             )}
-            {shippingEligibility?.supported && shippingEligibility.mock && (
-              <p className="text-xs text-gray-500 mt-2">International shipping rates are estimated. The final amount is confirmed in GHS at payment.</p>
+            {isInternational && shippingEligibility === null && deliveryMethod === 'home' && (
+              <p className="text-xs text-gray-500 mt-2" role="status">Checking shipping availability for this destination…</p>
             )}
           </div>
         ) : (
@@ -1393,11 +1475,18 @@ export default function CheckoutPage() {
             </p>
           </div>
         )}
+        {deliveryMethod === 'home' && isInternational && shippingEligibility === null && (
+          <div className="bg-gray-50 rounded-xl p-4 border border-gray-200 mb-4">
+            <p className="text-sm text-gray-600" role="status">
+              Checking shipping availability for this destination…
+            </p>
+          </div>
+        )}
         <button
           onClick={payWithPaystack}
-          disabled={isProcessing || !isPaystackLoaded || payableAmountChanged || Boolean(deliveryMethod === 'home' && shippingEligibility && !shippingEligibility.supported)}
+          disabled={isProcessing || !isPaystackLoaded || payableAmountChanged || Boolean(deliveryMethod === 'home' && isInternational && shippingEligibility?.supported !== true)}
           className={`w-full py-4 rounded-lg font-semibold text-white transition-all ${
-            isProcessing || !isPaystackLoaded || payableAmountChanged || Boolean(deliveryMethod === 'home' && shippingEligibility && !shippingEligibility.supported)
+            isProcessing || !isPaystackLoaded || payableAmountChanged || Boolean(deliveryMethod === 'home' && isInternational && shippingEligibility?.supported !== true)
               ? 'bg-gray-400 cursor-not-allowed'
               : 'bg-green-600 hover:bg-green-700 transform hover:scale-[1.02]'
           }`}

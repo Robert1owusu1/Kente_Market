@@ -30,6 +30,7 @@ import { auditFromRequest } from "../utils/auditLog.js";
 import { recordFinancialEvent } from "../Services/ledgerService.js";
 import { newOrderNumber } from "../utils/orderNumber.js";
 import { validateDestinationAddress, validateDestinationCountry } from "../utils/destinationValidation.js";
+import { checkVendorDestination, getChargeableShippingGHS } from "../Services/shippingService.js";
 
 // Client-supplied order-item images are stored and rendered to other users (e.g.
 // in the vendor's order view), so they must not be able to carry javascript: or
@@ -260,6 +261,53 @@ export const restoreStockForOrder = async (items, { skipProductIds = new Set(), 
 // CRUD OPERATIONS (Your existing functions)
 // ============================================
 
+/**
+ * Resolve authoritative international shipping for an order write.
+ * Fail-closed: every vendor in the order must serve the destination
+ * (vendor_shipping_destinations row, missing row = not eligible), and the
+ * chargeable GHS amount comes from carrier tables / seeded fallback —
+ * never from client input, never domestic-flat, never parity FX.
+ *
+ * Returns { destCode } for domestic (GH) destinations — caller keeps the
+ * existing calcShipping path. For international destinations returns
+ * { destCode, shippingGHS } or { error } (caller must 4xx/5xx + roll back
+ * any reservation, mirroring the other creation gates).
+ *
+ * @param {string} destCode - validated ISO country code (non-GH)
+ * @param {any} shippingAddress - raw address (for region)
+ * @param {Array<number|string>} vendorIds - authoritative vendor ids
+ * @param {Array<{productId: number, qty: number}>} weightItems
+ * @param {number} subtotalGHS
+ */
+const resolveInternationalShipping = async (destCode, shippingAddress, vendorIds, weightItems, subtotalGHS) => {
+  const region = shippingAddress?.region || shippingAddress?.state || shippingAddress?.province || null;
+  for (const vendorId of vendorIds) {
+    let eligible = false;
+    try {
+      eligible = await checkVendorDestination(vendorId, destCode, region);
+    } catch (err) {
+      if (err && (err.code === 'ER_NO_SUCH_TABLE' || /doesn't exist/i.test(err.message || ''))) {
+        return { error: { status: 503, code: 'SHIPPING_TABLES_MISSING', message: 'International shipping is temporarily unavailable. Please try again later.' } };
+      }
+      throw err;
+    }
+    if (!eligible) {
+      return { error: { status: 400, code: 'VENDOR_DOES_NOT_SHIP', message: 'One or more items in your order cannot be shipped to this destination' } };
+    }
+  }
+  const ship = await getChargeableShippingGHS({
+    destinationCountry: destCode,
+    destinationRegion: region,
+    vendorId: vendorIds.length > 0 ? vendorIds[0] : null,
+    items: weightItems,
+    subtotal: subtotalGHS,
+  });
+  if (!ship.ok) {
+    return { error: { status: ship.status, code: ship.code, message: ship.message } };
+  }
+  return { destCode, shippingGHS: ship.amountGHS };
+};
+
 // @desc    Create new order
 // @route   POST /api/orders
 // @access  Private
@@ -285,11 +333,15 @@ export const addOrderItems = async (req, res) => {
     // validate-address endpoint and on address updates) — totals remain
     // server-authoritative below; client shipping/tax/total fields are
     // never trusted (see updateOrder stripping + recompute).
+    // destCountryCode is hoisted: non-GH destinations resolve authoritative
+    // international shipping (per-vendor eligibility + GHS charge) below.
+    let destCountryCode = "GH";
     if (req.body.shippingAddress && typeof req.body.shippingAddress === "object") {
       const dest = validateDestinationCountry(req.body.shippingAddress);
       if (!dest.valid) {
         return res.status(400).json({ message: dest.message, code: dest.code });
       }
+      destCountryCode = dest.countryCode || "GH";
     }
 
     // Normalize client items into {productId, quantity, ...}. We deliberately do
@@ -439,7 +491,38 @@ export const addOrderItems = async (req, res) => {
 
     // Authoritative totals — single source of truth is shared/pricing.js (the
     // same functions drive the cart page, so price shown == price charged).
-    const { subtotal, tax, shipping } = calcOrderTotals(items);
+    // 🌍 International destinations do NOT use the domestic flat shipping:
+    // every vendor must serve the destination (fail-closed) and the GHS
+    // charge comes from carrier tables / seeded fallback via
+    // resolveInternationalShipping. Quoted ≠ charged can never happen —
+    // verify-paystack checks paidKobo against the totalAmount booked here.
+    let { subtotal, tax, shipping } = calcOrderTotals(items);
+    if (destCountryCode !== "GH") {
+      const orderVendorIds = [...new Set(items.map((it) => it.vendorId).filter((v) => v != null))];
+      const intl = await resolveInternationalShipping(
+        destCountryCode,
+        req.body.shippingAddress,
+        orderVendorIds,
+        items.map((it) => ({ productId: it.product, qty: it.qty })),
+        subtotal
+      );
+      if (intl.error) {
+        // Reservation was taken above; hand the units back (coupon slots are
+        // only reserved later, so nothing to release there yet).
+        if (reservedUnits.size > 0) {
+          try {
+            await restoreStockForOrder(
+              [...reservedUnits].map(([productId, qty]) => ({ product: productId, qty })),
+              { reason: 'intl-shipping-rollback' }
+            );
+          } catch (restoreErr) {
+            console.warn(` Could not roll back reservation: ${restoreErr.message}`);
+          }
+        }
+        return res.status(intl.error.status).json({ message: intl.error.message, code: intl.error.code });
+      }
+      shipping = intl.shippingGHS;
+    }
 
     // Coupon: discount is computed server-side and never trusted from the client.
     // The code is validated against the DB, and the resulting discount is
@@ -474,7 +557,13 @@ export const addOrderItems = async (req, res) => {
       appliedCouponId = c.id;
     }
 
-    const totalAmount = calcOrderTotals(items, { discount }).total;
+    // NOTE: shipping above may be the international GHS resolution (not the
+    // domestic flat). Recompute the total from the authoritative parts so a
+    // non-GH destination is never booked at the domestic shipping figure.
+    // Discount normalization mirrors calcOrderTotals exactly, so domestic
+    // orders book byte-identical totals to before.
+    const appliedDiscount = round2(Math.min(Math.max(Number(discount) || 0, 0), subtotal));
+    const totalAmount = round2(Math.max(subtotal + tax + shipping - appliedDiscount, 0));
 
     // IMPORTANT: paymentStatus is always forced to "pending". A client must NEVER
     // be able to self-assert a payment as paid. Orders are marked paid only by the
@@ -759,11 +848,14 @@ export const updateOrder = async (req, res) => {
     // 🌍 Checkout workstream: validate destination on address updates.
     // Paid/refunded orders keep their financial snapshot immutable: a
     // destination change after payment is rejected (would alter shipping).
+    // newDestCode is hoisted for the pre-payment totals sync below.
+    let newDestCode = null;
     if (req.body.shippingAddress && typeof req.body.shippingAddress === "object") {
       const dest = validateDestinationAddress(req.body.shippingAddress);
       if (!dest.valid) {
         return res.status(400).json({ message: dest.message, code: dest.code });
       }
+      newDestCode = dest.countryCode;
       if (existingOrder.paymentStatus === "paid" || existingOrder.paymentStatus === "refunded") {
         return res.status(400).json({
           message: "Destination cannot be changed after payment",
@@ -828,6 +920,61 @@ export const updateOrder = async (req, res) => {
           }
           body.paymentReference = providedRef;
         }
+      }
+    }
+
+    // 🌍 Address-driven totals sync (owner path, pre-payment only): the
+    // storefront syncs the destination address BEFORE initializing the
+    // Paystack charge, so the booked totalAmount already carries the
+    // authoritative shipping and quoted == charged == verified. Non-GH
+    // re-runs per-vendor eligibility + GHS carrier resolution; GH restores
+    // the domestic flat. Paid/refunded were rejected above; when a
+    // paymentReference is already attached (charge initiated for the booked
+    // total) a destination-COUNTRY change is rejected, while same-country
+    // edits recompute to the identical figure. Admins set monetary fields
+    // explicitly and are never overwritten here.
+    if (req.user.role !== 'admin' && newDestCode && body.shippingAddress && typeof body.shippingAddress === "object") {
+      /**
+       * @param {any} v
+       */
+      const parseAddr = (v) => {
+        try {
+          return typeof v === "string" ? JSON.parse(v) : (v || {});
+        } catch { return {}; }
+      };
+      const storedCode = (() => {
+        const c = validateDestinationCountry(parseAddr(existingOrder.shippingAddress));
+        return c.valid ? c.countryCode : "GH";
+      })();
+      if (existingOrder.paymentReference && newDestCode !== storedCode) {
+        return res.status(400).json({
+          message: "Destination cannot be changed after payment has been initialized",
+          code: "ADDRESS_CHANGE_AFTER_CHARGE",
+        });
+      }
+      if (!existingOrder.paymentReference) {
+        const storedItems = Array.isArray(existingOrder.items) ? existingOrder.items : [];
+        const syncSubtotal = calcSubtotal(storedItems);
+        let syncedShipping = calcShipping(syncSubtotal);
+        if (newDestCode !== "GH") {
+          const storedVendorIds = [...new Set(storedItems.map((/** @type {any} */ it) => it?.vendorId).filter((/** @type {any} */ v) => v != null))];
+          const intl = await resolveInternationalShipping(
+            newDestCode,
+            body.shippingAddress,
+            storedVendorIds,
+            storedItems.map((/** @type {any} */ it) => ({ productId: it?.product ?? it?.productId, qty: it?.qty ?? it?.quantity ?? 1 })),
+            syncSubtotal
+          );
+          if (intl.error) {
+            return res.status(intl.error.status).json({ message: intl.error.message, code: intl.error.code });
+          }
+          syncedShipping = intl.shippingGHS;
+        }
+        const syncDiscount = Number(existingOrder.discount ?? 0);
+        const syncTax = Number(existingOrder.tax ?? calcTax(syncSubtotal));
+        const syncApplied = round2(Math.min(Math.max(syncDiscount, 0), syncSubtotal));
+        body.shippingCost = syncedShipping;
+        body.totalAmount = Math.max(0, round2(syncSubtotal + syncTax + syncedShipping - syncApplied));
       }
     }
 
@@ -904,7 +1051,10 @@ export const updateOrder = async (req, res) => {
       }
 
       const discount = calcCouponDiscount(subtotal, c.discountType, c.discountValue);
-      const shipping = Number(existingOrder.shippingCost ?? calcShipping(subtotal));
+      // Prefer the address-synced shipping when this same PUT also moved the
+      // destination (body.shippingCost set above); otherwise the stored order
+      // figure, exactly as before.
+      const shipping = Number(body.shippingCost ?? existingOrder.shippingCost ?? calcShipping(subtotal));
       const tax = Number(existingOrder.tax ?? calcTax(subtotal));
       // C2: `discount` is now capped at `subtotal` inside calcCouponDiscount,
       // but shipping and tax are read from the stored order rather than

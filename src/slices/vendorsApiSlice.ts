@@ -263,6 +263,33 @@ export const vendorsApiSlice = apiSlice.injectEndpoints({
       providesTags: ["VendorInsights"],
       keepUnusedDataFor: 300,
     }),
+
+    // Vendor shipping destinations
+    getVendorShippingDestinations: builder.query<{ destinations: Array<{ id: number; countryCode: string; region: string | null; isActive: boolean }> }, void>({
+      query: () => ({
+        url: `${VENDORS_URL}/shipping/destinations`,
+        method: "GET",
+      }),
+      providesTags: ["VendorShipping"],
+      keepUnusedDataFor: 300,
+    }),
+
+    addVendorShippingDestination: builder.mutation<{ destination: { vendorId: number; countryCode: string; region: string | null; isActive: boolean } }, { countryCode: string; region?: string; isActive?: boolean }>({
+      query: (data) => ({
+        url: `${VENDORS_URL}/shipping/destinations`,
+        method: "POST",
+        body: data,
+      }),
+      invalidatesTags: ["VendorShipping"],
+    }),
+
+    removeVendorShippingDestination: builder.mutation<{ message?: string }, number>({
+      query: (id) => ({
+        url: `${VENDORS_URL}/shipping/destinations/${id}`,
+        method: "DELETE",
+      }),
+      invalidatesTags: ["VendorShipping"],
+    }),
   }),
 });
 
@@ -289,4 +316,7 @@ export const {
   useGetVendorFulfilmentQuery,
   useGetVendorInsightsQuery,
   useGetAdminScorecardQuery,
+  useGetVendorShippingDestinationsQuery,
+  useAddVendorShippingDestinationMutation,
+  useRemoveVendorShippingDestinationMutation,
 } = vendorsApiSlice;

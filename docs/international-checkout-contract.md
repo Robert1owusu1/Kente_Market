@@ -1,48 +1,69 @@
-# International Checkout — Coordination Contract (checkout workstream)
+# International Checkout — Integration Contract (integrated)
 
-Owner: `feature/global-production-checkout`. Integration target: `feature/global-production`.
+Owner: `fix/global-production-integration` (unifies `feature/global-production-checkout`,
+`feature/global-production-shipping`, `feature/global-production-payments`).
+Status: integrated, DB-backed, fail-closed. This document supersedes the
+per-workstream contract drafts.
 
-## Endpoints (implemented, mounted at `/api/checkout/international` in `backend/server.js`)
+## Endpoints (mounted at `/api/checkout/international` in `backend/server.js`)
 
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
 | GET | `/countries` | public | Supported destinations `{code,name,currency,phoneExample,zipLabel}[]` + `chargeCurrency: "GHS"` |
-| GET | `/countries/:countryCode` | public | Per-country form config (required/optional fields, phone/zip patterns, regions) |
+| GET | `/countries/:countryCode` | public | Per-country form config + `chargeCurrency: "GHS"` |
 | POST | `/validate-address` | public | Full address validation → `{valid, normalized, currency, chargeCurrency}` or `400 {valid:false, errors}` |
-| POST | `/shipping-options` | public | **MOCK** rates `{supported,countryCode,currency,chargeCurrency,mock:true,options[]}` |
-| POST | `/vendor-eligibility` | `protect` | **Permissive mock** `{eligible:true,vendors[],mock:true}` |
+| POST | `/shipping-options` | public | DB-backed rates `{supported,countryCode,currency,chargeCurrency,mock:false,options[]}`; `502 {supported:false}` when FX is unavailable |
+| POST | `/vendor-eligibility` | `protect` | DB-backed `{eligible,vendors[]}` (fail-closed: missing row = not eligible) |
 
-## Assumptions (marked, not invented behavior)
+Supported destinations: GH/GB/US/CA/DE/NL only. Anything else → `UNSUPPORTED_DESTINATION` / `supported:false`.
 
-1. **Charge currency is always GHS.** `currency` fields from these endpoints are
-   DISPLAY-ONLY. No exchange rates exist anywhere in this workstream.
-2. **Shipping rates are mocks.** `getShippingOptions` returns placeholder
-   per-country standard rates. The shipping workstream replaces the internals of
-   `getShippingOptions` + `checkVendorShippingEligibility` with real carrier
-   rates and a `vendor_shipping_destinations` lookup. Response SHAPE is frozen.
-3. **Vendor eligibility is permissive.** All vendors return `eligible:true`
-   until the shipping workstream adds destination checks. Checkout blocks only
-   on `supported:false` / unknown country.
-4. **Mobile Money is Ghana-only.** International orders must use `card` through
-   the existing Paystack popup. No new PSP is introduced here.
-5. **Order totals stay server-authoritative.** `orderController.addOrderItems`
-   recomputes via `shared/pricing.js`; client totals are never trusted.
-   `updateOrder` rejects destination changes once `paymentStatus` is
-   `paid`/`refunded` (`PAID_SNAPSHOT_IMMUTABLE`).
+## What is real and what is not (read before launch copy)
 
-## Shared-file dependencies (coordinate before changing)
+1. **Charge and settlement currency is always GHS.** Paystack initialization,
+   verification (`verify-paystack`, webhook, stuck-order recovery, custom-request
+   checkout) and transfers/recipients all enforce `CHARGED_CURRENCY === "GHS"`
+   with exact equality. `currency` fields on shipping options (GBP/USD/CAD/EUR)
+   are DISPLAY-ONLY estimates.
+2. **Shipping rates are table rates, not live couriers.** `dhl/fedex/ups/ems`
+   exist only as `shipping_carriers` rows; there is no carrier API call,
+   tracking, label, or webhook integration. `apiConfig` is reserved, unread.
+3. **No multi-currency charging, no instant settlement.** Cross-border delivery
+   is collected in GHS; payouts go to GHS-capable accounts only (provider-side
+   failure is the safe failure). Escrow/ledger behavior is unchanged.
+4. **Mobile Money is Ghana-only.** International orders pay by card through the
+   existing Paystack popup.
+5. **Order totals are server-authoritative end to end.** `addOrderItems`
+   resolves international shipping in GHS (per-vendor eligibility +
+   `getChargeableShippingGHS`) and books it into `shippingCost`/`totalAmount`;
+   `updateOrder` re-syncs shipping on pre-payment address changes and freezes
+   the destination once a charge is initiated (`ADDRESS_CHANGE_AFTER_CHARGE`)
+   or paid (`PAID_SNAPSHOT_IMMUTABLE`). Client totals are never trusted.
+6. **FX is seeded manual data with fail-closed misses.** Missing/invalid rates
+   refuse the quote (`502 SHIPPING_FX_UNAVAILABLE`); rates >90 days old emit a
+   server log warning. Production should feed `exchange_rates` from a real
+   source; seeds are documented estimates.
 
-- `backend/controllers/orderController.js` — checkout adds destination gate only.
-  Payments workstream: keep the `paid/refunded` conditional-flip guards.
-- `backend/server.js` — one mount line only.
-- `shared/pricing.js` — NOT touched (shipping workstream owns zone rates).
-- `backend/Services/paystackservices.js`, `routes/paymentRoutes.js`,
-  escrow/refund services — NOT touched (payments workstream owns).
+## Operator checklist (must be true in production)
+
+- `npm run db:migrate --prefix backend` has run (creates `shipping_carriers`,
+  `shipping_rates`, `vendor_shipping_destinations`, `exchange_rates` + order/
+  address currency columns). Without these tables, international checkout
+  returns `503 SHIPPING_TABLES_MISSING`; domestic GH checkout is unaffected.
+- Vendors opt into each destination at `GET/POST/DELETE
+  /api/vendors/shipping/destinations` (`manage_orders` permission). Only GH is
+  backfilled; a vendor with no row for a country cannot sell there.
+- `FRONTEND_URL`, `COOKIE_SAME_SITE`, `TRUST_PROXY`, `JWT_SECRET` set; Paystack
+  live webhook endpoint configured (see `PRODUCTION_HARDENING_AUDIT.md` gates).
 
 ## Frontend contract
 
-- `InternationalAddressForm` posts `countryCode` + `addressLine1/city/region/postalCode`;
-  checkout maps it onto the legacy order payload (`address`, `countryCode`).
-- Payment-amount freeze: first finite `payableTotal` is captured in
-  `initialPayableRef`; any change blocks `payWithPaystack` until refresh.
+- `InternationalAddressForm` posts `countryCode` + address fields; checkout maps
+  it onto the legacy order payload.
+- Payment stays blocked for international home delivery until the
+  shipping-eligibility lookup resolves `supported:true` (pending counts as
+  blocked); failures show the server message inline.
+- Pre-charge sync: the address is PUT to the order BEFORE the Paystack popup
+  opens and the popup charges exactly the returned server total.
+- Amount freeze: the baseline tracks the last server-confirmed total (order
+  load, coupon apply, address sync); only silent moves block payment.
 - Ghana default (`GH`) preserves the existing form and MoMo flow unchanged.

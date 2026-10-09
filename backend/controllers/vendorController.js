@@ -1237,3 +1237,59 @@ export const getVendorInsights = async (req, res) => {
     res.status(500).json({ message: 'Failed to fetch demand insights' });
   }
 };
+
+// @desc    Get vendor's shipping destinations
+// @route   GET /api/vendors/shipping/destinations
+// @access  Private (vendor, manage_orders)
+export const getVendorShippingDestinations = async (req, res) => {
+  try {
+    const { getVendorShippingDestinations } = await import('../Services/shippingService.js');
+    const destinations = await getVendorShippingDestinations(req.user.id);
+    res.json({ destinations });
+  } catch (error) {
+    console.error('Error fetching vendor shipping destinations:', error);
+    res.status(500).json({ message: 'Failed to fetch shipping destinations' });
+  }
+};
+
+// @desc    Add or update a vendor shipping destination
+// @route   POST /api/vendors/shipping/destinations
+// @access  Private (vendor, manage_orders)
+export const addVendorShippingDestination = async (req, res) => {
+  try {
+    const { countryCode, region, isActive } = req.body;
+    if (!countryCode || typeof countryCode !== 'string') {
+      return res.status(400).json({ message: 'countryCode is required' });
+    }
+    const { setVendorShippingDestination } = await import('../Services/shippingService.js');
+    const destination = await setVendorShippingDestination(req.user.id, countryCode, region, isActive);
+    res.status(201).json({ message: 'Shipping destination added', destination });
+  } catch (error) {
+    console.error('Error adding vendor shipping destination:', error);
+    if (error.message.startsWith('Unsupported country') || error.message.startsWith('Invalid region')) {
+      return res.status(400).json({ message: error.message });
+    }
+    res.status(500).json({ message: 'Failed to add shipping destination' });
+  }
+};
+
+// @desc    Remove a vendor shipping destination
+// @route   DELETE /api/vendors/shipping/destinations/:id
+// @access  Private (vendor, manage_orders)
+export const removeVendorShippingDestination = async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ message: 'Invalid destination id' });
+    }
+    const { removeVendorShippingDestination } = await import('../Services/shippingService.js');
+    const deleted = await removeVendorShippingDestination(req.user.id, id);
+    if (!deleted) {
+      return res.status(404).json({ message: 'Destination not found' });
+    }
+    res.json({ message: 'Shipping destination removed' });
+  } catch (error) {
+    console.error('Error removing vendor shipping destination:', error);
+    res.status(500).json({ message: 'Failed to remove shipping destination' });
+  }
+};

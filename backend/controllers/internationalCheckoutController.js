@@ -1,26 +1,26 @@
 // @ts-check
 // controllers/internationalCheckoutController.js
-// Checkout workstream: international address validation, shipping eligibility
-// and shipping-price queries.
+// UNIFIED international checkout controller (checkout + shipping workstreams).
 //
-// Coordination contract (shipping/payments workstreams):
+// Endpoints:
 // - GET    /api/checkout/international/countries
 // - GET    /api/checkout/international/countries/:countryCode
 // - POST   /api/checkout/international/validate-address
-// - POST   /api/checkout/international/shipping-options   (mock rates until
-//          the shipping workstream provides real carrier rates)
-// - POST   /api/checkout/international/vendor-eligibility (permissive until
-//          the shipping workstream adds vendor_shipping_destinations checks)
+// - POST   /api/checkout/international/shipping-options   (DB-backed carrier
+//          rates via shippingService, with static fallback table)
+// - POST   /api/checkout/international/vendor-eligibility (DB-backed
+//          vendor_shipping_destinations checks, fail-closed)
 //
-// Currency safety: charge currency is always GHS. `currency` fields below
-// are DISPLAY-ONLY placeholders for the shipping mock and must never be
-// treated as chargeable amounts. No exchange rates are invented here.
+// Currency safety: charge currency is always GHS (see CHARGE_CURRENCY).
+// `currency` fields on shipping options are DISPLAY-ONLY and must never be
+// treated as chargeable amounts. Supported destinations: GH/GB/US/CA/DE/NL.
 
 import {
   SUPPORTED_DESTINATIONS,
   CHARGE_CURRENCY,
   normalizeDestinationCode,
 } from "../utils/destinationValidation.js";
+import { getShippingOptions as getShippingOptionsService, checkVendorDestination } from "../Services/shippingService.js";
 
 /**
  * Per-country address field requirements and validation patterns.
@@ -41,6 +41,9 @@ import {
  * This is the single source of truth for international address forms.
  * Exported (string-keyed map) so shipping-side code can validate destinations
  * against the exact same table.
+ * NOTE: zip patterns use optional-space (` ?`) form and values are tested
+ * after upper-casing and whitespace-stripping, so "SW1A 1AA" and "SW1A1AA"
+ * both validate.
  *
  * @type {Record<string, CountryConfig>}
  */
@@ -133,6 +136,18 @@ export const COUNTRY_CONFIG = {
 };
 
 /**
+ * Normalize a caller-supplied country identifier to a COUNTRY_CONFIG key.
+ * Accepts ISO codes (any case/whitespace) and the legacy "Ghana" name.
+ * @param {unknown} countryCode
+ * @returns {string | null}
+ */
+const toCountryCode = (countryCode) => {
+  if (typeof countryCode !== "string") return null;
+  if (countryCode.trim().toLowerCase() === "ghana") return "GH";
+  return normalizeDestinationCode(countryCode);
+};
+
+/**
  * Get list of supported countries for checkout
  *
  * @param {import("express").Request} _req
@@ -163,14 +178,15 @@ export const getSupportedCountries = async (_req, res) => {
 export const getAddressConfig = async (req, res) => {
   try {
     const { countryCode } = req.params;
-    const config = COUNTRY_CONFIG[String(countryCode || "").toUpperCase()];
+    const code = toCountryCode(countryCode);
+    const config = code ? COUNTRY_CONFIG[code] : null;
 
-    if (!config) {
+    if (!config || !code) {
       return res.status(404).json({ message: "Country not supported" });
     }
 
     res.json({
-      countryCode: String(countryCode).toUpperCase(),
+      countryCode: code,
       name: config.name,
       currency: config.currency,
       chargeCurrency: CHARGE_CURRENCY,
@@ -197,7 +213,7 @@ export const getAddressConfig = async (req, res) => {
 export const validateAddress = async (req, res) => {
   try {
     const { countryCode, ...addressData } = req.body;
-    const code = normalizeDestinationCode(countryCode === "Ghana" ? "GH" : countryCode);
+    const code = toCountryCode(countryCode);
     const config = code ? COUNTRY_CONFIG[code] : null;
 
     if (!config || !code) {
@@ -228,7 +244,6 @@ export const validateAddress = async (req, res) => {
         errors[field] = `${field} is required`;
         continue;
       }
-
       // Field-specific validation
       switch (field) {
         case "phone": {
@@ -245,7 +260,9 @@ export const validateAddress = async (req, res) => {
         case "postalCode":
         case "zipCode": {
           const zipRegex = new RegExp(config.zipPattern, "i");
-          if (!zipRegex.test(value)) {
+          // Normalize-then-test: strip all whitespace so "SW1A 1AA" and
+          // "SW1A1AA" both validate against the optional-space pattern.
+          if (!zipRegex.test(value.toUpperCase().replace(/\s/g, ""))) {
             errors[field] = `Invalid ${config.zipLabel} format`;
           } else {
             normalized[field] = value.toUpperCase().trim();
@@ -281,6 +298,7 @@ export const validateAddress = async (req, res) => {
           }
           break;
         }
+
         default:
           break;
       }
@@ -293,7 +311,7 @@ export const validateAddress = async (req, res) => {
       if (value) {
         if (field === "zipCode" || field === "postalCode") {
           const zipRegex = new RegExp(config.zipPattern, "i");
-          if (!zipRegex.test(value)) {
+          if (!zipRegex.test(value.toUpperCase().replace(/\s/g, ""))) {
             errors[field] = `Invalid ${config.zipLabel} format`;
           } else {
             normalized[field] = value.toUpperCase().trim();
@@ -388,17 +406,19 @@ function normalizePhone(phone, countryCode) {
 
 /**
  * Get shipping options for a destination and cart.
- * MOCK until the shipping workstream provides real carrier rates.
- * Amounts are informational; the order total remains server-authoritative
- * in GHS via shared/pricing.js in orderController.
+ * DB-backed carrier rates via shippingService (fail-closed per-vendor
+ * eligibility); amounts are informational display values, the order total
+ * remains server-authoritative in GHS via shared/pricing.js in orderController.
  *
  * @param {import("express").Request} req
  * @param {import("express").Response} res
  */
 export const getShippingOptions = async (req, res) => {
   try {
-    const { countryCode, subtotal } = req.body;
-    const code = normalizeDestinationCode(countryCode);
+    const { countryCode, subtotal, region } = req.body;
+    /** @type {any[]} */
+    const items = Array.isArray(req.body.items) ? req.body.items : [];
+    const code = toCountryCode(countryCode);
     const config = code ? COUNTRY_CONFIG[code] : null;
 
     if (!config || !code) {
@@ -408,16 +428,57 @@ export const getShippingOptions = async (req, res) => {
       });
     }
 
-    const shippingOptions = getDefaultShippingOptions(code, subtotal);
+    // Fail-closed: EVERY vendor in the cart must be eligible to ship to this
+    // destination — not just the first one. A multi-vendor cart must never
+    // receive options (or a green light) because vendor #1 ships there while
+    // vendor #2 has opted out.
+    const vendorIds = [...new Set(
+      (items || []).map(it => it.vendorId).filter(v => v != null)
+    )];
 
-    res.json({
-      supported: true,
-      countryCode: code,
+    for (const vendorId of vendorIds) {
+      const eligible = await checkVendorDestination(vendorId, code, region);
+      if (!eligible) {
+        return res.json({
+          supported: false,
+          message: `This vendor does not ship to ${code}${region ? ` (${region})` : ""}`,
+          countryCode: code,
+          currency: config.currency,
+          chargeCurrency: CHARGE_CURRENCY,
+          options: [],
+        });
+      }
+    }
+
+    // Eligibility above has already cleared every vendor. Rate lookup prefers
+    // the first vendor's override and falls back to platform defaults.
+    // NOTE: multi-vendor rate combination (summing per-vendor legs) is NOT
+    // implemented — see orderController which re-resolves the authoritative
+    // GHS shipping per vendor at order creation.
+    const vendorId = vendorIds.length > 0 ? vendorIds[0] : null;
+
+    const result = await getShippingOptionsService({
+      destinationCountry: code,
+      destinationRegion: region,
+      vendorId,
+      items: items || [],
+      subtotal: subtotal || 0,
       currency: config.currency,
-      chargeCurrency: CHARGE_CURRENCY,
-      mock: true,
-      options: shippingOptions
     });
+
+    // A missing FX rate is a fail-closed outage, never parity pricing.
+    if (result && /** @type {any} */ (result).fxUnavailable) {
+      return res.status(502).json({
+        message: "Shipping rates are temporarily unavailable for this currency",
+        supported: false,
+        countryCode: code,
+        currency: config.currency,
+        chargeCurrency: CHARGE_CURRENCY,
+        options: [],
+      });
+    }
+
+    res.json({ ...result, chargeCurrency: CHARGE_CURRENCY, mock: false });
   } catch (error) {
     console.error("getShippingOptions error:", error.message);
     res.status(500).json({ message: "Failed to fetch shipping options" });
@@ -425,68 +486,33 @@ export const getShippingOptions = async (req, res) => {
 };
 
 /**
- * Default shipping options per country (MOCK placeholder until the shipping
- * workstream replaces it with real carrier integration).
- *
- * @param {string} countryCode
- * @param {number|string} subtotal
- * @returns {Array<{id: string, name: string, amount: number, currency: string, transitDaysMin: number, transitDaysMax: number, freeThreshold: number, isFree: boolean}>}
- */
-function getDefaultShippingOptions(countryCode, subtotal) {
-  // Placeholder rates. The shipping workstream will replace with real rates.
-  /** @type {Record<string, {standard: number, freeThreshold: number, currency: string, transitDays: string}>} */
-  const rates = {
-    GH: { standard: 15, freeThreshold: 200, currency: "GHS", transitDays: "2-5" },
-    GB: { standard: 12, freeThreshold: 100, currency: "GBP", transitDays: "5-10" },
-    US: { standard: 18, freeThreshold: 150, currency: "USD", transitDays: "7-14" },
-    CA: { standard: 20, freeThreshold: 180, currency: "CAD", transitDays: "7-14" },
-    DE: { standard: 15, freeThreshold: 120, currency: "EUR", transitDays: "5-10" },
-    NL: { standard: 14, freeThreshold: 110, currency: "EUR", transitDays: "5-10" }
-  };
-
-  const rate = rates[countryCode] || rates.GH;
-  const numericSubtotal = Number(subtotal) || 0;
-  const isFree = numericSubtotal >= rate.freeThreshold;
-
-  return [
-    {
-      id: "standard",
-      name: "Standard Shipping",
-      amount: isFree ? 0 : rate.standard,
-      currency: rate.currency,
-      transitDaysMin: parseInt(rate.transitDays.split("-")[0], 10),
-      transitDaysMax: parseInt(rate.transitDays.split("-")[1], 10),
-      freeThreshold: rate.freeThreshold,
-      isFree
-    }
-  ];
-}
-
-/**
  * Check if a vendor can ship to a destination country.
- * Permissive until the shipping workstream adds the
- * vendor_shipping_destinations table checks.
+ * Uses vendor_shipping_destinations table for per-vendor eligibility
+ * (fail-closed: a missing row means NOT eligible).
  *
  * @param {import("express").Request} req
  * @param {import("express").Response} res
  */
 export const checkVendorShippingEligibility = async (req, res) => {
   try {
-    const { vendorIds, countryCode } = req.body;
-    const code = normalizeDestinationCode(countryCode);
+    const { countryCode, region } = req.body;
+    /** @type {any[]} */
+    const vendorIds = Array.isArray(req.body.vendorIds) ? req.body.vendorIds : [];
+    const code = toCountryCode(countryCode);
 
-    if (!code) {
+    if (!code || !COUNTRY_CONFIG[code]) {
       return res.json({ eligible: false, reason: "Country not supported" });
     }
 
-    const ids = Array.isArray(vendorIds) ? vendorIds : [];
-    const results = ids.map(vendorId => ({
-      vendorId,
-      eligible: true,
-      countryCode: code
-    }));
+    const results = await Promise.all(
+      vendorIds.map(async (vendorId) => {
+        const eligible = await checkVendorDestination(vendorId, code, region);
+        return { vendorId, eligible, countryCode: code, region: region || null };
+      })
+    );
 
-    res.json({ eligible: true, vendors: results, mock: true });
+    const allEligible = results.every(r => r.eligible);
+    res.json({ eligible: allEligible, vendors: results });
   } catch (error) {
     console.error("checkVendorShippingEligibility error:", error.message);
     res.status(500).json({ message: "Failed to check shipping eligibility" });

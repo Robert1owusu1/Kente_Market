@@ -29,6 +29,9 @@ import {
   getVendorDirectory,
   updateVendorVerification,
   getAdminVendorScorecard,
+  getVendorShippingDestinations,
+  addVendorShippingDestination,
+  removeVendorShippingDestination,
 } from '../controllers/vendorController.js';
 import {
   getVendorOrders,
@@ -104,6 +107,15 @@ router.route('/withdraw').post(vendorOrStaff, requireVendorPermission('view_earn
 // POST /api/vendors/orders/:id/status → advance fulfilment / post progress
 router.route('/orders').get(vendorOrStaff, requireVendorPermission('view_customers'), getVendorOrders);
 router.route('/orders/:id/status').post(vendorOrStaff, requireVendorPermission('manage_orders'), updateVendorOrderStatus);
+
+// GET /api/vendors/shipping/destinations → vendor's shipping destinations
+// POST /api/vendors/shipping/destinations → add/update shipping destination
+// DELETE /api/vendors/shipping/destinations/:id → remove shipping destination
+router.route('/shipping/destinations')
+  .get(vendorOrStaff, requireVendorPermission('manage_orders'), getVendorShippingDestinations)
+  .post(vendorOrStaff, requireVendorPermission('manage_orders'), addVendorShippingDestination);
+router.route('/shipping/destinations/:id')
+  .delete(vendorOrStaff, requireVendorPermission('manage_orders'), removeVendorShippingDestination);
 
 // GET /api/vendors → list all vendors (admin only)
 router.route('/').get(protect, admin, listVendors);
