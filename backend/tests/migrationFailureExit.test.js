@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const backendDir = join(dirname(fileURLToPath(import.meta.url)), '..');
-const SCRATCH = `km_migfail_${process.pid}_${Date.now()}`;
+const SCRATCH = `km_scratch_migfail_${process.pid}_${Date.now()}`;
 
 let pool = null;
 let skip = false;

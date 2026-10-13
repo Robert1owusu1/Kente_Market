@@ -161,13 +161,13 @@ jobs:
       - name: Install backend deps
         run: npm ci --prefix backend
 
-      - name: Allow scratch databases for migration-failure tests
-        # tests/migrationFailureExit.test.js creates and drops km_migfail_*
-        # databases to prove a failing migration exits non-zero. Without this
-        # grant the suite skips itself in CI (ER_DBACCESS_DENIED_ERROR).
+      - name: Prepare the test database (scratch schemas, triggers)
+        # As root on this disposable service only (see the script header):
+        # grant km_scratch_* for the schema tests and allow CREATE TRIGGER
+        # under binary logging for payoutLifecycle test 4.
         env:
           CI_DB_ROOT_PASSWORD: ci-only-root-password-not-a-secret
-        run: node backend/scripts/ci-grant-scratch-db.mjs
+        run: node backend/scripts/ci-prepare-test-db.mjs
 
       - name: Create schema and run every migration
         # db:setup = setupDB.js (load branding_house.sql) && db:migrate (the
@@ -182,8 +182,10 @@ jobs:
         # would still look green. In this job every suite must run.
         run: |
           set -o pipefail
-          npm test --prefix backend 2>&1 | tee /tmp/backend-tests.log
+          status=0
+          npm test --prefix backend 2>&1 | tee /tmp/backend-tests.log || status=$?
           if grep -nE "# (SKIP|TODO)" /tmp/backend-tests.log; then
             echo "::error::a test suite skipped in the database job (see lines above)"
             exit 1
           fi
+          exit $status

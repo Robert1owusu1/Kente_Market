@@ -75,7 +75,9 @@ const MARK = `FINFXT-${ts}`; // orders.notes marker so cleanup is scoped to us
 // Disposable schema owned by THIS suite: the executed-migration cases and the
 // missing-table probes run here, so they can never disturb other suites (or
 // the shared dev database) while `node --test` runs files in parallel.
-const SCRATCH = 'finaud_fresh_mig';
+// km_scratch_ prefix: the only databases the CI user may create/drop
+// (scripts/ci-prepare-test-db.mjs).
+const SCRATCH = 'km_scratch_fx_fresh_mig';
 let scratchReady = false;
 const state = {
   customer: null,
@@ -286,8 +288,13 @@ after(async () => {
           password: process.env.DB_PASSWORD || '',
           port: process.env.DB_PORT || 3306,
         });
-        await conn.query(`DROP DATABASE IF EXISTS \`${SCRATCH}\``);
-        await conn.end();
+        // Close in finally: a refused DROP used to skip conn.end(), and the
+        // open socket kept the test process alive forever (CI timeout).
+        try {
+          await conn.query(`DROP DATABASE IF EXISTS \`${SCRATCH}\``);
+        } finally {
+          await conn.end().catch(() => {});
+        }
       } catch (err) {
         console.warn(` finFxThreshold scratch drop skipped: ${err.message}`);
       }

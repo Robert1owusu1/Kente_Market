@@ -170,3 +170,17 @@ Reports: `LOCAL_SYSTEM_TEST_REPORT.md`, `DATABASE_AND_FINANCIAL_INTEGRITY_REPORT
 Release-set verification: a clean copy of exactly the files a commit would contain (tracked + 87 untracked, no
 `.env`, no uploads) → fresh `db:setup` exit 0, backend **913/913** (0 `# SKIP`), tsc 0/0, eslint 0 errors,
 vitest 89/89, build OK, gitleaks 0 (after deriving test fixture secrets at runtime). CI DB-less rehearsal: 0 fail.
+
+---
+
+## CI run on PR (2026-10-13) — MySQL job cancelled at 30 min; root causes and fixes
+
+| ID | Finding | Fix | Evidence |
+|---|---|---|---|
+| CI-2 | `internationalFxThreshold.test.js` (never in CI before) leaked a MySQL connection when `DROP DATABASE` was refused for the unprivileged CI user → the test process never exited → job hit its 30-min timeout | connection closed in `finally` | CI-identical local run (no `.env`, CI env only, `ci` user, `npm test` concurrency 4, the workflow's own step script under `bash -eo pipefail`): hang reproduced (>10 min, idle `ci` connection), gone after the fix (~2 min) |
+| CI-3 | Same suite's scratch DB `finaud_fresh_mig` outside the CI grant (5 failures behind the hang) | scratch schemas renamed to `km_scratch_*`; one grant covers both suites | same run: suite passes as `ci` |
+| CI-4 | `payoutLifecycle` test 4 creates a trigger; MySQL 8.4 binary logging requires SUPER for that (`ER_BINLOG_CREATE_ROUTINE_NEED_SUPER`) | `scripts/ci-prepare-test-db.mjs` (renamed from `ci-grant-scratch-db.mjs`) also sets `log_bin_trust_function_creators=1` on the disposable service | passes as `ci` |
+| CI-5 | My first skip-guard version could mask a test failure when the shell is not `-e` | explicit `status` capture; exits with the suite's status after the skip check | step script tested: pass→0, fail→1, skip→1 under both `bash -eo pipefail` and plain bash |
+| CI-6 (known flake, open) | node:test runner "Unable to deserialize cloned data" on `verification-fixes.test.js` in 1 of 5 CI-identical runs at concurrency 4 (file passes alone 3/3; runner IPC, not test logic) | none — re-run the job if seen; consider `--test-concurrency=2` if it recurs | 4 of 5 full runs 913/913 |
+
+Final CI-identical result: 913/913, exit 0, 0 `# SKIP` (3 consecutive runs after the fixes, plus the workflow-script run).
