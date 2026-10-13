@@ -3,6 +3,7 @@
 
 import helmet from 'helmet';
 import hpp from 'hpp';
+import { frontendOrigins } from '../config/frontendOrigins.js';
 
 /**
  * Setup all security middleware
@@ -61,10 +62,7 @@ export const setupSecurity = (app) => {
 
 // CORS configuration
   app.use((req, res, next) => {
-    const allowedOrigins = (process.env.FRONTEND_URL || '')
-      .split(',')
-      .map(o => o.trim())
-      .filter(Boolean);
+    const allowedOrigins = frontendOrigins();
     // Dev convenience only: production with an empty allow-list fails at boot
     // (server.js) rather than silently falling back to a localhost-only CORS.
     if (allowedOrigins.length === 0 && process.env.NODE_ENV !== 'production') {

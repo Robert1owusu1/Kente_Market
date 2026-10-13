@@ -65,10 +65,16 @@ const sniffWebp = (b) => {
   if (b.toString('ascii', 0, 4) !== 'RIFF' || b.toString('ascii', 8, 12) !== 'WEBP') return null;
   const chunk = b.toString('ascii', 12, 16);
   if (chunk === 'VP8 ') {
-    // Lossy: 3-byte frame tag (0x9D 0x01 0x2A) at 20..22; 14-bit width/height LE.
-    if (b[20] !== 0x9d || b[21] !== 0x01 || b[22] !== 0x2a) return null;
-    const width = (b.readUInt16LE(23) & 0x3fff);
-    const height = (b.readUInt16LE(25) & 0x3fff);
+    // Lossy: the VP8 payload starts with a 3-byte frame tag @20, then the
+    // 3-byte start code 0x9D 0x01 0x2A @23, then 16-bit LE width/height
+    // (14 bits each) @26/@28. (This branch used to read the start code at
+    // @20 and the dimensions at @23/@25 — three bytes adrift — so EVERY
+    // real lossy WebP was rejected as "not an image" by every route that
+    // consults the sniffer. Only the synthetic VP8X fixtures in the test
+    // suite passed, which is why nothing caught it.)
+    if (b[23] !== 0x9d || b[24] !== 0x01 || b[25] !== 0x2a) return null;
+    const width = (b.readUInt16LE(26) & 0x3fff);
+    const height = (b.readUInt16LE(28) & 0x3fff);
     return { format: 'webp', width, height };
   }
   if (chunk === 'VP8L') {

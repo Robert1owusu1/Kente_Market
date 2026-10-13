@@ -281,39 +281,43 @@ describe('P-GP-5: no exchange-rate machinery exists', () => {
 });
 
 describe('P-GP-6: idempotency keys are stable (changing one double-books money)', () => {
-  test('the charge.collected dedupeKey shape is unchanged', () => {
-    // financial_events has UNIQUE(dedupeKey). This exact template is what
-    // makes a replayed webhook a no-op. Editing it means an existing row no
-    // longer matches, so the NEXT redelivery books the charge a second time.
-    const src = read('routes/paymentRoutes.js');
+  // The charge journal moved into the shared applyPaidOrderSideEffects (C-3),
+  // which every paid path calls. The guarantees pinned here are unchanged.
+  test('the charge.collected dedupeKey value is unchanged', () => {
+    // financial_events has UNIQUE(dedupeKey). The VALUE `charge.collected:<ref>`
+    // is what makes a replayed webhook a no-op against rows written before
+    // the refactor; changing it would let the NEXT redelivery book twice.
+    const src = read('Services/escrowService.js');
     assert.equal(
-      src.includes('dedupeKey: `charge.collected:${reference}`'),
+      src.includes('`charge.collected:${order.paymentReference}`'),
       true,
       'charge.collected dedupeKey template changed'
     );
   });
 
-  test('the charge.collected journal is written on both the webhook and verify paths', () => {
-    const src = read('routes/paymentRoutes.js');
-    const count = (src.match(/eventType: 'charge\.collected'/g) || []).length;
-    assert.equal(count, 2, `expected exactly 2 charge.collected writes, found ${count}`);
+  test('the charge.collected journal is written once, and both webhook and verify reach it', () => {
+    const escrow = read('Services/escrowService.js');
+    const routes = read('routes/paymentRoutes.js');
+    const count = (escrow.match(/eventType: 'charge\.collected'/g) || []).length;
+    assert.equal(count, 1, `expected exactly 1 shared charge.collected write, found ${count}`);
+    assert.equal(/eventType: 'charge\.collected'/.test(routes), false, 'routes must not journal charges on their own');
+    // FV-13: the webhook now runs the shared routine after releasing its attempt
+    // connection, keyed on the id THIS delivery flipped.
+    assert.equal(routes.includes("applyPaidOrderSideEffects(webhookFlippedOrderId, { source: 'webhook', charge: event.data })"), true);
+    assert.equal(routes.includes("applyPaidOrderSideEffects(orderId, { source: 'verify', charge: data })"), true);
   });
 
-  test('both charge.collected writes pass an explicit currency and a real snapshot', () => {
-    const src = read('routes/paymentRoutes.js');
-    assert.equal(
-      (src.match(/currency: CHARGED_CURRENCY/g) || []).length >= 2,
-      true,
-      'charge.collected writes must state their currency explicitly'
-    );
-    assert.equal(
-      (src.match(/buildChargeSnapshot\(/g) || []).length,
-      2,
-      'both charge.collected writes must persist a redacted provider snapshot'
-    );
+  test('the charge.collected write states its currency and persists the real provider snapshot', () => {
+    const escrow = read('Services/escrowService.js');
+    const fn = escrow.slice(escrow.indexOf('export const applyPaidOrderSideEffects'));
+    const journal = fn.slice(0, fn.indexOf("await step('escrowHeld'"));
+    assert.equal(journal.includes('currency: CHARGED_CURRENCY'), true, 'charge.collected must state its currency explicitly');
+    assert.equal(journal.includes('buildChargeSnapshot(charge ??'), true,
+      'the snapshot is built from the verified provider charge the caller passed in');
     // The old stub payloads must be gone — they recorded a label, not evidence.
-    assert.equal(src.includes("payload: { event: 'charge.success' }"), false);
-    assert.equal(src.includes("payload: { event: 'verify-paystack fallback' }"), false);
+    const routes = read('routes/paymentRoutes.js');
+    assert.equal(routes.includes("payload: { event: 'charge.success' }"), false);
+    assert.equal(routes.includes("payload: { event: 'verify-paystack fallback' }"), false);
   });
 });
 

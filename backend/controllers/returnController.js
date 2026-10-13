@@ -4,7 +4,7 @@ import ReturnRequest from "../models/returnModel.js";
 import Order from "../models/orderModel.js";
 import pool from "../config/db.js";
 import { voidEscrowForOrder } from "../Services/escrowService.js";
-import { voidVendorEscrow } from "../Services/escrowService.js";
+import { voidVendorEscrow, reversePlatformRevenueForRefund, readCommissionSnapshot } from "../Services/escrowService.js";
 import { getOrderVendorIds } from "./vendorOrderController.js";
 import { round2 } from "../../shared/pricing.js";
 import paystackServices from "../Services/paystackservices.js";
@@ -12,6 +12,7 @@ import { recordFinancialEvent } from "../Services/ledgerService.js";
 import Coupon from "../models/couponModel.js";
 import { restoreStockForOrder } from "./orderController.js";
 import isValidId from "../utils/isValidId.js";
+import { buildRefundClaim } from "../utils/refundClaim.js";
 
 const VALID_STATUSES = ["pending", "approved", "rejected", "completed"];
 const VALID_REASONS = ["damaged", "wrong_item", "not_as_described", "changed_mind", "other"];
@@ -38,6 +39,10 @@ export const createReturnRequest = async (req, res) => {
     // Returns only make sense for orders that were actually paid for.
     if (order.paymentStatus !== "paid") {
       return res.status(400).json({ message: "You can only request a return on a paid order" });
+    }
+    // R13: orders paid with referral earnings are final (no refund at all).
+    if (order.paymentMethod === "referral_credit") {
+      return res.status(409).json({ message: "Orders paid with referral earnings are final and cannot be refunded", code: "REFERRAL_CREDIT_FINAL" });
     }
 
     // Prevent duplicate open return requests against the same order (avoids an
@@ -150,11 +155,31 @@ const validatePartialRefund = async (orderId, vendorId, amount) => {
   if (ownLines.length === 0) {
     return { valid: false, message: 'No refundable lines found for that vendor' };
   }
-  const ownSubtotal = round2(ownLines.reduce((sum, it) => sum + (Number(it.price) || 0) * (parseInt(it.qty ?? it.quantity, 10) || 1), 0));
+  const lineTotal = (/** @type {any} */ it) => (Number(it.price) || 0) * (parseInt(it.qty ?? it.quantity, 10) || 1);
+  const grossLines = ownLines.reduce((sum, it) => sum + lineTotal(it), 0);
+  // FV-3: the customer paid for these lines AFTER the order discount, which
+  // is apportioned pro rata over all lines — the same factor
+  // createEscrowAllocations applies to the vendor's allocation. Refunding the
+  // gross line value returned more than was paid for them.
+  // Orders allocated by current code carry a commission snapshot: what the
+  // customer paid for a line is P - Da - Ds (admin coupons are split by
+  // platform commission, seller coupons by price — REFERRAL_SYSTEM_DESIGN.md §3).
+  const snapshot = await readCommissionSnapshot(orderId);
+  let ownSubtotal;
+  if (snapshot) {
+    ownSubtotal = round2(snapshot.lines
+      .filter((l) => l.vendorId != null && parseInt(String(l.vendorId), 10) === vendorId)
+      .reduce((sum, l) => sum + (Number(l.P) || 0) - (Number(l.Da) || 0) - (Number(l.Ds) || 0), 0));
+  } else {
+    const orderGross = rawItems.reduce((sum, it) => sum + lineTotal(it), 0);
+    const discount = Math.max(0, Number(order.discount) || 0);
+    const netFactor = orderGross > 0 ? Math.max(0, 1 - discount / orderGross) : 1;
+    ownSubtotal = round2(grossLines * netFactor);
+  }
   if (Math.abs(amount - ownSubtotal) >= 0.01) {
     return {
       valid: false,
-      message: `Partial refunds cover the vendor's full lines (GH₵${ownSubtotal.toFixed(2)}). Item-level slices are not supported.`,
+      message: `Partial refunds cover the vendor's full lines after the order discount (GH₵${ownSubtotal.toFixed(2)}). Item-level slices are not supported.`,
     };
   }
   const remaining = round2((Number(order.totalAmount) || 0) - (Number(order.refundedAmount) || 0));
@@ -178,6 +203,12 @@ export const updateReturnStatus = async (req, res) => {
     const existing = await ReturnRequest.findById(req.params.id);
     if (!existing) {
       return res.status(404).json({ message: "Return request not found" });
+    }
+    if (status === 'approved' && existing.orderId) {
+      const [[o]] = await pool.execute(`SELECT paymentMethod FROM orders WHERE id = ?`, [existing.orderId]);
+      if (o?.paymentMethod === 'referral_credit') {
+        return res.status(409).json({ message: 'Orders paid with referral earnings are final and cannot be refunded', code: 'REFERRAL_CREDIT_FINAL' });
+      }
     }
 
     // P1 partial pre-validation (read-only): all 400s must fire BEFORE the
@@ -330,7 +361,13 @@ export const updateReturnStatus = async (req, res) => {
       return res.json({ message: 'Partial vendor refund issued', returnRequest: updatedReturn, refundedAmount: amount, vendorId: partialVendorId });
     }
 
+    // What happened to the customer's money on approval. Reported to the
+    // admin: a rejected or unknown refund used to be logged server-side only
+    // while the response said the return was simply "updated".
+    /** @type {'not-applicable' | 'issued' | 'rejected' | 'unknown' | 'not-refundable'} */
+    let refundOutcome = 'not-applicable';
     if (status === 'approved' && existing.status === 'pending' && existing.orderId) {
+      refundOutcome = 'not-refundable';
       // Void escrow so funds are not paid to the vendor: held allocations are
       // voided and already-credited (advance) funds are clawed back from the
       // vendor wallet. This keeps a vendor from being paid for a fully
@@ -352,7 +389,10 @@ export const updateReturnStatus = async (req, res) => {
           // without them this guard compares `undefined === 0` and never fires.
           const [claimResult] = await pool.execute(
             `UPDATE orders SET refundReference = ? WHERE id = ? AND refundReference IS NULL`,
-            [`refund:${order.id}:${req.params.id}:${order.paymentReference}`, existing.orderId]
+            // Bounded via buildRefundClaim (see utils/refundClaim.js): a long
+            // external reference can never overflow the VARCHAR(191) claim
+            // column and break this claim/release CAS pair.
+            [buildRefundClaim(order.id, req.params.id, order.paymentReference), existing.orderId]
           );
           if (claimResult.affectedRows === 0) {
             return res.status(409).json({ message: 'Refund already claimed or in progress for this order' });
@@ -363,10 +403,12 @@ export const updateReturnStatus = async (req, res) => {
             `Return ${req.params.id} approved`
           );
           if (!refund?.status) {
+            refundOutcome = 'rejected';
             await pool.execute(`UPDATE orders SET refundReference = NULL WHERE id = ?`, [existing.orderId])
               .catch(() => {});
  console.warn(` Return ${req.params.id}: Paystack refund rejected (${refund?.message || 'unknown'}) — manual refund required`);
           } else {
+            refundOutcome = 'issued';
  console.log(` Return ${req.params.id}: customer refunded via Paystack`);
             // Flip the order to 'refunded' the moment the money actually
             // moved. This is what makes the refund RETRIABLE (an admin cancel
@@ -374,11 +416,13 @@ export const updateReturnStatus = async (req, res) => {
             // refund here can be completed there) and what stops a second
             // refund from ever being issued after a successful one — the
             // guard is now our own ledger, not Paystack's rejection.
-            await pool.execute(
+            const [flipped] = await pool.execute(
               `UPDATE orders SET paymentStatus = 'refunded', updated_at = CURRENT_TIMESTAMP
                WHERE id = ? AND paymentStatus = 'paid'`,
               [existing.orderId]
- ).catch((e) => console.warn(` Could not mark order ${existing.orderId} refunded: ${e.message}`));
+ ).catch((e) => { console.warn(` Could not mark order ${existing.orderId} refunded: ${e.message}`); return [{ affectedRows: 0 }]; });
+            // FV-8: the full refund also refunds the platform's own lines.
+            if (flipped.affectedRows > 0) await reversePlatformRevenueForRefund(existing.orderId, 'return');
             // P0-10: the payment decremented stock; the refund must put the
             // units back (mirrors cancelOrder). Lines never taken at payment
             // (stock conflicts) are skipped so stock is not inflated.
@@ -423,11 +467,24 @@ export const updateReturnStatus = async (req, res) => {
           }
         }
       } catch (refundErr) {
+        // The provider call threw (or a later step did): the claim marker is
+        // kept, reconcileRefundedButPaid alerts for dashboard verification,
+        // and nothing is re-issued automatically.
+        if (refundOutcome !== 'issued') refundOutcome = 'unknown';
  console.warn(` Return ${req.params.id}: refund error (${refundErr.message}) — manual refund required`);
       }
     }
 
-    res.json({ message: "Return request status updated", returnRequest });
+    const refundMessages = {
+      rejected: 'Return approved, but the Paystack refund was rejected. No money moved — refund the order from the order screen.',
+      unknown: 'Return approved, but the refund outcome is unknown. Check the Paystack dashboard before retrying.',
+      'not-refundable': 'Return approved. The order is not in a refundable paid state, so no refund was issued.',
+    };
+    res.json({
+      message: refundMessages[refundOutcome] || "Return request status updated",
+      returnRequest,
+      refundOutcome,
+    });
   } catch (error) {
     console.error("updateReturnStatus error:", error.message);
     res.status(500).json({ message: "Failed to update return request" });

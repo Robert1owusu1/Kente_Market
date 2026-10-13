@@ -1,4 +1,5 @@
 // config/passport.js
+import { bindReferralAtSignup, recordDevice, REFERRAL_COOKIE } from '../Services/referralService.js';
 import passport from 'passport';
 import { TERMS_VERSION } from './legalTerms.js';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
@@ -9,7 +10,7 @@ import pool from './db.js';
 import { signUserToken, SESSION_7D } from '../utils/generateToken.js';
 
 // Helper: Find or create user from OAuth profile
-const findOrCreateOAuthUser = async (provider, profile, opts = {}) => {
+export const findOrCreateOAuthUser = async (provider, profile, opts = {}) => {
   const consentAt = opts?.consentAt || null;
   // RB-06: Google LOGIN must not silently create accounts. Creation is only
   // allowed on the explicit signup path (allowCreate === true). Login with an
@@ -22,6 +23,14 @@ const findOrCreateOAuthUser = async (provider, profile, opts = {}) => {
     
     const providerId = `${provider}Id`; // googleId or facebookId
     const email = profile.emails?.[0]?.value?.toLowerCase();
+    // SEC-12: an email the provider has NOT verified proves nothing about who
+    // owns it. Linking/adopting by such an email would hand an existing
+    // (possibly verified) account to whoever controls the provider identity.
+    // Google sends email_verified (profile.emails[0].verified). An identity
+    // already bound by provider id (step 1) still signs in; anything else that
+    // would rely on an unverified email is refused with the generic failure.
+    const emailVerifiedFlag = profile.emails?.[0]?.verified;
+    const emailVerified = emailVerifiedFlag === true || emailVerifiedFlag === 'true';
     
     // 1. Check if user exists by provider ID
     const [existingByProvider] = await connection.execute(
@@ -33,6 +42,11 @@ const findOrCreateOAuthUser = async (provider, profile, opts = {}) => {
       return existingByProvider[0];
     }
     
+    if (email && !emailVerified) {
+      console.warn(`Refused ${provider} sign-in: provider email not verified`);
+      return null;
+    }
+
     // 2. Check if user exists by email (link accounts)
     if (email) {
       const [existingByEmail] = await connection.execute(
@@ -107,7 +121,8 @@ const findOrCreateOAuthUser = async (provider, profile, opts = {}) => {
     console.log(`Created new user via ${provider} OAuth`);
     
     const [newUser] = await connection.execute('SELECT * FROM users WHERE id = ?', [result.insertId]);
-    return newUser[0];
+    // _created lets the signup callback attribute a referral to NEW accounts only.
+    return { ...newUser[0], _created: true };
     
   } catch (error) {
  console.error(` OAuth ${provider} error:`, error);
@@ -152,6 +167,14 @@ export const configurePassport = () => {
         const allowCreate = req?.oauthMode === 'signup';
         const user = await findOrCreateOAuthUser('google', profile, { consentAt: req.consentAt, allowCreate });
         if (!user) return done(null, false);
+        // Referral (REFERRAL_SYSTEM_DESIGN.md R9/R11): bind only a newly created account; every
+        // OAuth sign-in records the device. Neither can fail the sign-in.
+        await recordDevice(user.id, req.deviceId);
+        if (user._created) {
+          await bindReferralAtSignup({
+            userId: user.id, email: user.email, visitToken: req.cookies?.[REFERRAL_COOKIE], deviceId: req.deviceId, ip: req.ip,
+          });
+        }
         return done(null, user);
       } catch (error) {
         return done(error, null);

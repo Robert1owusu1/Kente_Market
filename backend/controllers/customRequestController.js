@@ -6,17 +6,14 @@ import pool from "../config/db.js";
 import CustomRequest from "../models/customRequestModel.js";
 import Order from "../models/orderModel.js";
 import Notification from "../models/notificationModel.js";
-import {
-  createEscrowAllocations,
-  holdEscrowForOrder,
-  getOrderAllocations,
-  releaseAllocation,
-} from "../Services/escrowService.js";
+import { buildEscrowAllocationRows, allocationFees } from "../Services/commissionService.js";
+import { recordFinancialEvent } from "../Services/ledgerService.js";
 import { CUSTOM_ADVANCE_RATIO } from "../config/businessConfig.js";
 import { issueCertificateForOrder } from "../Services/certificateService.js";
 import PaystackService from "../Services/paystackservices.js";
 import { CHARGED_CURRENCY } from "../Services/paymentCurrency.js";
 import { newOrderNumber } from "../utils/orderNumber.js";
+import { round2 } from "../../shared/pricing.js";
 
 // Combine needed-for date + time into a contractually visible completion date.
 const completionFromRequest = (request) => {
@@ -243,10 +240,33 @@ export const cancelRequest = async (req, res) => {
 
 // POST /api/custom-requests/:id/checkout — customer pays (Paystack) and the
 //    custom order is created + escrow held.
+// FIX: Entire checkout flow is now protected by a single database transaction
+// with an atomic claim on the custom request (UPDATE ... WHERE status='accepted').
+// This prevents:
+// - Orphan paid orders disconnected from their custom request
+// - Duplicate orders from concurrent checkouts or retries
+// - Inconsistent intermediate states if any step fails
 export const checkoutRequest = async (req, res) => {
+  // Phase 1: Validate input and verify Paystack payment (OUTSIDE transaction).
+  // We cannot roll back an external Paystack charge, so verification happens first.
+  // If the DB transaction later fails, the verified payment is logged for reconciliation.
+  let request;
+  let price;
+  let paymentReference;
+  let items;
+  let completionDate;
+  let notes;
+  // Read from the request in Phase 1 but written by the Phase 2 transaction,
+  // so they must live at function scope (a block-scoped destructure here made
+  // Phase 2 throw ReferenceError after Paystack had already been verified).
+  let paymentMethod;
+  let shippingAddress;
+
   try {
-    const { paymentReference, paymentMethod, shippingAddress, notes } = req.body || {};
-    const request = await CustomRequest.findById(parseInt(req.params.id));
+    const { paymentReference: ref, notes: userNotes } = req.body || {};
+    ({ paymentMethod, shippingAddress } = req.body || {});
+    paymentReference = ref;
+    request = await CustomRequest.findById(parseInt(req.params.id));
     if (!request) return res.status(404).json({ message: "Request not found" });
     if (request.customerId !== req.user.id) {
       return res.status(403).json({ message: "Not authorized" });
@@ -258,17 +278,13 @@ export const checkoutRequest = async (req, res) => {
       return res.status(400).json({ message: "Payment reference is missing" });
     }
 
-    const price = parseFloat(request.vendorQuotePrice);
+    price = parseFloat(request.vendorQuotePrice);
     if (!price || price <= 0) {
       return res.status(400).json({ message: "Vendor quote price is invalid" });
     }
 
-    // SECURITY: this endpoint used to trust the client-supplied
-    // `paymentReference` and immediately create a PAID order that releases a
-    // 50% advance to the vendor. Anyone could pass an arbitrary string. Verify
-    // with Paystack server-side that the charge actually succeeded, settled the
-    // full quote amount, in GHS, and that the reference has not already been
-    // consumed by another order.
+    // SECURITY: Verify Paystack server-side that the charge succeeded, settled
+    // the full quote amount in GHS, and that the reference hasn't been consumed.
     const verification = await PaystackService.verifyTransaction(paymentReference);
     const tx = verification?.data;
     if (!tx || tx.status !== 'success') {
@@ -279,6 +295,9 @@ export const checkoutRequest = async (req, res) => {
     if (tx.currency !== CHARGED_CURRENCY || !Number.isFinite(paidKobo) || paidKobo !== expectedKobo) {
       return res.status(400).json({ message: "Payment amount does not match the quoted price." });
     }
+
+    // Check paymentReference uniqueness (race with other checkouts handled by
+    // DB unique key uq_orders_paymentReference inside the transaction).
     const [[existingRef]] = await pool.execute(
       "SELECT id FROM orders WHERE paymentReference = ? LIMIT 1",
       [paymentReference]
@@ -288,14 +307,12 @@ export const checkoutRequest = async (req, res) => {
     }
 
     // Suspended-vendor re-check: status may have changed since quote/accept.
-    {
-      const [[vrow]] = await pool.execute(`SELECT status FROM vendors WHERE userId = ?`, [request.vendorId]);
-      if (!vrow || vrow.status !== 'approved') {
-        return res.status(400).json({ message: "This vendor is not available for new orders." });
-      }
+    const [[vrow]] = await pool.execute(`SELECT status FROM vendors WHERE userId = ?`, [request.vendorId]);
+    if (!vrow || vrow.status !== 'approved') {
+      return res.status(400).json({ message: "This vendor is not available for new orders." });
     }
 
-    const items = [
+    items = [
       {
         product: request.baseProductId || null,
         name: `Custom Kente (${request.yards} yd)`,
@@ -314,80 +331,215 @@ export const checkoutRequest = async (req, res) => {
       },
     ];
 
-    // The SELECT-then-INSERT above is not atomic: two concurrent checkouts
-    // with the same reference could both pass it. The DB UNIQUE key on
-    // orders.paymentReference is the real guard — catch the race and fail
-    // this checkout cleanly so one charge can never create two paid orders
-    // (each of which would release a 50% advance to the vendor).
-    let order;
-    try {
-      order = await Order.create({
-        userId: req.user.id,
-        // N-18: same collision as the regular checkout path — `CUS-${Date.now()}`
-        // handed two same-millisecond custom orders the same UNIQUE key.
-        orderNumber: newOrderNumber("CUS"),
-        items,
-        totalAmount: price,
-        shippingAddress: shippingAddress || {},
-        billingAddress: shippingAddress || {},
-        paymentMethod: paymentMethod || "Card Payment",
-        paymentStatus: "paid",
-        orderStatus: "processing",
-        shippingCost: 0,
-        tax: 0,
-        discount: 0,
-        notes: notes || `Custom kente request #${request.id} — vendor: ${request.vendorBusinessName}. Needed by: ${request.neededForDate} ${request.neededForTime}`,
+    completionDate = completionFromRequest(request);
+    notes = userNotes || `Custom kente request #${request.id} — vendor: ${request.vendorBusinessName}. Needed by: ${request.neededForDate} ${request.neededForTime}`;
+  } catch (error) {
+    console.error(" checkoutRequest validation error:", error.message);
+    return res.status(500).json({ message: "Failed to validate custom order payment" });
+  }
+
+  // Phase 2: Execute all database mutations in a SINGLE transaction.
+  // Atomic claim: UPDATE custom_requests SET status='paid', orderId=? WHERE id=? AND status='accepted'
+  // Only ONE checkout can win this claim. The loser gets 0 affected rows and fails cleanly.
+  const connection = await pool.getConnection();
+  let orderId = null;
+  let orderNumber = null;
+  let advancesReleased = 0;
+
+  try {
+    await connection.beginTransaction();
+
+    // 1. ATOMIC CLAIM: Try to transition the custom request from 'accepted' to 'paid'
+    //    and reserve the orderId slot in one conditional UPDATE.
+    //    We don't know the orderId yet, so we use a two-step within the transaction:
+    //    - First, create the order (which generates the orderId)
+    //    - Then, atomically claim the custom request with that orderId
+    //    If another checkout already claimed it, affectedRows === 0 and we roll back.
+
+    // 1a. Create the order within this transaction (inlined from Order.create).
+    orderNumber = newOrderNumber("CUS");
+
+    const [orderResult] = await connection.execute(
+      `INSERT INTO orders
+        (userId, orderNumber, items, totalAmount, shippingAddress, billingAddress,
+         paymentMethod, paymentStatus, orderStatus, shippingCost, tax, discount, notes, paymentReference,
+         couponId, expectedCompletionDate, productionNote, couponUseState)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        request.customerId,
+        orderNumber,
+        JSON.stringify(items),
+        price,
+        JSON.stringify(shippingAddress || {}),
+        JSON.stringify(shippingAddress || {}),
+        paymentMethod || "Card Payment",
+        "paid",
+        "processing",
+        0,
+        0,
+        0,
+        notes,
         paymentReference,
-        expectedCompletionDate: completionFromRequest(request),
-      });
-    } catch (createErr) {
-      if (
-        createErr?.code === 'ER_DUP_ENTRY' ||
-        String(createErr?.message || '').includes('uq_orders_paymentReference') ||
-        String(createErr?.message || '').includes('Duplicate entry')
-      ) {
-        return res.status(400).json({ message: "This payment reference has already been used." });
-      }
-      throw createErr;
+        null,
+        completionDate,
+        null,
+        0,
+      ]
+    );
+
+    orderId = orderResult.insertId;
+
+    // 1b. Create order_items rows (dual-write for vendor-scoped queries).
+    for (const item of items) {
+      await connection.execute(
+        `INSERT INTO order_items
+         (orderId, vendorId, productId, name, qty, price, image, selectedColor, selectedSize, yards,
+          isCustomizable, productionTime, reserved, customRequestId, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+        [
+          orderId,
+          item.vendorId,
+          item.product || null,
+          item.name || item.title || 'Custom Kente',
+          1,
+          price,
+          item.image || null,
+          item.selectedColor || null,
+          item.selectedSize || null,
+          item.yards || null,
+          1, // isCustomizable
+          1, // productionTime
+          0,
+          item.customRequestId || null,
+        ]
+      );
     }
 
-    // Hold escrow immediately (custom orders are pre-paid). Custom orders use
-    // a 50/50 split: the advance half is released to the weaver right away
-    // (into their withdrawable balance), the balance stays held until delivery.
-    await createEscrowAllocations(order.id, items, { advanceRatio: CUSTOM_ADVANCE_RATIO });
-    try {
-      await holdEscrowForOrder(order.id);
-      const allocations = await getOrderAllocations(order.id);
-      let advancesReleased = 0;
-      for (const allocation of allocations) {
-        if (allocation.allocationType === 'advance') {
-          const released = await releaseAllocation(allocation);
-          if (released.status === 'available') advancesReleased += 1;
+    // 2. ATOMIC CLAIM: Now link the custom request to this order.
+    //    Only succeeds if the request is still 'accepted' (not already claimed by another checkout).
+    const [claimResult] = await connection.execute(
+      `UPDATE custom_requests
+       SET status = 'paid', orderId = ?, updated_at = CURRENT_TIMESTAMP
+       WHERE id = ? AND status = 'accepted'`,
+      [orderId, request.id]
+    );
+
+    if (claimResult.affectedRows !== 1) {
+      // Another concurrent checkout already claimed this request.
+      // Roll back the order we just created and fail cleanly.
+      throw new Error('CUSTOM_REQUEST_ALREADY_CLAIMED');
+    }
+
+    // 3. Create escrow allocations (advance + balance for custom orders),
+    //    inside this transaction, through the same commission builder as
+    //    standard checkout. A request with no base product is still escrowed
+    //    for its vendor (rated by vendor > global rules) — previously it was
+    //    skipped, so the weaver could never be paid for a paid order (D-2).
+    const { rows: allocationRows, snapshot } = await buildEscrowAllocationRows(connection, items, {
+      advanceRatio: CUSTOM_ADVANCE_RATIO,
+      discount: 0, // custom orders have no coupon discount
+    });
+    await connection.execute(`UPDATE orders SET commissionSnapshot = ? WHERE id = ?`, [JSON.stringify(snapshot), orderId]);
+    for (const r of allocationRows) {
+      await connection.execute(
+        `INSERT IGNORE INTO escrow_allocations
+           (orderId, vendorId, amount, platformFeeRate, platformFee, payoutAmount, status, allocationType)
+         VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)`,
+        [orderId, r.vendorId, r.amount, r.platformFeeRate, r.platformFee, r.payoutAmount, r.allocationType]
+      );
+    }
+
+    // 4. Hold escrow (pending -> held).
+    await connection.execute(
+      `UPDATE escrow_allocations
+       SET status = 'held', updated_at = CURRENT_TIMESTAMP
+       WHERE orderId = ? AND status = 'pending'`,
+      [orderId]
+    );
+    await connection.execute(
+      `UPDATE orders SET escrowStatus = 'held', updated_at = CURRENT_TIMESTAMP
+       WHERE id = ? AND escrowStatus IN ('none', 'held')`,
+      [orderId]
+    );
+
+    // 5. Release advance allocations (held -> available + wallet credit).
+    //    Inlined from releaseAllocation to run within this transaction.
+    const [advanceAllocations] = await connection.execute(
+      `SELECT ea.*, v.businessName, v.recipientCode
+       FROM escrow_allocations ea
+       JOIN vendors v ON v.userId = ea.vendorId
+       WHERE ea.orderId = ? AND ea.allocationType = 'advance' AND ea.status = 'held'`,
+      [orderId]
+    );
+
+    for (const allocation of advanceAllocations) {
+      const { platformFee, payoutAmount } = allocationFees(allocation);
+
+      // Lock the allocation row and re-check order eligibility atomically.
+      const [transition] = await connection.execute(
+        `UPDATE escrow_allocations ea
+           SET ea.status = 'available', ea.platformFee = ?, ea.payoutAmount = ?,
+               ea.updated_at = CURRENT_TIMESTAMP
+         WHERE ea.id = ? AND ea.status = 'held'
+           AND NOT EXISTS (
+             SELECT 1 FROM orders o
+              WHERE o.id = ea.orderId
+                AND (o.orderStatus = 'cancelled' OR o.paymentStatus = 'refunded' OR o.paymentStatus != 'paid')
+           )`,
+        [platformFee, payoutAmount, allocation.id]
+      );
+
+      if (transition.affectedRows === 1) {
+        // Credit vendor wallet in the same transaction.
+        const amount = round2(parseFloat(String(payoutAmount)) || 0);
+        if (amount > 0) {
+          await connection.execute(`INSERT IGNORE INTO vendor_wallets (vendorId) VALUES (?)`, [allocation.vendorId]);
+          const [ledger] = await connection.execute(
+            `INSERT IGNORE INTO wallet_transactions (vendorId, type, amount, allocationId, note, status)
+             VALUES (?, 'credit', ?, ?, ?, 'succeeded')`,
+            [allocation.vendorId, amount, allocation.id, `Escrow advance release for order ${orderNumber}`.trim()]
+          );
+          if (ledger.affectedRows === 1) {
+            await connection.execute(
+              `UPDATE vendor_wallets
+               SET available_balance = available_balance + ?, total_earned = total_earned + ?,
+                   updated_at = CURRENT_TIMESTAMP WHERE vendorId = ?`,
+              [amount, amount, allocation.vendorId]
+            );
+            // Record financial event (best-effort, non-fatal if it fails)
+            try {
+              await recordFinancialEvent({
+                eventType: 'escrow.release',
+                direction: 'info',
+                amount,
+                vendorId: allocation.vendorId,
+                allocationId: allocation.id,
+                reference: `escrow.release:${allocation.id}`,
+                dedupeKey: `escrow.release:${allocation.id}`,
+                payload: { orderNumber: orderNumber || null },
+                connection,
+              });
+            } catch { /* journal is best-effort */ }
+            advancesReleased += 1;
+          }
         }
       }
-      if (advancesReleased > 0) {
- console.log(` Released ${advancesReleased} advance allocation(s) for custom order ${order.id}`);
-      }
-    } catch (escrowErr) {
- console.warn(` Advance escrow for order ${order.id} not released: ${escrowErr.message}`);
     }
 
-    // Paid custom orders get their authenticity certificate automatically.
+    await connection.commit();
+
+    // Phase 3: Post-commit operations (non-critical, best-effort).
+    // These can fail without leaving the database in an inconsistent state.
     if (request.baseProductId) {
       try {
-        await issueCertificateForOrder(order.id, {
+        await issueCertificateForOrder(orderId, {
           productId: request.baseProductId,
           issuedTo: `${req.user.firstName || ''} ${req.user.lastName || ''}`.trim() || 'Verified Customer',
         });
       } catch (certErr) {
- console.warn(` Auto-certificate for order ${order.id} skipped: ${certErr.message}`);
+        console.warn(` Auto-certificate for order ${orderId} skipped: ${certErr.message}`);
       }
     }
-
-    const updated = await CustomRequest.update(request.id, {
-      status: 'paid',
-      orderId: order.id,
-    });
 
     try {
       await Notification.create({
@@ -397,18 +549,49 @@ export const checkoutRequest = async (req, res) => {
         message: `Payment of GHS ${price.toFixed(2)} confirmed. ${Math.round((CUSTOM_ADVANCE_RATIO || 0) * 100)}% released to you as an advance; the rest is held until delivery is confirmed.`,
         link: "/vendor/custom-requests",
       });
-    } catch {
-      /* non-fatal */
+    } catch { /* non-fatal */ }
+
+    // Build response objects (refetch to include all relations).
+    const order = await Order.findById(orderId);
+    const updatedRequest = await CustomRequest.findById(request.id);
+
+    if (advancesReleased > 0) {
+      console.log(` Released ${advancesReleased} advance allocation(s) for custom order ${orderId}`);
     }
 
     res.status(201).json({
       message: "Payment received. Your custom order is now with the vendor.",
       order,
-      request: updated,
+      request: updatedRequest,
     });
+
   } catch (error) {
- console.error(" checkoutRequest error:", error.message);
+    await connection.rollback().catch(() => {});
+
+    // If the failure was due to concurrent claim, return a clear 409.
+    if (error.message === 'CUSTOM_REQUEST_ALREADY_CLAIMED') {
+      return res.status(409).json({
+        message: "This request has already been paid for. Please refresh the page.",
+      });
+    }
+
+    // If we created an order but rolled back, the paymentReference is now free
+    // (the order row was deleted by rollback). However, the Paystack charge
+    // has ALREADY succeeded and cannot be rolled back. Log for reconciliation.
+    if (orderId) {
+      console.error(
+        `CRITICAL: Custom request checkout failed after Paystack verification. ` +
+        `Payment reference=${paymentReference}, customer=${request.customerId}, ` +
+        `request=${request.id}, vendor=${request.vendorId}, amount=${price}. ` +
+        `Order creation was rolled back. This charge requires manual reconciliation. ` +
+        `Error: ${error.message}`
+      );
+    }
+
+    console.error(" checkoutRequest error:", error.message);
     res.status(500).json({ message: "Failed to complete custom order payment" });
+  } finally {
+    connection.release();
   }
 };
 

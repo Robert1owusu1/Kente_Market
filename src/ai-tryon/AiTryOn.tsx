@@ -6,7 +6,7 @@ import ImageUpload from "./ImageUpload";
 import StyleSelector from "./StyleSelector";
 import TryOnPreview from "./TryOnPreview";
 import DecorateMode from "./DecorateMode";
-import tryOnService from "./api/tryOnService";
+import tryOnService, { TryOnRequestError } from "./api/tryOnService";
 import { SAMPLE_PRODUCTS, getProductById } from "../allProductsData/products";
 import { useGetProductsDetailsQuery } from "../slices/productsApiSlice";
 import type { Product } from "../types/domain";
@@ -70,6 +70,9 @@ const AiTryOn = () => {
       setError("Please upload your photo and select a Kente cloth first.");
       return;
     }
+    // Duplicate-submit guard: the button is disabled while processing, but a
+    // double click (or Enter key) can still fire before React re-renders.
+    if (isProcessing) return;
 
     setIsProcessing(true);
     setError(null);
@@ -77,23 +80,26 @@ const AiTryOn = () => {
 
     try {
       setProcessingMessage("Reading your photo and the Kente weave...");
-      const result = await tryOnService.generateTryOn(
+      // Only the photo and the product ID leave the browser. The garment
+      // image, name and category are resolved server-side from the catalog,
+      // and the server polls the prediction to completion.
+      const output = await tryOnService.generateTryOn(
         modelImage,
-        selectedProduct.img as string,
-        selectedProduct.title as string,
-        selectedProduct.category as string
+        selectedProduct.id as number,
       );
-      setResultImage(result.output as string | null);
+      setResultImage(output);
       setStep(3);
     } catch (err) {
-      console.error("Try-on generation error:", err);
-      // Fallback: show a local visual preview using the model photo with an overlay note
+      console.error("Try-on generation failed");
+      // Show the real reason and STAY on the selection step so the user can
+      // retry. (The old behaviour substituted the user's own photo as a
+      // fake "result", which misrepresented a failed generation as a
+      // successful preview.)
       setError(
-        "The AI stylist is busy right now. Please try again in a moment, or use our canvas preview below."
+        err instanceof TryOnRequestError
+          ? err.message
+          : "The AI stylist is busy right now. Please try again in a moment.",
       );
-      // Provide a graceful fallback by showing the model image marked as preview
-      setResultImage(modelImage);
-      setStep(3);
     } finally {
       setIsProcessing(false);
       setProcessingMessage("");
@@ -132,8 +138,9 @@ const AiTryOn = () => {
             <div>
               <p className="font-medium">{error}</p>
               <p className="text-sm mt-1">
-                You can still preview the weaving style visually. For the best
-                photorealistic result, ensure your FASHN API key is configured.
+                Your photo stays private: it is only used to generate this
+                preview, and the server re-processes it (stripping location and
+                camera metadata) before it reaches the AI model.
               </p>
             </div>
           </div>
@@ -330,8 +337,8 @@ const AiTryOn = () => {
               Photorealistic Wear Try-On
             </h3>
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              Using the FASHN.ai virtual try-on engine, see your exact photo
-              wearing the Kente with realistic fabric draping.
+              Powered by the IDM-VTON virtual try-on model, see your exact
+              photo wearing the Kente with realistic fabric draping.
             </p>
           </div>
           <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-lg text-center">

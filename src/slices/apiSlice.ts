@@ -85,6 +85,8 @@ export const apiSlice = createApi({
     'Fulfilment',
     'VendorInsights',
     'VendorShipping',
+    'Payout',
+    'Referral',
   ],
   endpoints: () => ({}),
 });

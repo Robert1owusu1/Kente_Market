@@ -643,3 +643,96 @@ CREATE TABLE IF NOT EXISTS authenticity_certificates (
   CONSTRAINT fk_cert_product FOREIGN KEY (productId) REFERENCES product(id) ON DELETE CASCADE,
   CONSTRAINT fk_cert_order FOREIGN KEY (orderId) REFERENCES orders(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
+
+-- ---------------------------------------------------------------------------
+-- International shipping + FX (F-6). These four tables were previously created
+-- ONLY by backend/migrateExchangeRates.js, migrateShippingCarriersRates.js and
+-- migrateVendorShippingDestinations.js, so a database built from this canonical
+-- schema had no exchange_rates/shipping_* tables and international checkout
+-- failed with 503 SHIPPING_TABLES_MISSING (or a cross-currency quote threw a
+-- driver error). DDL below is byte-identical to those migrations, so
+-- `npm run db:setup` (dump + db:migrate) and a dump-only restore agree, and
+-- the migrations' CREATE ... IF NOT EXISTS stay no-ops afterwards.
+-- Seeded rows (carriers, platform rates, exchange rates) remain migration-only
+-- on purpose: db:migrate runs after this dump and seeds seed-once.
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS shipping_carriers (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  code VARCHAR(50) NOT NULL UNIQUE COMMENT 'Internal code: dhl, fedex, ups, local_gh, ems',
+  name VARCHAR(100) NOT NULL COMMENT 'Display name',
+  supportedCountries JSON NOT NULL COMMENT 'Array of ISO country codes this carrier serves',
+  apiConfig JSON NULL COMMENT 'Credentials, account numbers, API endpoints',
+  isActive BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_sc_active (isActive)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS shipping_rates (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  carrierId INT NOT NULL,
+  vendorId INT NULL COMMENT 'NULL = platform default rate; vendorId = vendor-specific override',
+  originCountry CHAR(2) NOT NULL DEFAULT 'GH' COMMENT 'ISO 3166-1 alpha-2',
+  destinationCountry CHAR(2) NOT NULL COMMENT 'ISO 3166-1 alpha-2',
+  destinationRegion VARCHAR(100) NULL COMMENT 'NULL = all regions in destination country',
+  serviceLevel VARCHAR(50) NOT NULL COMMENT 'standard, express, economy',
+  minWeightKg DECIMAL(8,3) DEFAULT 0 COMMENT 'Minimum weight for this rate',
+  maxWeightKg DECIMAL(8,3) DEFAULT 999 COMMENT 'Maximum weight for this rate',
+  baseCost DECIMAL(10,2) NOT NULL COMMENT 'Base cost in rate currency',
+  perKgCost DECIMAL(10,2) DEFAULT 0 COMMENT 'Additional cost per kg over minWeightKg',
+  freeThreshold DECIMAL(10,2) NULL COMMENT 'Subtotal in rate currency for free shipping',
+  transitDaysMin INT NOT NULL COMMENT 'Minimum transit days',
+  transitDaysMax INT NOT NULL COMMENT 'Maximum transit days',
+  currency CHAR(3) NOT NULL DEFAULT 'GHS' COMMENT 'Currency of this rate (usually order currency)',
+  effectiveFrom DATE NOT NULL COMMENT 'Rate effective from this date',
+  effectiveTo DATE NULL COMMENT 'Rate expires on this date (NULL = indefinite)',
+  isActive BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (carrierId) REFERENCES shipping_carriers(id) ON DELETE CASCADE,
+  FOREIGN KEY (vendorId) REFERENCES users(id) ON DELETE CASCADE,
+  -- Named aliases: migrateShippingCarriersRates.js ADDs these on an existing
+  -- database, so a dump-only restore must carry them too — otherwise
+  -- `SHOW CREATE TABLE` would differ depending on whether db:migrate ran.
+  CONSTRAINT fk_sr_carrier FOREIGN KEY (carrierId) REFERENCES shipping_carriers(id) ON DELETE CASCADE,
+  CONSTRAINT fk_sr_vendor FOREIGN KEY (vendorId) REFERENCES users(id) ON DELETE CASCADE,
+  INDEX idx_sr_lookup (originCountry, destinationCountry, destinationRegion, serviceLevel, isActive),
+  INDEX idx_sr_vendor (vendorId),
+  INDEX idx_sr_carrier (carrierId),
+  INDEX idx_sr_dates (effectiveFrom, effectiveTo)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS vendor_shipping_destinations (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  vendorId INT NOT NULL COMMENT 'vendors.userId (users.id of the vendor owner)',
+  countryCode CHAR(2) NOT NULL COMMENT 'ISO 3166-1 alpha-2, e.g., GH, GB, US',
+  region VARCHAR(100) NULL COMMENT 'NULL = all regions in the country',
+  isActive BOOLEAN DEFAULT TRUE COMMENT 'Vendor can enable/disable without deleting',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (vendorId) REFERENCES users(id) ON DELETE CASCADE,
+  -- Named alias added by migrateVendorShippingDestinations.js on existing DBs.
+  CONSTRAINT fk_vsd_vendor FOREIGN KEY (vendorId) REFERENCES users(id) ON DELETE CASCADE,
+  UNIQUE KEY uq_vendor_country_region (vendorId, countryCode, region),
+  INDEX idx_vsd_vendor (vendorId),
+  INDEX idx_vsd_country (countryCode),
+  INDEX idx_vsd_active (isActive)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- exchange_rates: SEEDED, NOT LIVE. `source` defaults to 'manual' and the
+-- migration seeds documented approximations — there is no real-time FX feed in
+-- this application. Shipping converts through these rows and fails closed
+-- (502 SHIPPING_FX_UNAVAILABLE) when a row is missing/invalid.
+CREATE TABLE IF NOT EXISTS exchange_rates (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  baseCurrency CHAR(3) NOT NULL DEFAULT 'GHS' COMMENT 'Base currency (platform currency)',
+  targetCurrency CHAR(3) NOT NULL COMMENT 'Target currency (customer currency)',
+  rate DECIMAL(12,6) NOT NULL COMMENT '1 base = X target (e.g., 1 GHS = 0.054 GBP)',
+  source VARCHAR(50) NOT NULL DEFAULT 'manual' COMMENT 'manual, api, paystack, bank',
+  effectiveDate DATE NOT NULL COMMENT 'Date this rate applies to',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_exchange_rate (baseCurrency, targetCurrency, effectiveDate),
+  INDEX idx_er_date (effectiveDate),
+  INDEX idx_er_currencies (baseCurrency, targetCurrency)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

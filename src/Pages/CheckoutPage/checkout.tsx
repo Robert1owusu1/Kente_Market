@@ -26,6 +26,7 @@ import {
   PAYMENT_CONFIRMATION_DELAYED_MESSAGE,
 } from '../../utils/paymentRef';
 import { useGetOrderByIdQuery, useUpdateOrderMutation, useCreateOrderMutation } from '../../slices/ordersApiSlice';
+import { useGetMyReferralsQuery, usePayOrderWithEarningsMutation } from '../../slices/referralsApiSlice';
 import axios from 'axios';
 import type { FormErrors } from "../../types/domain";
 import { formatCedi } from '../../utils/formatCurrency';
@@ -37,6 +38,8 @@ interface AppliedCoupon {
   code: string;
   discountType?: 'percentage' | 'fixed' | string;
   discountValue?: number | string;
+  /** Discount the server actually booked (may be capped below the coupon's face value). */
+  amount?: number;
   [key: string]: unknown;
 }
 
@@ -222,7 +225,11 @@ export default function CheckoutPage() {
     // Use the shared pricing helper so checkout totals always match what the
     // cart page persisted when it created the order (VAT from shared/pricing.js, GH₵15 ship).
     let appliedDiscountValue = 0;
-    if (appliedCoupon) {
+    if (appliedCoupon && Number.isFinite(appliedCoupon.amount)) {
+      // The server caps coupons (admin coupons at the platform commission,
+      // seller coupons at the seller's proceeds), so show what it booked.
+      appliedDiscountValue = Number(appliedCoupon.amount);
+    } else if (appliedCoupon) {
       const discountValue = Number(appliedCoupon.discountValue) || 0;
       if (appliedCoupon.discountType === 'percentage') {
         appliedDiscountValue = (calcOrderTotals(cartItems).subtotal * discountValue / 100);
@@ -339,6 +346,7 @@ export default function CheckoutPage() {
       }).unwrap() as unknown as {
         order?: {
           totalAmount?: number | string;
+          discount?: number | string;
           discountType?: AppliedCoupon['discountType'];
           discountValue?: AppliedCoupon['discountValue'];
         };
@@ -354,6 +362,7 @@ export default function CheckoutPage() {
           code: couponCode.trim(),
           discountType: updated.order.discountType,
           discountValue: updated.order.discountValue,
+          amount: Number(updated.order.discount),
         });
         toast.success('Coupon applied successfully');
       } else {
@@ -664,6 +673,42 @@ export default function CheckoutPage() {
       const e = err as { data?: { message?: string; code?: string } } | undefined;
       toast.error(e?.data?.message || 'Could not confirm the order total. Please check the destination and try again.');
       return null;
+    }
+  };
+
+  // Referral earnings (REFERRAL_SYSTEM_DESIGN.md R13): pay the WHOLE order
+  // from the wallet. Final — the server refuses cancellation refunds for it.
+  const { data: myReferrals } = useGetMyReferralsQuery();
+  const [payOrderWithEarnings, { isLoading: payingWithEarnings }] = usePayOrderWithEarningsMutation();
+  const [acceptEarningsFinal, setAcceptEarningsFinal] = useState(false);
+  const earningsBalance = Number(myReferrals?.wallet?.balance ?? 0);
+  const canPayWithEarnings = Number.isFinite(payableTotal) && payableTotal > 0 && earningsBalance >= payableTotal
+    && !serverOrder?.paymentReference;
+
+  const payWithEarnings = async () => {
+    if (!acceptEarningsFinal) {
+      toast.error('Please confirm that orders paid with referral earnings cannot be refunded.');
+      return;
+    }
+    if (deliveryMethod === 'home' && isInternational && shippingEligibility?.supported !== true) {
+      toast.error(shippingEligibility?.message || 'Checking shipping availability for this destination…');
+      return;
+    }
+    const synced = await syncAddressTotals();
+    if (synced === null) return;
+    if (earningsBalance < synced) {
+      toast.error('Your referral earnings do not cover the full order total.');
+      return;
+    }
+    const orderId = preOrderId ?? ensuredOrderIdRef.current;
+    if (!orderId) return;
+    try {
+      await payOrderWithEarnings({ orderId, acceptFinal: true }).unwrap();
+      clearCart();
+      toast.success('Order paid with your referral earnings');
+      navigate(`/order/${orderId}`);
+    } catch (err) {
+      toast.error((err as { data?: { message?: string } })?.data?.message || 'Payment with referral earnings failed');
     }
   };
 
@@ -1502,6 +1547,25 @@ export default function CheckoutPage() {
             `Pay ${formatCedi(payableTotal)}`
           )}
         </button>
+
+        {canPayWithEarnings && (
+          <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 space-y-3">
+            <p className="text-sm text-amber-900">
+              You have {formatCedi(earningsBalance)} in referral earnings — enough to pay this whole order.
+            </p>
+            <label className="flex items-start gap-2 text-sm text-amber-900">
+              <input type="checkbox" checked={acceptEarningsFinal} onChange={(e) => setAcceptEarningsFinal(e.target.checked)} className="mt-1" />
+              I understand that an order paid with referral earnings is final and cannot be cancelled or refunded.
+            </label>
+            <button
+              onClick={payWithEarnings}
+              disabled={payingWithEarnings || isProcessing || !acceptEarningsFinal}
+              className="w-full py-3 rounded-lg font-semibold text-white bg-amber-600 hover:bg-amber-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+            >
+              {payingWithEarnings ? 'Paying…' : `Pay ${formatCedi(payableTotal)} with referral earnings`}
+            </button>
+          </div>
+        )}
 
         <p className="text-xs text-center text-gray-500 mt-3">
           By completing this purchase, you agree to our terms and conditions

@@ -5,6 +5,7 @@ dotenv.config();
 import readline from 'readline';
 import User from './models/usersModel.js';
 import pool from './config/db.js';
+import { frontendBaseUrl } from './config/frontendOrigins.js';
 
 const rl = readline.createInterface({
   input: process.stdin,
@@ -144,7 +145,7 @@ const setupAdmin = async () => {
  console.log(` Role: Admin`);
  console.log(`Email Verified: Yes`);
  console.log(`\n You can now login to the admin panel!`);
- console.log(` Admin URL: ${process.env.FRONTEND_URL || 'http://localhost:5173'}/login\n`);
+ console.log(` Admin URL: ${frontendBaseUrl() || 'http://localhost:5173'}/login\n`);
  console.log(' SECURITY NOTE: This script will not run again.\n');
     console.log('='.repeat(60) + '\n');
 

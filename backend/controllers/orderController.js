@@ -5,6 +5,7 @@
 import Order from "../models/orderModel.js";
 import pool from "../config/db.js";
 import Coupon from "../models/couponModel.js";
+import { capCouponDiscount } from "../Services/commissionService.js";
 import Notification from "../models/notificationModel.js";
 import isValidId from "../utils/isValidId.js";
 import { computeTopProductTypes } from "../utils/marketInsights.js";
@@ -14,7 +15,6 @@ import { round2, calcSubtotal, calcTax, calcShipping, calcCouponDiscount, calcOr
 import {
   createEscrowAllocations,
   reallocateOrderEscrow,
-  consumeCouponForOrder,
   releaseEscrowForOrder,
   setEscrowReleaseDeadline,
   getOrderAllocations,
@@ -22,6 +22,9 @@ import {
   cancelEscrowForOrder,
   retryFailedAllocations,
   ESCROW_RELEASE_DAYS,
+  applyPaidOrderSideEffects,
+  PAID_TRACKING_SET_SQL,
+  reversePlatformRevenueForRefund,
 } from "../Services/escrowService.js";
 import { reserveStockForItems } from "../Services/reservationService.js";
 import { recordStockMove } from "../Services/stockMoves.js";
@@ -31,6 +34,8 @@ import { recordFinancialEvent } from "../Services/ledgerService.js";
 import { newOrderNumber } from "../utils/orderNumber.js";
 import { validateDestinationAddress, validateDestinationCountry } from "../utils/destinationValidation.js";
 import { checkVendorDestination, getChargeableShippingGHS } from "../Services/shippingService.js";
+import { CHARGED_CURRENCY } from "../Services/paymentCurrency.js";
+import { buildRefundClaim } from "../utils/refundClaim.js";
 
 // Client-supplied order-item images are stored and rendered to other users (e.g.
 // in the vendor's order view), so they must not be able to carry javascript: or
@@ -81,7 +86,12 @@ export const decrementStockForOrder = async (items, orderId = null) => {
     return { decremented: {}, shortfall: 0, conflicts: [] };
   }
 
-  const connection = await pool.getConnection();
+  // FV-12: no dedicated connection. Nothing here is transactional, and holding
+  // one while recordStockMove/flagStockShortfall take another from the same
+  // pool deadlocked under concurrency (each caller holding one, all waiting
+  // for one more) until the 12 s query timeout — inside the paid webhook,
+  // which already holds a connection of its own.
+  const connection = pool;
   /** @type {Record<number, number>} */
   const decremented = {};
   const conflicts = [];
@@ -130,8 +140,6 @@ export const decrementStockForOrder = async (items, orderId = null) => {
   } catch (err) {
  console.warn(` Stock decrement failed: ${err.message}`);
     return { decremented, shortfall: 0, conflicts };
-  } finally {
-    connection.release();
   }
 };
 
@@ -167,7 +175,7 @@ const flagStockShortfall = async (orderId, conflicts) => {
   }
 
   try {
-    const [adminUsers] = await pool.execute(`SELECT id FROM users WHERE role = 'admin' LIMIT 5`);
+    const [adminUsers] = await pool.execute(`SELECT id FROM users WHERE role = 'admin' ORDER BY id ASC LIMIT 5`);
     const list = conflicts.map((c) => `${c.title} (${c.missing} short)`).join(', ');
     for (const admin of adminUsers) {
       await Notification.create({
@@ -229,7 +237,8 @@ export const restoreStockForOrder = async (items, { skipProductIds = new Set(), 
   }
   if (restores.size === 0) return;
 
-  const connection = await pool.getConnection();
+  // FV-12: no dedicated connection (see decrementStockForOrder).
+  const connection = pool;
   try {
     for (const [productId, qty] of restores) {
       const [res] = await connection.execute(
@@ -242,8 +251,6 @@ export const restoreStockForOrder = async (items, { skipProductIds = new Set(), 
     }
   } catch (err) {
  console.warn(` Stock restore failed: ${err.message}`);
-  } finally {
-    connection.release();
   }
 };
 
@@ -538,7 +545,24 @@ export const addOrderItems = async (req, res) => {
         requested.map((r) => productMap.get(r.productId)?.vendorId).filter((v) => v != null)
       )];
       const couponResult = await Coupon.validate(couponCode, subtotal, { vendorIds: cartVendorIds });
+      // FV-11: both refusals below happen AFTER the stock reservation and
+      // before any order row exists, so the expiry sweeper can never return
+      // those units. They used to be kept forever: a bogus coupon code let any
+      // customer drain a product's stock to zero, one request at a time.
+      const releaseReservation = async () => {
+        if (reservedUnits.size === 0) return;
+        try {
+          await restoreStockForOrder(
+            [...reservedUnits].map(([productId, qty]) => ({ product: productId, qty })),
+            { reason: 'create-rollback' }
+          );
+          reservedUnits = new Map();
+        } catch (restoreErr) {
+          console.warn(` Could not roll back reservation: ${restoreErr.message}`);
+        }
+      };
       if (!couponResult.valid) {
+        await releaseReservation();
         return res.status(400).json({ message: couponResult.message });
       }
       const c = couponResult.coupon;
@@ -550,10 +574,15 @@ export const addOrderItems = async (req, res) => {
       // capped coupon can never fund more discounted orders than maxUses.
       const reservation = await Coupon.reserveUse(c.id);
       if (!reservation.reserved) {
+        await releaseReservation();
         return res.status(400).json({ message: "Coupon usage limit reached" });
       }
       couponSlotReserved = true;
       discount = calcCouponDiscount(subtotal, c.discountType, c.discountValue);
+      // R7: an admin coupon may not exceed the platform commission on these
+      // items (the platform must not lose money) and a seller coupon may not
+      // exceed that seller's proceeds. The order is booked at the capped value.
+      discount = await capCouponDiscount(pool, items, discount, c.vendorId ?? null);
       appliedCouponId = c.id;
     }
 
@@ -578,7 +607,9 @@ export const addOrderItems = async (req, res) => {
       totalAmount,
       shippingAddress: req.body.shippingAddress || {},
       billingAddress: req.body.billingAddress || {},
-      paymentMethod: req.body.paymentMethod || "pending",
+      // 'referral_credit' marks orders paid from referral earnings (final, no
+      // refund); only the dedicated endpoint may set it, never the client here.
+      paymentMethod: (req.body.paymentMethod && req.body.paymentMethod !== 'referral_credit') ? req.body.paymentMethod : "pending",
       paymentStatus: "pending",
       orderStatus: "pending",
       shippingCost: shipping,
@@ -869,6 +900,11 @@ export const updateOrder = async (req, res) => {
     // Monetary fields (items, shippingCost, tax, discount, totalAmount) are also
     // reserved so an owner can't tamper with what they pay; only admins may adjust.
     const body = { ...req.body };
+    // Orders paid from referral earnings are final (no refund). That status is
+    // set only by the referral-credit checkout; nobody may assert or remove it here.
+    if (body.paymentMethod === 'referral_credit' || existingOrder.paymentMethod === 'referral_credit') {
+      delete body.paymentMethod;
+    }
     if (req.user.role !== 'admin') {
       delete body.paymentStatus;
       delete body.orderStatus;
@@ -889,6 +925,11 @@ export const updateOrder = async (req, res) => {
       delete body.couponId;
       delete body.deliveredAt;
       delete body.couponCode;
+      // Vendor-owned production facts (set through the vendor order endpoint):
+      // the buyer must not rewrite the promised completion date or the
+      // vendor's progress note on their own order.
+      delete body.expectedCompletionDate;
+      delete body.productionNote;
 
       // paymentReference is the ONE money reference an owner may still set —
       // but exactly once, while it is empty and the order is not yet paid.
@@ -1050,7 +1091,13 @@ export const updateOrder = async (req, res) => {
         }
       }
 
-      const discount = calcCouponDiscount(subtotal, c.discountType, c.discountValue);
+      const nominal = calcCouponDiscount(subtotal, c.discountType, c.discountValue);
+      // R7: same cap as checkout (admin coupon <= platform commission,
+      // seller coupon <= seller proceeds on these items).
+      const orderLines = Array.isArray(existingOrder.items)
+        ? existingOrder.items
+        : (typeof existingOrder.items === 'string' ? JSON.parse(existingOrder.items) : []);
+      const discount = await capCouponDiscount(pool, orderLines, nominal, c.vendorId ?? null);
       // Prefer the address-synced shipping when this same PUT also moved the
       // destination (body.shippingCost set above); otherwise the stored order
       // figure, exactly as before.
@@ -1093,6 +1140,43 @@ export const updateOrder = async (req, res) => {
       }
     }
 
+    // F-2: cancellation and refunds own dedicated, money-moving endpoints
+    // (cancelOrder, return approve). The generic admin update path must not
+    // bypass their lifecycle (Paystack refund + escrow void/clawback):
+    // - orderStatus -> 'cancelled' is rejected (use PUT /api/orders/:id/cancel).
+    // - paymentStatus -> 'refunded' is rejected (use cancel/return flows).
+    // - any forward move off a cancelled/refunded order is rejected
+    //   (resurrection without collection would strand or double-pay escrow).
+    // Unrelated field updates on live orders are unaffected.
+    if (req.user.role === 'admin') {
+      const terminal = existingOrder.paymentStatus === 'refunded' || existingOrder.orderStatus === 'cancelled';
+      if (body.orderStatus === 'cancelled' && existingOrder.orderStatus !== 'cancelled') {
+        return res.status(400).json({
+          message: 'Use PUT /api/orders/:id/cancel to cancel an order so refund and escrow are settled.',
+          code: 'CANCEL_VIA_CANCEL_ENDPOINT',
+        });
+      }
+      if (body.paymentStatus === 'refunded' && existingOrder.paymentStatus !== 'refunded') {
+        return res.status(400).json({
+          message: 'Refunds must go through the cancellation or return flow so escrow is voided.',
+          code: 'REFUND_VIA_REFUND_FLOW',
+        });
+      }
+      if (terminal && body.orderStatus && body.orderStatus !== existingOrder.orderStatus) {
+        return res.status(400).json({
+          message: 'Cannot move a cancelled or refunded order to a live status.',
+          code: 'TERMINAL_ORDER_IMMUTABLE',
+        });
+      }
+    }
+
+    // Every field the caller sent may have been stripped above (an owner
+    // sending only money/status fields): that is a bad request, not a 500
+    // from Order.update's "No valid fields to update".
+    if (!Object.keys(body).some((key) => Order.UPDATABLE_FIELDS.includes(key))) {
+      return res.status(400).json({ message: "No updatable fields supplied" });
+    }
+
     // If this throws, the outer catch hands back the reservation taken above
     // (the order still points at the old coupon, so the slot would be orphaned).
     const updatedOrder = await Order.update(req.params.id, body);
@@ -1127,7 +1211,7 @@ export const updateOrder = async (req, res) => {
       } catch (reallocErr) {
         console.warn(` Coupon escrow realloc failed for order ${req.params.id}: ${reallocErr.message}`);
         try {
-          const [adminUsers] = await pool.execute(`SELECT id FROM users WHERE role = 'admin' LIMIT 5`);
+          const [adminUsers] = await pool.execute(`SELECT id FROM users WHERE role = 'admin' ORDER BY id ASC LIMIT 5`);
           for (const admin of adminUsers) {
             await Notification.create({
               userId: admin.id,
@@ -1198,8 +1282,8 @@ export const updateOrderToPaid = async (req, res) => {
       // win — affectedRows === 0 means the order moved and we must not run
       // escrow/stock/coupon side effects.
       const [flip] = await pool.execute(
-        `UPDATE orders SET paymentStatus = 'paid', orderStatus = 'processing', updated_at = CURRENT_TIMESTAMP
-         WHERE id = ? AND paymentStatus != 'paid' AND orderStatus NOT IN ('cancelled', 'refunded')`,
+        `UPDATE orders SET paymentStatus = 'paid', orderStatus = 'processing', ${PAID_TRACKING_SET_SQL}, updated_at = CURRENT_TIMESTAMP
+         WHERE id = ? AND paymentStatus NOT IN ('paid', 'refunded') AND orderStatus NOT IN ('cancelled', 'refunded')`,
         [req.params.id]
       );
       if (flip.affectedRows === 0) {
@@ -1246,30 +1330,23 @@ export const updateOrderToPaid = async (req, res) => {
       }
     }
 
-    // Hold escrow allocations for the order so vendors can be paid out
-    const heldCount = await holdEscrowForOrder(req.params.id);
-
-    // Decrement in-stock inventory now that the sale is confirmed — once only.
-    if (!alreadyPaid) {
-      const paidOrderForStock = await Order.findById(req.params.id);
-      let paidItems = paidOrderForStock?.items;
-      if (typeof paidItems === 'string') {
-        try { paidItems = JSON.parse(paidItems); } catch { paidItems = []; }
+    // Post-payment side effects. Only the call that flipped the order runs
+    // them (shared, per-effect-marked routine — see paymentRoutes webhook);
+    // a repeated admin click on an already-paid order re-runs only the
+    // idempotent escrow hold, exactly as before.
+    let heldCount = 0;
+    if (alreadyPaid) {
+      heldCount = await holdEscrowForOrder(req.params.id);
+    } else {
+      const effects = await applyPaidOrderSideEffects(req.params.id, { source: 'admin-mark-paid' });
+      if (!effects.complete) {
+        console.error(` Admin mark-paid: order ${req.params.id} side effects incomplete (recovery will retry): ${effects.errors.join('; ')}`);
       }
-      if (Array.isArray(paidItems) && paidItems.length > 0) {
-        await decrementStockForOrder(paidItems, req.params.id);
-      }
-
-      // Consume deferred coupon usage on admin-confirmed payment (P0-5:
-      // race losers are journaled + flagged, not silently over-funded).
-      const freshOrder = await Order.findById(req.params.id);
-      if (freshOrder?.couponId) {
-        try {
-          await consumeCouponForOrder(freshOrder.couponId, req.params.id);
-        } catch (e) {
- console.warn(` Could not increment coupon usage: ${e.message}`);
-        }
-      }
+      const [[held]] = await pool.execute(
+        `SELECT COUNT(*) AS n FROM escrow_allocations WHERE orderId = ? AND status = 'held'`,
+        [req.params.id]
+      );
+      heldCount = Number(held?.n) || 0;
 
       // Receipt email — only when this call actually flipped the order to
       // paid. Detached (N-20 class): the paid flip is committed, and the
@@ -1517,6 +1594,15 @@ export const cancelOrder = async (req, res) => {
       return res.status(404).json({ message: "Order not found" });
     }
 
+    // R13: an order paid with referral earnings is final — no cancellation
+    // refund, so the earnings can never be turned back into withdrawable money.
+    if (order.paymentMethod === 'referral_credit' && order.paymentStatus === 'paid') {
+      return res.status(409).json({
+        message: 'Orders paid with referral earnings are final and cannot be cancelled or refunded.',
+        code: 'REFERRAL_CREDIT_FINAL',
+      });
+    }
+
     const cancellableStatuses = ['pending', 'processing'];
     if (!cancellableStatuses.includes(order.orderStatus)) {
       return res.status(400).json({
@@ -1543,7 +1629,10 @@ export const cancelOrder = async (req, res) => {
       // was present, a regex over the file counted both and called V-07 fixed.
       const [claimResult] = await pool.execute(
         `UPDATE orders SET refundReference = ? WHERE id = ? AND refundReference IS NULL`,
-        [`refund:${order.id}:cancel:${order.paymentReference}`, req.params.id]
+        // Bounded via buildRefundClaim (see utils/refundClaim.js): a long
+        // external reference can never overflow the VARCHAR(191) claim column
+        // and break this claim/release CAS pair.
+        [buildRefundClaim(order.id, 'cancel', order.paymentReference), req.params.id]
       );
       if (claimResult.affectedRows === 0) {
         return res.status(409).json({ message: 'Refund already claimed or in progress for this order' });
@@ -1591,16 +1680,33 @@ export const cancelOrder = async (req, res) => {
        SET orderStatus = 'cancelled', 
            paymentStatus = ?,
            updated_at = CURRENT_TIMESTAMP
-       WHERE id = ? AND orderStatus IN ('pending', 'processing')`,
-      [wasPaid ? 'refunded' : order.paymentStatus, req.params.id]
+       WHERE id = ? AND orderStatus IN ('pending', 'processing') AND paymentStatus = ?`,
+      // FV-2: also conditional on the paymentStatus this handler decided on.
+      // Without it, a payment confirmed after the read above was overwritten
+      // back to 'pending' and the order cancelled with no refund issued.
+      [wasPaid ? 'refunded' : order.paymentStatus, req.params.id, order.paymentStatus]
     );
     const statusChanged = statusUpdate.affectedRows > 0;
-        
+    // FV-8: a refunded cancellation reverses the platform's own revenue too.
+    if (statusChanged && wasPaid) await reversePlatformRevenueForRefund(req.params.id, 'cancel');
+
     if (!statusChanged) {
+      const current = await Order.findById(req.params.id);
+      if (current?.orderStatus !== 'cancelled') {
+        // Not a concurrent cancel: the order moved under us (paid by the
+        // webhook, or shipped). Nothing was cancelled. If this handler already
+        // refunded, the refund journal + claim marker hand the order to
+        // reconcileRefundedButPaid, which voids escrow and flips it refunded.
+        return res.status(409).json({
+          message: wasPaid
+            ? 'The refund was issued, but the order changed state while cancelling. Reconciliation will finish the refund bookkeeping; review the order before shipping.'
+            : 'The order changed state while cancelling (a payment may have just been confirmed). Reload the order and cancel again to refund it.',
+          order: current,
+        });
+      }
       // Lost the race: another process (sweeper or concurrent cancel) already
       // cancelled this order and already ran stock restore + escrow void.
       // Running coupon release or a second restore/void here would double-count.
-      const current = await Order.findById(req.params.id);
       return res.json({ message: 'Order cancelled', order: current });
     }
 
@@ -1683,10 +1789,15 @@ export const cancelOrder = async (req, res) => {
     // to avoid double-counting.
 
 
-    // Void any held escrow allocations so funds return to the platform
-    if (order.escrowStatus === 'held' || order.escrowStatus === 'none') {
-      await cancelEscrowForOrder(req.params.id);
-    }
+    // F-2: void + claw back escrow on EVERY cancellation, regardless of the
+    // order-level escrowStatus. cancelEscrowForOrder is idempotent: pending/
+    // held -> failed, available -> claimed + clawed back from the wallet,
+    // releasing/released -> left for manual recovery. Gating on
+    // 'held'/'none' here used to strand available allocations as
+    // withdrawable on cancelled+refunded orders (recomputeOrderEscrowStatus
+    // reports all-available as order-level 'released', so the old gate never
+    // fired exactly when funds were in vendor balances).
+    await cancelEscrowForOrder(req.params.id);
 
     const updatedOrder = await Order.findById(req.params.id);
     await auditFromRequest(req, {

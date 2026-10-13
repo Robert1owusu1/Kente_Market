@@ -8,8 +8,9 @@
 import pool from '../config/db.js';
 import { sendEmailSafely } from './emailService.js';
 import { escapeHtml } from './htmlEscape.js';
+import { frontendBaseUrl } from '../config/frontendOrigins.js';
 
-const frontendUrl = () => process.env.FRONTEND_URL || 'http://localhost:5173';
+const frontendUrl = () => frontendBaseUrl() || 'http://localhost:5173';
 
 const getOrder = async (orderId) => {
   const [rows] = await pool.execute(`SELECT * FROM orders WHERE id = ?`, [orderId]);

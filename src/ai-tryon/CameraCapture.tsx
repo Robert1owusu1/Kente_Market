@@ -1,6 +1,7 @@
 import React, { useRef, useState, useEffect } from "react";
 import { FaCamera, FaRedo } from "react-icons/fa";
 import { MdCameraswitch } from "react-icons/md";
+import { prepareTryOnImage } from "./utils/prepareTryOnImage";
 import "./AiTryOnStyles.css";
 
 interface CameraCaptureProps {
@@ -56,7 +57,7 @@ const CameraCapture = ({ onCapture }: CameraCaptureProps) => {
     setFacingMode((prev) => (prev === "user" ? "environment" : "user"));
   };
 
-  const capturePhoto = () => {
+  const capturePhoto = async () => {
     if (!videoRef.current) return;
     const video = videoRef.current;
     const canvas = document.createElement("canvas");
@@ -69,9 +70,16 @@ const CameraCapture = ({ onCapture }: CameraCaptureProps) => {
     setFlash(true);
     setTimeout(() => setFlash(false), 300);
 
-    const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
-    onCapture(dataUrl);
-    stopCamera();
+    try {
+      // Same preparation as the file-upload path: downscale/compress so the
+      // JSON payload fits the API body limit (camera frames are always JPEG,
+      // so there is no EXIF to strip here, but the size cap still matters).
+      const dataUrl = await prepareTryOnImage(canvas.toDataURL("image/jpeg", 0.92));
+      onCapture(dataUrl);
+      stopCamera();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not process that photo.");
+    }
   };
 
   return (
@@ -97,6 +105,11 @@ const CameraCapture = ({ onCapture }: CameraCaptureProps) => {
             muted
             playsInline
           />
+          {error && (
+            <p className="aitryon-error text-sm absolute top-2 left-2 right-2 bg-black/60 text-white rounded px-2 py-1">
+              {error}
+            </p>
+          )}
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <div className="w-52 h-80 border-2 border-dashed border-white/60 rounded-xl opacity-70"></div>
           </div>

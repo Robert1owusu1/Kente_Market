@@ -25,6 +25,7 @@ import {
   deleteVendorCoupon,
   updateVendorProfile,
   withdrawVendorBalance,
+  getMyWithdrawals,
   getPublicStorefront,
   getVendorDirectory,
   updateVendorVerification,
@@ -101,7 +102,11 @@ router.route('/products/:id').put(vendorOrStaff, requireVendorPermission('manage
 router.route('/products/:id').delete(vendorOrStaff, requireVendorPermission('manage_products'), deleteVendorProduct);
 
 // POST /api/vendors/withdraw → vendor withdraws from available wallet balance
-router.route('/withdraw').post(vendorOrStaff, requireVendorPermission('view_earnings'), withdrawVendorBalance);
+// Least privilege: initiating a payout needs request_payouts (owner always passes);
+// view_earnings alone only grants READ access to earnings and withdrawals.
+router.route('/withdraw').post(vendorOrStaff, requireVendorPermission('request_payouts'), withdrawVendorBalance);
+// GET /api/vendors/withdrawals → the caller's own withdrawal requests (vendor-scoped)
+router.route('/withdrawals').get(vendorOrStaff, requireVendorPermission('view_earnings'), getMyWithdrawals);
 
 // GET /api/vendors/orders → orders containing this vendor's products (customer PII)
 // POST /api/vendors/orders/:id/status → advance fulfilment / post progress

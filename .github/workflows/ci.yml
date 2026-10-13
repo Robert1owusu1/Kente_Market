@@ -121,7 +121,9 @@ jobs:
           MYSQL_DATABASE: branding_house
           MYSQL_USER: ci
           MYSQL_PASSWORD: ci
-          MYSQL_RANDOM_ROOT_PASSWORD: "yes"
+          # Known placeholder (service is disposable, loopback-only) so the job
+          # can grant the scratch-DB privilege below.
+          MYSQL_ROOT_PASSWORD: ci-only-root-password-not-a-secret
         ports:
           - 3306:3306
         options: >-
@@ -159,6 +161,14 @@ jobs:
       - name: Install backend deps
         run: npm ci --prefix backend
 
+      - name: Allow scratch databases for migration-failure tests
+        # tests/migrationFailureExit.test.js creates and drops km_migfail_*
+        # databases to prove a failing migration exits non-zero. Without this
+        # grant the suite skips itself in CI (ER_DBACCESS_DENIED_ERROR).
+        env:
+          CI_DB_ROOT_PASSWORD: ci-only-root-password-not-a-secret
+        run: node backend/scripts/ci-grant-scratch-db.mjs
+
       - name: Create schema and run every migration
         # db:setup = setupDB.js (load branding_house.sql) && db:migrate (the
         # full chain, incl. legal_consent_at/sessions sync and the login-window
@@ -167,4 +177,13 @@ jobs:
         run: npm run db:setup --prefix backend
 
       - name: Backend tests (full suite, database reachable)
-        run: npm test --prefix backend
+        # node:test reports a skipped describe() as "ok … # SKIP" but leaves
+        # "# skipped 0" in the summary, so a DB suite that silently skipped
+        # would still look green. In this job every suite must run.
+        run: |
+          set -o pipefail
+          npm test --prefix backend 2>&1 | tee /tmp/backend-tests.log
+          if grep -nE "# (SKIP|TODO)" /tmp/backend-tests.log; then
+            echo "::error::a test suite skipped in the database job (see lines above)"
+            exit 1
+          fi

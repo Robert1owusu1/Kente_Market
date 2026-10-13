@@ -1,10 +1,34 @@
 // FILE: backend/controllers/tryOnController.js
 // DESCRIPTION: AI Virtual Try-On controller - proxies to Replicate (IDM-VTON)
+//
+// Trust model (see utils/tryOnImage.js for the byte-level half):
+//   - modelImage is the user's personal photo. It must arrive inline (data:
+//     URI), is decoded, magic-byte-checked, pixel-capped, fully re-encoded
+//     (EXIF/GPS stripped) server-side, and only the sanitized JPEG is handed
+//     to the provider. No client-supplied URL is ever used as the model image
+//     — a URL would bypass the sanitization entirely and turn the provider's
+//     fetcher into an attacker-directed fetcher.
+//   - the garment is NEVER client-supplied. The caller sends a productId; the
+//     server resolves title/category/image from its own catalog row (which
+//     must be approved) and reads the image bytes from local storage or uses
+//     an operator-allow-listed https host. A client that claims a product id
+//     it does not own, or a product that does not exist, gets a 404 and
+//     spends nothing.
+//   - text sent to the provider is server-derived: garment name from the
+//     catalog title (bounded), category mapped to the provider's enum.
 
 import axios from "axios";
 import expressAsyncHandler from "express-async-handler";
 import pool from "../config/db.js";
 import { AI_TRYON_DAILY_LIMIT } from "../config/businessConfig.js";
+import {
+  sanitizeImageBuffer,
+  decodeInlineDataUri,
+  readLocalCatalogImage,
+  toGarmentCategory,
+  sanitizeGarmentName,
+  TryOnInputError,
+} from "../utils/tryOnImage.js";
 
 // In-memory prediction store (simple; replace with DB in production)
 const predictions = new Map();
@@ -15,6 +39,24 @@ const REPLICATE_API_URL = "https://api.replicate.com/v1";
 // unbounded. Old entries are dropped after 2h and a hard FIFO cap is enforced.
 const MAX_PREDICTIONS = 1000;
 const PREDICTION_TTL_MS = 2 * 60 * 60 * 1000;
+// A prediction still "processing" after this window is treated as abandoned
+// for capacity accounting, so a lost terminal update cannot leak a slot.
+const INFLIGHT_WINDOW_MS = 5 * 60 * 1000;
+// Concurrency caps on paid inference. The daily credit limit bounds SPEND per
+// user/day; these bound how much of it can be in flight at once, which is
+// what protects the provider account (and the instance) from a burst.
+const MAX_ACTIVE_PER_USER = (() => {
+  const n = Number(process.env.AI_TRYON_MAX_ACTIVE_PER_USER);
+  return Number.isFinite(n) && n >= 1 && n <= 10 ? n : 2;
+})();
+const MAX_ACTIVE_GLOBAL = (() => {
+  const n = Number(process.env.AI_TRYON_MAX_ACTIVE_GLOBAL);
+  return Number.isFinite(n) && n >= 1 && n <= 100 ? n : 8;
+})();
+const TERMINAL_STATUSES = new Set(["succeeded", "failed", "canceled"]);
+
+const isTerminal = (entry) => TERMINAL_STATUSES.has(entry.status);
+
 const prunePredictions = () => {
   const now = Date.now();
   for (const [id, p] of predictions) {
@@ -24,6 +66,25 @@ const prunePredictions = () => {
     const oldest = predictions.keys().next().value;
     predictions.delete(oldest);
   }
+};
+
+/**
+ * Count predictions that are still consuming (or about to consume) provider
+ * capacity, optionally for one user. Exported for the security suite: the cap
+ * is a behaviour, and the map is the state it reads.
+ * @param {number|null} userId
+ * @returns {number}
+ */
+export const countInFlight = (userId = null) => {
+  const now = Date.now();
+  let n = 0;
+  for (const p of predictions.values()) {
+    if (isTerminal(p)) continue;
+    if (now - p.createdAt > INFLIGHT_WINDOW_MS) continue;
+    if (userId !== null && p.userId !== userId) continue;
+    n += 1;
+  }
+  return n;
 };
 
 // Atomically reserve one try-on credit for the user today. Returns true if the
@@ -45,11 +106,6 @@ const reserveTryOnCredit = async (userId) => {
   return (row?.count || 0) <= AI_TRYON_DAILY_LIMIT;
 };
 
-/**
- * Generate an AI virtual try-on
- * POST /api/tryon/generate
- * Body: { modelImage, garmentImage, garmentName, category }
- */
 /** Feature flag: the AI try-on is OFF unless the operator has explicitly set
  *  AI_TRYON_ENABLED=true AND configured a token. This used to be enabled by
  *  default (the check was `!== 'false'`), which contradicted its own comment
@@ -191,6 +247,56 @@ export const assertFetchableImageUrl = (value, field) => {
 };
 
 /**
+ * Resolve the garment for a try-on from the SERVER's catalog. The caller only
+ * ever supplies an id; everything else - image source, title, category - is
+ * read from the approved product row. Returns:
+ *   { image, name, category } where `image` is either a sanitized
+ *   data: URI (local storage) or an allow-listed https URL.
+ * Throws TryOnInputError (400/404) when the product is unknown, not approved,
+ * or its image cannot be used.
+ * Exported for the security suite.
+ */
+export const resolveGarmentForTryOn = async (productId) => {
+  const id = Number(productId);
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new TryOnInputError("productId must be a valid product id");
+  }
+  const [[row]] = await pool.execute(
+    `SELECT id, title, img, category, approvalStatus FROM product WHERE id = ?`,
+    [id]
+  );
+  // Unknown and "not publicly sellable" answer identically, so this endpoint
+  // cannot be used to probe which products exist but are unapproved/rejected.
+  if (!row || row.approvalStatus !== "approved") {
+    throw new TryOnInputError(
+      "That Kente cloth is not available for AI try-on. Please pick another one.",
+      404,
+    );
+  }
+
+  let image;
+  if (typeof row.img === "string" && row.img.startsWith("https://")) {
+    // Remote catalog image (e.g. an S3/R2 public object): same fail-closed
+    // allow-list as before — a hostname the operator has not named is refused.
+    image = assertFetchableImageUrl(row.img, "productImage");
+  } else {
+    // Local storage (/images, /uploads/...): read the bytes HERE, sanitize
+    // them, and inline them. No network fetch, no SSRF surface at all.
+    const sanitized = await sanitizeImageBuffer(
+      await readLocalCatalogImage(row.img),
+      "productImage",
+    );
+    image = sanitized.dataUri;
+  }
+
+  return {
+    image,
+    name: sanitizeGarmentName(row.title),
+    category: toGarmentCategory(row.category),
+  };
+};
+
+/**
  * Public capability check so the UI can hide the try-on entry points when the
  * backend has not enabled the feature.
  * GET /api/tryon/status
@@ -200,31 +306,66 @@ export const status = expressAsyncHandler(async (_req, res) => {
 });
 
 export const generateTryOn = expressAsyncHandler(async (req, res) => {
-  const { modelImage, garmentImage, garmentName, category } = req.body;
+  const { modelImage, productId } = req.body;
 
   if (!isTryOnEnabled()) {
     res.status(503);
-    throw new Error("AI try-on is not enabled. Configure REPLICATE_API_TOKEN / AI_TRYON_ENABLED.");
+    throw new Error("AI try-on is not enabled.");
   }
 
-  if (!modelImage || !garmentImage) {
+  if (!modelImage || !productId) {
     res.status(400);
-    throw new Error("modelImage and garmentImage are required");
+    throw new Error("modelImage and productId are required");
   }
 
-  // Validate BEFORE reserving a credit, so a rejected SSRF attempt does not
-  // burn one of the user's daily try-ons.
+  // ---- Validate EVERYTHING before reserving a credit or spending money, so
+  // ---- a rejected request never burns one of the user's daily try-ons.
+  // 1) The model image must be inline bytes (a URL here would bypass
+  //    sanitization), decodable, within the pixel/size caps, and is
+  //    re-encoded with EXIF/GPS stripped before it goes anywhere.
   let safeModelImage;
-  let safeGarmentImage;
   try {
-    safeModelImage = assertFetchableImageUrl(modelImage, "modelImage");
-    safeGarmentImage = assertFetchableImageUrl(garmentImage, "garmentImage");
+    if (typeof modelImage !== "string" || !modelImage.startsWith("data:")) {
+      throw new TryOnInputError(
+        "modelImage must be an uploaded photo (base64 data: URI), not a URL",
+      );
+    }
+    // Syntax-level check first (keeps one predicate for data: URIs), then the
+    // byte-level pipeline in utils/tryOnImage.js.
+    assertFetchableImageUrl(modelImage, "modelImage");
+    safeModelImage = await sanitizeImageBuffer(
+      decodeInlineDataUri(modelImage, "modelImage"),
+      "modelImage",
+    ).then((r) => r.dataUri);
   } catch (err) {
-    res.status(400);
+    res.status(err instanceof TryOnInputError ? err.statusCode : 400);
     throw err;
   }
 
-  // Enforce the per-user daily cost limit.
+  // 2) The garment comes from the server's catalog, keyed by productId.
+  let garment;
+  try {
+    garment = await resolveGarmentForTryOn(productId);
+  } catch (err) {
+    res.status(err instanceof TryOnInputError ? err.statusCode : 400);
+    throw err;
+  }
+
+  // 3) Bound concurrent paid inference per user and in total BEFORE the daily
+  //    credit is touched: "you already have one running" must not consume a
+  //    credit, and global overload must be a controlled 429, not a provider
+  //    bill.
+  prunePredictions();
+  if (countInFlight(req.user.id) >= MAX_ACTIVE_PER_USER) {
+    res.status(429).set("Retry-After", "30");
+    throw new Error("You already have a try-on in progress. Please wait for it to finish.");
+  }
+  if (countInFlight() >= MAX_ACTIVE_GLOBAL) {
+    res.status(429).set("Retry-After", "60");
+    throw new Error("The AI stylist is at capacity right now. Please try again in a minute.");
+  }
+
+  // 4) Enforce the per-user daily cost limit.
   const allowed = await reserveTryOnCredit(req.user.id);
   if (!allowed) {
     res.status(429);
@@ -244,9 +385,9 @@ export const generateTryOn = expressAsyncHandler(async (req, res) => {
         version: "0513734a452173b8173e907e3a59d19a36266e55b48528559432bd21c7d7e985",
         input: {
           human_img: safeModelImage,
-          garm_img: safeGarmentImage,
-          garment_des: garmentName || "Authentic Kente cloth",
-          category: category || "upper_body",
+          garm_img: garment.image,
+          garment_des: garment.name,
+          category: garment.category,
           seed: Math.floor(Math.random() * 100000),
         },
       },
@@ -276,17 +417,29 @@ export const generateTryOn = expressAsyncHandler(async (req, res) => {
       });
     }
 
-    res.status(500);
-    throw new Error("Replicate did not return a prediction id.");
+    res.status(502);
+    throw new Error("Failed to generate try-on. Please try again.");
   } catch (error) {
-    console.error("Try-On generation error:", error.message);
-    res.status(error.response?.status || 502);
-    throw new Error(
-      error.response?.data?.detail ||
-        error.response?.data?.error ||
-        error.response?.data?.message ||
-        "Failed to generate try-on. Please try again."
+    // Provider errors are logged server-side in full and answered with a
+    // fixed message: upstream `detail` strings can carry account/config
+    // information, and relaying them verbatim hands the caller a channel to
+    // reflect provider internals through our API.
+    console.error(
+      "Try-On provider error:",
+      error.response?.status || "network",
+      error.message
     );
+    if (error.response?.status === 402) {
+      // Replicate answers 402 when the account is out of credit/capacity. It
+      // is a controlled, retryable state, and as a 4xx the explanatory
+      // message survives the generic-5xx rule in errorMiddleware.
+      res.status(429);
+      throw new Error("The AI stylist is out of capacity right now. Please try again later.");
+    }
+    // 5xx: errorMiddleware replaces the message with a fixed generic string,
+    // so nothing provider-shaped can reach the client.
+    res.status(502);
+    throw new Error("Failed to generate try-on. Please try again.");
   }
 });
 
@@ -298,6 +451,8 @@ export const getTryOnStatus = expressAsyncHandler(async (req, res) => {
   const { id } = req.params;
   const prediction = predictions.get(id);
 
+  // Ownership: a prediction id from another account answers exactly like a
+  // nonexistent one (404), so ids cannot be probed for existence either.
   if (!prediction || prediction.userId !== req.user.id) {
     res.status(404);
     throw new Error("Prediction not found");
@@ -315,12 +470,20 @@ export const getTryOnStatus = expressAsyncHandler(async (req, res) => {
       });
 
       const data = statusResp.data;
+      // Cache terminal states so the slot frees for capacity accounting and
+      // repeated polls stop hitting the provider.
+      if (data.status === "succeeded" || data.status === "failed" || data.status === "canceled") {
+        predictions.set(id, {
+          ...prediction,
+          status: data.status,
+          output: data.status === "succeeded" ? data.output ?? null : null,
+        });
+      }
       const status = {
         status: data.status,
         output: data.output,
         message: data.status === "succeeded" ? "Try-on complete!" : undefined,
       };
-      if (data.output) predictions.set(id, { ...prediction, status: "succeeded", output: data.output });
       return res.json(status);
     }
 
@@ -330,13 +493,25 @@ export const getTryOnStatus = expressAsyncHandler(async (req, res) => {
       output: prediction.output,
     });
   } catch (error) {
+    // A provider outage must not look like an infinite "processing" to the
+    // client; report the stored state rather than fabricating progress.
     console.error("Try-On status error:", error.message);
     res.json({
-      status: "processing",
-      output: null,
+      status: prediction.status || "processing",
+      output: prediction.output ?? null,
       message: "Still processing...",
     });
   }
 });
 
 export default { generateTryOn, getTryOnStatus };
+
+/** Exported for the security suite only: the capacity check reads the live
+ *  prediction map, and the caps are behaviour worth driving directly rather
+ *  than asserting in source. */
+export const tryOnTestHooks = {
+  predictions,
+  MAX_ACTIVE_PER_USER,
+  MAX_ACTIVE_GLOBAL,
+  INFLIGHT_WINDOW_MS,
+};

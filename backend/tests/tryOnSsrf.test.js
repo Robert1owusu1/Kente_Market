@@ -262,21 +262,48 @@ describe('F4a: the shapes that were never fetchable stay refused', () => {
 });
 
 describe('F4a: the controller and the feature flag are both fail-closed', () => {
-  test('generateTryOn validates both fields before it can spend anything', () => {
+  test('generateTryOn validates everything before it can spend anything', () => {
     const src = read('../controllers/tryOnController.js');
     const start = src.indexOf('export const generateTryOn');
     assert.ok(start > -1, 'generateTryOn not found');
     const body = src.slice(start, src.indexOf('\n});', start));
 
-    // The validation must come before reserveTryOnCredit — otherwise a
-    // rejected URL burns one of the user's daily try-ons.
-    const vIndex = body.indexOf('assertFetchableImageUrl(modelImage');
+    // The model image must be sanitized (sniff + re-encode) and the garment
+    // must be resolved SERVER-side from the product row — both before
+    // reserveTryOnCredit, otherwise a rejected request burns one of the
+    // user's daily try-ons.
+    const sanitizeIndex = body.indexOf('sanitizeImageBuffer');
+    const garmentIndex = body.indexOf('resolveGarmentForTryOn(productId)');
     const creditIndex = body.indexOf('reserveTryOnCredit');
-    assert.ok(vIndex > -1, 'modelImage is not validated');
-    assert.ok(body.indexOf('assertFetchableImageUrl(garmentImage') > -1, 'garmentImage is not validated');
+    assert.ok(sanitizeIndex > -1, 'modelImage is not sanitized');
+    assert.ok(garmentIndex > -1, 'the garment is not resolved from the catalog');
     assert.ok(creditIndex > -1, 'the daily credit is not reserved');
-    assert.ok(vIndex < creditIndex, 'the credit is reserved before the URLs are validated');
-    assert.match(body, /res\.status\(400\)/, 'a rejected URL must not fall through as a 500');
+    assert.ok(sanitizeIndex < creditIndex, 'the credit is reserved before the image is sanitized');
+    assert.ok(garmentIndex < creditIndex, 'the credit is reserved before the garment is resolved');
+    assert.match(body, /res\.status\(400\)/, 'a rejected request must not fall through as a 500');
+
+    // A client-supplied garment URL must be gone: the garment now comes from
+    // the server's catalog, never from the request body.
+    assert.ok(
+      !body.includes('assertFetchableImageUrl(garmentImage'),
+      'garmentImage is still read from the request body',
+    );
+    // The model image must be inline (a URL would bypass sanitization).
+    assert.match(
+      body,
+      /must be an uploaded photo/,
+      'modelImage is not required to be an inline upload',
+    );
+  });
+
+  test('concurrency caps are enforced before the credit is reserved', () => {
+    const src = read('../controllers/tryOnController.js');
+    const start = src.indexOf('export const generateTryOn');
+    const body = src.slice(start, src.indexOf('\n});', start));
+    const capacityIndex = body.indexOf('countInFlight');
+    const creditIndex = body.indexOf('reserveTryOnCredit');
+    assert.ok(capacityIndex > -1, 'in-flight capacity is not checked');
+    assert.ok(capacityIndex < creditIndex, 'capacity is checked after the credit is reserved');
   });
 
   test('the old opt-in allow-list condition is gone', () => {

@@ -150,13 +150,15 @@ describe('F2: the first gate is anchored', () => {
     }
   });
 
-  test('the profile twin stays anchored — it is the reference implementation', () => {
-    const start = profileSrc.indexOf('const fileFilter');
-    assert.ok(start > -1, 'profileRoutes fileFilter not found');
-    const block = profileSrc.slice(start, profileSrc.indexOf('\n});', start));
-    assert.ok(block.includes(ANCHORED_EXT), 'profileRoutes lost the anchored extension regex');
-    assert.ok(block.includes(ANCHORED_MIME), 'profileRoutes lost the anchored MIME regex');
-    assert.ok(!block.includes(UNANCHORED_OLD));
+  test('profile uploads use the shared anchored gate, not a private copy (STORE-1)', () => {
+    // profileRoutes used to carry its own (anchored) twin of this filter and
+    // its own multer.diskStorage straight into uploads/profiles, bypassing
+    // storageService. It now stages through the shared middleware checked above.
+    assert.match(profileSrc, /import upload from '\.\.\/middleware\/uploadMiddleware\.js';/);
+    assert.match(profileSrc, /upload\.single\('profilePicture'\)/);
+    assert.ok(!profileSrc.includes('diskStorage'), 'profileRoutes must not write to disk itself');
+    assert.ok(!profileSrc.includes(UNANCHORED_OLD));
+    assert.match(profileSrc, /putObject\(\{ key: `profiles\//, 'stored through storageService');
   });
 });
 

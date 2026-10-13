@@ -75,6 +75,9 @@ after(async () => {
       await pool.execute(`DELETE FROM orders WHERE id = ?`, [oid]);
     }
     await pool.execute(`DELETE FROM notifications WHERE userId = ?`, [state.admin]);
+    if (state.unknownOrder) {
+      await pool.execute(`DELETE FROM notifications WHERE title LIKE 'Refund outcome unknown%' AND message LIKE ?`, [`Order #${state.unknownOrder} %`]);
+    }
     await pool.execute(`DELETE FROM users WHERE id IN (?, ?, ?)`, [state.buyer, state.vendor, state.admin]);
   } finally {
     await pool.end();
@@ -123,9 +126,14 @@ describe('reconcileRefundedButPaid', () => {
     assert.equal(order.escrowStatus, 'held', 'no automatic void without proof');
     const [[alloc]] = await pool.execute(`SELECT status FROM escrow_allocations WHERE orderId = ?`, [state.unknownOrder]);
     assert.equal(alloc.status, 'held', 'allocation untouched');
+    // Recipients are the first admins by id (deterministic since A-1); this
+    // suite's own admin is not necessarily among them on a database that
+    // already has older admins, so assert on the alert for THIS order —
+    // checking a specific recipient is what made this test intermittent.
     const [[note]] = await pool.execute(
-      `SELECT COUNT(*) AS n FROM notifications WHERE userId = ? AND title LIKE 'Refund outcome unknown%'`,
-      [state.admin]
+      `SELECT COUNT(*) AS n FROM notifications n JOIN users u ON u.id = n.userId AND u.role = 'admin'
+       WHERE n.title LIKE 'Refund outcome unknown%' AND n.message LIKE ?`,
+      [`Order #${state.unknownOrder} %`]
     );
     assert.ok(Number(note.n) >= 1, 'admin alerted to verify in dashboard');
   });

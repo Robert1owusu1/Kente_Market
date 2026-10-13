@@ -1,6 +1,6 @@
 // Pages/Vendor/VendorPayouts.jsx
 // Wallet balance, withdrawal, transaction history
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { FaWallet, FaUniversity, FaMobileAlt, FaSpinner, FaCheckCircle, FaExclamationTriangle } from 'react-icons/fa';
 import { toast } from 'react-toastify';
 import { useGetMyVendorProfileQuery, useWithdrawVendorMutation } from '../../slices/vendorsApiSlice';
@@ -65,6 +65,20 @@ const VendorPayouts = () => {
   };
   const [withdraw, { isLoading: withrawing }] = useWithdrawVendorMutation();
   const [amount, setAmount] = useState('');
+  // Idempotency key for ONE withdrawal intent: reused by a double-click or a
+  // retry after a network error (the server then answers "already submitted"
+  // instead of reserving the money twice); replaced once the amount changes
+  // or the withdrawal went through.
+  const requestKeyRef = useRef<{ amount: string; key: string } | null>(null);
+  const requestKeyFor = (value: string) => {
+    if (!requestKeyRef.current || requestKeyRef.current.amount !== value) {
+      const key = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+        ? crypto.randomUUID()
+        : `wd-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+      requestKeyRef.current = { amount: value, key };
+    }
+    return requestKeyRef.current.key;
+  };
 
   if (isLoading) return <div className="py-10 flex items-center justify-center"><Loader /></div>;
   if (!data?.vendor) return null;
@@ -75,11 +89,19 @@ const VendorPayouts = () => {
     const num = parseFloat(amount);
     if (!num || num <= 0) return toast.error('Enter a valid amount');
     try {
-      const res = await withdraw({ amount: num }).unwrap();
+      const res = await withdraw({ amount: amount.trim(), currency: 'GHS', requestKey: requestKeyFor(amount.trim()) }).unwrap();
       toast.success(res.message || 'Withdrawal initiated');
+      requestKeyRef.current = null;
       setAmount('');
     } catch (err) {
-      const e = err as { data?: { message?: string }; message?: string; error?: string } | undefined;
+      const e = err as { status?: number; data?: { message?: string; duplicate?: boolean }; message?: string; error?: string } | undefined;
+      if (e?.status === 409 && e?.data?.duplicate) {
+        // The first submission already reached the server — never a second one.
+        toast.info('This withdrawal was already submitted. Check your payout history before trying again.');
+        requestKeyRef.current = null;
+        setAmount('');
+        return;
+      }
       toast.error(e?.data?.message || e?.message || 'Withdrawal failed');
     }
   };

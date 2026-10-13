@@ -95,13 +95,23 @@ const setupClawbackScenario = async () => {
   const allocationId = allocRes.insertId;
   createdAllocationIds.push(allocationId);
 
-  // Fund the wallet the way an early release would.
+  // Fund the wallet the way an early release would: the balance update AND
+  // the matching credit ledger row. clawbackAvailableAllocation only debits
+  // the wallet when a type='credit' row proves the payout was actually
+  // credited (F-2/E), so without this row the fixture would model a wallet
+  // that was credited outside the ledger — a state the production code
+  // deliberately refuses to claw back.
   await pool.execute(
     `INSERT INTO vendor_wallets (vendorId, available_balance, total_earned)
      VALUES (?, 90.00, 90.00)
      ON DUPLICATE KEY UPDATE available_balance = available_balance + 90.00,
                               total_earned = total_earned + 90.00`,
     [userId]
+  );
+  await pool.execute(
+    `INSERT IGNORE INTO wallet_transactions (vendorId, type, amount, allocationId, note, status)
+     VALUES (?, 'credit', 90.00, ?, 'Early (advance) escrow release for clawback fixture', 'succeeded')`,
+    [userId, allocationId]
   );
 
   return { userId, orderId, allocationId };

@@ -24,7 +24,9 @@ const up = async () => {
         if (err.code === 'ER_DUP_FIELDNAME') {
           console.log(` orders.${col.split(' ')[0]} already exists`);
         } else {
-          console.warn(` Could not add orders.${col.split(' ')[0]}: ${err.message}`);
+          // Anything but "already exists" leaves the schema short of what the
+          // checkout code reads, so fail the migration (and the db:migrate chain).
+          throw err;
         }
       }
     }
@@ -43,7 +45,9 @@ const up = async () => {
         if (err.code === 'ER_DUP_FIELDNAME') {
           console.log(` escrow_allocations.${col.split(' ')[0]} already exists`);
         } else {
-          console.warn(` Could not add escrow_allocations.${col.split(' ')[0]}: ${err.message}`);
+          // Anything but "already exists" leaves the schema short of what the
+          // checkout code reads, so fail the migration (and the db:migrate chain).
+          throw err;
         }
       }
     }
@@ -62,7 +66,9 @@ const up = async () => {
         if (err.code === 'ER_DUP_FIELDNAME') {
           console.log(` financial_events.${col.split(' ')[0]} already exists`);
         } else {
-          console.warn(` Could not add financial_events.${col.split(' ')[0]}: ${err.message}`);
+          // Anything but "already exists" leaves the schema short of what the
+          // checkout code reads, so fail the migration (and the db:migrate chain).
+          throw err;
         }
       }
     }
@@ -72,7 +78,7 @@ const up = async () => {
       await connection.execute(`CREATE INDEX idx_orders_currency ON orders (currency)`);
       console.log(' Added idx_orders_currency');
     } catch (err) {
-      if (err.code !== 'ER_DUP_KEYNAME') console.warn(` idx_orders_currency: ${err.message}`);
+      if (err.code !== 'ER_DUP_KEYNAME') throw err;
     }
 
     console.log('✅ International order currency columns added');
@@ -81,18 +87,35 @@ const up = async () => {
   }
 };
 
+// Reverse of up(). `DROP COLUMN/INDEX IF EXISTS` is not valid on MySQL 8, so
+// existence is checked in information_schema; the index goes before the
+// column it covers. Every column dropped here was added by up() on this
+// branch. Only run from a reviewed rollback, never automatically.
 const down = async () => {
   const connection = await pool.getConnection();
+  /** @param {string} sql @param {any[]} params */
+  const exists = async (sql, params) => {
+    const [rows] = await connection.execute(sql, params);
+    return /** @type {any[]} */ (rows).length > 0;
+  };
   try {
-    await connection.execute(`ALTER TABLE orders DROP COLUMN IF EXISTS currency`);
-    await connection.execute(`ALTER TABLE orders DROP COLUMN IF EXISTS exchangeRate`);
-    await connection.execute(`ALTER TABLE orders DROP COLUMN IF EXISTS originalCurrency`);
-    await connection.execute(`ALTER TABLE orders DROP COLUMN IF EXISTS originalAmount`);
-    await connection.execute(`ALTER TABLE escrow_allocations DROP COLUMN IF EXISTS currency`);
-    await connection.execute(`ALTER TABLE escrow_allocations DROP COLUMN IF EXISTS exchangeRate`);
-    await connection.execute(`ALTER TABLE financial_events DROP COLUMN IF EXISTS currency`);
-    await connection.execute(`ALTER TABLE financial_events DROP COLUMN IF EXISTS exchangeRate`);
-    await connection.execute(`DROP INDEX IF EXISTS idx_orders_currency ON orders`);
+    if (await exists(
+      `SELECT 1 FROM information_schema.STATISTICS
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'orders' AND INDEX_NAME = 'idx_orders_currency' LIMIT 1`, [])) {
+      await connection.execute(`DROP INDEX idx_orders_currency ON orders`);
+    }
+    const drops = [
+      ['orders', 'currency'], ['orders', 'exchangeRate'], ['orders', 'originalCurrency'], ['orders', 'originalAmount'],
+      ['escrow_allocations', 'currency'], ['escrow_allocations', 'exchangeRate'],
+      ['financial_events', 'currency'], ['financial_events', 'exchangeRate'],
+    ];
+    for (const [table, column] of drops) {
+      if (await exists(
+        `SELECT 1 FROM information_schema.COLUMNS
+          WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ? LIMIT 1`, [table, column])) {
+        await connection.execute(`ALTER TABLE ${table} DROP COLUMN ${column}`);
+      }
+    }
     console.log('✅ International order currency columns removed');
   } finally {
     connection.release();

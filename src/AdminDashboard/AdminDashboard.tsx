@@ -2,7 +2,7 @@
 // DESCRIPTION: Enhanced Admin Dashboard with real data, analytics, and settings
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { FaHome, FaBox, FaShoppingCart, FaUsers, FaChartLine, FaCog, FaStore, FaTag, FaPercent, FaUndo, FaStar, FaEnvelope, FaListUl, FaClipboardCheck, FaCoins, FaCertificate, FaBullhorn, FaInbox, FaLightbulb, FaClipboardList, FaChartPie, FaRecycle } from 'react-icons/fa';
+import { FaHome, FaBox, FaShoppingCart, FaUsers, FaChartLine, FaCog, FaStore, FaTag, FaPercent, FaUndo, FaStar, FaEnvelope, FaListUl, FaClipboardCheck, FaCoins, FaCertificate, FaBullhorn, FaInbox, FaLightbulb, FaClipboardList, FaChartPie, FaRecycle, FaMoneyCheckAlt, FaGift } from 'react-icons/fa';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, AreaChart, Area } from 'recharts';
 import ProductsPage from '../Pages/adminDashboardPages/products/ProductsPage';
 import OrdersPage from '../Pages/adminDashboardPages/Orders/OrdersPage';
@@ -11,12 +11,14 @@ import VendorsPage from '../Pages/adminDashboardPages/Vendors/VendorsPage';
 import PromotionsPage from '../Pages/adminDashboardPages/Promotions/PromotionsPage';
 import CouponsPage from '../Pages/adminDashboardPages/Coupons/CouponsPage';
 import ReturnsPage from '../Pages/adminDashboardPages/Returns/ReturnsPage';
+import PayoutsPage from '../Pages/adminDashboardPages/Payouts/PayoutsPage';
 import ReviewsAdminPage from '../Pages/adminDashboardPages/Reviews/ReviewsAdminPage';
 import SubscribersPage from '../Pages/adminDashboardPages/Subscribers/SubscribersPage';
 import CategoriesPage from '../Pages/adminDashboardPages/Categories/CategoriesPage';
 import ModerationPage from '../Pages/adminDashboardPages/Moderation/ModerationPage';
 import CampaignsPage from '../Pages/adminDashboardPages/Campaigns/CampaignsPage';
 import CommissionsPage from '../Pages/adminDashboardPages/Commissions/CommissionsPage';
+import ReferralsAdminPage from '../Pages/adminDashboardPages/Referrals/ReferralsAdminPage';
 import CertificatesAdminPage from '../Pages/adminDashboardPages/Certificates/CertificatesAdminPage';
 import InboxPage from '../Pages/adminDashboardPages/Inbox/InboxPage';
 import SuggestionsAdminPage from '../Pages/adminDashboardPages/Suggestions/SuggestionsAdminPage';
@@ -44,7 +46,13 @@ interface SettingsBag {
 }
 
 const AdminDashboard = () => {
-  const [activeSection, setActiveSection] = useState('dashboard');
+  // `/admin?section=payouts` (admin alert links) opens that section directly.
+  const [activeSection, setActiveSection] = useState(() => {
+    const requested = typeof window !== 'undefined'
+      ? new URLSearchParams(window.location.search).get('section')
+      : null;
+    return requested && /^[A-Za-z]+$/.test(requested) ? requested : 'dashboard';
+  });
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [settings, setSettings] = useState({
     siteName: 'Bonwire Kente',
@@ -158,6 +166,7 @@ const AdminDashboard = () => {
     { id: 'moderation', name: 'Moderation', icon: FaClipboardCheck },
     { id: 'campaigns', name: 'Campaigns', icon: FaBullhorn },
     { id: 'commissions', name: 'Commissions', icon: FaCoins },
+    { id: 'referrals', name: 'Referrals', icon: FaGift },
     { id: 'certificates', name: 'Certificates', icon: FaCertificate },
     { id: 'customers', name: 'Customers', icon: FaUsers },
     { id: 'promotions', name: 'Promotions', icon: FaTag },
@@ -166,6 +175,7 @@ const AdminDashboard = () => {
     { id: 'inbox', name: 'Inbox', icon: FaInbox },
     { id: 'suggestions', name: 'Suggestions', icon: FaLightbulb },
     { id: 'returns', name: 'Returns', icon: FaUndo },
+    { id: 'payouts', name: 'Payouts', icon: FaMoneyCheckAlt },
     { id: 'buyback', name: 'Sell-It-Back', icon: FaRecycle },
     { id: 'customRequests', name: 'Custom Requests', icon: FaClipboardList },
     { id: 'insights', name: 'Insights', icon: FaChartPie },
@@ -593,6 +603,8 @@ const AdminDashboard = () => {
         return <CampaignsPage />;
       case 'commissions':
         return <CommissionsPage />;
+      case 'referrals':
+        return <ReferralsAdminPage />;
       case 'certificates':
         return <CertificatesAdminPage />;
       case 'customers':
@@ -609,6 +621,8 @@ const AdminDashboard = () => {
         return <SuggestionsAdminPage />;
       case 'returns':
         return <ReturnsPage />;
+      case 'payouts':
+        return <PayoutsPage />;
       case 'buyback':
         return <BuybackAdmin />;
       case 'customRequests':

@@ -2,7 +2,7 @@
 // Full vendor dashboard with sidebar navigation (mirrors admin dashboard)
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { FaHome, FaBox, FaShoppingCart, FaChartLine, FaCog, FaStore, FaTag, FaPercent, FaStar, FaUndo, FaWallet, FaPlus, FaBoxes, FaEnvelope, FaUserCog, FaClipboardList } from 'react-icons/fa';
+import { FaHome, FaBox, FaShoppingCart, FaChartLine, FaCog, FaStore, FaTag, FaPercent, FaStar, FaUndo, FaWallet, FaPlus, FaBoxes, FaEnvelope, FaUserCog, FaClipboardList, FaGift } from 'react-icons/fa';
 import { useGetMyVendorProfileQuery } from '../../slices/vendorsApiSlice';
 import Loader from '../../components/loader/Loader';
 import VendorOverview from './VendorOverview';
@@ -19,6 +19,7 @@ import VendorMessages from './VendorMessages';
 import VendorStaff from './VendorStaff';
 import VendorCustomRequests from './VendorCustomRequests';
 import VendorInsights from './VendorInsights';
+import VendorReferrals from './VendorReferrals';
 import Footer from '../../components/Footer/Footer';
 
 const menuItems = [
@@ -35,6 +36,7 @@ const menuItems = [
   { id: 'coupons', name: 'Coupons', icon: FaPercent },
   { id: 'customRequests', name: 'Custom Requests', icon: FaClipboardList },
   { id: 'payouts', name: 'Payouts', icon: FaWallet },
+  { id: 'referrals', name: 'Refer Customers', icon: FaGift },
   { id: 'settings', name: 'Settings', icon: FaCog },
 ];
 
@@ -112,6 +114,8 @@ const VendorDashboard = () => {
         return <VendorCustomRequests />;
       case 'payouts':
         return <VendorPayouts />;
+      case 'referrals':
+        return <VendorReferrals storeSlug={typeof vendor.slug === 'string' ? vendor.slug : null} />;
       case 'settings':
         return <VendorSettings vendor={vendor} />;
       default:

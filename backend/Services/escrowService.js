@@ -4,15 +4,18 @@
 // held until the customer confirms receipt (or the release deadline passes), then
 // paid out to each vendor via Paystack Transfers minus the platform commission.
 import pool from '../config/db.js';
-import paystackServices from './paystackservices.js';
+import paystackServices, { PAYSTACK_TIMEOUT_MS } from './paystackservices.js';
 import { creditVendorBalance, clawbackVendorBalance } from './walletService.js';
+import { recordCheckAndAlert, dueJoin } from '../utils/reconciliationChecks.js';
 import { recordFinancialEvent } from './ledgerService.js';
-import { PLATFORM_FEE_RATE, ESCROW_RELEASE_DAYS } from '../config/businessConfig.js';
+import { reconcileTerminalOrderCharge } from './paymentReconciliationService.js';
+import { ESCROW_RELEASE_DAYS } from '../config/businessConfig.js';
 import { CHARGED_CURRENCY } from './paymentCurrency.js';
-import { resolveCommissionRate } from './commissionService.js';
+import { buildEscrowAllocationRows, allocationFees, readCommissionSnapshot } from './commissionService.js';
+import { recordReferralForOrder, recordPaymentInstrument, adjustReferralForRefund } from './referralService.js';
 import Notification from '../models/notificationModel.js';
 import Coupon from '../models/couponModel.js';
-import { round2, calcEscrowFees } from '../../shared/pricing.js';
+import { round2 } from '../../shared/pricing.js';
 import crypto from 'crypto';
 
 /**
@@ -28,6 +31,7 @@ import crypto from 'crypto';
  * @property {string | null} [payoutReference] Paystack transfer reference
  * @property {string | null} [recipientCode] vendor Paystack recipient code
  * @property {string} [reason] last-change reason
+ * @property {boolean} [pending] withdrawal reserved but provider outcome unknown (timeout) — still reserved
  */
 
 /**
@@ -35,7 +39,7 @@ import crypto from 'crypto';
  * @property {number} [product] legacy product field (product id)
  * @property {number} [productId] product id
  * @property {number} [id] product id fallback
- * @property {number | string} [vendorId] owning vendor user id (absent = platform-owned)
+ * @property {number | string | null} [vendorId] owning vendor user id (absent/null = platform-owned)
  * @property {number | string} [quantity] purchased quantity
  * @property {number | string} [price] unit price (GHS)
  * @property {number | string} [qty] quantity fallback name
@@ -59,6 +63,50 @@ export const getOrderAllocations = async (orderId) => {
 };
 
 /**
+ * F-2/F-3 central money-out invariant: an order is releasable only when it
+ * exists, is not cancelled, and its payment was actually collected (and not
+ * refunded). Every release path (manual confirm, auto-release, retry) must
+ * pass through this check against authoritative DB state — never trust a
+ * previous controller's validation, and never release on allocation status
+ * alone.
+ * @param {number | string} orderId
+ * @returns {Promise<{ ok: boolean, reason?: string }>}
+ */
+export const assertOrderReleasable = async (orderId) => {
+  const [[order]] = await pool.execute(
+    `SELECT id, orderStatus, paymentStatus FROM orders WHERE id = ?`,
+    [orderId]
+  );
+  if (!order) return { ok: false, reason: 'order not found' };
+  if (order.orderStatus === 'cancelled') return { ok: false, reason: 'order cancelled' };
+  if (order.paymentStatus === 'refunded') return { ok: false, reason: 'order refunded' };
+  if (order.paymentStatus !== 'paid') {
+    return { ok: false, reason: `payment not collected (paymentStatus='${order.paymentStatus}')` };
+  }
+  return { ok: true };
+};
+
+/**
+ * F-2 central money-out invariant for withdrawals: an order must not pay out
+ * once it is cancelled or refunded. Enforced inside the atomic claim (not
+ * just in the controller) so a cancellation racing a withdrawal cannot lose.
+ * @param {number | string} allocationId
+ * @returns {Promise<boolean>} true when the order is NOT cancelled/refunded
+ */
+export const assertOrderWithdrawable = async (allocationId) => {
+  const [[row]] = await pool.execute(
+    `SELECT o.orderStatus, o.paymentStatus
+      FROM escrow_allocations ea
+      JOIN orders o ON o.id = ea.orderId
+     WHERE ea.id = ?`,
+    [allocationId]
+  );
+  if (!row) return false;
+  if (row.orderStatus === 'cancelled' || row.paymentStatus === 'refunded') return false;
+  return true;
+};
+
+/**
  * Load a vendor's allocations that are in the 'available' state (released to
  * their balance, awaiting withdrawal), joined with their payout recipient.
  * @param {number | string} vendorId
@@ -70,6 +118,11 @@ export const getAvailableAllocationsForVendor = async (vendorId) => {
      FROM escrow_allocations ea
      JOIN vendors v ON v.userId = ea.vendorId
      WHERE ea.vendorId = ? AND ea.status = 'available'
+       AND NOT EXISTS (
+         SELECT 1 FROM orders o
+          WHERE o.id = ea.orderId
+            AND (o.orderStatus = 'cancelled' OR o.paymentStatus = 'refunded')
+       )
      ORDER BY ea.id ASC`,
     [vendorId]
   );
@@ -123,106 +176,26 @@ export const recomputeOrderEscrowStatus = async (orderId) => {
  * @returns {Promise<number>} number of allocations created
  */
 export const createEscrowAllocations = async (orderId, items, { advanceRatio = 0, discount = 0 } = {}) => {
-  if (!Array.isArray(items) || items.length === 0) return 0;
-
-  const productIds = items
-    .map((it) => it?.product || it?.productId || it?.id)
-    .filter((id) => id !== undefined && id !== null);
-
-  if (productIds.length === 0) return 0;
-
-  const placeholders = productIds.map(() => '?').join(', ');
-  const [products] = await pool.execute(
-    `SELECT id, vendorId, price, advanceRatio FROM product WHERE id IN (${placeholders})`,
-    productIds
+  // Commission is resolved PER LINE (product > vendor > category > global,
+  // then vendor rate, then default) on the seller's list price and frozen on
+  // the row (REFERRAL_SYSTEM_DESIGN.md §3).
+  // Who funds the discount (R6): an admin coupon (coupons.vendorId NULL) comes
+  // out of the platform commission; a seller coupon out of that seller's share.
+  const [[couponRow]] = await pool.execute(
+    `SELECT c.vendorId AS couponVendorId FROM orders o LEFT JOIN coupons c ON c.id = o.couponId WHERE o.id = ?`,
+    [orderId]
   );
-  /** @type {Array<{ id: number, vendorId: number | string, price: number | string, category?: string, advanceRatio?: number | null }>} */
-  const productRows = products;
-  const productMap = new Map(productRows.map((p) => [p.id, p]));
-
-  // vendorId -> total amount owed to that vendor (gross, before discount)
-  const vendorTotals = new Map();
-  let grossSubtotal = 0;
-  for (const it of items) {
-    const pid = /** @type {any} */ (it?.product || it?.productId || it?.id);
-    const product = productMap.get(pid);
-    const vendorId = product?.vendorId || it?.vendorId || null;
-    // RED-TEAM FIX (P0): order lines produced by orderController carry `qty`
-    // (custom-request lines carry both). Reading only `quantity` silently fell
-    // back to 1, so a 3-unit order escrowed ONE unit: the customer was charged
-    // for 3, the vendor could only ever be paid for 1, and the discount
-    // apportionment (netFactor below) used a wrong gross subtotal too.
-    const qty = parseFloat(String(it?.quantity ?? it?.qty)) || 1;
-    const price = parseFloat(String(it?.price ?? product?.price)) || 0;
-    grossSubtotal += qty * price;
-    if (!vendorId) continue; // platform-owned items skip escrow
-    vendorTotals.set(vendorId, (vendorTotals.get(vendorId) || 0) + qty * price);
-  }
-
-  // Vendors must be paid on the DISCOUNTED amount the customer actually
-  // spent, not the gross price — otherwise the platform (not the vendor)
-  // funds every coupon, and a large vendor-issued discount drives each order
-  // net-negative for the platform. Apportion the order-level discount across
-  // all items pro rata (platform-owned items share it too), then allocate.
-  const discountAmount = Math.max(0, parseFloat(String(discount)) || 0);
-  const netFactor = grossSubtotal > 0 ? Math.max(0, 1 - discountAmount / grossSubtotal) : 1;
-  if (netFactor < 1) {
-    for (const [vendorId, gross] of vendorTotals) {
-      vendorTotals.set(vendorId, round2(gross * netFactor));
-    }
-  }
-
+  const couponVendorId = couponRow?.couponVendorId ?? null;
+  const { rows, snapshot } = await buildEscrowAllocationRows(pool, items, { advanceRatio, discount, couponVendorId });
+  // Frozen per-line record (P, r, F, Da, Ds) for revenue, partial refunds and referrals.
+  await pool.execute(`UPDATE orders SET commissionSnapshot = ? WHERE id = ?`, [JSON.stringify(snapshot), orderId]);
   let created = 0;
-  for (const [vendorId] of vendorTotals) {
-    // Resolve the effective commission via the commission engine:
-    // product > vendor > category > global, then vendor override, then default.
-    const productForVendor = [...productRows].find((p) => p.vendorId === vendorId);
-    const feeRate = await resolveCommissionRate({
-      productId: productForVendor?.id,
-      vendorId,
-      category: productForVendor?.category,
-    });
-    const totalAmount = vendorTotals.get(vendorId) || 0;
-
-    // Use product-level advanceRatio if set, otherwise fall back to order-level option,
-    // otherwise fall back to global CUSTOM_ADVANCE_RATIO (default 0.5)
-    const productAdvanceRatio = productForVendor?.advanceRatio;
-    const ratio = productAdvanceRatio !== null && productAdvanceRatio !== undefined
-      ? parseFloat(String(productAdvanceRatio))
-      : Math.max(0, Math.min(1, parseFloat(String(advanceRatio)) || 0));
-
-    if (ratio > 0 && totalAmount > 0) {
-      // 50/50 (or configured) advance escrow: split into advance + balance.
-      const advanceAmount = round2(totalAmount * ratio);
-      const balanceAmount = round2(totalAmount - advanceAmount);
-      const { platformFee: advanceFee } = calcEscrowFees(advanceAmount, feeRate, PLATFORM_FEE_RATE);
-      const { platformFee: balanceFee } = calcEscrowFees(balanceAmount, feeRate, PLATFORM_FEE_RATE);
-      if (advanceAmount > 0) {
-        const [insert] = await pool.execute(
-          `INSERT IGNORE INTO escrow_allocations
-             (orderId, vendorId, amount, platformFeeRate, platformFee, payoutAmount, status, allocationType)
-           VALUES (?, ?, ?, ?, ?, ?, 'pending', 'advance')`,
-          [orderId, vendorId, advanceAmount, feeRate, advanceFee, round2(advanceAmount - advanceFee)]
-        );
-        created += insert.affectedRows;
-      }
-      if (balanceAmount > 0) {
-        const [insert] = await pool.execute(
-          `INSERT IGNORE INTO escrow_allocations
-             (orderId, vendorId, amount, platformFeeRate, platformFee, payoutAmount, status, allocationType)
-           VALUES (?, ?, ?, ?, ?, ?, 'pending', 'balance')`,
-          [orderId, vendorId, balanceAmount, feeRate, balanceFee, round2(balanceAmount - balanceFee)]
-        );
-        created += insert.affectedRows;
-      }
-      continue;
-    }
-
-    const { platformFee, payoutAmount } = calcEscrowFees(totalAmount, feeRate, PLATFORM_FEE_RATE);
+  for (const r of rows) {
     const [insert] = await pool.execute(
-      `INSERT IGNORE INTO escrow_allocations (orderId, vendorId, amount, platformFeeRate, platformFee, payoutAmount, status)
-       VALUES (?, ?, ?, ?, ?, ?, 'pending')`,
-      [orderId, vendorId, round2(totalAmount), feeRate, platformFee, payoutAmount]
+      `INSERT IGNORE INTO escrow_allocations
+         (orderId, vendorId, amount, platformFeeRate, platformFee, payoutAmount, status, allocationType)
+       VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)`,
+      [orderId, r.vendorId, r.amount, r.platformFeeRate, r.platformFee, r.payoutAmount, r.allocationType]
     );
     created += insert.affectedRows;
   }
@@ -268,7 +241,7 @@ const reportCouponExhausted = async (couponId, orderId, coupon) => {
     });
   } catch { /* journal is best-effort */ }
   try {
-    const [admins] = await pool.execute(`SELECT id FROM users WHERE role = 'admin' LIMIT 5`);
+    const [admins] = await pool.execute(`SELECT id FROM users WHERE role = 'admin' ORDER BY id ASC LIMIT 5`);
     for (const admin of admins) {
       await Notification.create({
         userId: admin.id,
@@ -384,45 +357,120 @@ export const releaseAllocation = async (allocation) => {
     return updated;
   }
 
-  const { platformFee, payoutAmount } = calcEscrowFees(
-    allocation.amount,
-    allocation.platformFeeRate,
-    PLATFORM_FEE_RATE
-  );
-
-  const [transition] = await pool.execute(
-    `UPDATE escrow_allocations
-     SET status = 'available', platformFee = ?, payoutAmount = ?,
-         updated_at = CURRENT_TIMESTAMP
-     WHERE id = ? AND status = 'held'`,
-    [platformFee, payoutAmount, allocation.id]
-  );
-
-  // A concurrent delivery confirmation may have released this allocation
-  // first. Only the request that wins held -> available owns the wallet credit.
-  if (transition.affectedRows !== 1) {
-    updated.reason = 'already released by another worker';
+  // F-3: never release for a cancelled/refunded/unpaid order, even if the
+  // allocation itself is still 'held' (e.g. cancel raced the release job).
+  // Checked here — not trusted from any caller — against live DB state.
+  const releasable = await assertOrderReleasable(allocation.orderId);
+  if (!releasable.ok) {
+    updated.reason = `order not releasable: ${releasable.reason}`;
     return updated;
   }
 
-  // Credit the vendor's wallet balance (durable, shown on dashboard).
-  const [orderRows] = await pool.execute(
+  // Commission frozen on the row at order time (later rule edits never
+  // rewrite it); recomputed from the stored rate only for rows with no fee.
+  const { platformFee, payoutAmount } = allocationFees(allocation);
+
+  // F-2/F-3/E: transition + wallet credit commit atomically on ONE
+  // connection with the allocation row locked first. A concurrent
+  // void/withdraw/release claim serializes on the row lock: it either runs
+  // fully before us (we then see a non-held row and refuse) or fully after
+  // us (it then sees the credit row and claws back). The split-brain the
+  // old code allowed — void claiming between our transition and our credit,
+  // debiting the vendor for funds never credited — is structurally closed.
+  const [[orderRows]] = await pool.execute(
     `SELECT orderNumber FROM orders WHERE id = ?`,
     [allocation.orderId]
   );
   const orderNumber = orderRows.length > 0 ? orderRows[0].orderNumber : null;
+
+  const connection = await pool.getConnection();
   try {
-    await creditVendorBalance(allocation.vendorId, allocation.id, payoutAmount, orderNumber);
-  } catch (error) {
-    // Do not strand an allocation as available without a corresponding wallet
-    // credit. Revert only our own transition so the scheduled release can
-    // safely retry; a successful concurrent credit is protected by its ledger
-    // unique key and will not be duplicated.
-    await pool.execute(
-      `UPDATE escrow_allocations SET status = 'held', updated_at = CURRENT_TIMESTAMP
-       WHERE id = ? AND status = 'available'`, [allocation.id]
+    await connection.beginTransaction();
+    const [[locked]] = await connection.execute(
+      `SELECT status FROM escrow_allocations WHERE id = ? FOR UPDATE`,
+      [allocation.id]
     );
+    if (!locked || locked.status !== 'held') {
+      await connection.rollback();
+      updated.reason = 'not held';
+      return updated;
+    }
+    // Re-check order eligibility atomically inside the claim so a
+    // cancellation landing between the pre-check and this UPDATE still wins.
+    // Exactly one of (release, void) can own a held allocation.
+    const [transition] = await connection.execute(
+      `UPDATE escrow_allocations ea
+        SET ea.status = 'available', ea.platformFee = ?, ea.payoutAmount = ?,
+            ea.updated_at = CURRENT_TIMESTAMP
+       WHERE ea.id = ? AND ea.status = 'held'
+         AND NOT EXISTS (
+           SELECT 1 FROM orders o
+            WHERE o.id = ea.orderId
+              AND (o.orderStatus = 'cancelled' OR o.paymentStatus = 'refunded' OR o.paymentStatus != 'paid')
+         )`,
+      [platformFee, payoutAmount, allocation.id]
+    );
+    if (transition.affectedRows !== 1) {
+      await connection.rollback();
+      updated.reason = 'order not releasable: changed during release';
+      return updated;
+    }
+
+    // Wallet credit in the same transaction (same statements + idempotency
+    // key as creditVendorBalance, so behavior is unchanged).
+    const amount = round2(parseFloat(String(payoutAmount)) || 0);
+    if (amount <= 0) throw new Error('Escrow credit amount must be positive');
+    await connection.execute(`INSERT IGNORE INTO vendor_wallets (vendorId) VALUES (?)`, [allocation.vendorId]);
+    const [ledger] = await connection.execute(
+      `INSERT IGNORE INTO wallet_transactions (vendorId, type, amount, allocationId, note, status)
+       VALUES (?, 'credit', ?, ?, ?, 'succeeded')`,
+      [allocation.vendorId, amount, allocation.id, `Escrow release for order ${orderNumber || ''}`.trim()]
+    );
+    if (ledger.affectedRows !== 1) {
+      await connection.rollback();
+      updated.reason = 'already credited by another worker';
+      return updated;
+    }
+    await connection.execute(
+      `UPDATE vendor_wallets
+       SET available_balance = available_balance + ?, total_earned = total_earned + ?,
+           updated_at = CURRENT_TIMESTAMP WHERE vendorId = ?`,
+      [amount, amount, allocation.vendorId]
+    );
+    await recordFinancialEvent({
+      eventType: 'escrow.release',
+      direction: 'info',
+      amount,
+      vendorId: allocation.vendorId,
+      allocationId: allocation.id,
+      reference: `escrow.release:${allocation.id}`,
+      dedupeKey: `escrow.release:${allocation.id}`,
+      payload: { orderNumber: orderNumber || null },
+      connection,
+    });
+    await connection.commit();
+  } catch (error) {
+    await connection.rollback().catch(() => {});
+    // If the order has become ineligible while we failed, park the row as
+    // failed (funds never moved — nothing to claw back) instead of
+    // stranding it 'held' where no future release may touch it.
+    try {
+      const re = await assertOrderReleasable(allocation.orderId);
+      if (!re.ok) {
+        await pool.execute(
+          `UPDATE escrow_allocations
+           SET status = 'failed', reason = 'voided (order ineligible; release failed)',
+               updated_at = CURRENT_TIMESTAMP
+           WHERE id = ? AND status = 'held'`,
+          [allocation.id]
+        );
+        updated.reason = `release failed and order ineligible (${re.reason})`;
+        return updated;
+      }
+    } catch { /* parking is best-effort */ }
     throw error;
+  } finally {
+    connection.release();
   }
 
   updated.status = 'available';
@@ -444,7 +492,7 @@ export const releaseAllocation = async (allocation) => {
  *   allocation (defaults to the full remaining payoutAmount)
  * @returns {Promise<Allocation>}
  */
-export const payoutAllocation = async (allocation, requestedAmount) => {
+export const payoutAllocation = async (allocation, requestedAmount, { withdrawalId = null } = {}) => {
   const updated = { ...allocation, paid: false };
 
   if (allocation.status !== 'available') {
@@ -459,42 +507,56 @@ export const payoutAllocation = async (allocation, requestedAmount) => {
     return updated;
   }
 
-  // The stored remainder is the source of truth: fees were fixed at release
-  // time, so never recompute them here or we'd drift from the wallet ledger.
-  const available = parseFloat(String(allocation.payoutAmount ?? 0)) || 0;
-  const requested = parseFloat(String(requestedAmount)) || available;
-  const amount = Math.min(available, Math.max(0, requested));
-  if (amount <= 0) {
+  const requestedNum = parseFloat(String(requestedAmount));
+  const wanted = Number.isFinite(requestedNum) && requestedNum > 0
+    ? round2(requestedNum)
+    : round2(parseFloat(String(allocation.payoutAmount ?? 0)) || 0);
+  if (wanted <= 0) {
     updated.reason = 'invalid withdrawal amount';
     return updated;
   }
-  const fullPayout = round2(available) - round2(amount) < 0.01;
   const reference = `kente_tr_${allocation.id}_${crypto.randomUUID().replace(/-/g, '')}`;
 
-  // Claim the funds and persist the provider idempotency key *before* any
-  // network call.  This is the critical boundary: concurrent requests cannot
-  // both send the same money to Paystack.
+  // Reserve the funds and persist the provider idempotency key BEFORE any
+  // network call (PAYOUT_LIFECYCLE_DESIGN.md §4.1). The allocation row lock
+  // is the one lock every writer of this allocation's money takes first
+  // (claims, settlements, clawbacks), so "full" is decided from the LOCKED
+  // remainder — never from the caller's possibly stale read — and two
+  // concurrent claims can never reserve the same money.
+  let amount;
+  let fullPayout;
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();
-    const [claimed] = await connection.execute(
-      `UPDATE escrow_allocations
-       SET status = CASE WHEN ? THEN 'releasing' ELSE 'available' END,
-           payoutAmount = payoutAmount - ?,
-           payoutReference = CASE WHEN ? THEN ? ELSE payoutReference END,
-           updated_at = CURRENT_TIMESTAMP
-       WHERE id = ? AND status = 'available' AND payoutAmount >= ?`,
-      [fullPayout, amount, fullPayout, reference, allocation.id, amount]
+    const [[locked]] = await connection.execute(
+      `SELECT id, orderId, status, payoutAmount FROM escrow_allocations WHERE id = ? FOR UPDATE`,
+      [allocation.id]
     );
-    if (claimed.affectedRows !== 1) {
+    const [[order]] = locked
+      ? await connection.execute(`SELECT orderStatus, paymentStatus FROM orders WHERE id = ?`, [locked.orderId])
+      : [[null]];
+    const remainder = locked ? round2(parseFloat(String(locked.payoutAmount ?? 0)) || 0) : 0;
+    // F-2: a cancellation/refund that landed after the controller's read wins.
+    const orderBlocked = !order || order.orderStatus === 'cancelled' || order.paymentStatus === 'refunded';
+    if (!locked || locked.status !== 'available' || orderBlocked || remainder < wanted || remainder <= 0) {
       await connection.rollback();
       updated.reason = 'allocation was already claimed by another withdrawal';
       return updated;
     }
+    amount = wanted;
+    fullPayout = round2(remainder - amount) < 0.01;
     await connection.execute(
-      `INSERT INTO payout_attempts (allocationId, vendorId, amount, reference, isFull, status)
-       VALUES (?, ?, ?, ?, ?, 'processing')`,
-      [allocation.id, allocation.vendorId, amount, reference, fullPayout]
+      `UPDATE escrow_allocations
+          SET status = ?, payoutAmount = payoutAmount - ?,
+              payoutReference = CASE WHEN ? THEN ? ELSE payoutReference END,
+              updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?`,
+      [fullPayout ? 'releasing' : 'available', amount, fullPayout, reference, allocation.id]
+    );
+    await connection.execute(
+      `INSERT INTO payout_attempts (allocationId, vendorId, amount, amountMinor, currency, withdrawalId, reference, isFull, status)
+       VALUES (?, ?, ?, ?, 'GHS', ?, ?, ?, 'processing')`,
+      [allocation.id, allocation.vendorId, amount, Math.round(amount * 100), withdrawalId, reference, fullPayout]
     );
     await connection.commit();
   } catch (error) {
@@ -509,12 +571,24 @@ export const payoutAllocation = async (allocation, requestedAmount) => {
       amount, allocation.recipientCode, `Escrow payout for order #${allocation.orderId}`, reference
     );
     const providerReference = result?.data?.data?.reference || result?.data?.reference || reference;
-    if (!providerReference) throw new Error('Paystack transfer returned no reference');
+    const ackStatus = String(result?.data?.status || result?.data?.data?.status || '').toLowerCase() || null;
 
-    // Paystack normally returns the supplied reference. Keep the provider's
-    // value if it differs so its webhook can still be reconciled.
-    if (providerReference !== reference) {
-      await pool.execute(`UPDATE payout_attempts SET providerReference = ? WHERE reference = ?`, [providerReference, reference]);
+    // The provider acknowledged this exact reference: record it. A later
+    // "transfer not found" from verify is then contradictory evidence and is
+    // escalated instead of releasing the funds (design §5).
+    await pool.execute(
+      `UPDATE payout_attempts
+          SET initiatedAt = CURRENT_TIMESTAMP, providerStatus = ?,
+              providerReference = CASE WHEN ? <> reference THEN ? ELSE providerReference END
+        WHERE reference = ?`,
+      [ackStatus, providerReference, providerReference, reference]
+    );
+    if (ackStatus === 'otp') {
+      // Paystack is waiting for an OTP to finalise this transfer: it will not
+      // complete on its own. The funds stay reserved; an operator must act.
+      const { alertPayoutAttempt } = await import('./transferSettlementService.js');
+      const [[row]] = await pool.execute(`SELECT * FROM payout_attempts WHERE reference = ?`, [reference]);
+      if (row) await alertPayoutAttempt(row, 'provider_otp', 'Paystack requires an OTP to finalise this transfer (disable transfer OTP or finalise it in the dashboard)');
     }
 
     // Immutable audit event for the claim (dedupe by the globally unique
@@ -530,31 +604,38 @@ export const payoutAllocation = async (allocation, requestedAmount) => {
         reference,
         providerReference,
         dedupeKey: `payout.claimed:${reference}`,
-        payload: { isFull: fullPayout },
+        payload: { isFull: fullPayout, withdrawalId },
       });
     } catch { /* journal is best-effort */ }
 
     if (fullPayout) {
       updated.status = 'releasing';
+      updated.payoutAmount = 0;
     } else {
-      const remainingNet = Math.max(0, round2(available - amount));
+      const remainingNet = Math.max(0, round2(parseFloat(String(allocation.payoutAmount ?? 0)) - amount));
       updated.payoutAmount = remainingNet;
       updated.status = 'available';
-      updated.reason = `partial withdrawal of GHS ${round2(amount).toFixed(2)} (${round2(remainingNet).toFixed(2)} remaining)`;
+      updated.reason = `partial withdrawal of GHS ${round2(amount).toFixed(2)}`;
     }
     updated.paid = true;
+    updated.amount = amount;
     updated.platformFee = allocation.platformFee;
     updated.payoutReference = providerReference;
   } catch (error) {
     // A timeout can mean Paystack accepted the transfer but its response was
-    // lost. Never re-open these funds automatically; reconciliation can safely
-    // retry/query the same provider reference without creating a duplicate.
+    // lost, so the reservation is NEVER released here. Only provider evidence
+    // (webhook or verify, design §5) can return these funds; reconciliation
+    // verifies this same reference and never re-sends it.
     await pool.execute(
-      `UPDATE payout_attempts SET lastError = ?, updated_at = CURRENT_TIMESTAMP WHERE reference = ? AND status = 'processing'`,
-      [String(error.message || error).slice(0, 500), reference]
+      `UPDATE payout_attempts SET lastError = ?, initiateHttpStatus = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE reference = ? AND status = 'processing'`,
+      [String(error.message || error).slice(0, 500),
+       Number.isInteger(error?.providerStatus) ? error.providerStatus : null, reference]
     );
- console.error(` Escrow payout failed for allocation ${allocation.id}:`, error.message);
+    console.error(` Escrow payout failed for allocation ${allocation.id}:`, error.message);
     updated.status = fullPayout ? 'releasing' : 'available';
+    updated.pending = true;
+    updated.amount = amount;
     updated.reason = `Transfer outcome pending reconciliation: ${error.message}`;
   }
   return updated;
@@ -564,9 +645,16 @@ export const payoutAllocation = async (allocation, requestedAmount) => {
  * Release ALL escrow for an order that has been delivered and confirmed
  * (or auto-released after the deadline). Idempotent per allocation.
  * @param {number | string} orderId
- * @returns {Promise<{ released: number, available: number, failed: number }>}
+ * @returns {Promise<{ released: number, available: number, failed: number, skipped?: string }>}
  */
 export const releaseEscrowForOrder = async (orderId) => {
+  // F-3: authoritative order gate — releaseEscrowForOrder is called from
+  // customer confirm, admin, webhook-adjacent and scheduler paths; none of
+  // them may release a cancelled/refunded/unpaid order.
+  const releasable = await assertOrderReleasable(orderId);
+  if (!releasable.ok) {
+    return { released: 0, available: 0, failed: 0, skipped: `order not releasable: ${releasable.reason}` };
+  }
   const allocations = await getOrderAllocations(orderId);
   if (allocations.length === 0) return { released: 0, available: 0, failed: 0 };
 
@@ -575,9 +663,15 @@ export const releaseEscrowForOrder = async (orderId) => {
 
   for (const allocation of allocations) {
     if (allocation.status === 'held') {
-      const updated = await releaseAllocation(allocation);
-      if (updated.status === 'available') available += 1;
-      else if (updated.status === 'failed') failed += 1;
+      // F: one bad/stale row must not abort the whole order pass.
+      try {
+        const updated = await releaseAllocation(allocation);
+        if (updated.status === 'available') available += 1;
+        else if (updated.status === 'failed') failed += 1;
+      } catch (error) {
+        console.error(` Release failed for allocation ${allocation.id}: ${error.message}`);
+        failed += 1;
+      }
     }
   }
 
@@ -597,9 +691,15 @@ export const releaseEscrowForOrder = async (orderId) => {
  * Does NOT affect other vendors' allocations in the same order.
  * @param {number | string} orderId
  * @param {number | string} vendorId
- * @returns {Promise<{ released: number, available: number, failed: number }>}
+ * @returns {Promise<{ released: number, available: number, failed: number, skipped?: string }>}
  */
 export const releaseVendorEscrow = async (orderId, vendorId) => {
+  // F-3: same authoritative gate as the whole-order path (auto-release calls
+  // here directly per vendor).
+  const releasable = await assertOrderReleasable(orderId);
+  if (!releasable.ok) {
+    return { released: 0, available: 0, failed: 0, skipped: `order not releasable: ${releasable.reason}` };
+  }
   const allocations = await getOrderAllocations(orderId);
   const vendorAllocs = allocations.filter(a => a.vendorId == vendorId);
   if (vendorAllocs.length === 0) return { released: 0, available: 0, failed: 0 };
@@ -609,9 +709,15 @@ export const releaseVendorEscrow = async (orderId, vendorId) => {
 
   for (const allocation of vendorAllocs) {
     if (allocation.status === 'held') {
-      const updated = await releaseAllocation(allocation);
-      if (updated.status === 'available') available += 1;
-      else if (updated.status === 'failed') failed += 1;
+      // F: one bad/stale row must not abort the vendor pass.
+      try {
+        const updated = await releaseAllocation(allocation);
+        if (updated.status === 'available') available += 1;
+        else if (updated.status === 'failed') failed += 1;
+      } catch (error) {
+        console.error(` Release failed for allocation ${allocation.id}: ${error.message}`);
+        failed += 1;
+      }
     }
   }
 
@@ -638,6 +744,8 @@ export const releaseVendorEscrow = async (orderId, vendorId) => {
  * Called by cleanup scheduler.
  */
 export const autoReleaseExpiredVendorEscrows = async () => {
+  // F-3: candidate pre-filter on authoritative order state (service-level
+  // assertOrderReleasable inside releaseVendorEscrow remains the real guard).
   const [rows] = await pool.execute(
     `SELECT vof.orderId, vof.vendorId
      FROM vendor_order_fulfillment vof
@@ -645,7 +753,9 @@ export const autoReleaseExpiredVendorEscrows = async () => {
      WHERE vof.status IN ('delivered','shipped')
        AND vof.deliveredAt IS NOT NULL
        AND vof.escrowReleaseDeadline IS NOT NULL
-       AND vof.escrowReleaseDeadline < NOW()`
+       AND vof.escrowReleaseDeadline < NOW()
+       AND o.orderStatus NOT IN ('cancelled', 'refunded')
+       AND o.paymentStatus = 'paid'`
   );
 
   for (const row of rows) {
@@ -720,10 +830,13 @@ export const setVendorEscrowReleaseDeadline = async (orderId, vendorId) => {
  * Called by the cleanup scheduler.
  */
 export const autoReleaseExpiredEscrows = async () => {
+  // F-3: only collected, live orders are candidates (releaseEscrowForOrder
+  // re-validates authoritatively per order).
   const [rows] = await pool.execute(
     `SELECT id FROM orders
      WHERE orderStatus = 'delivered'
        AND escrowStatus = 'held'
+       AND paymentStatus = 'paid'
        AND escrowReleaseDeadline IS NOT NULL
        AND escrowReleaseDeadline < NOW()`
   );
@@ -771,6 +884,46 @@ export const cancelEscrowForOrder = async (orderId) => {
  * @returns {Promise<void>}
  */
 /**
+ * Refund after payout: allocations already transferred to the vendor
+ * ('released') cannot be clawed back automatically, so the refunded amount
+ * becomes a platform loss unless recovered by hand (R-6 decision). This used
+ * to happen silently; record the order as needs_review and alert admins once.
+ * Best-effort — never blocks the refund path.
+ * @param {any} orderId
+ * @param {any} [vendorId] limit to one vendor (partial refund)
+ */
+export const flagReleasedAllocationsAfterRefund = async (orderId, vendorId) => {
+  try {
+    const scoped = vendorId != null;
+    const [rows] = await pool.execute(
+      `SELECT id, vendorId, payoutAmount FROM escrow_allocations
+        WHERE orderId = ? AND status = 'released'${scoped ? ' AND vendorId = ?' : ''}`,
+      scoped ? [orderId, parseInt(vendorId, 10)] : [orderId]
+    );
+    const list = /** @type {any[]} */ (rows);
+    if (list.length === 0) return 0;
+    // One review row per ORDER (reconciliation_checks.entityId is an order id
+    // for every job; the admin review list joins it to orders).
+    const total = round2(list.reduce((sum, a) => sum + (parseFloat(String(a.payoutAmount ?? 0)) || 0), 0));
+    const parts = list.map((a) => `vendor ${a.vendorId} GHS ${round2(parseFloat(String(a.payoutAmount ?? 0)) || 0).toFixed(2)} (allocation ${a.id})`);
+    const message =
+      `Order ${orderId} was refunded after vendor payout: ${parts.join('; ')}. Total GHS ${total.toFixed(2)}. ` +
+      'Nothing was debited from the vendor; recover the funds manually or record the loss.';
+    await recordCheckAndAlert('refundAfterRelease', Number(orderId), {
+      state: 'needs_review',
+      reason: 'paid_out_before_refund',
+      detail: message,
+      nextCheckMinutes: 24 * 60,
+      alert: { title: 'Refund after vendor payout — manual recovery needed', message },
+    });
+    return list.length;
+  } catch (err) {
+    console.error(` flagReleasedAllocationsAfterRefund failed for order ${orderId}: ${/** @type {any} */ (err).message}`);
+    return 0;
+  }
+};
+
+/**
  * Void ONE vendor's escrow for an order (P1 partial/vendor returns).
  * Same guarantees as voidEscrowForOrder but scoped with `AND vendorId = ?`
  * on every statement, so innocent vendors' allocations are untouched:
@@ -790,59 +943,15 @@ export const voidVendorEscrow = async (orderId, vendorId) => {
     [orderId, vid]
   );
 
-  const available = await pool.execute(
-    `SELECT id, vendorId, amount, platformFee, payoutAmount
+  const [availableRows] = await pool.execute(
+    `SELECT id
      FROM escrow_allocations
      WHERE orderId = ? AND vendorId = ? AND status = 'available'`,
     [orderId, vid]
   );
 
-  for (const allocation of available[0]) {
-    const amount = round2(parseFloat(String(allocation.payoutAmount ?? 0)) || 0);
-    if (amount <= 0) {
-      await pool.execute(
-        `UPDATE escrow_allocations
-         SET status = 'failed', reason = 'voided (no payout)', updated_at = CURRENT_TIMESTAMP
-         WHERE id = ? AND status = 'available'`,
-        [allocation.id]
-      );
-      continue;
-    }
-    const [claim] = await pool.execute(
-      `UPDATE escrow_allocations
-       SET status = 'failed', reason = 'clawed back (partial refund)', updated_at = CURRENT_TIMESTAMP
-       WHERE id = ? AND status = 'available' AND payoutAmount >= ?`,
-      [allocation.id, amount]
-    );
-    if (claim.affectedRows !== 1) continue;
-    try {
-      const debited = await clawbackVendorBalance(
-        allocation.vendorId,
-        amount,
-        `clawback:${allocation.id}`,
-        `Escrow clawed back for order ${orderId} (partial vendor refund)`
-      );
-      if (!debited) {
- console.warn(` Clawback no-op for allocation ${allocation.id}: already withdrawn (check balance manually)`);
-      }
-      await recordFinancialEvent({
-        eventType: 'escrow.clawback',
-        direction: 'out',
-        amount,
-        vendorId: allocation.vendorId,
-        orderId,
-        allocationId: allocation.id,
-        reference: `escrow.clawback:${allocation.id}`,
-        dedupeKey: `escrow.clawback:${allocation.id}`,
-        payload: { reason: 'partial vendor refund' },
-      });
-    } catch (error) {
- console.error(` Clawback debit failed for allocation ${allocation.id}: ${error.message}`);
-      await pool.execute(
-        `UPDATE escrow_allocations SET reason = 'clawback failed: manual recovery needed' WHERE id = ?`,
-        [allocation.id]
-      );
-    }
+  for (const row of availableRows) {
+    await clawbackAvailableAllocation(orderId, row.id, 'clawed back (partial refund)', 'partial vendor refund');
   }
 
   const escrowStatus = await recomputeOrderEscrowStatus(orderId);
@@ -850,6 +959,12 @@ export const voidVendorEscrow = async (orderId, vendorId) => {
     `UPDATE orders SET escrowStatus = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
     [escrowStatus, orderId]
   );
+  // Referral commission follows the refund (R12); a failure here is retried
+  // by referralService.reconcileReferralRefunds.
+  await adjustReferralForRefund(orderId).catch((err) => {
+    console.error(` referral adjustment after refund failed for order ${orderId}: ${err.message}`);
+  });
+  await flagReleasedAllocationsAfterRefund(orderId, vendorId);
 };
 
 /** @param {any} orderId */
@@ -861,68 +976,14 @@ export const voidEscrowForOrder = async (orderId) => {
     [orderId]
   );
 
-  const available = await pool.execute(
-    `SELECT id, vendorId, amount, platformFee, payoutAmount
-     FROM escrow_allocations
+  const [available] = await pool.execute(
+    `SELECT id FROM escrow_allocations
      WHERE orderId = ? AND status = 'available'`,
     [orderId]
   );
 
-  for (const allocation of available[0]) {
-    const amount = round2(parseFloat(String(allocation.payoutAmount ?? 0)) || 0);
-    if (amount <= 0) {
-      await pool.execute(
-        `UPDATE escrow_allocations
-         SET status = 'failed', reason = 'voided (no payout)', updated_at = CURRENT_TIMESTAMP
-         WHERE id = ? AND status = 'available'`,
-        [allocation.id]
-      );
-      continue;
-    }
-
-    // Atomic claim: only ONE worker may claw back this allocation. Guarded on
-    // the remaining payoutAmount so a racing partial withdrawal can't be
-    // double-clawed; we recover whatever is still theirs.
-    const [claim] = await pool.execute(
-      `UPDATE escrow_allocations
-       SET status = 'failed', reason = 'clawed back (refunded)', updated_at = CURRENT_TIMESTAMP
-       WHERE id = ? AND status = 'available' AND payoutAmount >= ?`,
-      [allocation.id, amount]
-    );
-    if (claim.affectedRows !== 1) continue;
-
-    try {
-      const debited = await clawbackVendorBalance(
-        allocation.vendorId,
-        amount,
-        `clawback:${allocation.id}`,
-        `Escrow clawed back for order ${orderId} (refund/return approved)`
-      );
-      if (!debited) {
- console.warn(` Clawback no-op for allocation ${allocation.id}: already withdrawn (check balance manually)`);
-      }
-      // Idempotent journal per allocation — only recorded when THIS worker won
-      // the claim above, so a redelivery can't double record.
-      await recordFinancialEvent({
-        eventType: 'escrow.clawback',
-        direction: 'out',
-        amount,
-        vendorId: allocation.vendorId,
-        orderId,
-        allocationId: allocation.id,
-        reference: `escrow.clawback:${allocation.id}`,
-        dedupeKey: `escrow.clawback:${allocation.id}`,
-        payload: { reason: 'refund/return approved' },
-      });
-    } catch (error) {
-      // Balance was insufficient (funds already withdrawn elsewhere): leave the
-      // allocation marked failed + reason below so reconciliation can find it.
- console.error(` Clawback debit failed for allocation ${allocation.id}: ${error.message}`);
-      await pool.execute(
-        `UPDATE escrow_allocations SET reason = 'clawback failed: manual recovery needed' WHERE id = ?`,
-        [allocation.id]
-      );
-    }
+  for (const row of available) {
+    await clawbackAvailableAllocation(orderId, row.id, 'clawed back (refunded)', 'refund/return approved');
   }
 
   const escrowStatus = await recomputeOrderEscrowStatus(orderId);
@@ -930,8 +991,120 @@ export const voidEscrowForOrder = async (orderId) => {
     `UPDATE orders SET escrowStatus = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
     [escrowStatus, orderId]
   );
+  // Referral commission follows the refund (R12); a failure here is retried
+  // by referralService.reconcileReferralRefunds.
+  await adjustReferralForRefund(orderId).catch((err) => {
+    console.error(` referral adjustment after refund failed for order ${orderId}: ${err.message}`);
+  });
+  await flagReleasedAllocationsAfterRefund(orderId);
 };
 
+/**
+ * Claw back ONE available allocation with a bounded re-read loop.
+ * Shared by voidEscrowForOrder and voidVendorEscrow so both offer the same
+ * guarantees:
+ *  - pending/held handled by the caller; here only 'available' is touched.
+ *  - a racing partial withdrawal that shrinks payoutAmount between SELECT
+ *    and claim triggers a re-read + retry (max 3) instead of abandoning
+ *    withdrawable funds on a cancelled/refunded order.
+ *  - the vendor wallet is debited ONLY when a credit ledger row proves the
+ *    funds were actually credited (F-2/E: a failed credit + concurrent void
+ *    must never debit the vendor's unrelated balance).
+ *  - reasons always contain 'void'/'clawback'/'refund' so
+ *    retryFailedAllocations keeps refusing these rows.
+ * @param {any} orderId
+ * @param {number} allocationId
+ * @param {string} claimReason stored reason on the failed row
+ * @param {string} journalReason human reason for ledger + notes
+ * @returns {Promise<string>} outcome: 'clawed-back' | 'voided-empty' |
+ *   'voided-uncredited' | 'gone' | 'contended' | 'manual-recovery'
+ */
+export const clawbackAvailableAllocation = async (orderId, allocationId, claimReason, journalReason) => {
+  // F-2/E: claim + credit-verification serialize on the allocation row lock
+  // (same lock releaseAllocation holds across ITS transition+credit). A void
+  // can therefore never observe "available but not yet credited" and debit
+  // the vendor for funds that never arrived.
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [[cur]] = await connection.execute(
+      `SELECT vendorId, payoutAmount, status FROM escrow_allocations WHERE id = ? FOR UPDATE`,
+      [allocationId]
+    );
+    if (!cur || cur.status !== 'available') {
+      await connection.rollback();
+      return 'gone';
+    }
+    const amount = round2(parseFloat(String(cur.payoutAmount ?? 0)) || 0);
+    if (amount <= 0) {
+      await connection.execute(
+        `UPDATE escrow_allocations
+         SET status = 'failed', reason = 'voided (no payout)', updated_at = CURRENT_TIMESTAMP
+         WHERE id = ? AND status = 'available'`,
+        [allocationId]
+      );
+      await connection.commit();
+      return 'voided-empty';
+    }
+
+    // Atomic claim: only ONE worker may claw back this allocation. The row
+    // is already locked by us, so the payoutAmount guard cannot race.
+    await connection.execute(
+      `UPDATE escrow_allocations
+       SET status = 'failed', reason = ?, updated_at = CURRENT_TIMESTAMP
+       WHERE id = ? AND status = 'available' AND payoutAmount >= ?`,
+      [claimReason, allocationId, amount]
+    );
+
+    // Only debit when the funds were actually credited to the wallet.
+    const [[credit]] = await connection.execute(
+      `SELECT id FROM wallet_transactions WHERE type = 'credit' AND allocationId = ? LIMIT 1`,
+      [allocationId]
+    );
+    await connection.commit();
+    if (!credit) return 'voided-uncredited';
+
+    try {
+      const debited = await clawbackVendorBalance(
+        cur.vendorId,
+        amount,
+        `clawback:${allocationId}`,
+        `Escrow clawed back for order ${orderId} (${journalReason})`
+      );
+      if (!debited) {
+ console.warn(` Clawback no-op for allocation ${allocationId}: already withdrawn (check balance manually)`);
+      }
+      // Idempotent journal per allocation — only recorded when THIS worker won
+      // the claim above, so a redelivery can't double record.
+      await recordFinancialEvent({
+        eventType: 'escrow.clawback',
+        direction: 'out',
+        amount,
+        vendorId: cur.vendorId,
+        orderId,
+        allocationId,
+        reference: `escrow.clawback:${allocationId}`,
+        dedupeKey: `escrow.clawback:${allocationId}`,
+        payload: { reason: journalReason },
+      });
+      return 'clawed-back';
+    } catch (error) {
+      // Balance was insufficient (funds already withdrawn elsewhere): leave the
+      // allocation marked failed + reason below so reconciliation can find it.
+ console.error(` Clawback debit failed for allocation ${allocationId}: ${error.message}`);
+      await pool.execute(
+        `UPDATE escrow_allocations SET reason = 'clawback failed: manual recovery needed' WHERE id = ?`,
+        [allocationId]
+      );
+      return 'manual-recovery';
+    }
+  } catch (error) {
+    await connection.rollback().catch(() => {});
+    throw error;
+  } finally {
+    connection.release();
+  }
+};
 /**
  * Retry payouts for all failed escrow allocations of an order.
  * Admin endpoint: allows retrying vendor payouts that failed.
@@ -1023,31 +1196,47 @@ export const retryFailedAllocations = async (orderId) => {
  * releaseAllocation). Purely idempotent: creditVendorBalance is gated by the
  * uq_wallet_credit_allocation unique key, so any allocation that was already
  * credited is skipped and never double-credited.
+ * @param {{ vendorId?: number | null, limit?: number }} [opts] scheduler uses the defaults
  * @returns {Promise<{ credited: number, errored: number }>}
  */
-export const reconcileAvailableAllocations = async () => {
+export const reconcileAvailableAllocations = async ({ vendorId = null, limit = 200 } = {}) => {
+  const batch = Math.min(500, Math.max(1, Math.floor(Number(limit)) || 200));
+  const vid = vendorId == null ? null : Number(vendorId);
+  const vendorScope = vid != null && Number.isInteger(vid) && vid > 0 ? ` AND ea.vendorId = ${vid}` : '';
   const [rows] = await pool.execute(
     `SELECT ea.*, v.businessName, v.recipientCode
      FROM escrow_allocations ea
      JOIN vendors v ON v.userId = ea.vendorId
      WHERE ea.status = 'available'
+       -- INT-2: only allocations still MISSING their wallet credit. Credited
+       -- 'available' rows (ordinary unwithdrawn balances) never leave this
+       -- status, so without this filter the oldest 200 filled every batch and
+       -- a newer crash-stranded credit was never recovered. Probes
+       -- uq_wallet_credit_allocation (vendorId, allocationId, type).
+       AND NOT EXISTS (
+         SELECT 1 FROM wallet_transactions wt
+          WHERE wt.vendorId = ea.vendorId AND wt.allocationId = ea.id AND wt.type = 'credit')${vendorScope}
      ORDER BY ea.id ASC
-     LIMIT 200`
+     LIMIT ${batch}`
   );
   let credited = 0;
   let errored = 0;
   for (const allocation of rows) {
     try {
+      // F-3: never backfill credit for a cancelled/refunded/unpaid order —
+      // a leftover 'available' row there must be voided by the cancel/return
+      // flow, not paid out by the reconciler.
+      const releasable = await assertOrderReleasable(allocation.orderId);
+      if (!releasable.ok) {
+        console.warn(` reconcileAvailableAllocations: skipping allocation ${allocation.id} (${releasable.reason})`);
+        continue;
+      }
       const [orderRows] = await pool.execute(
         `SELECT orderNumber FROM orders WHERE id = ?`,
         [allocation.orderId]
       );
       const orderNumber = orderRows.length > 0 ? orderRows[0].orderNumber : null;
-      const { payoutAmount } = calcEscrowFees(
-        allocation.amount,
-        allocation.platformFeeRate,
-        PLATFORM_FEE_RATE
-      );
+      const { payoutAmount } = allocationFees(allocation);
       const applied = await creditVendorBalance(
         allocation.vendorId,
         allocation.id,
@@ -1064,36 +1253,470 @@ export const reconcileAvailableAllocations = async () => {
   return { credited, errored };
 };
 
+export { readCommissionSnapshot } from './commissionService.js';
+
+
 /**
  * Track platform revenue from platform-owned products (no vendorId).
- * Called after order creation. Inserts into a platform_revenue table if it
- * exists, otherwise logs to console.
+ * Called after payment confirmation. Records gross, discount, and net amounts.
+ *
+ * The platform lines' share of an admin coupon is read from the order's
+ * commission snapshot (split by platform commission, as escrow does), so
+ * vendor payouts + platform net + discount == order gross. Legacy orders
+ * without a snapshot keep the previous whole-order pro rata split.
  * @param {number | string} orderId
  * @param {OrderLine[]} items
- * @returns {Promise<void>}
+ * @param {number} [discount=0] order-level discount to apportion
+ * @returns {Promise<boolean>} false only when the revenue row could not be written
  */
-export const trackPlatformRevenue = async (orderId, items) => {
-  if (!Array.isArray(items) || items.length === 0) return;
+export const trackPlatformRevenue = async (orderId, items, discount = 0) => {
+  if (!Array.isArray(items) || items.length === 0) return true;
+
+  // Same quantity/price reading as createEscrowAllocations.
+  const lineTotal = (/** @type {any} */ it) =>
+    (parseFloat(String(it?.price)) || 0) * (parseFloat(String(it?.quantity ?? it?.qty)) || 1);
 
   const platformItems = items.filter((it) => !it.vendorId);
-  if (platformItems.length === 0) return;
+  if (platformItems.length === 0) return true;
 
-  const total = platformItems.reduce(
-    (sum, it) => sum + (parseFloat(String(it.price)) || 0) * (parseInt(String(it.qty)) || 1),
-    0
-  );
-  if (total <= 0) return;
+  const gross = platformItems.reduce((sum, it) => sum + lineTotal(it), 0);
+  if (gross <= 0) return true;
+
+  let net;
+  let platformDiscount;
+  const snapshot = await readCommissionSnapshot(orderId);
+  if (snapshot) {
+    // Orders allocated by current code: the admin-coupon share of each
+    // platform line was frozen at checkout (split by platform commission, R6).
+    const platformLines = snapshot.lines.filter((l) => !l.vendorId);
+    platformDiscount = round2(platformLines.reduce((s, l) => s + (Number(l.Da) || 0), 0));
+    net = round2(gross - platformDiscount);
+  } else {
+    // Legacy orders (allocated before the snapshot existed): pro rata split.
+    const orderGross = items.reduce((sum, it) => sum + lineTotal(it), 0);
+    const discountAmount = Math.max(0, parseFloat(String(discount)) || 0);
+    const netFactor = orderGross > 0 ? Math.max(0, 1 - discountAmount / orderGross) : 1;
+    net = round2(gross * netFactor);
+    platformDiscount = round2(gross - net);
+  }
 
   try {
     await pool.execute(
-      `INSERT INTO platform_revenue (orderId, amount, created_at)
-       VALUES (?, ?, CURRENT_TIMESTAMP)
-       ON DUPLICATE KEY UPDATE amount = VALUES(amount)`,
-      [orderId, round2(total)]
+      `INSERT INTO platform_revenue (orderId, amount, grossAmount, discountAmount, source, created_at)
+       VALUES (?, ?, ?, ?, 'platform_product', CURRENT_TIMESTAMP)
+       ON DUPLICATE KEY UPDATE amount = VALUES(amount), grossAmount = VALUES(grossAmount), discountAmount = VALUES(discountAmount)`,
+      [orderId, net, gross, platformDiscount]
     );
+    return true;
   } catch (err) {
  console.warn(` Could not track platform revenue for order ${orderId}: ${err.message}`);
+    return false;
   }
+};
+
+/**
+ * FV-8: reverse an order's platform revenue when the order is fully refunded.
+ * Writes ONE `source='refund'` row mirroring the `platform_product` row with
+ * negated amount/gross/discount (unique (orderId, source) ⇒ idempotent), plus
+ * an audit journal entry. A no-op when no platform revenue was ever booked
+ * (vendor-only orders, late charges on cancelled orders). Partial (per-vendor)
+ * refunds never touch platform lines, so they are not reversed here.
+ * Net platform revenue for an order = SUM(amount) over its rows.
+ * @param {number | string} orderId
+ * @param {string} reason e.g. 'cancel', 'return', 'reconciled'
+ * @returns {Promise<boolean>} true if a reversal row was written by this call
+ */
+export const reversePlatformRevenueForRefund = async (orderId, reason) => {
+  // Every full-refund path calls this right after the order turns refunded /
+  // cancelled, so the referral commission is settled to 0 here as well (R12).
+  await adjustReferralForRefund(orderId).catch((err) => {
+    console.error(` referral adjustment after full refund failed for order ${orderId}: ${err.message}`);
+  });
+  try {
+    const [ins] = /** @type {any} */ (await pool.execute(
+      `INSERT IGNORE INTO platform_revenue (orderId, amount, grossAmount, discountAmount, source, created_at)
+       SELECT orderId, -amount, -COALESCE(grossAmount, amount), -COALESCE(discountAmount, 0), 'refund', CURRENT_TIMESTAMP
+         FROM platform_revenue WHERE orderId = ? AND source = 'platform_product'`,
+      [orderId]
+    ));
+    if (ins.affectedRows !== 1) return false;
+    const [[row]] = /** @type {any} */ (await pool.execute(
+      `SELECT amount FROM platform_revenue WHERE orderId = ? AND source = 'refund'`, [orderId]
+    ));
+    await recordFinancialEvent({
+      eventType: 'platform_revenue.reversed',
+      direction: 'out',
+      amount: Math.abs(Number(row?.amount) || 0),
+      orderId,
+      dedupeKey: `platform_revenue.reversed:${orderId}`,
+      payload: { reason },
+    });
+    return true;
+  } catch (err) {
+    // Recoverable: reconcileRefundedPlatformRevenue backfills missing reversals.
+    console.error(` Could not reverse platform revenue for refunded order ${orderId}: ${err.message}`);
+    return false;
+  }
+};
+
+/**
+ * FV-8 safety net: refunded orders whose platform revenue was booked but
+ * never reversed (crash after the refund flip, a path without the hook, or
+ * history from before FV-8). Bounded per run; idempotent.
+ * @param {{ limit?: number }} [opts]
+ * @returns {Promise<number>} reversals written
+ */
+export const reconcileRefundedPlatformRevenue = async ({ limit = 100 } = {}) => {
+  const safeLimit = Math.min(500, Math.max(1, Math.floor(Number(limit)) || 100));
+  const [rows] = /** @type {any} */ (await pool.execute(
+    `SELECT pr.orderId FROM platform_revenue pr
+       JOIN orders o ON o.id = pr.orderId
+      WHERE pr.source = 'platform_product' AND o.paymentStatus = 'refunded'
+        AND NOT EXISTS (SELECT 1 FROM platform_revenue r WHERE r.orderId = pr.orderId AND r.source = 'refund')
+      ORDER BY pr.orderId ASC
+      LIMIT ${safeLimit}`
+  ));
+  let written = 0;
+  for (const r of rows) {
+    if (await reversePlatformRevenueForRefund(r.orderId, 'backfill')) written += 1;
+  }
+  if (written > 0) console.log(` Platform revenue reversed for ${written} refunded order(s)`);
+  return written;
+};
+
+/**
+ * Mark a specific payment side effect as completed for an order.
+ * Idempotent: safe to call multiple times.
+ * @param {number | string} orderId
+ * @param {string} effectName - one of: 'escrowHeld', 'stockDecremented', 'couponConsumed', 'financialEventRecorded', 'platformRevenueTracked', 'referralRecorded'
+ * @returns {Promise<boolean>} true if this call made a change
+ */
+export const markPaymentSideEffect = async (orderId, effectName) => {
+  const validEffects = ['escrowHeld', 'stockDecremented', 'couponConsumed', 'financialEventRecorded', 'platformRevenueTracked', 'referralRecorded'];
+  if (!validEffects.includes(effectName)) {
+    throw new Error(`Invalid side effect name: ${effectName}`);
+  }
+  try {
+    const [result] = await pool.execute(
+      `UPDATE orders
+       SET paymentSideEffects = JSON_SET(
+            COALESCE(paymentSideEffects, JSON_OBJECT()),
+            '$.${effectName}',
+            true
+         ),
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = ? AND (paymentSideEffects IS NULL OR JSON_EXTRACT(paymentSideEffects, '$.${effectName}') IS NULL OR JSON_EXTRACT(paymentSideEffects, '$.${effectName}') = false)`,
+      [orderId]
+    );
+    return result.affectedRows > 0;
+  } catch (err) {
+ console.warn(` Could not mark payment side effect ${effectName} for order ${orderId}: ${err.message}`);
+    return false;
+  }
+};
+
+/** Effects that must be recorded for EVERY paid order, coupon or not. */
+const NON_COUPON_SIDE_EFFECTS = ['escrowHeld', 'stockDecremented', 'financialEventRecorded', 'platformRevenueTracked'];
+/** Full set: the four above plus coupon consumption (coupon orders only). */
+const REQUIRED_SIDE_EFFECTS = ['escrowHeld', 'stockDecremented', 'couponConsumed', 'financialEventRecorded', 'platformRevenueTracked'];
+
+/**
+ * Does this order actually reference a coupon?
+ * Fails closed: only explicit "no coupon" sentinels (null/undefined/0/''),
+ * are treated as coupon-free. Any other value — including a malformed one —
+ * counts as a coupon reference so couponConsumed stays mandatory for it.
+ * @param {unknown} couponId
+ * @returns {boolean}
+ */
+const orderHasCoupon = (couponId) => {
+  if (couponId === null || couponId === undefined) return false;
+  if (typeof couponId === 'boolean') return false;
+  if (typeof couponId === 'number') return Number.isFinite(couponId) && couponId !== 0;
+  const raw = String(couponId).trim().toLowerCase();
+  return !(raw === '' || raw === 'null' || raw === 'undefined' || raw === '0' || raw === 'false');
+};
+
+/**
+ * Check if all critical payment side effects are complete for an order.
+ * `couponConsumed` is only required when the order carries a coupon — an
+ * order without one is complete once escrow, stock, the financial event and
+ * platform revenue are recorded. Missing/NULL/malformed coupon fields are
+ * handled without throwing, and never mask genuinely missing effects.
+ * @param {number | string} orderId
+ * @returns {Promise<{complete: boolean, missing: string[]}>}
+ */
+export const checkPaymentSideEffects = async (orderId) => {
+  const [[row]] = await pool.execute(
+    `SELECT paymentSideEffects, couponId FROM orders WHERE id = ?`,
+    [orderId]
+  );
+  // Unknown order: fail closed with the full set (coupon applicability unknown).
+  if (!row) {
+    return { complete: false, missing: [...REQUIRED_SIDE_EFFECTS] };
+  }
+  const required = orderHasCoupon(row.couponId) ? REQUIRED_SIDE_EFFECTS : NON_COUPON_SIDE_EFFECTS;
+  const effects = row.paymentSideEffects;
+  // NULL, scalar or otherwise malformed payload => nothing proven complete.
+  if (!effects || typeof effects !== 'object') {
+    return { complete: false, missing: [...required] };
+  }
+  const missing = required.filter(e => !effects[e]);
+  return { complete: missing.length === 0, missing };
+};
+
+/**
+ * SQL fragment every paid-flip UPDATE sets alongside paymentStatus = 'paid'.
+ * It opts the order into side-effect tracking: recovery only ever touches
+ * orders carrying a (possibly empty) marker object. Orders paid before
+ * tracking existed keep paymentSideEffects = NULL and are never re-processed
+ * — re-running stock/coupon/revenue effects on historical orders would
+ * corrupt them, because nothing recorded what had already been applied.
+ */
+export const PAID_TRACKING_SET_SQL = 'paymentSideEffects = COALESCE(paymentSideEffects, JSON_OBJECT())';
+
+/** @param {unknown} raw @returns {Record<string, any> | null} */
+const parseSideEffects = (raw) => {
+  if (raw === null || raw === undefined) return null;
+  if (typeof raw === 'string') {
+    try { const v = JSON.parse(raw); return v && typeof v === 'object' ? v : null; } catch { return null; }
+  }
+  return typeof raw === 'object' ? /** @type {Record<string, any>} */ (raw) : null;
+};
+
+/** @param {unknown} raw @returns {OrderLine[]} */
+const parseOrderItems = (raw) => {
+  let items = raw;
+  if (typeof items === 'string') {
+    try { items = JSON.parse(items); } catch { items = []; }
+  }
+  return Array.isArray(items) ? /** @type {OrderLine[]} */ (items) : [];
+};
+
+/**
+ * Lines whose stock was NOT yet taken for this order. decrementStockForOrder
+ * writes a 'sale' stock_moves row per product it decrements, so a retry after
+ * a crash mid-decrement only takes the products that are still missing
+ * instead of decrementing everything a second time.
+ * @param {number | string} orderId
+ * @param {OrderLine[]} items
+ */
+const linesNotYetDecremented = async (orderId, items) => {
+  try {
+    const [rows] = /** @type {any} */ (await pool.execute(
+      `SELECT DISTINCT productId FROM stock_moves WHERE orderId = ? AND reason = 'sale'`,
+      [orderId]
+    ));
+    const taken = new Set(rows.map((/** @type {any} */ r) => Number(r.productId)));
+    return items.filter((it) => !taken.has(parseInt(String(/** @type {any} */ (it).product ?? /** @type {any} */ (it).productId), 10)));
+  } catch (err) {
+    if (/** @type {any} */ (err)?.code === 'ER_NO_SUCH_TABLE') return items;
+    throw err;
+  }
+};
+
+/**
+ * Apply every still-missing post-payment side effect for a PAID order, and
+ * record each one in orders.paymentSideEffects only after it succeeded.
+ *
+ * Shared by all four paths that move an order to paid (Paystack webhook,
+ * verify-paystack fallback, admin mark-paid, stuck-pending recovery) and by
+ * the incomplete-paid recovery job, so they can no longer drift apart. Each
+ * effect is idempotent on its own as well (escrow hold is a pending->held
+ * CAS, the journal has a dedupe key, platform revenue upserts, coupon use is
+ * claimed once per order, stock skips products already taken), so a retry
+ * after a crash completes the order instead of doubling anything.
+ *
+ * Never throws for an individual effect: a failure is returned in `errors`,
+ * the marker stays unset, and recoverIncompletePaidOrders retries it.
+ *
+ * @param {number | string} orderId
+ * @param {{ source: string, charge?: object | null }} opts
+ *   source: who confirmed the payment (journal snapshot `capturedBy`);
+ *   charge: the provider transaction when one was verified, else null.
+ * @returns {Promise<{ complete: boolean, skipped?: string, applied: string[], errors: string[] }>}
+ */
+export const applyPaidOrderSideEffects = async (orderId, { source, charge = null }) => {
+  const [rows] = /** @type {any} */ (await pool.execute(
+    `SELECT id, items, couponId, discount, totalAmount, paymentReference,
+            paymentStatus, orderStatus, paymentSideEffects, paymentMethod
+     FROM orders WHERE id = ?`,
+    [orderId]
+  ));
+  const order = rows[0];
+  if (!order) return { complete: false, skipped: 'not-found', applied: [], errors: [] };
+  if (order.paymentStatus !== 'paid' || ['cancelled', 'refunded'].includes(order.orderStatus)) {
+    return { complete: false, skipped: 'not-paid', applied: [], errors: [] };
+  }
+  const done = parseSideEffects(order.paymentSideEffects);
+  if (!done) {
+    // Untracked (paid before tracking existed): never re-apply anything.
+    return { complete: false, skipped: 'untracked', applied: [], errors: [] };
+  }
+
+  const items = parseOrderItems(order.items);
+  /** @type {string[]} */ const applied = [];
+  /** @type {string[]} */ const errors = [];
+
+  /** @param {string} name @param {() => Promise<boolean>} run */
+  const step = async (name, run) => {
+    if (done[name] === true) return;
+    try {
+      if (await run()) {
+        await markPaymentSideEffect(orderId, name);
+        applied.push(name);
+      } else {
+        errors.push(`${name}: not confirmed`);
+      }
+    } catch (err) {
+      errors.push(`${name}: ${/** @type {any} */ (err)?.message || err}`);
+    }
+  };
+
+  await step('financialEventRecorded', async () => {
+    if (order.paymentMethod === 'referral_credit') {
+      // Paid from the buyer's referral wallet (no provider charge exists).
+      return recordFinancialEvent({
+        eventType: 'referral_credit.collected',
+        direction: 'in',
+        amount: parseFloat(order.totalAmount) || 0,
+        currency: CHARGED_CURRENCY,
+        orderId: order.id,
+        reference: `referral_credit:${order.id}`,
+        dedupeKey: `referral_credit.collected:${order.id}`,
+        payload: { capturedBy: String(source) },
+      });
+    }
+    const { buildChargeSnapshot } = await import('./paymentCurrency.js');
+    const totalKobo = Math.round((parseFloat(order.totalAmount) || 0) * 100);
+    return recordFinancialEvent({
+      eventType: 'charge.collected',
+      direction: 'in',
+      amount: parseFloat(order.totalAmount) || 0,
+      // Every caller validated the provider charge against CHARGED_CURRENCY
+      // (or is an admin confirming a GHS order); the provider's own values
+      // are preserved verbatim in the snapshot.
+      currency: CHARGED_CURRENCY,
+      orderId: order.id,
+      reference: order.paymentReference || null,
+      providerReference: order.paymentReference || null,
+      // Per-reference key, shared with the historical webhook/verify writes
+      // so they dedupe against each other. Orders without a reference get a
+      // per-order key (all of them used to share `charge.collected:undefined`,
+      // so only the first such order was ever journaled).
+      dedupeKey: order.paymentReference
+        ? `charge.collected:${order.paymentReference}`
+        : `charge.collected:order:${order.id}`,
+      payload: buildChargeSnapshot(charge ?? { amount: totalKobo, currency: CHARGED_CURRENCY }, source),
+    });
+  });
+
+  await step('escrowHeld', async () => {
+    await holdEscrowForOrder(order.id);
+    return true;
+  });
+
+  await step('platformRevenueTracked', async () =>
+    trackPlatformRevenue(order.id, items, parseFloat(order.discount ?? 0) || 0)
+  );
+
+  await step('stockDecremented', async () => {
+    const remaining = await linesNotYetDecremented(order.id, items);
+    if (remaining.length > 0) {
+      const { decrementStockForOrder } = await import('../controllers/orderController.js');
+      await decrementStockForOrder(remaining, order.id);
+    }
+    return true;
+  });
+
+  if (orderHasCoupon(order.couponId)) {
+    await step('couponConsumed', async () => {
+      // Exhausted coupons are journaled + reported inside; that is still a
+      // completed settlement attempt (the slot cannot be taken twice).
+      await consumeCouponForOrder(order.couponId, order.id);
+      return true;
+    });
+  }
+
+  // Referral commission (REFERRAL_SYSTEM_DESIGN.md): one per order, created
+  // only here, i.e. after the backend verified the payment. Not part of the
+  // recovery gate below (historical orders must not be re-scanned); a missed
+  // step is picked up by referralService.recordMissingReferralCommissions.
+  if (charge) await recordPaymentInstrument(order.id, charge);
+  await step('referralRecorded', async () => recordReferralForOrder(order.id));
+
+  return { complete: errors.length === 0, applied, errors };
+};
+
+/** Orders examined per recovery run (bounded scan). */
+const RECOVERY_BATCH_SIZE = Math.max(1, parseInt(process.env.PAID_EFFECTS_RECOVERY_BATCH || '', 10) || 50);
+/** Give the confirming request time to finish before recovery competes with it. */
+const RECOVERY_GRACE_MINUTES = 10;
+/** After this many recovery attempts the order is left for an operator. */
+const RECOVERY_MAX_ATTEMPTS = 5;
+
+/**
+ * Recovery job: paid orders whose tracked side effects are incomplete — the
+ * confirming request crashed or a DB write failed after the paid flip (a
+ * webhook redelivery cannot help: it sees `paid` and stands down).
+ *
+ * Bounded and conservative: only tracked orders (never historical NULL
+ * rows), never cancelled/refunded ones, only after a grace period, at most
+ * RECOVERY_BATCH_SIZE per run and RECOVERY_MAX_ATTEMPTS per order; an order
+ * that still fails then raises one admin alert instead of retrying forever.
+ * @returns {Promise<number>} number of orders brought to complete
+ */
+export const recoverIncompletePaidOrders = async () => {
+  const missing = (/** @type {string} */ k) =>
+    `(JSON_EXTRACT(paymentSideEffects, '$.${k}') IS NULL OR JSON_EXTRACT(paymentSideEffects, '$.${k}') = false)`;
+  const [rows] = /** @type {any} */ (await pool.execute(
+    `SELECT id FROM orders
+     WHERE paymentStatus = 'paid'
+       AND orderStatus NOT IN ('cancelled', 'refunded')
+       AND paymentSideEffects IS NOT NULL
+       AND COALESCE(JSON_EXTRACT(paymentSideEffects, '$.recoveryAttempts'), 0) < ${RECOVERY_MAX_ATTEMPTS}
+       AND updated_at < DATE_SUB(NOW(), INTERVAL ${RECOVERY_GRACE_MINUTES} MINUTE)
+       AND (${missing('escrowHeld')} OR ${missing('stockDecremented')}
+            OR ${missing('financialEventRecorded')} OR ${missing('platformRevenueTracked')}
+            -- couponConsumed only gates orders that actually carry a coupon
+            OR (couponId IS NOT NULL AND couponId <> 0 AND ${missing('couponConsumed')}))
+     ORDER BY id ASC
+     LIMIT ${RECOVERY_BATCH_SIZE}`
+  ));
+
+  let recovered = 0;
+  for (const { id } of rows) {
+    try {
+      await pool.execute(
+        `UPDATE orders
+         SET paymentSideEffects = JSON_SET(paymentSideEffects, '$.recoveryAttempts',
+               COALESCE(JSON_EXTRACT(paymentSideEffects, '$.recoveryAttempts'), 0) + 1)
+         WHERE id = ? AND paymentSideEffects IS NOT NULL`,
+        [id]
+      );
+      const result = await applyPaidOrderSideEffects(id, { source: 'recovery' });
+      if (result.complete) {
+        recovered += 1;
+ console.log(` Recovered incomplete paid order ${id} (${result.applied.join(', ') || 'nothing missing'})`);
+        continue;
+      }
+      if (result.skipped) continue;
+ console.warn(` Paid order ${id} still incomplete after recovery: ${result.errors.join('; ')}`);
+      const [[att]] = /** @type {any} */ (await pool.execute(
+        `SELECT COALESCE(JSON_EXTRACT(paymentSideEffects, '$.recoveryAttempts'), 0) AS n FROM orders WHERE id = ?`,
+        [id]
+      ));
+      if (Number(att?.n) >= RECOVERY_MAX_ATTEMPTS) {
+        const { notifyAdmins } = await import('../utils/adminAlerts.js');
+        await notifyAdmins(
+          'Paid order side effects incomplete — manual review',
+          `Order #${id} is paid but post-payment processing could not complete after ${RECOVERY_MAX_ATTEMPTS} attempts: ${result.errors.join('; ').slice(0, 400)}. Automatic recovery has stopped for this order.`
+        );
+      }
+    } catch (err) {
+ console.warn(` Could not recover incomplete paid order ${id}: ${/** @type {any} */ (err)?.message}`);
+    }
+  }
+  return recovered;
 };
 
 /**
@@ -1189,7 +1812,7 @@ export const reconcileRefundedButPaid = async () => {
           if (Number.isFinite(vid)) await voidVendorEscrow(row.id, vid);
         } catch { /* void is best-effort here */ }
         try {
-          const [admins] = await pool.execute(`SELECT id FROM users WHERE role = 'admin' LIMIT 5`);
+          const [admins] = await pool.execute(`SELECT id FROM users WHERE role = 'admin' ORDER BY id ASC LIMIT 5`);
           for (const admin of admins) {
             await Notification.create({
               userId: admin.id,
@@ -1209,6 +1832,7 @@ export const reconcileRefundedButPaid = async () => {
           [row.id]
         );
         if (flip.affectedRows > 0) {
+          await reversePlatformRevenueForRefund(row.id, 'reconciled');
           try {
             await recordFinancialEvent({
               eventType: 'refund.reconciled',
@@ -1222,7 +1846,7 @@ export const reconcileRefundedButPaid = async () => {
           recovered += 1;
         }
         try {
-          const [admins] = await pool.execute(`SELECT id FROM users WHERE role = 'admin' LIMIT 5`);
+          const [admins] = await pool.execute(`SELECT id FROM users WHERE role = 'admin' ORDER BY id ASC LIMIT 5`);
           for (const admin of admins) {
             await Notification.create({
               userId: admin.id,
@@ -1235,7 +1859,7 @@ export const reconcileRefundedButPaid = async () => {
         } catch { /* notify is best-effort */ }
       } else {
         try {
-          const [admins] = await pool.execute(`SELECT id FROM users WHERE role = 'admin' LIMIT 5`);
+          const [admins] = await pool.execute(`SELECT id FROM users WHERE role = 'admin' ORDER BY id ASC LIMIT 5`);
           for (const admin of admins) {
             await Notification.create({
               userId: admin.id,
@@ -1255,16 +1879,79 @@ export const reconcileRefundedButPaid = async () => {
   return recovered;
 };
 
-export const recoverStuckPendingOrders = async () => {
-  const [rows] = await pool.execute(
-    `SELECT id, paymentReference, items, totalAmount FROM orders
-     WHERE paymentStatus = 'pending'
-       AND paymentReference IS NOT NULL
-       AND paymentReference != ''
-       AND created_at < DATE_SUB(NOW(), INTERVAL 1 HOUR)`
-  );
+/** Stuck-pending scan bounds: each candidate costs one Paystack verify call. */
+const STUCK_PENDING_WINDOW_DAYS = 7;
+const STUCK_PENDING_BATCH = Math.max(1, parseInt(process.env.STUCK_PENDING_RECOVERY_BATCH || '', 10) || 100);
+const STUCK_PENDING_JOB = 'stuckPending';
+/** Re-check backoff for an order Paystack keeps reporting unpaid: 30 min, doubling, capped at 12 h. */
+/** @param {unknown} checkCount */
+const stuckPendingBackoffMinutes = (checkCount) => Math.min(12 * 60, 30 * 2 ** Math.min(10, Math.max(0, Number(checkCount) || 0)));
+
+/**
+ * Last-resort recovery for orders whose payment confirmation never arrived.
+ * Bounded: only orders 1h..7d old, oldest first, STUCK_PENDING_BATCH per run.
+ * It used to re-verify EVERY pending order ever created on each 30-minute run
+ * — an ever-growing scan of abandoned checkouts, each one a provider call.
+ * Older late charges still reach operators through the webhook and
+ * reconcileUnmatchedCharges.
+ */
+
+/**
+ * Safe integer id list for an `o.id IN (...)` scope (operator re-check / tests).
+ * @param {unknown} ids
+ */
+const idScope = (ids) => {
+  if (ids == null) return '';
+  const clean = [...new Set((Array.isArray(ids) ? ids : []).map(Number).filter((n) => Number.isInteger(n) && n > 0))];
+  return clean.length ? ` AND o.id IN (${clean.join(',')})` : ' AND 1 = 0';
+};
+
+/**
+ * @param {{ limit?: number, orderIds?: number[] | null, minAgeMinutes?: number }} [opts]
+ *   defaults are the scheduler's; `orderIds` scopes a targeted re-check.
+ */
+export const recoverStuckPendingOrders = async ({ limit = STUCK_PENDING_BATCH, orderIds = null, minAgeMinutes = 60 } = {}) => {
+  const batch = Math.min(500, Math.max(1, Math.floor(Number(limit)) || STUCK_PENDING_BATCH));
+  const minAgeRaw = Math.floor(Number(minAgeMinutes));
+  const minAge = Number.isFinite(minAgeRaw) && minAgeRaw >= 0 ? minAgeRaw : 60;
+  // FV-7: fair selection via reconciliation_checks. It used to be oldest-first
+  // over the whole 7-day window, re-verifying every abandoned checkout every
+  // 30 min, so > STUCK_PENDING_BATCH of them starved a newer, genuinely paid
+  // order until they aged out. Now: only DUE orders, never-checked first, then
+  // least recently checked; "not paid" answers back off exponentially.
+  const population = `o.paymentStatus = 'pending'
+       AND o.paymentReference IS NOT NULL
+       AND o.paymentReference != ''
+       AND o.created_at <= DATE_SUB(NOW(), INTERVAL ${minAge} MINUTE)
+       AND o.created_at > DATE_SUB(NOW(), INTERVAL ${STUCK_PENDING_WINDOW_DAYS} DAY)${idScope(orderIds)}`;
+  const { join, due, order: fairOrder } = dueJoin(STUCK_PENDING_JOB, 'o.id');
+  let rows;
+  try {
+    [rows] = /** @type {any} */ (await pool.execute(
+      `SELECT o.id, o.paymentReference, o.totalAmount, COALESCE(rc.checkCount, 0) AS checkCount
+         FROM orders o ${join}
+        WHERE ${population} AND ${due}
+        ORDER BY ${fairOrder}
+        LIMIT ${batch}`
+    ));
+  } catch (err) {
+    if (err?.code !== 'ER_NO_SUCH_TABLE') throw err;
+    console.warn('reconciliation_checks missing — run `npm run db:migrate` (migrateReconciliationChecks.js); using the legacy oldest-first scan');
+    [rows] = /** @type {any} */ (await pool.execute(
+      `SELECT o.id, o.paymentReference, o.totalAmount, 0 AS checkCount FROM orders o
+        WHERE ${population} ORDER BY o.created_at ASC LIMIT ${batch}`
+    ));
+  }
+  /** @param {any} order @param {'waiting' | 'needs_review' | 'resolved'} state @param {string} reason @param {{ title: string, message: string } | null} [alert] */
+  const outcome = (order, state, reason, alert = null) => recordCheckAndAlert(STUCK_PENDING_JOB, order.id, {
+    state, reason, alert,
+    nextCheckMinutes: state === 'needs_review' ? 6 * 60 : stuckPendingBackoffMinutes(order.checkCount),
+  });
 
   if (rows.length === 0) return 0;
+  if (rows.length === batch) {
+    console.warn(` recoverStuckPendingOrders: batch limit (${batch}) reached; remaining candidates are checked on later runs`);
+  }
 
   let recovered = 0;
   for (const order of rows) {
@@ -1275,6 +1962,7 @@ export const recoverStuckPendingOrders = async () => {
       const ref = order.paymentReference;
       if (!ref || !/^[A-Za-z0-9._-]{1,100}$/.test(ref)) {
  console.warn(` Stuck order ${order.id}: invalid paymentReference format, skipping`);
+        await outcome(order, 'needs_review', 'invalid_reference');
         continue;
       }
       const encodedRef = encodeURIComponent(ref);
@@ -1289,11 +1977,12 @@ export const recoverStuckPendingOrders = async () => {
         || verifyUrl.pathname !== `/transaction/verify/${encodedRef}`
       ) {
         console.warn(` Stuck order ${order.id}: paymentReference does not survive URL normalization, skipping`);
+        await outcome(order, 'needs_review', 'invalid_reference');
         continue;
       }
       const resp = await axios.get(
         verifyUrl.href,
-        { headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` } }
+        { headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` }, timeout: PAYSTACK_TIMEOUT_MS }
       );
       const tx = resp.data?.data;
       if (tx?.status === 'success') {
@@ -1313,6 +2002,13 @@ export const recoverStuckPendingOrders = async () => {
 ` Stuck order ${order.id}: payment mismatch — paid ${paidKobo} ${tx.currency}, ` +
             `expected ${expectedKobo} ${CHARGED_CURRENCY} (ref ${order.paymentReference}); NOT recovering`
           );
+          // A real charge that does not match the order: the customer paid
+          // something, the order is not fulfilled — a human must decide
+          // (refund or correct). Durable + alerted once, not a log line.
+          await outcome(order, 'needs_review', 'charge_amount_mismatch', {
+            title: 'Paid charge does not match its order',
+            message: `Order #${order.id}: Paystack confirms a successful charge of ${paidKobo} ${tx.currency} (pesewas) but the order expects ${expectedKobo} ${CHARGED_CURRENCY}. The order was NOT marked paid. Decide on a refund or correction in the Paystack dashboard.`,
+          });
           continue;
         }
         // Flip-guard: only run side effects if THIS call actually moved the
@@ -1320,50 +2016,55 @@ export const recoverStuckPendingOrders = async () => {
         // verify-paystack fallback can never double-hold escrow or
         // double-decrement stock.
         const [flipResult] = await pool.execute(
-          `UPDATE orders SET paymentStatus = 'paid', orderStatus = 'processing', updated_at = CURRENT_TIMESTAMP
+          `UPDATE orders SET paymentStatus = 'paid', orderStatus = 'processing', ${PAID_TRACKING_SET_SQL}, updated_at = CURRENT_TIMESTAMP
            WHERE id = ? AND paymentStatus = 'pending' AND orderStatus NOT IN ('cancelled', 'refunded')`,
           [order.id]
         );
-        if (flipResult.affectedRows === 0) continue;
-
-        await holdEscrowForOrder(order.id);
-
-        // P0-6: consume the coupon like every other paid path (previously
-        // skipped here, so recovered orders never burned a use).
-        try {
-          const [[couponRow]] = await pool.execute(
-            `SELECT couponId FROM orders WHERE id = ?`,
+        if (flipResult.affectedRows === 0) {
+          // The flip missed: the order may have been cancelled/refunded after
+          // the charge settled (or a fallback already paid it). A verified
+          // charge on a terminal order must be reconciled by refund here too —
+          // this job is the last resort when the webhook never arrived, and
+          // silently skipping it used to drop the customer's money.
+          const [[fresh]] = await pool.execute(
+            `SELECT id, paymentStatus, orderStatus, refundReference, totalAmount, paymentReference
+             FROM orders WHERE id = ?`,
             [order.id]
           );
-          if (couponRow?.couponId) {
-            await consumeCouponForOrder(couponRow.couponId, order.id);
+          if (
+            fresh &&
+            (['cancelled', 'refunded'].includes(fresh.orderStatus) || fresh.paymentStatus === 'refunded')
+          ) {
+            const terminal = await reconcileTerminalOrderCharge(fresh, tx);
+            if (terminal.action === 'refunded') {
+              console.log(` Reconciled late charge on terminal order ${order.id} by refund`);
+            }
+            // Further refund follow-up is owned by the refund reconcilers.
+            await outcome(order, 'resolved', `terminal_${terminal.action}`);
+          } else {
+            await outcome(order, 'resolved', 'paid_elsewhere');
           }
-        } catch (couponErr) {
- console.warn(` Could not consume coupon for recovered order ${order.id}: ${couponErr.message}`);
+          continue;
         }
 
-        // This path acts like the webhook: decrement in-stock inventory now
-        // that the order is confirmed paid (guarded so it runs once, and the
-        // atomic conditional decrement prevents any oversell), so recovery
-        // never leaks stock.
-        try {
-          const { decrementStockForOrder } = await import('../controllers/orderController.js');
-          let items = order.items;
-          if (typeof items === 'string') {
-            try { items = JSON.parse(items); } catch { items = []; }
-          }
-          if (Array.isArray(items) && items.length > 0) {
-            await decrementStockForOrder(items, order.id);
-          }
-        } catch (stockErr) {
- console.warn(` Could not decrement stock for recovered order ${order.id}: ${stockErr.message}`);
+        // Same shared side effects as the webhook/verify paths (this path
+        // used to skip the charge journal and platform revenue entirely).
+        const effects = await applyPaidOrderSideEffects(order.id, { source: 'stuck-recovery', charge: tx });
+        if (!effects.complete) {
+          console.error(` Stuck order ${order.id}: paid but side effects incomplete (recovery will retry): ${effects.errors.join('; ')}`);
         }
 
  console.log(` Recovered stuck order ${order.id} via Paystack verify`);
         recovered += 1;
+        await outcome(order, 'resolved', 'recovered');
+      } else {
+        // Not (yet) a successful charge — abandoned checkouts land here on
+        // every check; back off so they stop crowding the batch.
+        await outcome(order, 'waiting', `provider_${String(tx?.status || 'no_data').slice(0, 40)}`);
       }
     } catch (err) {
  console.warn(` Could not recover stuck order ${order.id}: ${err.message}`);
+      await outcome(order, 'waiting', 'verify_error');
     }
   }
   return recovered;

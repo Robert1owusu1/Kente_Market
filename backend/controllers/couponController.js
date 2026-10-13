@@ -4,6 +4,11 @@ import Coupon from "../models/couponModel.js";
 import pool from "../config/db.js";
 import isValidId from "../utils/isValidId.js";
 import { auditFromRequest } from "../utils/auditLog.js";
+import { resolveCommissionRate, capCouponDiscount } from "../Services/commissionService.js";
+import { calcCouponDiscount } from "../../shared/pricing.js";
+
+/** Global platform commission as a percentage (the admin-coupon ceiling, R7). */
+const adminCouponCeilingPercent = async () => Math.round((await resolveCommissionRate({})) * 10000) / 100;
 
 export const createCoupon = async (req, res) => {
   try {
@@ -24,6 +29,12 @@ export const createCoupon = async (req, res) => {
     // two create paths agree on what "valid" means.
     if (discountType === "percentage" && parseFloat(discountValue) > 100) {
       return res.status(400).json({ message: "Percentage discounts cannot exceed 100%" });
+    }
+    // R7: an admin coupon is funded by the platform commission and may not
+    // exceed it (checkout additionally caps per item, where rules can be lower).
+    const ceiling = await adminCouponCeilingPercent();
+    if (discountType === "percentage" && parseFloat(discountValue) > ceiling) {
+      return res.status(400).json({ message: `Admin coupons cannot exceed the platform commission (${ceiling}%)` });
     }
 
     const coupon = await Coupon.create({ code, discountType, discountValue, minPurchase, maxUses, expiresAt, isActive });
@@ -98,6 +109,12 @@ export const updateCoupon = async (req, res) => {
     }
     if (nextType === "percentage" && nextValue > 100) {
       return res.status(400).json({ message: "Percentage discounts cannot exceed 100%" });
+    }
+    if (existing.vendorId == null && nextType === "percentage") {
+      const ceiling = await adminCouponCeilingPercent();
+      if (nextValue > ceiling) {
+        return res.status(400).json({ message: `Admin coupons cannot exceed the platform commission (${ceiling}%)` });
+      }
     }
 
     const coupon = await Coupon.update(req.params.id, req.body);
@@ -203,7 +220,19 @@ export const validateCoupon = async (req, res) => {
       return res.status(400).json({ message: REFUSED, coupon: null });
     }
 
-    res.json({ message: result.message, coupon: safeCoupon });
+    // R7: the most this coupon can take off these items (admin coupon <=
+    // platform commission, seller coupon <= seller proceeds), so the cart shows
+    // what checkout will book. Prices come from the DB, quantities are bounded.
+    let discountCap = null;
+    if (Array.isArray(items) && items.length > 0) {
+      const lines = items.slice(0, 50).map((it) => ({
+        product: parseInt(it?.product ?? it?.productId ?? it?.id, 10),
+        qty: Math.max(1, Math.min(1000, parseInt(it?.qty ?? it?.quantity, 10) || 1)),
+      })).filter((l) => Number.isFinite(l.product));
+      const nominal = calcCouponDiscount(parseFloat(cartTotal), result.coupon.discountType, result.coupon.discountValue);
+      discountCap = await capCouponDiscount(pool, lines, nominal, result.coupon.vendorId ?? null);
+    }
+    res.json({ message: result.message, coupon: safeCoupon, discountCap });
   } catch (error) {
     console.error("validateCoupon error:", error.message);
     res.status(500).json({ message: "Failed to validate coupon" });

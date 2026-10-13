@@ -171,7 +171,7 @@ export default function CustomRequestCheckout() {
     // the checkout call below can be retried with the SAME reference instead
     // of discarding it and inviting a second charge.
     pendingPaymentRef.current = reference;
-    savePendingPaymentRef(req.id, reference);
+    savePendingPaymentRef(req.id, reference, 'custom');
 
     try {
       const { data } = await axios.post(`/api/custom-requests/${req.id}/checkout`, {
@@ -182,14 +182,14 @@ export default function CustomRequestCheckout() {
       });
       // Confirmed — drop the persisted reference.
       pendingPaymentRef.current = null;
-      clearPendingPaymentRef(req.id);
+      clearPendingPaymentRef(req.id, 'custom');
       toast.success(data.message || "Payment received — your custom order is with the weaver.");
       const orderId = data.order?.id || data.request?.orderId;
       navigate(orderId ? `/order/${orderId}` : "/custom-requests");
     } catch (err) {
       // The money has left the account already: retry the confirmation with
       // the SAME persisted reference before showing any error.
-      const savedReference = pendingPaymentRef.current || readPendingPaymentRef(req.id);
+      const savedReference = pendingPaymentRef.current || readPendingPaymentRef(req.id, 'custom');
       if (savedReference) {
         try {
           const retry = await axios.post(`/api/custom-requests/${req.id}/checkout`, {
@@ -199,7 +199,7 @@ export default function CustomRequestCheckout() {
             paymentReference: savedReference,
           });
           pendingPaymentRef.current = null;
-          clearPendingPaymentRef(req.id);
+          clearPendingPaymentRef(req.id, 'custom');
           toast.success(retry.data?.message || "Payment received — your custom order is with the weaver.");
           const retryOrderId = retry.data?.order?.id || retry.data?.request?.orderId;
           navigate(retryOrderId ? `/order/${retryOrderId}` : "/custom-requests");

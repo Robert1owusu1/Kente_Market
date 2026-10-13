@@ -28,6 +28,10 @@ const VALID_PERMISSIONS = [
   'view_customers',
   'manage_inventory',
   'view_earnings',
+  // Moving money is not "viewing" it: POST /api/vendors/withdraw used to sit
+  // behind view_earnings. Withdrawals now need this key, which only the
+  // store OWNER can grant (same rule as manage_staff — see grantCeiling).
+  'request_payouts',
   'manage_products',
   'manage_coupons',
   'manage_staff',
@@ -232,6 +236,12 @@ const grantCeiling = (req, permissions, targetPermissions = null) => {
   }
   if (permissions && permissions.manage_staff && !(targetPermissions && targetPermissions.manage_staff)) {
     return 'manage_staff can only be granted by the store owner';
+  }
+  // request_payouts initiates transfers of the store's money: owner-only to
+  // ADD, for the same reason as manage_staff (a stolen manager key must not
+  // be able to mint payout operators).
+  if (permissions && permissions.request_payouts && !(targetPermissions && targetPermissions.request_payouts)) {
+    return 'request_payouts can only be granted by the store owner';
   }
   return null;
 };

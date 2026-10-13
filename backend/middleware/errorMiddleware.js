@@ -27,7 +27,17 @@ const notFound = (req, res, next) => {
 };
 
 const errorHandeler = (err, req, res, next) => {
-    let statusCode = res.statusCode === 200 ? 500 : res.statusCode;
+    // Body-parser errors (e.g. JSON over the 1MB limit) carry their status on
+    // err.status/err.statusCode while res is still 200; without this they
+    // collapsed to a 500, so a caller exceeding the payload limit — the most
+    // ordinary oversized-upload mistake there is — got a server error instead
+    // of the 413 the limit is supposed to produce. Only http-errors instances
+    // (they always carry a boolean `expose`) are trusted: an AxiosError also
+    // has `status`, but that is the UPSTREAM provider's status — a Paystack
+    // 401 must not reach the SPA as a 401 (which it treats as session expiry).
+    const httpErrorStatus = err && typeof err.expose === 'boolean' && Number.isInteger(err.status)
+        && err.status >= 400 && err.status < 600 ? err.status : 500;
+    let statusCode = res.statusCode === 200 ? httpErrorStatus : res.statusCode;
     console.error(`[${req.method}] ${redactUrl(req.originalUrl)} -> ${statusCode}: ${err.message}`);
     if (err.stack) {
         console.error(err.stack.split('\n').slice(0, 5).join('\n'));

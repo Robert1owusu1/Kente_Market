@@ -88,63 +88,68 @@ const up = async () => {
     console.log('✅ Default carriers seeded');
 
     // Seed default platform rates (vendorId = NULL)
-    // Rates are in the destination country's currency (matching COUNTRY_CONFIG)
+    // Rates are in the destination country's currency (matching COUNTRY_CONFIG).
+    //
+    // SEED-ONCE: `shipping_rates` carries no unique key on the lane, so
+    // `INSERT IGNORE` cannot dedupe — re-running `npm run db:migrate` stacked
+    // the same 6 rows every time (measured 6 -> 12 -> 18 on MySQL 8.4).
+    // Seed only while the platform has no rates at all: operator-maintained
+    // rows are never rewritten and a repeated migration is data-inert.
+    const [[{ n: platformRates }]] = await connection.execute(
+      'SELECT COUNT(*) AS n FROM shipping_rates WHERE vendorId IS NULL'
+    );
     const now = new Date().toISOString().split('T')[0];
-    await connection.execute(`
-      INSERT IGNORE INTO shipping_rates 
-        (carrierId, vendorId, originCountry, destinationCountry, destinationRegion, serviceLevel,
-         minWeightKg, maxWeightKg, baseCost, perKgCost, freeThreshold, transitDaysMin, transitDaysMax,
-         currency, effectiveFrom, effectiveTo, isActive)
-      SELECT c.id, NULL, 'GH', 'GH', NULL, 'standard', 0, 30, 15, 0, 200, 2, 5, 'GHS', ?, NULL, TRUE
-      FROM shipping_carriers c WHERE c.code = 'local_gh'
-    `, [now]);
 
-    await connection.execute(`
-      INSERT IGNORE INTO shipping_rates 
-        (carrierId, vendorId, originCountry, destinationCountry, destinationRegion, serviceLevel,
-         minWeightKg, maxWeightKg, baseCost, perKgCost, freeThreshold, transitDaysMin, transitDaysMax,
-         currency, effectiveFrom, effectiveTo, isActive)
-      SELECT c.id, NULL, 'GH', 'GB', NULL, 'standard', 0, 5, 12, 0, 100, 5, 10, 'GBP', ?, NULL, TRUE
-      FROM shipping_carriers c WHERE c.code = 'dhl'
-    `, [now]);
-
-    await connection.execute(`
-      INSERT IGNORE INTO shipping_rates 
-        (carrierId, vendorId, originCountry, destinationCountry, destinationRegion, serviceLevel,
-         minWeightKg, maxWeightKg, baseCost, perKgCost, freeThreshold, transitDaysMin, transitDaysMax,
-         currency, effectiveFrom, effectiveTo, isActive)
-      SELECT c.id, NULL, 'GH', 'US', NULL, 'standard', 0, 5, 18, 0, 150, 7, 14, 'USD', ?, NULL, TRUE
-      FROM shipping_carriers c WHERE c.code = 'dhl'
-    `, [now]);
-
-    await connection.execute(`
-      INSERT IGNORE INTO shipping_rates 
-        (carrierId, vendorId, originCountry, destinationCountry, destinationRegion, serviceLevel,
-         minWeightKg, maxWeightKg, baseCost, perKgCost, freeThreshold, transitDaysMin, transitDaysMax,
-         currency, effectiveFrom, effectiveTo, isActive)
-      SELECT c.id, NULL, 'GH', 'CA', NULL, 'standard', 0, 5, 20, 0, 180, 7, 14, 'CAD', ?, NULL, TRUE
-      FROM shipping_carriers c WHERE c.code = 'dhl'
-    `, [now]);
-
-    await connection.execute(`
-      INSERT IGNORE INTO shipping_rates 
-        (carrierId, vendorId, originCountry, destinationCountry, destinationRegion, serviceLevel,
-         minWeightKg, maxWeightKg, baseCost, perKgCost, freeThreshold, transitDaysMin, transitDaysMax,
-         currency, effectiveFrom, effectiveTo, isActive)
-      SELECT c.id, NULL, 'GH', 'DE', NULL, 'standard', 0, 5, 15, 0, 120, 5, 10, 'EUR', ?, NULL, TRUE
-      FROM shipping_carriers c WHERE c.code = 'dhl'
-    `, [now]);
-
-    await connection.execute(`
-      INSERT IGNORE INTO shipping_rates 
-        (carrierId, vendorId, originCountry, destinationCountry, destinationRegion, serviceLevel,
-         minWeightKg, maxWeightKg, baseCost, perKgCost, freeThreshold, transitDaysMin, transitDaysMax,
-         currency, effectiveFrom, effectiveTo, isActive)
-      SELECT c.id, NULL, 'GH', 'NL', NULL, 'standard', 0, 5, 14, 0, 110, 5, 10, 'EUR', ?, NULL, TRUE
-      FROM shipping_carriers c WHERE c.code = 'dhl'
-    `, [now]);
-
-    console.log('✅ Default platform shipping rates seeded');
+    if (Number(platformRates) > 0) {
+      console.log(`ℹ️  shipping_rates already holds ${platformRates} platform row(s); seeding skipped (re-run is data-inert)`);
+    } else {
+      const platformSeedSql = [
+        // GH (domestic) — GHS, matches shared/pricing.js (GH₵15 / free >= 200)
+        `INSERT IGNORE INTO shipping_rates
+          (carrierId, vendorId, originCountry, destinationCountry, destinationRegion, serviceLevel,
+           minWeightKg, maxWeightKg, baseCost, perKgCost, freeThreshold, transitDaysMin, transitDaysMax,
+           currency, effectiveFrom, effectiveTo, isActive)
+         SELECT c.id, NULL, 'GH', 'GH', NULL, 'standard', 0, 30, 15, 0, 200, 2, 5, 'GHS', ?, NULL, TRUE
+         FROM shipping_carriers c WHERE c.code = 'local_gh'`,
+        // International lanes — destination DISPLAY currency (GBP/USD/CAD/EUR).
+        // baseCost and freeThreshold are in that currency; the service converts
+        // both to GHS before comparing or charging.
+        `INSERT IGNORE INTO shipping_rates
+          (carrierId, vendorId, originCountry, destinationCountry, destinationRegion, serviceLevel,
+           minWeightKg, maxWeightKg, baseCost, perKgCost, freeThreshold, transitDaysMin, transitDaysMax,
+           currency, effectiveFrom, effectiveTo, isActive)
+         SELECT c.id, NULL, 'GH', 'GB', NULL, 'standard', 0, 5, 12, 0, 100, 5, 10, 'GBP', ?, NULL, TRUE
+         FROM shipping_carriers c WHERE c.code = 'dhl'`,
+        `INSERT IGNORE INTO shipping_rates
+          (carrierId, vendorId, originCountry, destinationCountry, destinationRegion, serviceLevel,
+           minWeightKg, maxWeightKg, baseCost, perKgCost, freeThreshold, transitDaysMin, transitDaysMax,
+           currency, effectiveFrom, effectiveTo, isActive)
+         SELECT c.id, NULL, 'GH', 'US', NULL, 'standard', 0, 5, 18, 0, 150, 7, 14, 'USD', ?, NULL, TRUE
+         FROM shipping_carriers c WHERE c.code = 'dhl'`,
+        `INSERT IGNORE INTO shipping_rates
+          (carrierId, vendorId, originCountry, destinationCountry, destinationRegion, serviceLevel,
+           minWeightKg, maxWeightKg, baseCost, perKgCost, freeThreshold, transitDaysMin, transitDaysMax,
+           currency, effectiveFrom, effectiveTo, isActive)
+         SELECT c.id, NULL, 'GH', 'CA', NULL, 'standard', 0, 5, 20, 0, 180, 7, 14, 'CAD', ?, NULL, TRUE
+         FROM shipping_carriers c WHERE c.code = 'dhl'`,
+        `INSERT IGNORE INTO shipping_rates
+          (carrierId, vendorId, originCountry, destinationCountry, destinationRegion, serviceLevel,
+           minWeightKg, maxWeightKg, baseCost, perKgCost, freeThreshold, transitDaysMin, transitDaysMax,
+           currency, effectiveFrom, effectiveTo, isActive)
+         SELECT c.id, NULL, 'GH', 'DE', NULL, 'standard', 0, 5, 15, 0, 120, 5, 10, 'EUR', ?, NULL, TRUE
+         FROM shipping_carriers c WHERE c.code = 'dhl'`,
+        `INSERT IGNORE INTO shipping_rates
+          (carrierId, vendorId, originCountry, destinationCountry, destinationRegion, serviceLevel,
+           minWeightKg, maxWeightKg, baseCost, perKgCost, freeThreshold, transitDaysMin, transitDaysMax,
+           currency, effectiveFrom, effectiveTo, isActive)
+         SELECT c.id, NULL, 'GH', 'NL', NULL, 'standard', 0, 5, 14, 0, 110, 5, 10, 'EUR', ?, NULL, TRUE
+         FROM shipping_carriers c WHERE c.code = 'dhl'`,
+      ];
+      for (const sql of platformSeedSql) {
+        await connection.execute(sql, [now]);
+      }
+      console.log('✅ Default platform shipping rates seeded (seed-once: later runs will not stack rows)');
+    }
   } finally {
     connection.release();
   }

@@ -12,7 +12,9 @@
 import { describe, test, before } from 'node:test';
 import assert from 'node:assert/strict';
 
+/** @type {any} */
 let controller;
+/** @type {string} */
 let CHARGE_CURRENCY;
 
 before(async () => {
@@ -24,6 +26,7 @@ before(async () => {
  * Minimal express res double capturing status + json payload.
  */
 const mockRes = () => {
+  /** @type {{ statusCode: number, body: any }} */
   const res = { statusCode: 200, body: undefined };
   // @ts-expect-error test double: express response shape
   res.status = (code) => { res.statusCode = code; return res; };

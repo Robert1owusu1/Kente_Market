@@ -5,20 +5,29 @@ import pool from '../config/db.js';
 import { protect } from '../middleware/authMiddleware.js';
 import { apiLimiter, webhookLimiter } from '../middleware/rateLimitMiddleware.js';
 import {
-  holdEscrowForOrder,
-  trackPlatformRevenue,
-  consumeCouponForOrder,
+  applyPaidOrderSideEffects,
+  PAID_TRACKING_SET_SQL,
 } from '../Services/escrowService.js';
 import { computeExpectedCompletion } from '../utils/computeExpectedCompletion.js';
-import { decrementStockForOrder } from '../controllers/orderController.js';
 import { sendOrderConfirmationEmail } from '../utils/orderEmailService.js';
-import { recordFinancialEvent } from '../Services/ledgerService.js';
-import { CHARGED_CURRENCY, buildChargeSnapshot } from '../Services/paymentCurrency.js';
+import { CHARGED_CURRENCY } from '../Services/paymentCurrency.js';
+import { PAYSTACK_TIMEOUT_MS } from '../Services/paystackservices.js';
 import {
   settleTransferSuccess,
   settleTransferFailed,
   settleTransferReversed,
 } from '../Services/transferSettlementService.js';
+import { reconcileTerminalOrderCharge } from '../Services/paymentReconciliationService.js';
+import { recordFinancialEvent } from '../Services/ledgerService.js';
+import { notifyAdmins } from '../utils/adminAlerts.js';
+
+// Provider evidence carried by a signed transfer webhook: amount in pesewas and
+// currency. Settlement refuses to book a transfer whose evidence differs from
+// the reservation (reconciliation_required instead) — PAYOUT_LIFECYCLE_DESIGN.md.
+const transferEvidence = (data) => ({
+  amountMinor: data?.amount != null && Number.isFinite(Number(data.amount)) ? Number(data.amount) : null,
+  currency: data?.currency || null,
+});
 
 const router = express.Router();
 
@@ -132,6 +141,7 @@ router.post('/verify-paystack', protect, async (req, res) => {
         headers: {
           Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
         },
+        timeout: PAYSTACK_TIMEOUT_MS,
       }
     );
 
@@ -141,7 +151,7 @@ router.post('/verify-paystack', protect, async (req, res) => {
       // Fallback: if the webhook missed this order, mark it paid here.
       // The webhook_events idempotency guard prevents double-processing.
       const [existing] = await pool.execute(
-        `SELECT id, userId, totalAmount, paymentStatus, couponId FROM orders WHERE paymentReference = ?`,
+        `SELECT id, userId, totalAmount, paymentStatus, orderStatus, refundReference, paymentReference, couponId, items, discount FROM orders WHERE paymentReference = ?`,
         [reference]
       );
       let orderMarkedPaid = false;
@@ -154,22 +164,81 @@ router.post('/verify-paystack', protect, async (req, res) => {
           message: `Payment reference maps to ${existing.length} orders`,
         });
       }
-      if (existing.length === 1 && existing[0].paymentStatus !== 'paid') {
+      if (existing.length === 1) {
         const order = existing[0];
 
-        // Only the order owner may flip it to paid, and only when Paystack
-        // actually collected the full order amount. Without these checks an
-        // attacker could mark a large order paid by reusing a reference from a
-        // smaller/low-value successful transaction (see audit).
-        if (order.userId !== req.user.id) {
+        // Ownership is enforced EVERY time an order is bound to this
+        // reference — including when it is already paid. It used to run only
+        // on the unpaid branch, so any authenticated user could read the
+        // payer's Paystack customer block (email/name/phone) by posting a
+        // reference whose order had already been flipped. Admins may verify
+        // any reference (support tooling).
+        if (order.userId !== req.user.id && req.user.role !== 'admin') {
           return res.status(403).json({ success: false, message: 'Order does not belong to this user' });
         }
+
+        // Already paid: idempotent success receipt for the authorized owner.
+        if (order.paymentStatus === 'paid') {
+          return res.json({
+            status: 'success',
+            message: 'Payment verified successfully',
+            data: {
+              reference: data.reference,
+              amount: data.amount / 100,
+              currency: data.currency,
+              channel: data.channel,
+              paid_at: data.paid_at,
+              customer: data.customer,
+              orderMarkedPaid: false,
+            },
+          });
+        }
+
+        // Only when Paystack actually collected the full order amount may ANY
+        // reconciliation proceed — including the terminal-order branch below,
+        // which journals a successful collection and pushes a refund. Without
+        // this check an attacker could attach a small successful charge's
+        // reference to a large cancelled order and have the terminal branch
+        // book order.totalAmount as collected (see audit). Mirrors the
+        // webhook, which validates before its own terminal-order branch.
         const expectedKobo = Math.round(parseFloat(order.totalAmount) * 100);
         const paidKobo = parseInt(data.amount, 10);
-        if (data.currency !== CHARGED_CURRENCY || paidKobo !== expectedKobo) {
+        if (
+          data.currency !== CHARGED_CURRENCY ||
+          !Number.isFinite(paidKobo) ||
+          paidKobo !== expectedKobo
+        ) {
+          console.error(
+            `verify-paystack: amount/currency mismatch for ${reference} on order ${order.id}: ` +
+            `paid ${paidKobo} ${data.currency}, expected ${expectedKobo} ${CHARGED_CURRENCY} — refusing to reconcile`
+          );
           return res.status(400).json({
             success: false,
             message: 'Payment amount does not match the order total',
+          });
+        }
+
+        // Terminal orders (cancelled, or refunded by any path) must never be
+        // resurrected by a late or duplicate verification — and the captured
+        // funds must never be silently dropped. Reconcile the verified charge
+        // by refunding it through the shared claim path (validated above).
+        if (
+          order.orderStatus === 'cancelled' ||
+          order.orderStatus === 'refunded' ||
+          order.paymentStatus === 'refunded'
+        ) {
+          const outcome = await reconcileTerminalOrderCharge(order, data);
+          return res.json({
+            status: 'success',
+            // 'refund-unknown' = the provider call did not return a definite
+            // result, so the refund may still be in flight — same customer
+            // message as a definitive failure. 'finalization-failed' means
+            // the provider ACCEPTED the refund and only the DB write lagged,
+            // so "initiated" is truthful.
+            message: (outcome.action === 'refund-failed' || outcome.action === 'refund-unknown')
+              ? 'Payment verified; the order was cancelled and the refund is delayed. Please contact support if it is not reflected shortly.'
+              : 'Payment verified; the order was cancelled, so a refund has been initiated.',
+            data: { reference: data.reference, orderMarkedPaid: false },
           });
         }
 
@@ -178,9 +247,10 @@ router.post('/verify-paystack', protect, async (req, res) => {
         // the same client-supplied reference were both marked paid by one
         // verified charge (double-spend).
         const [flipResult] = await pool.execute(
-          `UPDATE orders SET paymentStatus = 'paid', orderStatus = 'processing', updated_at = CURRENT_TIMESTAMP
-           WHERE id = ? AND paymentReference = ? AND paymentStatus != 'paid' AND orderStatus NOT IN ('cancelled', 'refunded')`,
-          [order.id, reference]
+          `UPDATE orders SET paymentStatus = 'paid', orderStatus = 'processing', ${PAID_TRACKING_SET_SQL}, updated_at = CURRENT_TIMESTAMP
+           WHERE id = ? AND paymentReference = ? AND totalAmount = ? AND paymentStatus IN ('pending', 'failed') AND orderStatus NOT IN ('cancelled', 'refunded')`,
+          // FV-1: pinned to the total validated above (no change in between).
+          [order.id, reference, order.totalAmount]
         );
         const orderId = order.id;
         // Idempotency: only run the post-payment side effects (escrow hold,
@@ -190,34 +260,13 @@ router.post('/verify-paystack', protect, async (req, res) => {
         // coupon are not decremented twice.
         const flipped = flipResult.affectedRows > 0;
         if (flipped) {
-          const heldCount = await holdEscrowForOrder(orderId);
- console.log(` verify-paystack fallback: order ${orderId} marked paid (${heldCount} allocations held)`);
-          // Decrement in-stock inventory for the confirmed order.
-          try {
-            const [[paidOrderRow]] = await pool.execute(
-              `SELECT items FROM orders WHERE id = ?`,
-              [orderId]
-            );
-            if (paidOrderRow?.items) {
-              let paidItems = paidOrderRow.items;
-              if (typeof paidItems === 'string') {
-                try { paidItems = JSON.parse(paidItems); } catch { paidItems = []; }
-              }
-              if (Array.isArray(paidItems) && paidItems.length > 0) {
-                await decrementStockForOrder(paidItems, orderId);
-              }
-            }
-          } catch (stockErr) {
- console.warn(` Could not decrement stock for order ${orderId}: ${stockErr.message}`);
+          // Shared post-payment side effects (see the webhook): marked one by
+          // one, finished by recoverIncompletePaidOrders if anything fails.
+          const effects = await applyPaidOrderSideEffects(orderId, { source: 'verify', charge: data });
+          if (!effects.complete) {
+            console.error(` verify-paystack: order ${orderId} paid but side effects incomplete (recovery will retry): ${effects.errors.join('; ')}`);
           }
-          // Consume deferred coupon usage (P0-5: race losers journaled, not silent).
-          if (order.couponId) {
-            try {
-              await consumeCouponForOrder(order.couponId, orderId);
-            } catch (couponErr) {
-              console.error(`Failed to increment coupon uses: ${couponErr.message}`);
-            }
-          }
+ console.log(` verify-paystack fallback: order ${orderId} marked paid`);
           // Seed expected completion date for customised orders (see webhook logic).
           try {
             const [[ordRow]] = await pool.execute(
@@ -235,47 +284,46 @@ router.post('/verify-paystack', protect, async (req, res) => {
           }
           // Receipt email — only when THIS call flipped the order, so a webhook
           // that already handled payment never sends a duplicate. Detached
-          // (N-20 class): the flip is committed and the audit event below
-          // must not be sequenced by SMTP.
+          // (N-20 class): the flip is committed and the response must not be
+          // sequenced by SMTP.
           void sendOrderConfirmationEmail(orderId).catch((emailErr) => {
             console.warn(` Could not send order confirmation email: ${emailErr.message}`);
           });
           orderMarkedPaid = true;
-          // Immutable audit event (dedupe per reference; no-op if the webhook
-          // already recorded it).
-          try {
-            await recordFinancialEvent({
-              eventType: 'charge.collected',
-              direction: 'in',
-              amount: order.totalAmount,
-              // Asserted equal to CHARGED_CURRENCY a few lines above, so
-              // booking in CHARGED_CURRENCY cannot diverge from what Paystack
-              // actually collected. The provider's own value is preserved
-              // verbatim in the snapshot below.
-              currency: CHARGED_CURRENCY,
-              orderId,
-              reference,
-              providerReference: reference,
-              dedupeKey: `charge.collected:${reference}`,
-              payload: buildChargeSnapshot(data, 'verify'),
-            });
-          } catch { /* journal is best-effort */ }
         }
-      }
 
-      res.json({
-        status: 'success',
-        message: 'Payment verified successfully',
-        data: {
-          reference: data.reference,
-          amount: data.amount / 100,
-          currency: data.currency,
-          channel: data.channel,
-          paid_at: data.paid_at,
-          customer: data.customer,
-          orderMarkedPaid,
-        },
-      });
+        // Flip-path response. (This response was missing at HEAD — the route
+        // fell out of the handler without ever writing to `res`, so a
+        // SUCCESSFUL verify-fallback flip left the checkout request hanging
+        // until the client timed out; `orderMarkedPaid` was the orphaned
+        // evidence of the deleted response.) Ownership was proven above, so
+        // echoing the verified receipt is safe. `orderMarkedPaid` is false
+        // when the flip lost a race to the webhook between the SELECT above
+        // and the UPDATE — the money state is still confirmed either way.
+        return res.json({
+          status: 'success',
+          message: orderMarkedPaid
+            ? 'Payment verified successfully'
+            : 'Payment already confirmed',
+          data: {
+            reference: data.reference,
+            amount: data.amount / 100,
+            currency: data.currency,
+            channel: data.channel,
+            paid_at: data.paid_at,
+            orderMarkedPaid,
+          },
+        });
+      } else {
+        // No order is bound to this reference. Do NOT echo the payer's
+        // Paystack customer block: the caller has proven no association with
+        // the transaction, so its PII is not theirs to read.
+        res.json({
+          status: 'success',
+          message: 'Payment verified; no order is bound to this reference yet',
+          data: { reference: data.reference, orderMarkedPaid: false },
+        });
+      }
     } else {
       res.status(400).json({
         status: 'failed',
@@ -349,6 +397,17 @@ router.post('/paystack-webhook', webhookLimiter, async (req, res) => {
           let orderId = null;
           let orderFound = false;
           let validationError = null;
+          // Set when the verified charge belongs to a TERMINAL order
+          // (cancelled/refunded): reconciled by refund after the loop instead
+          // of retried or dropped.
+          let terminalOrder = null;
+          // Set ONLY when this delivery's UPDATE actually flipped the order
+          // to paid. The confirmation email keys off this flag, never off
+          // orderFound/orderId: the convergence branch below sets those
+          // without any flip happening here, and keying the email off them
+          // sent a SECOND confirmation whenever the verify-paystack fallback
+          // had already paid and emailed the order.
+          let webhookFlippedOrderId = null;
 
           for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
             const connection = await pool.getConnection();
@@ -380,106 +439,68 @@ router.post('/paystack-webhook', webhookLimiter, async (req, res) => {
                   break;
                 }
               }
-              const [result] = await connection.execute(
-                `UPDATE orders 
-                 SET paymentStatus = 'paid', orderStatus = 'processing', updated_at = CURRENT_TIMESTAMP
-                 WHERE paymentReference = ? AND paymentStatus != 'paid' AND orderStatus NOT IN ('cancelled', 'refunded')`,
-                [reference]
-              );
+              // FV-1: flip ONLY the row validated above, at the total validated
+              // above. The flip used to be keyed by reference alone, so when
+              // the SELECT found no order yet (the usual case — the reference
+              // is PUT onto the order after the charge) validation was skipped
+              // and an order bound in between was paid for any amount. No
+              // validated row → nothing to flip; wait for the next attempt.
+              const validated = preRows[0];
+              const [result] = validated
+                ? await connection.execute(
+                  `UPDATE orders
+                   SET paymentStatus = 'paid', orderStatus = 'processing', ${PAID_TRACKING_SET_SQL}, updated_at = CURRENT_TIMESTAMP
+                   WHERE id = ? AND paymentReference = ? AND totalAmount = ?
+                     AND paymentStatus IN ('pending', 'failed') AND orderStatus NOT IN ('cancelled', 'refunded')`,
+                  [validated.id, reference, validated.totalAmount]
+                )
+                : [{ affectedRows: 0 }];
               if (result.affectedRows > 0) {
                 orderFound = true;
                 // Resolve the orderId from the reference
                 const [orderRows] = await connection.execute(
-                  `SELECT id, items, couponId, totalAmount FROM orders WHERE paymentReference = ?`,
+                  `SELECT id FROM orders WHERE paymentReference = ?`,
                   [reference]
                 );
                 if (orderRows.length > 0) {
                   orderId = orderRows[0].id;
-
-                  // Immutable audit event for the collected charge (dedupe per
-                  // Paystack reference — safe against webhook + fallback races).
-                  try {
-                    await recordFinancialEvent({
-                      eventType: 'charge.collected',
-                      direction: 'in',
-                      amount: orderRows[0].totalAmount,
-                      // Currency was asserted equal to CHARGED_CURRENCY in the
-                      // validation above, which necessarily ran (preRows is
-                      // non-empty or the paid-flip UPDATE could not match).
-                      currency: CHARGED_CURRENCY,
-                      orderId,
-                      reference,
-                      providerReference: reference,
-                      dedupeKey: `charge.collected:${reference}`,
-                      payload: buildChargeSnapshot(event.data, 'webhook'),
-                    });
-                  } catch { /* journal is best-effort */ }
-
-                  // Hold escrow allocations (pending → held)
-                  const heldCount = await holdEscrowForOrder(orderId);
- console.log(` Webhook: order ${orderId} marked paid for reference ${reference} (${heldCount} allocations held)`);
-
-                  // Track platform-owned product revenue
-                  let items = orderRows[0].items;
-                  if (typeof items === 'string') {
-                    try { items = JSON.parse(items); } catch { items = []; }
-                  }
-                  if (Array.isArray(items) && items.length > 0) {
-                    await trackPlatformRevenue(orderId, items);
-                  }
-
-                  // Decrement in-stock inventory now that payment is confirmed.
-                  if (Array.isArray(items) && items.length > 0) {
-                    await decrementStockForOrder(items, orderId);
- console.log(` Stock decremented for order ${orderId}`);
-                  }
-
-                  // For customised (custom-woven) orders, seed the expected
-                  // completion date = order start + longest productionTime among
-                  // customisable items, so the buyer sees how many days are left
-                  // to finish weaving. Only seed if not already set.
-                  try {
-                    const [[ordRow]] = await connection.execute(
-                      `SELECT expectedCompletionDate, created_at, items FROM orders WHERE id = ?`,
-                      [orderId]
-                    );
-                    if (ordRow && !ordRow.expectedCompletionDate) {
-                      const completion = computeExpectedCompletion(ordRow);
-                      if (completion) {
-                        await connection.execute(
-                          `UPDATE orders SET expectedCompletionDate = ? WHERE id = ?`,
-                          [completion, orderId]
-                        );
-                      }
-                    }
-                  } catch (compErr) {
- console.warn(` Could not seed expected completion date: ${compErr.message}`);
-                  }
-
-                  // Consume the deferred coupon usage now that payment is confirmed
-                  // (P0-5: race losers are journaled + flagged for reconcile).
-                  if (orderRows[0].couponId) {
-                    try {
-                      const { consumed } = await consumeCouponForOrder(orderRows[0].couponId, orderId);
-                      if (consumed) {
- console.log(` Coupon ${orderRows[0].couponId} consumed on confirmed payment for order ${orderId}`);
-                      }
-                    } catch (couponErr) {
- console.warn(` Could not increment coupon on payment: ${couponErr.message}`);
-                    }
-                  }
+                  // THIS delivery performed the paid flip — the only condition
+                  // under which it may send a confirmation email. The side
+                  // effects run AFTER this attempt's connection is released
+                  // (FV-13, below the loop).
+                  webhookFlippedOrderId = orderId;
                 }
                 break; // success, no more retries needed
+              } else if (!validated) {
+                // Nothing was validated on this attempt: an order bound since
+                // the SELECT is examined (and amount-checked) on the next one.
+                console.log(`⏳ Webhook: order not yet found for ${reference} (attempt ${attempt + 1}/${MAX_RETRIES})`);
               } else {
+                const [[existingOrder]] = await connection.execute(
+                  `SELECT id, paymentStatus, orderStatus, refundReference, totalAmount, paymentReference
+                   FROM orders WHERE paymentReference = ?`, [reference]
+                );
                 // A verified-payment fallback may have completed the same
                 // order between delivery attempts. Treat that as terminally
                 // processed instead of retrying this webhook forever.
-                const [[alreadyPaid]] = await connection.execute(
-                  `SELECT id, paymentStatus FROM orders WHERE paymentReference = ?`, [reference]
-                );
-                if (alreadyPaid?.paymentStatus === 'paid') {
+                // Deliberately sets orderFound WITHOUT touching
+                // webhookFlippedOrderId: the flip (and the confirmation
+                // email) belongs to whoever actually performed it.
+                if (existingOrder?.paymentStatus === 'paid') {
                   orderFound = true;
-                  orderId = alreadyPaid.id;
+                  break;
+                }
+                // Late charge on a TERMINAL order: the money moved at Paystack
+                // but a cancelled/refunded order must never be resurrected.
+                // Reconcile by pushing a real refund (shared idempotent claim)
+                // instead of looping retries or silently dropping the funds.
+                if (
+                  existingOrder &&
+                  (['cancelled', 'refunded'].includes(existingOrder.orderStatus) ||
+                    existingOrder.paymentStatus === 'refunded')
+                ) {
+                  terminalOrder = existingOrder;
+                  orderFound = true; // stop the create-wait retry loop
                   break;
                 }
                 // Order not yet created — wait and retry.
@@ -494,6 +515,68 @@ router.post('/paystack-webhook', webhookLimiter, async (req, res) => {
             }
           }
 
+          // FV-13: post-payment work runs with NO connection held by this
+          // delivery. It used to run inside the attempt above, holding that
+          // attempt's pooled connection while applyPaidOrderSideEffects took
+          // more from the same pool — pool-size concurrent paid flips could
+          // each hold one and wait for another (hold-and-wait stall).
+          if (webhookFlippedOrderId) {
+            // Post-payment side effects (journal, escrow hold, platform
+            // revenue, stock, coupon) through the shared routine: each is
+            // marked only once applied, so a crash or DB error here is
+            // finished by recoverIncompletePaidOrders — a redelivery of
+            // this webhook cannot, because it will find the order paid.
+            const effects = await applyPaidOrderSideEffects(webhookFlippedOrderId, { source: 'webhook', charge: event.data });
+            if (!effects.complete) {
+              console.error(` Webhook: order ${webhookFlippedOrderId} paid but side effects incomplete (recovery will retry): ${effects.errors.join('; ')}`);
+            }
+            console.log(` Webhook: order ${webhookFlippedOrderId} marked paid for reference ${reference}`);
+
+            // For customised (custom-woven) orders, seed the expected
+            // completion date = order start + longest productionTime among
+            // customisable items, so the buyer sees how many days are left
+            // to finish weaving. Only seed if not already set.
+            try {
+              const [[ordRow]] = await pool.execute(
+                `SELECT expectedCompletionDate, created_at, items FROM orders WHERE id = ?`,
+                [webhookFlippedOrderId]
+              );
+              if (ordRow && !ordRow.expectedCompletionDate) {
+                const completion = computeExpectedCompletion(ordRow);
+                if (completion) {
+                  await pool.execute(
+                    `UPDATE orders SET expectedCompletionDate = ? WHERE id = ? AND expectedCompletionDate IS NULL`,
+                    [completion, webhookFlippedOrderId]
+                  );
+                }
+              }
+            } catch (compErr) {
+              console.warn(` Could not seed expected completion date: ${compErr.message}`);
+            }
+          }
+
+          if (terminalOrder) {
+            // The charge is real but the order is terminal: refund it. On a
+            // definitive provider rejection the claim is released and the
+            // webhook is failed so Paystack's redelivery re-attempts the
+            // refund. On 'refund-unknown' / 'finalization-failed' the claim
+            // was KEPT (the refund may already exist at the provider), the
+            // event is still failed for visibility, and the redelivery stands
+            // down on the claim while reconcileStaleRefundClaims finalizes
+            // from the provider's actual refund state.
+            const outcome = await reconcileTerminalOrderCharge(terminalOrder, event.data || {});
+            if (['refund-failed', 'refund-unknown', 'finalization-failed'].includes(outcome.action)) {
+              console.error(` Webhook: late charge on terminal order ${terminalOrder.id} not finalized (${outcome.action}): ${outcome.error?.message || outcome.error}`);
+              await pool.execute(
+                `UPDATE webhook_events SET processing_status = 'failed', last_error = ?
+                 WHERE event = ? AND reference = ?`,
+                [`Late charge on terminal order ${terminalOrder.id}; ${outcome.action}: ${String(outcome.error?.message || outcome.error).slice(0, 300)}`, event.event, reference]
+              );
+              // Non-2xx so Paystack redelivers.
+              return res.status(500).send('Refund reconciliation incomplete; retry webhook');
+            }
+            console.log(` Webhook: late charge on terminal order ${terminalOrder.id} reconciled (${outcome.action}) for reference ${reference}`);
+          }
 if (!orderFound) {
             if (validationError) {
  console.error(` ${validationError}`);
@@ -514,13 +597,15 @@ if (!orderFound) {
             // A non-2xx makes Paystack retry later, when order creation may
             // have completed. The durable failed state avoids losing payment.
             return res.status(500).send('Order not ready; retry webhook');
-          } else if (orderId) {
-            // Receipt email — fires only when the webhook itself performed the
-            // paid flip. If the verify-paystack fallback already did it, the
-            // affected guard above means orderFound is false here. Detached
-            // (N-20 class): Paystack's webhook response and the durable
+          } else if (webhookFlippedOrderId) {
+            // Receipt email — fires ONLY when the webhook itself performed
+            // the paid flip (webhookFlippedOrderId). The convergence branch
+            // above (fallback already paid the order) sets orderFound without
+            // a flip; keying the email off orderFound/orderId used to send a
+            // SECOND confirmation in exactly that case. Detached (N-20
+            // class): Paystack's webhook response and the durable
             // processing_status write must never wait on SMTP.
-            void sendOrderConfirmationEmail(orderId).catch((emailErr) => {
+            void sendOrderConfirmationEmail(webhookFlippedOrderId).catch((emailErr) => {
               console.warn(` Could not send order confirmation email: ${emailErr.message}`);
             });
           }
@@ -534,9 +619,22 @@ if (!orderFound) {
         break;
       }
 
-      case 'charge.failed':
-        console.log('Payment failed:', event.data.reference);
+      case 'charge.failed': {
+        // Durable receipt (idempotent, no state machine): the order stays
+        // 'pending' so the customer can retry with a fresh charge, but the
+        // failure is recorded for ops visibility and reconciliation instead
+        // of living only in stdout.
+        const failedRef = event.data?.reference;
+        if (failedRef) {
+          await pool.execute(
+            `INSERT IGNORE INTO webhook_events (event, reference, payload, processing_status, processed_at)
+             VALUES (?, ?, ?, 'processed', CURRENT_TIMESTAMP)`,
+            ['charge.failed', failedRef, JSON.stringify(event.data || null)]
+          ).catch(() => { /* receipt is best-effort; never block the 200 */ });
+        }
+        console.log('Payment failed:', failedRef);
         break;
+      }
 
 case 'transfer.success': {
         const transferRef = event.data?.reference;
@@ -546,7 +644,7 @@ case 'transfer.success': {
             return res.status(200).send('Duplicate ignored');
           }
           try {
-            const outcome = await settleTransferSuccess(transferRef);
+            const outcome = await settleTransferSuccess(transferRef, transferEvidence(event.data));
             if (outcome === 'unknown') {
               console.warn(`Transfer success has no payout attempt: ${transferRef}`);
             }
@@ -568,7 +666,7 @@ case 'transfer.success': {
             return res.status(200).send('Duplicate ignored');
           }
           try {
-            const outcome = await settleTransferFailed(transferRef);
+            const outcome = await settleTransferFailed(transferRef, transferEvidence(event.data));
             if (outcome === 'unknown') {
               console.warn(`Transfer failed has no payout attempt: ${transferRef}`);
             }
@@ -590,7 +688,7 @@ case 'transfer.success': {
             return res.status(200).send('Duplicate ignored');
           }
           try {
-            const outcome = await settleTransferReversed(reversedRef);
+            const outcome = await settleTransferReversed(reversedRef, transferEvidence(event.data));
             if (outcome === 'unknown') {
               console.warn(`Transfer reversed has no payout attempt: ${reversedRef}`);
             }
@@ -598,6 +696,65 @@ case 'transfer.success': {
  if (outcome !== 'unknown') console.log(` Transfer reversed settled: ${reversedRef} (${outcome})`);
           } catch (error) {
             await failWebhook(event.event, reversedRef, error);
+            throw error; // → 500 so Paystack redelivers
+          }
+        }
+        break;
+      }
+
+      // Paystack refunds are asynchronous: every refund path books the order
+      // refunded when the refund REQUEST is accepted, so a refund that later
+      // fails at the provider used to leave the order "refunded" with the
+      // customer unpaid and nobody told. Record every refund event durably;
+      // on refund.failed alert admins once (no automatic money or state
+      // change — re-issuing is an operator decision, see the runbook).
+      case 'refund.pending':
+      case 'refund.processing':
+      case 'refund.processed':
+      case 'refund.failed': {
+        const txRef = event.data?.transaction_reference ?? event.data?.transaction?.reference;
+        const refundId = event.data?.refund_reference ?? event.data?.id ?? '';
+        if (txRef) {
+          const key = `${txRef}:${refundId}`.slice(0, 255);
+          if (event.event !== 'refund.failed') {
+            await pool.execute(
+              `INSERT IGNORE INTO webhook_events (event, reference, payload, processing_status, processed_at)
+               VALUES (?, ?, ?, 'processed', CURRENT_TIMESTAMP)`,
+              [event.event, key, JSON.stringify(event.data || null)]
+            );
+            break;
+          }
+          if (!(await claimWebhook(event.event, key, JSON.stringify(event.data || null)))) {
+            return res.status(200).send('Duplicate ignored');
+          }
+          try {
+            const [[order]] = await pool.execute(
+              `SELECT id, orderNumber, paymentStatus, refundReference FROM orders WHERE paymentReference = ? LIMIT 1`,
+              [txRef]
+            );
+            const amount = Number(event.data?.amount);
+            await recordFinancialEvent({
+              eventType: 'refund.failed',
+              direction: 'info',
+              amount: Number.isFinite(amount) && amount > 0 ? amount / 100 : 0,
+              orderId: order?.id ?? null,
+              reference: txRef,
+              providerReference: String(refundId || txRef),
+              dedupeKey: `refund.failed:${key}`,
+              payload: event.data || null,
+            });
+            await notifyAdmins(
+              'Paystack refund FAILED — customer not refunded',
+              `Paystack reports refund ${refundId || '(no id)'} for transaction ${txRef}` +
+                `${order ? ` (order #${order.orderNumber || order.id}, now ${order.paymentStatus})` : ' (no matching order)'} ` +
+                `as FAILED${Number.isFinite(amount) ? ` (GHS ${(amount / 100).toFixed(2)})` : ''}. ` +
+                'The order may already show as refunded. Verify in the Paystack dashboard and refund the customer manually; ' +
+                'do not re-run cancel/return on the order.',
+              { link: order ? `/admin/orders/${order.id}` : '/admin/orders' }
+            );
+            await completeWebhook(event.event, key);
+          } catch (error) {
+            await failWebhook(event.event, key, error);
             throw error; // → 500 so Paystack redelivers
           }
         }

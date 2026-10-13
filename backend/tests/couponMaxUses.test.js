@@ -561,7 +561,7 @@ describe('N-7/V-04 source guards (no DB required)', () => {
   test('couponUseState is not client-writable and validate stays advisory', async () => {
     const fs = await import('node:fs/promises');
     const modelSrc = await fs.readFile(new URL('../models/orderModel.js', import.meta.url), 'utf8');
-    const whitelist = modelSrc.match(/const allowedFields = \[([\s\S]*?)\]/);
+    const whitelist = modelSrc.match(/static UPDATABLE_FIELDS = \[([\s\S]*?)\]/);
     assert.ok(whitelist, 'Order.update field whitelist present');
     assert.ok(
       !/couponUseState/.test(whitelist[1]),

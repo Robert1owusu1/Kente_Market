@@ -6,6 +6,7 @@ import paystackServices from '../Services/paystackservices.js';
 import { getWallet } from '../Services/walletService.js';
 import { getAvailableAllocationsForVendor, payoutAllocation } from '../Services/escrowService.js';
 import { PLATFORM_FEE_RATE } from '../config/businessConfig.js';
+import { resolveCommissionRate } from '../Services/commissionService.js';
 import { hasInvalidYards, INVALID_YARDS_MESSAGE } from '../utils/yards.js';
 import { toNonNegativeInt } from '../utils/nonNegativeInt.js';
 import { clearCache } from '../middleware/cacheMiddleware.js';
@@ -152,7 +153,12 @@ export const getMyVendorProfile = async (req, res) => {
     const summary = await Vendor.getEscrowSummary(req.user.id);
     const payouts = await Vendor.getPayoutHistory(req.user.id);
     const walletTransactions = await Vendor.getWalletTransactions(req.user.id);
-    res.json({ vendor, summary, payouts, walletTransactions });
+    // COM-7: the rate the engine actually applies store-wide (vendor rule >
+    // global rule > vendors.platformFeeRate > default). vendors.platformFeeRate
+    // alone is shadowed by any active global rule, so showing it misinformed
+    // vendors. Product/category rules can still differ per item.
+    const commissionRate = await resolveCommissionRate({ vendorId: req.user.id });
+    res.json({ vendor, summary, payouts, walletTransactions, commission: { rate: commissionRate, perItemRulesMayApply: true } });
   } catch (error) {
     console.error('Error fetching vendor profile:', error);
     res.status(500).json({ message: 'Failed to fetch vendor profile' });
@@ -1046,16 +1052,55 @@ export const updateVendorVerification = async (req, res) => {
   }
 };
 
-// @desc    Withdraw funds from the vendor's available wallet balance
-// @route   POST /api/vendors/withdraw
-// @access  Private (approoved vendor)
-export const withdrawVendorBalance = async (req, res) => {
-  const { amount } = req.body;
-  const amountNum = parseFloat(amount);
+// Strict money input: a decimal string/number with at most 2 places, parsed to
+// integer pesewas. parseFloat("50abc") === 50 used to be accepted.
+const MONEY_RE = /^\d{1,9}(\.\d{1,2})?$/;
+const REQUEST_KEY_RE = /^[A-Za-z0-9_-]{8,64}$/;
 
-  if (!amountNum || amountNum <= 0) {
-    return res.status(400).json({ message: 'A valid withdrawal amount is required' });
+/** @returns {number | null} pesewas, or null when the input is not a valid positive amount */
+export const parseWithdrawalAmountMinor = (value) => {
+  // Only a JSON number or string: String([5]) === '5' must not pass.
+  if (typeof value !== 'number' && typeof value !== 'string') return null;
+  const text = typeof value === 'number' ? (Number.isFinite(value) ? String(value) : '') : value.trim();
+  if (!MONEY_RE.test(text)) return null;
+  const minor = Math.round(Number(text) * 100);
+  return minor > 0 ? minor : null;
+};
+
+/** Derived view of one withdrawal request (status comes from its attempts). */
+const loadWithdrawal = async (vendorId, withdrawalId) => {
+  const [[w]] = await pool.execute(
+    `SELECT id, vendorId, requestKey, amountMinor, currency, created_at FROM vendor_withdrawals WHERE id = ? AND vendorId = ?`,
+    [withdrawalId, vendorId]
+  );
+  if (!w) return null;
+  const [attempts] = await pool.execute(
+    `SELECT id, allocationId, amount, currency, reference, status, providerStatus, created_at, updated_at
+       FROM payout_attempts WHERE withdrawalId = ? AND vendorId = ? ORDER BY id ASC`,
+    [withdrawalId, vendorId]
+  );
+  return { ...w, amount: Number(w.amountMinor) / 100, attempts };
+};
+
+// @desc    Withdraw funds from the vendor's available wallet balance
+// @route   POST /api/vendors/withdraw   body: { amount, currency?, requestKey? }
+//          (or Idempotency-Key header)
+// @access  Private (approved vendor; staff with request_payouts)
+export const withdrawVendorBalance = async (req, res) => {
+  const amountMinor = parseWithdrawalAmountMinor(req.body?.amount);
+  if (amountMinor == null) {
+    return res.status(400).json({ message: 'A valid withdrawal amount is required (GHS, at most 2 decimal places)' });
   }
+  const currency = req.body?.currency == null ? 'GHS' : String(req.body.currency).toUpperCase();
+  if (currency !== 'GHS') {
+    return res.status(400).json({ message: 'Withdrawals are paid in GHS only' });
+  }
+  const rawKey = req.get?.('Idempotency-Key') ?? req.headers?.['idempotency-key'] ?? req.body?.requestKey;
+  const requestKey = rawKey == null || rawKey === '' ? null : String(rawKey);
+  if (requestKey != null && !REQUEST_KEY_RE.test(requestKey)) {
+    return res.status(400).json({ message: 'Invalid request key' });
+  }
+  const amountNum = amountMinor / 100;
 
   try {
     const vendor = await Vendor.findByUserId(req.user.id);
@@ -1066,68 +1111,105 @@ export const withdrawVendorBalance = async (req, res) => {
       return res.status(403).json({ message: 'Vendor application must be approved to withdraw' });
     }
 
+    // Eligible = remainder of released, credited allocations on active orders.
+    // The wallet balance also contains money already reserved by in-flight
+    // transfers, so it is NOT what can be withdrawn now.
+    const allocations = await getAvailableAllocationsForVendor(req.user.id);
+    const eligibleMinor = allocations.reduce(
+      (s, a) => s + Math.round((parseFloat(a.payoutAmount) || 0) * 100), 0);
     const wallet = await getWallet(req.user.id);
-    const available = parseFloat(wallet.available_balance) || 0;
-    if (amountNum > available) {
+    const walletMinor = Math.round((parseFloat(wallet.available_balance) || 0) * 100);
+    const withdrawableMinor = Math.min(eligibleMinor, walletMinor);
+    if (amountMinor > withdrawableMinor) {
       return res.status(400).json({
-        message: `Insufficient available balance. Available: GH₵${available.toFixed(2)}`,
+        message: `Insufficient available balance. Available: GH₵${(withdrawableMinor / 100).toFixed(2)}`,
       });
     }
 
-    const allocations = await getAvailableAllocationsForVendor(req.user.id);
-    let remaining = amountNum;
+    // One row per request: stable internal id + idempotency (unique per vendor
+    // and key). A retried/double-clicked request never reserves twice.
+    let withdrawalId;
+    try {
+      const [ins] = await pool.execute(
+        `INSERT INTO vendor_withdrawals (vendorId, requestKey, amountMinor, currency, requestedBy) VALUES (?, ?, ?, 'GHS', ?)`,
+        [req.user.id, requestKey, amountMinor, req.staff?.id ?? null]
+      );
+      withdrawalId = ins.insertId;
+    } catch (err) {
+      if (err.code !== 'ER_DUP_ENTRY') throw err;
+      const [[prev]] = await pool.execute(
+        `SELECT id FROM vendor_withdrawals WHERE vendorId = ? AND requestKey = ?`, [req.user.id, requestKey]
+      );
+      const existing = prev ? await loadWithdrawal(req.user.id, prev.id) : null;
+      if (existing && Number(existing.amountMinor) !== amountMinor) {
+        return res.status(422).json({ message: 'This request key was already used for a different amount' });
+      }
+      return res.status(409).json({
+        message: 'This withdrawal request was already submitted',
+        duplicate: true,
+        withdrawal: existing,
+      });
+    }
+
+    let remainingMinor = amountMinor;
     let paid = 0;
+    let pending = 0;
     let failed = 0;
     const results = [];
 
-    // Vendors may withdraw any amount up to their available balance. Full
-    // allocations pay out in one transfer and turn 'releasing'; if the request
-    // only covers part of an allocation, that part is transferred and the
-    // allocation stays 'available' so the remainder can be withdrawn later.
+    // Vendors may withdraw any amount up to their eligible balance. Full
+    // allocations pay out in one transfer and turn 'releasing'; a request that
+    // only covers part of an allocation reserves just that part.
     for (const allocation of allocations) {
-      if (remaining <= 0) break;
-      const availableInAllocation = parseFloat(allocation.payoutAmount) || 0;
-      if (availableInAllocation <= 0) continue;
+      if (remainingMinor <= 0) break;
+      const inAllocationMinor = Math.round((parseFloat(allocation.payoutAmount) || 0) * 100);
+      if (inAllocationMinor <= 0) continue;
 
-      const take = Math.min(remaining, availableInAllocation);
-      const updated = await payoutAllocation(allocation, take);
+      const takeMinor = Math.min(remainingMinor, inAllocationMinor);
+      const updated = await payoutAllocation(allocation, takeMinor / 100, { withdrawalId });
       results.push(updated);
 
-      // The wallet is debited only by the signed transfer.success webhook.
-      // A provider acknowledgement is not settlement; debiting here makes a
-      // failed/reversed transfer silently lose vendor funds.
-      if (updated.paid) {
-        remaining = Math.round((remaining - take) * 100) / 100;
-        paid += 1;
+      // A reservation that reached the provider without a definite answer
+      // (timeout) is still a reservation: count it, or the loop would reserve
+      // the same amount again from the next allocation.
+      if (updated.paid || updated.pending) {
+        remainingMinor -= takeMinor;
+        if (updated.paid) paid += 1; else pending += 1;
       } else {
-        // Payout failed (e.g. invalid recipient) — balance stays available,
-        // allocation stays retryable.
+        // Nothing reserved (claim lost to a concurrent withdrawal/refund, or
+        // no recipient) — the balance stays available.
         failed += 1;
       }
     }
 
-    const settled = Math.round((amountNum - remaining) * 100) / 100;
+    const settled = (amountMinor - remainingMinor) / 100;
 
-    if (paid === 0) {
+    if (paid === 0 && pending === 0) {
       // Nothing moved — surface the real reason (e.g. Paystack blocked the
       // transfer for a starter business) instead of a vague payout-details hint.
       const firstFailure = results.find((r) => r && !r.paid && r.reason);
       const reason = firstFailure?.reason || 'payout details could not be used';
       return res.status(400).json({
         message: `Withdrawal failed: ${reason}`,
+        withdrawalId,
         requested: amountNum,
         settled,
         paid,
+        pending,
         failed,
         results,
       });
     }
 
     return res.json({
-      message: `Withdrawal of GH₵${settled.toFixed(2)} initiated`,
+      message: pending > 0
+        ? `Withdrawal of GH₵${settled.toFixed(2)} submitted. Part of it is awaiting confirmation from Paystack and stays reserved until then`
+        : `Withdrawal of GH₵${settled.toFixed(2)} initiated`,
+      withdrawalId,
       requested: amountNum,
       settled,
       paid,
+      pending,
       failed,
       results,
     });
@@ -1136,6 +1218,25 @@ export const withdrawVendorBalance = async (req, res) => {
     return res.status(500).json({ message: 'Failed to process withdrawal' });
   }
 };
+
+// @desc    The caller's own withdrawal requests with their transfer attempts
+// @route   GET /api/vendors/withdrawals
+// @access  Private (approved vendor; staff with view_earnings)
+export const getMyWithdrawals = async (req, res) => {
+  try {
+    const [rows] = await pool.execute(
+      `SELECT id FROM vendor_withdrawals WHERE vendorId = ? ORDER BY id DESC LIMIT 50`,
+      [req.user.id]
+    );
+    const withdrawals = [];
+    for (const r of rows) withdrawals.push(await loadWithdrawal(req.user.id, r.id));
+    res.json({ withdrawals });
+  } catch (error) {
+    console.error('Error fetching withdrawals:', error.message);
+    res.status(500).json({ message: 'Failed to fetch withdrawals' });
+  }
+};
+
 // @desc    Public fulfilment scorecard for a vendor (on-time delivery %)
 export const getVendorFulfilment = async (req, res) => {
   try {

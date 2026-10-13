@@ -2,6 +2,7 @@
 import nodemailer from 'nodemailer';
 import crypto from 'crypto';
 import { escapeHtml } from './htmlEscape.js';
+import { frontendBaseUrl } from '../config/frontendOrigins.js';
 
 /**
  * Mask an email address for logs: keep the first character of the local part
@@ -317,7 +318,7 @@ export const sendWelcomeEmail = async (email, firstName) => {
  <li> Special offers and discounts</li>
             </ul>
             <div style="text-align: center; margin: 30px 0;">
-              <a href="${escapeHtml(process.env.FRONTEND_URL || 'http://localhost:5173')}" class="button">Start Shopping</a>
+              <a href="${escapeHtml(frontendBaseUrl() || 'http://localhost:5173')}" class="button">Start Shopping</a>
             </div>
             <p>If you have any questions, feel free to contact our support team.</p>
           </div>
@@ -352,7 +353,7 @@ export const sendPasswordResetEmail = async (email, firstName, resetToken) => {
   const transporter = createTransporter();
   
   // Create reset URL
-  const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/reset-password/${resetToken}`;
+  const resetUrl = `${frontendBaseUrl() || 'http://localhost:5173'}/reset-password/${resetToken}`;
 
   const mailOptions = {
     from: process.env.EMAIL_FROM || 'Bonwire Kente <noreply@bonwirekente.com>',
@@ -478,7 +479,7 @@ export const sendPasswordResetConfirmation = async (email, firstName) => {
             <p>If you didn't reset your password, please contact our support team immediately to secure your account.</p>
             
             <div style="text-align: center; margin: 30px 0;">
-              <a href="${escapeHtml(process.env.FRONTEND_URL || 'http://localhost:5173')}/login" class="button">Login to Your Account</a>
+              <a href="${escapeHtml(frontendBaseUrl() || 'http://localhost:5173')}/login" class="button">Login to Your Account</a>
             </div>
             
             <p style="color: #666; font-size: 14px;">Best regards,<br>The Bonwire Kente Team</p>

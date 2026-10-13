@@ -25,14 +25,23 @@ if (!fs.existsSync(sqlPath)) {
   process.exit(1);
 }
 
-// DROP DATABASE is unconditional — refuse to run it against production
-// without an explicit, separate opt-in (a mis-pointed .env would otherwise
-// wipe the live database).
-if (process.env.NODE_ENV === 'production' && process.env.ALLOW_DESTRUCTIVE_DB !== '1') {
+// DROP DATABASE is unconditional — refuse to run it against anything but a
+// database on this machine without an explicit, separate opt-in. Keying this
+// on NODE_ENV alone was not enough: a developer .env that points at the
+// hosted database usually leaves NODE_ENV unset, and `npm run db:setup`
+// would then have dropped the live database.
+const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '::1']);
+const isLocalHost = LOCAL_HOSTS.has(String(process.env.DB_HOST || '').trim());
+if ((!isLocalHost || process.env.NODE_ENV === 'production') && process.env.ALLOW_DESTRUCTIVE_DB !== '1') {
   console.error(
-' Refusing to DROP DATABASE: NODE_ENV=production. ' +
+' Refusing to DROP DATABASE: DB_HOST is not a local database (or NODE_ENV=production). ' +
     'If this is truly intended, re-run with ALLOW_DESTRUCTIVE_DB=1.'
   );
+  process.exit(1);
+}
+
+if (!/^[A-Za-z0-9_]+$/.test(dbName)) {
+  console.error(` Refusing DB_NAME "${dbName}": only letters, digits and _ are allowed`);
   process.exit(1);
 }
 
@@ -52,7 +61,12 @@ try {
   );
  console.log(` Dropped existing database ${dbName} (if any)`);
 
-  const schema = fs.readFileSync(sqlPath, 'utf8');
+  // branding_house.sql names its database; load it into DB_NAME instead, so
+  // the database that was just dropped is the one that gets rebuilt.
+  const schema = fs.readFileSync(sqlPath, 'utf8').replace(
+    /^CREATE DATABASE IF NOT EXISTS branding_house;\s*USE branding_house;/m,
+    `CREATE DATABASE IF NOT EXISTS \`${dbName}\`;\nUSE \`${dbName}\`;`
+  );
   await connection.query(schema);
  console.log(` Database ${dbName} created with schema from branding_house.sql`);
 } catch (err) {

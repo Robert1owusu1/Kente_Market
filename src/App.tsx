@@ -9,6 +9,7 @@ import PromotionPopup from './components/PromotionPopup/PromotionPopup';
 import TestingModePopup from './components/TestingModePopup/TestingModePopup';
 
 import SyncUserRole from './components/SyncUserRole/SyncUserRole';
+import ReferralCapture from './components/Referral/ReferralCapture';
 import TermsReconsentGate from './components/legal/TermsReconsentGate';
 import NotFound from './components/NotFound/NotFound';
 import PrivateRoute from './components/privateRoutes/PrivateRoute';
@@ -76,6 +77,7 @@ const KenteMuseum = lazy(() => import('./Pages/Museum/KenteMuseum'));
 const SuggestionsPage = lazy(() => import('./Pages/Suggestions/SuggestionsPage'));
 const MyMessages = lazy(() => import('./Pages/Messages/MyMessages'));
 const MyCertificates = lazy(() => import('./Pages/Certificates/MyCertificates'));
+const ReferralsPage = lazy(() => import('./Pages/Referrals/ReferralsPage'));
 const CustomRequestForm = lazy(() => import('./Pages/CustomRequest/CustomRequestForm'));
 const MyCustomRequests = lazy(() => import('./Pages/CustomRequest/MyCustomRequests'));
 const CustomRequestCheckout = lazy(() => import('./Pages/CustomRequest/CustomRequestCheckout'));
@@ -188,6 +190,7 @@ const App = () => {
                 <Route path='/orders' element={<OrdersPage />} />
                 <Route path='/messages' element={<MyMessages />} />
                 <Route path='/certificates' element={<MyCertificates />} />
+                <Route path='/referrals' element={<ReferralsPage />} />
                 <Route path='/customize/:id' element={<CustomRequestForm />} />
                 <Route path='/custom-requests' element={<MyCustomRequests />} />
                 <Route path='/custom-requests/:id/checkout' element={<CustomRequestCheckout />} />
@@ -211,6 +214,7 @@ const App = () => {
         <PromotionPopup />
         <TestingModePopup />
         <SyncUserRole />
+        <ReferralCapture />
         {/* Terms/consent versioning: blocks any session that has not accepted
             the current revision until it does (or logs out). */}
         <TermsReconsentGate />

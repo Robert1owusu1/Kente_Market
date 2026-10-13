@@ -27,24 +27,37 @@ const up = async () => {
     console.log('✅ exchange_rates table created');
 
     // Seed initial rates for supported currencies (approximate rates as of 2024)
-    // These are just seed values; production should use a real FX API
-    const today = new Date().toISOString().split('T')[0];
-    const rates = [
-      { base: 'GHS', target: 'GHS', rate: 1.0 },
-      { base: 'GHS', target: 'GBP', rate: 0.054 },
-      { base: 'GHS', target: 'USD', rate: 0.068 },
-      { base: 'GHS', target: 'CAD', rate: 0.092 },
-      { base: 'GHS', target: 'EUR', rate: 0.063 },
-    ];
+    // These are just seed values; production should use a real FX API.
+    //
+    // SEED-ONCE: re-running `npm run db:migrate` must never touch rate data.
+    // Inserting on every run would add a NEW row dated today, and because
+    // lookups take `effectiveDate <= today ORDER BY effectiveDate DESC`, that
+    // fresh seed row would silently SHADOW whatever rate the operator had
+    // curated yesterday — a silent repricing of every international order.
+    const [[{ n: existing }]] = await connection.execute(
+      'SELECT COUNT(*) AS n FROM exchange_rates'
+    );
+    if (Number(existing) > 0) {
+      console.log(`ℹ️  exchange_rates already holds ${existing} row(s); seeding skipped (re-run is data-inert)`);
+    } else {
+      const today = new Date().toISOString().split('T')[0];
+      const rates = [
+        { base: 'GHS', target: 'GHS', rate: 1.0 },
+        { base: 'GHS', target: 'GBP', rate: 0.054 },
+        { base: 'GHS', target: 'USD', rate: 0.068 },
+        { base: 'GHS', target: 'CAD', rate: 0.092 },
+        { base: 'GHS', target: 'EUR', rate: 0.063 },
+      ];
 
-    for (const r of rates) {
-      await connection.execute(
-        `INSERT IGNORE INTO exchange_rates (baseCurrency, targetCurrency, rate, source, effectiveDate) VALUES (?, ?, ?, 'manual', ?)`,
-        [r.base, r.target, r.rate, today]
-      );
+      for (const r of rates) {
+        await connection.execute(
+          `INSERT IGNORE INTO exchange_rates (baseCurrency, targetCurrency, rate, source, effectiveDate) VALUES (?, ?, ?, 'manual', ?)`,
+          [r.base, r.target, r.rate, today]
+        );
+      }
+
+      console.log('✅ Initial exchange rates seeded (seed-once: later runs will not overwrite operator rates)');
     }
-
-    console.log('✅ Initial exchange rates seeded');
   } finally {
     connection.release();
   }

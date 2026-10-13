@@ -1,5 +1,6 @@
 import React, { useCallback, useState } from "react";
 import { FaCloudUploadAlt, FaImage, FaTimes } from "react-icons/fa";
+import { prepareTryOnImage } from "./utils/prepareTryOnImage";
 import "./AiTryOnStyles.css";
 
 interface ImageUploadProps {
@@ -10,30 +11,47 @@ interface ImageUploadProps {
 const ImageUpload = ({ onImageSelected, label = "Upload your photo" }: ImageUploadProps) => {
   const [dragOver, setDragOver] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isPreparing, setIsPreparing] = useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const handleFile = useCallback(
-    (file: File | undefined) => {
-      if (!file) return;
+    async (file: File | undefined) => {
+      if (!file || isPreparing) return;
+      setError(null);
       if (!file.type.startsWith("image/")) {
-        alert("Please upload an image file (JPG, PNG).");
+        setError("Please upload an image file (JPG, PNG or WebP).");
         return;
       }
       if (file.size > 10 * 1024 * 1024) {
-        alert("Image is too large. Maximum size is 10MB.");
+        setError("Image is too large. Maximum size is 10MB.");
         return;
       }
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const dataUrl = e.target?.result;
-        if (typeof dataUrl === "string") {
-          setPreview(dataUrl);
-          onImageSelected(dataUrl);
-        }
-      };
-      reader.readAsDataURL(file);
+      setIsPreparing(true);
+      try {
+        const raw = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            const result = e.target?.result;
+            if (typeof result === "string") resolve(result);
+            else reject(new Error("Could not read that image file."));
+          };
+          reader.onerror = () => reject(new Error("Could not read that image file."));
+          reader.readAsDataURL(file);
+        });
+        // Downscale + strip EXIF client-side so the JSON payload fits the
+        // API's body limit and the photo leaves the device without metadata.
+        const prepared = await prepareTryOnImage(raw);
+        setPreview(prepared);
+        onImageSelected(prepared);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Could not process that image.");
+        onImageSelected(null);
+      } finally {
+        setIsPreparing(false);
+      }
     },
-    [onImageSelected]
+    [onImageSelected, isPreparing]
   );
 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
@@ -45,6 +63,7 @@ const ImageUpload = ({ onImageSelected, label = "Upload your photo" }: ImageUplo
 
   const clearImage = () => {
     setPreview(null);
+    setError(null);
     onImageSelected(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
@@ -65,15 +84,16 @@ const ImageUpload = ({ onImageSelected, label = "Upload your photo" }: ImageUplo
           <FaCloudUploadAlt className="text-5xl text-primary mb-3" />
           <p className="font-medium text-gray-700 dark:text-gray-200">{label}</p>
           <p className="text-sm text-gray-500 dark:text-gray-400">
-            Drag & drop your photo here, or click to browse
+            {isPreparing ? "Preparing your photo…" : "Drag & drop your photo here, or click to browse"}
           </p>
+          {error && <p className="aitryon-error text-sm mt-2">{error}</p>}
           <p className="text-xs text-gray-400 mt-2">
-            JPG or PNG • Max 10MB • Front-facing photo recommended
+            JPG, PNG or WebP • Max 10MB • Front-facing photo recommended
           </p>
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*"
+            accept="image/jpeg,image/png,image/webp"
             className="hidden"
             onChange={(e) => handleFile(e.target.files?.[0])}
           />

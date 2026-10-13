@@ -10,6 +10,7 @@ import { authLimiter } from '../middleware/rateLimitMiddleware.js';
 import { setCsrfCookie, getOrIssueCsrfToken } from '../middleware/csrfMiddleware.js';
 import { consumeOnce } from '../utils/redisClient.js';
 import User from '../models/usersModel.js';
+import { frontendBaseUrl } from '../config/frontendOrigins.js';
 
 const router = express.Router();
 
@@ -95,10 +96,10 @@ const handleOAuthSuccess = (req, res) => {
     // NOTE: no user data is placed in the URL. The exchange token is signed
     // with JWT_SECRET and purpose-bound, so credentials can never be forged
     // via a crafted callback URL.
-    res.redirect(`${process.env.FRONTEND_URL}/oauth/callback?success=true#token=${exchangeToken}`);
+    res.redirect(`${frontendBaseUrl()}/oauth/callback?success=true#token=${exchangeToken}`);
   } catch (error) {
     console.error('OAuth success handler error:', error);
-    res.redirect(`${process.env.FRONTEND_URL}/login?error=oauth_failed`);
+    res.redirect(`${frontendBaseUrl()}/login?error=oauth_failed`);
   }
 };
 
@@ -148,7 +149,7 @@ const pruneStateNonces = () => {
 const startGoogleOAuth = (mode) => (req, res, next) => {
     if (mode === 'signup') {
       if (!isConsentTokenValid(req.query.consent)) {
-        return res.redirect(`${process.env.FRONTEND_URL}/register?error=consent_required`);
+        return res.redirect(`${frontendBaseUrl()}/register?error=consent_required`);
       }
       // Mirror the acceptance into an httpOnly cookie so we can re-verify it at the
       // callback (the consent query param will not survive the Google round-trip).
@@ -206,7 +207,7 @@ router.get('/google/callback',
   googleCallbackMode,
   async (req, res, next) => {
     if (req.oauthMode === 'signup' && !isConsentTokenValid(req.cookies.oauth_consent)) {
-      return res.redirect(`${process.env.FRONTEND_URL}/register?error=consent_required`);
+      return res.redirect(`${frontendBaseUrl()}/register?error=consent_required`);
     }
     // RB-06: Verify OAuth state parameter (login CSRF protection).
     // The state must be present in the query, match the httpOnly cookie, and
@@ -215,7 +216,7 @@ router.get('/google/callback',
     // minutes, and the browser dropping its cookie is not a defence that
     // binds an attacker who already holds both halves of the pair).
     const refuse = () =>
-      res.redirect(`${process.env.FRONTEND_URL}/login?error=invalid_oauth_state`);
+      res.redirect(`${frontendBaseUrl()}/login?error=invalid_oauth_state`);
     try {
       const queryState = req.query.state;
       const cookieState = req.cookies?.oauth_state;
@@ -250,7 +251,7 @@ router.get('/google/callback',
       // Generic failure for every OAuth error / unknown identity: no oracle
       // for whether an email exists (RB-06).
       if (err || !user) {
-        return res.redirect(`${process.env.FRONTEND_URL}/login?error=google_failed`);
+        return res.redirect(`${frontendBaseUrl()}/login?error=google_failed`);
       }
       req.user = user;
       return handleOAuthSuccess(req, res);

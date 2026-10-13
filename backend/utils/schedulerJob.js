@@ -54,7 +54,7 @@ const maybeAlertAdmins = async (jobName, errorMessage) => {
     if (claim.affectedRows !== 1) return;
 
     const [adminUsers] = await pool.execute(
-      `SELECT email FROM users WHERE role = 'admin' AND email IS NOT NULL LIMIT 3`
+      `SELECT email FROM users WHERE role = 'admin' AND email IS NOT NULL ORDER BY id ASC LIMIT 3`
     );
     const { sendEmailSafely } = await import('./emailService.js');
     for (const admin of adminUsers) {

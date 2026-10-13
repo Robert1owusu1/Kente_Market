@@ -18,6 +18,7 @@ import {
 } from '../utils/emailService.js';
 import { signRegisterPendingToken } from '../utils/registerPendingToken.js';
 import { TERMS_VERSION } from '../config/legalTerms.js';
+import { bindReferralAtSignup, recordDevice, REFERRAL_COOKIE } from '../Services/referralService.js';
 
 // ============================================
 // AUTHENTICATION ROUTES
@@ -55,6 +56,7 @@ const authUser = asyncHandler(async (req, res) => {
 
   // Update last login
   await user.updateLastLogin();
+  void recordDevice(user.id, req.deviceId); // referral anti-abuse signal
 
   // Generate token with remember me support
   generateToken(res, user, rememberMe === true);
@@ -190,6 +192,16 @@ const registerUser = asyncHandler(async (req, res) => {
 
     // Save OTP to database
     await User.setVerificationToken(user.id, otp, otpExpiry);
+
+    // Referral attribution for the NEW account only (R9/R11). Detached and
+    // cookie-free so the reply stays identical to the existing-account branch.
+    void bindReferralAtSignup({
+      userId: user.id,
+      email: user.email,
+      visitToken: req.cookies?.[REFERRAL_COOKIE],
+      deviceId: req.deviceId,
+      ip: req.ip,
+    });
 
     // Send OTP email — detached (N-20 class): the OTP is already persisted,
     // so nothing after this point may be sequenced by SMTP. A failure is

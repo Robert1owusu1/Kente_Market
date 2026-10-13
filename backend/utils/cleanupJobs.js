@@ -1,5 +1,5 @@
 import pool from '../config/db.js';
-import { autoReleaseExpiredEscrows, autoReleaseExpiredVendorEscrows, recoverStuckPendingOrders } from '../Services/escrowService.js';
+import { autoReleaseExpiredEscrows, autoReleaseExpiredVendorEscrows, recoverStuckPendingOrders, recoverIncompletePaidOrders } from '../Services/escrowService.js';
 import Notification from '../models/notificationModel.js';
 import { sendEmailSafely } from './emailService.js';
 import { scanWishlistRestocks } from '../Services/wishlistRestockService.js';
@@ -10,8 +10,12 @@ import {
   reconcileStuckTransfers,
   reclaimStaleProcessingWebhooks,
 } from '../Services/transferReconciliationService.js';
-import { reconcileAvailableAllocations, reconcileRefundedButPaid } from '../Services/escrowService.js';
+import { reconcileAvailableAllocations, reconcileRefundedButPaid, reconcileRefundedPlatformRevenue } from '../Services/escrowService.js';
+import { promoteReferralCommissions, reconcileReferralRefunds, recordMissingReferralCommissions } from '../Services/referralService.js';
+import { reconcileReferralWithdrawals } from '../Services/referralPayoutService.js';
+import { reconcileStaleRefundClaims, reconcileUnmatchedCharges } from '../Services/paymentReconciliationService.js';
 import { runScheduledJob } from './schedulerJob.js';
+import { frontendBaseUrl } from '../config/frontendOrigins.js';
 
 // Deactivate (not destroy) stale unverified users. Never hard-delete a user
 // who has any financial footprint: orders cascade to escrow allocations under
@@ -98,7 +102,7 @@ export const escalateStaleCustomRequests = async () => {
 
         // 3) Admin — badge + dashboard visibility
         const [adminUsers] = await pool.execute(
-          `SELECT id FROM users WHERE role = 'admin' LIMIT 5`
+          `SELECT id FROM users WHERE role = 'admin' ORDER BY id ASC LIMIT 5`
         );
         for (const admin of adminUsers) {
           await Notification.create({
@@ -169,7 +173,7 @@ export const sendAbandonedCartEmails = async () => {
           .join('<br/>');
         if (!row.email) continue;
 
-        const cartUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/cart`;
+        const cartUrl = `${frontendBaseUrl() || 'http://localhost:5173'}/cart`;
         const ok = await sendEmailSafely(
           row.email,
 `You left something beautiful in your cart, ${row.firstName || 'friend'} `,
@@ -220,6 +224,9 @@ const scheduleJobs = () => {
   run('autoReleaseExpiredEscrows', autoReleaseExpiredEscrows, 2 * HOUR);
   run('autoReleaseExpiredVendorEscrows', autoReleaseExpiredVendorEscrows, 2 * HOUR);
   run('recoverStuckPendingOrders', recoverStuckPendingOrders, 30 * 60 * 1000);
+  // Paid orders whose tracked post-payment effects did not all complete
+  // (crash / DB error after the paid flip). Bounded batch, tracked orders only.
+  run('recoverIncompletePaidOrders', recoverIncompletePaidOrders, 15 * 60 * 1000);
   run('releaseExpiredReservations', releaseExpiredReservations, 30 * 60 * 1000);
   run('escalateStaleCustomRequests', escalateStaleCustomRequests, HOUR);
   run('scanWishlistRestocks', scanWishlistRestocks, HOUR);
@@ -229,12 +236,30 @@ const scheduleJobs = () => {
   run('reclaimStaleProcessingWebhooks', reclaimStaleProcessingWebhooks, 15 * 60 * 1000);
   run('reconcileAvailableAllocations', reconcileAvailableAllocations, 15 * 60 * 1000);
   run('reconcileRefundedButPaid', reconcileRefundedButPaid, 15 * 60 * 1000);
+  // FV-8: refunded orders whose platform revenue was never reversed (crash
+  // after the refund flip, late-charge path, pre-FV-8 history). Bounded.
+  run('reconcileRefundedPlatformRevenue', reconcileRefundedPlatformRevenue, 60 * 60 * 1000);
+  // Finding 1: crash-stranded refund claims (pending/failed + late-charge
+  // claim) converge from the provider's actual refund state — the paid-only
+  // reconcileRefundedButPaid above never saw this population.
+  run('reconcileStaleRefundClaims', reconcileStaleRefundClaims, 15 * 60 * 1000);
+  // Finding 2: charge.success receipts with no bound order are re-verified
+  // server-side and reported idempotently, and reprocessed when the order
+  // appears.
+  run('reconcileUnmatchedCharges', reconcileUnmatchedCharges, 30 * 60 * 1000);
+  // Referral commissions (REFERRAL_SYSTEM_DESIGN.md): pending -> available once
+  // the order completed; refunds missed by a crash; paid orders whose referral
+  // step did not run; referral withdrawals awaiting Paystack. All bounded.
+  run('promoteReferralCommissions', () => promoteReferralCommissions(), 30 * 60 * 1000);
+  run('reconcileReferralRefunds', () => reconcileReferralRefunds(), 30 * 60 * 1000);
+  run('recordMissingReferralCommissions', () => recordMissingReferralCommissions(), 30 * 60 * 1000);
+  run('reconcileReferralWithdrawals', () => reconcileReferralWithdrawals(), 30 * 60 * 1000);
   // Weekly vendor demand digest (Monday mornings). Settings-guarded and
   // idempotent per calendar week; not fired on boot (that would email everyone).
   setTimeout(() => runScheduledJob('sendWeeklyVendorDigest', sendWeeklyVendorDigest).catch(() => {}), 7 * DAY);
   setInterval(() => runScheduledJob('sendWeeklyVendorDigest', sendWeeklyVendorDigest).catch(() => {}), 7 * DAY);
 
- console.log(' Cleanup scheduler started (users 24h, escrow 2h, vendor escrow 2h, stuck orders 30m, reservations 30m, SLA 1h, restock 1h, price-drop 1h, abandoned-cart 1h, transfers 30m, webhook reclaim 15m, refund reconcile 15m, digest weekly) — distributed lock + job status + failure alerts active');
+ console.log(' Cleanup scheduler started (users 24h, escrow 2h, vendor escrow 2h, stuck orders 30m, incomplete paid orders 15m, reservations 30m, SLA 1h, restock 1h, price-drop 1h, abandoned-cart 1h, transfers 30m, webhook reclaim 15m, refund reconcile 15m, stale refund claims 15m, unmatched charges 30m, digest weekly) — distributed lock + job status + failure alerts active');
 };
 
 export const startCleanupSchedule = () => {

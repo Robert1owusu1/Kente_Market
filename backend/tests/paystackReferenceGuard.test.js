@@ -266,6 +266,7 @@ describe('V-09b: the unattended recovery job applies the same guard', { skip: !d
       try {
         await pool.execute('DELETE FROM financial_events WHERE orderId = ?', [id]);
         await pool.execute('DELETE FROM escrow_allocations WHERE orderId = ?', [id]);
+        await pool.execute(`DELETE FROM reconciliation_checks WHERE entityId = ?`, [id]).catch(() => {});
         await pool.execute('DELETE FROM orders WHERE id = ?', [id]);
       } catch (err) {
         console.error(`paystackReferenceGuard recovery cleanup FAILED: ${err.message}`);
@@ -294,6 +295,11 @@ describe('V-09b: the unattended recovery job applies the same guard', { skip: !d
 
   test('control: a legitimate stuck reference IS queried, at the exact URL', async () => {
     recoveryCalls = [];
+    // FV-7: the previous test's run already verified this order and backed it
+    // off (reconciliation_checks.nextCheckAt). Make it due again, as if the
+    // back-off had elapsed, so this run must query it.
+    await pool.execute(`DELETE FROM reconciliation_checks WHERE job = 'stuckPending' AND entityId = ?`, [fixture.legit])
+      .catch((err) => { if (err.code !== 'ER_NO_SUCH_TABLE') throw err; });
     const { recoverStuckPendingOrders } = await import('../Services/escrowService.js');
     await recoverStuckPendingOrders();
 

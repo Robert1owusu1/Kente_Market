@@ -191,6 +191,28 @@ export const uploadLimiter = rateLimit({
   }
 });
 
+// Rate limiter for AI Try-On generation — the only route on the platform
+// where a request spends third-party money (Replicate inference) on the
+// caller's behalf. The generic apiLimiter is 600/15min (shopping-session
+// shaped) and the per-user daily credit caps total spend, but neither bounds
+// the RATE at which one account can fire paid jobs. Keyed on the
+// authenticated user id — the value the caller cannot forge via
+// X-Forwarded-For — falling back to the IP bucket for unauthenticated noise
+// (protect rejects those before the handler, but the limiter runs after
+// protect only, so the fallback is defence in depth).
+export const tryOnGenerateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // per user per window — matches the daily-credit shape
+  ...redisStore('rl:tryon'),
+  keyGenerator: (req) => `tryon:user:${req.user?.id || ipKeyGenerator(req.ip)}`,
+  handler: (req, res) => {
+    res.status(429).json({
+      message: 'Too many AI try-on requests. Please wait a few minutes and try again.',
+      retryAfter: req.rateLimit.resetTime,
+    });
+  },
+});
+
 // Rate limiter for order creation
 export const orderLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
@@ -323,4 +345,24 @@ export const accountRegisterLimiter = rateLimit({
   handler: (req, res) => {
     res.status(429).json({ message: 'Too many registration attempts. Please try again later.' });
   },
+});
+
+// Referral link capture (public) and referral money actions (withdraw, payout
+// account, pay with earnings).
+export const referralVisitLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  ...redisStore('rl:refvisit'),
+  handler: (req, res) => {
+    res.status(429).json({ message: 'Too many requests. Please try again later.' });
+  }
+});
+
+export const referralMoneyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  ...redisStore('rl:refmoney'),
+  handler: (req, res) => {
+    res.status(429).json({ message: 'Too many requests. Please try again later.' });
+  }
 });

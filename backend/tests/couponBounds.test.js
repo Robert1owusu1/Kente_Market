@@ -146,11 +146,22 @@ describe('C2: POST rejects an out-of-range percentage', () => {
     assert.equal(res.statusCode, 400);
   });
 
-  test('100% is accepted (the cap is a ceiling, not a limit below it)', async (t) => {
+  // R7 (owner rule, REFERRAL_SYSTEM_DESIGN.md): an ADMIN coupon is funded by
+  // the platform commission and may not exceed it. 100% used to be accepted.
+  test('R7: an admin coupon above the platform commission is rejected (100%)', async (t) => {
+    if (!dbAvailable) return t.skip('needs a database to read the platform commission');
+    const res = await attempt({ code: `C2FULL${Date.now()}`, discountType: 'percentage', discountValue: 100 });
+    assert.equal(res.statusCode, 400);
+    assert.match(res.body.message, /platform commission/i);
+  });
+
+  test('R7: exactly the platform commission is accepted (the ceiling is inclusive)', async (t) => {
     if (!dbAvailable) return t.skip('needs a database to actually create the coupon');
+    const { resolveCommissionRate } = await import('../Services/commissionService.js');
+    const ceiling = Math.round((await resolveCommissionRate({})) * 10000) / 100;
     const code = `C2EXACT${Date.now()}`;
-    const res = await attempt({ code, discountType: 'percentage', discountValue: 100 });
-    assert.equal(res.statusCode, 201, `100% should be allowed, got ${JSON.stringify(res.body)}`);
+    const res = await attempt({ code, discountType: 'percentage', discountValue: ceiling });
+    assert.equal(res.statusCode, 201, `${ceiling}% should be allowed, got ${JSON.stringify(res.body)}`);
     createdCodes.push(code);
   });
 

@@ -22,7 +22,7 @@ const assertKeySafe = (key) => {
   if (candidate.startsWith('..') || path.isAbsolute(candidate) || candidate.includes('../')) {
     throw new Error('Unsafe storage key');
   }
-  if (!/^(products|references)\/[^/]+$/.test(key)) {
+  if (!/^(products|references|profiles)\/[^/]+$/.test(key)) {
     throw new Error(`Unsupported storage key: ${key}`);
   }
   return candidate;

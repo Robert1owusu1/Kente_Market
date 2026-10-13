@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { IoMdSearch } from "react-icons/io";
-import { FaCaretDown, FaUser, FaShoppingBag, FaPalette, FaHeart, FaCog, FaSignOutAlt, FaTimes, FaStore, FaEnvelope, FaCertificate, FaMagic, FaPaperPlane } from 'react-icons/fa';
+import { FaCaretDown, FaUser, FaShoppingBag, FaPalette, FaHeart, FaCog, FaSignOutAlt, FaTimes, FaStore, FaEnvelope, FaCertificate, FaMagic, FaPaperPlane, FaGift } from 'react-icons/fa';
 import { FaCartShopping } from "react-icons/fa6";
 import { resolveImageUrl } from "../../utils/imageUrl";
 import logoImg from "../../assets/logo.png";
@@ -46,6 +46,7 @@ const ProfileMenuItems = [
   { id: 5, name: "Favorites", link: "/wishlist", icon: FaHeart },
   { id: 6, name: "My Messages", link: "/messages", icon: FaEnvelope },
   { id: 7, name: "My Certificates", link: "/certificates", icon: FaCertificate },
+  { id: 12, name: "Refer & Earn", link: "/referrals", icon: FaGift },
   { id: 8, name: "Settings", link: "/profile?section=settings", icon: FaCog },
   { id: 9, name: "Seller Dashboard", link: "/vendor", icon: FaStore, role: 'vendor' },
   { id: 10, name: "Become a Seller", link: "/vendor/apply", icon: FaStore, role: 'customer' },

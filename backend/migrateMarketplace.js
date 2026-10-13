@@ -606,13 +606,14 @@ try {
     ['escrow_allocations', 'idx_escrow_vendor', '(vendorId)'],
     ['wallet_transactions', 'idx_wallet_vendor_id', '(vendorId, id)'],
     ['wallet_transactions', 'idx_wallet_reference', '(reference(100))'],
-    ['financial_events', 'idx_financial_dedupe', '(dedupeKey(191))'],
-    ['financial_events', 'idx_financial_order', '(orderId)'],
+    // financial_events (uq_fe_dedupe, idx_fe_order) and scheduler_job_status
+    // (PRIMARY KEY jobName) are indexed by the migrations that create them,
+    // which run after this one; listing them here only failed on a fresh
+    // install and added duplicate indexes on a second run.
     ['orders', 'idx_orders_payment_ref', '(paymentReference(191))'],
     ['orders', 'idx_orders_escrow_status', '(escrowStatus)'],
     ['payout_attempts', 'idx_payout_status', '(status)'],
     ['webhook_events', 'idx_webhook_event_ref', '(event, reference(191))'],
-    ['scheduler_job_status', 'idx_scheduler_job_name', '(jobName)'],
     // Hot-list composite indexes (reported slow queries): notifications page
     // reads by user sorted by recency; featured/trending lists filter on
     // featured + approval together. Composites remove the filesort and let a

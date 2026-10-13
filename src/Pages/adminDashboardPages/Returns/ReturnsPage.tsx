@@ -60,8 +60,13 @@ const ReturnsPage = () => {
     if (!window.confirm(`Are you sure you want to ${status} this return request?`)) return;
     setUpdatingId(id);
     try {
-      await updateReturnStatus({ id, status, adminNotes: notes[id as string] || '' }).unwrap();
-      toast.success(`Return request ${status}`);
+      const result = await updateReturnStatus({ id, status, adminNotes: notes[id as string] || '' }).unwrap();
+      // An approval whose refund did not go through must not look like success.
+      if (result?.refundOutcome === 'rejected' || result?.refundOutcome === 'unknown') {
+        toast.warning(result.message);
+      } else {
+        toast.success(`Return request ${status}`);
+      }
       setNotes((prev) => {
         const next = { ...prev };
         delete next[id as string];

@@ -41,7 +41,10 @@ interface SettingsForm {
 }
 
 const VendorSettings = ({ vendor }: { vendor: SettingsVendor }) => {
-  const profile = (useGetMyVendorProfileQuery().data as { vendor?: SettingsVendor } | undefined)?.vendor || vendor;
+  const profileData = useGetMyVendorProfileQuery().data as { vendor?: SettingsVendor; commission?: { rate?: number } } | undefined;
+  const profile = profileData?.vendor || vendor;
+  // COM-7: show the rate the commission engine applies, not the legacy column.
+  const commissionRate = profileData?.commission?.rate;
   const socials: Record<string, string> =
     profile?.socialMedia && typeof profile.socialMedia === 'object' ? profile.socialMedia : {};
 
@@ -249,8 +252,8 @@ const VendorSettings = ({ vendor }: { vendor: SettingsVendor }) => {
             <span className="text-sm font-medium text-gray-900 dark:text-white capitalize">{vendor.payoutType}</span>
           </div>
           <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/40 rounded-lg">
-            <span className="text-sm text-gray-600 dark:text-gray-400">Platform Fee Rate</span>
-            <span className="text-sm font-medium text-gray-900 dark:text-white">{(parseFloat(vendor.platformFeeRate as string) * 100).toFixed(1)}%</span>
+            <span className="text-sm text-gray-600 dark:text-gray-400" title="Some products or categories may carry a different rate">Platform Commission</span>
+            <span className="text-sm font-medium text-gray-900 dark:text-white">{typeof commissionRate === 'number' ? `${(commissionRate * 100).toFixed(2).replace(/\.?0+$/, '')}%` : '—'}</span>
           </div>
           <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/40 rounded-lg">
             <span className="text-sm text-gray-600 dark:text-gray-400">Member Since</span>

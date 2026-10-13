@@ -7,7 +7,10 @@
 // - GET    /api/checkout/international/countries/:countryCode
 // - POST   /api/checkout/international/validate-address
 // - POST   /api/checkout/international/shipping-options   (DB-backed carrier
-//          rates via shippingService, with static fallback table)
+//          rates via shippingService; static fallback table only when the
+//          tables EXIST but the lane has no rows; 503 SHIPPING_TABLES_MISSING
+//          when db:migrate never ran; 502 SHIPPING_FX_UNAVAILABLE when the
+//          required FX row is missing/invalid)
 // - POST   /api/checkout/international/vendor-eligibility (DB-backed
 //          vendor_shipping_destinations checks, fail-closed)
 //
@@ -20,7 +23,7 @@ import {
   CHARGE_CURRENCY,
   normalizeDestinationCode,
 } from "../utils/destinationValidation.js";
-import { getShippingOptions as getShippingOptionsService, checkVendorDestination } from "../Services/shippingService.js";
+import { getShippingOptions as getShippingOptionsService, checkVendorDestination, isMissingTableError } from "../Services/shippingService.js";
 
 /**
  * Per-country address field requirements and validation patterns.
@@ -437,7 +440,27 @@ export const getShippingOptions = async (req, res) => {
     )];
 
     for (const vendorId of vendorIds) {
-      const eligible = await checkVendorDestination(vendorId, code, region);
+      let eligible = false;
+      try {
+        eligible = await checkVendorDestination(vendorId, code, region);
+      } catch (err) {
+        // A missing vendor_shipping_destinations table means db:migrate never
+        // ran — fail closed with the same code order creation uses, never an
+        // opaque 500 and never a green light.
+        if (isMissingTableError(err)) {
+          console.warn(`[shipping] required table missing: ${err.message}. Run \`npm run db:migrate\` (backend).`);
+          return res.status(503).json({
+            message: "International shipping is temporarily unavailable. Please try again later.",
+            supported: false,
+            code: "SHIPPING_TABLES_MISSING",
+            countryCode: code,
+            currency: config.currency,
+            chargeCurrency: CHARGE_CURRENCY,
+            options: [],
+          });
+        }
+        throw err;
+      }
       if (!eligible) {
         return res.json({
           supported: false,
@@ -466,11 +489,28 @@ export const getShippingOptions = async (req, res) => {
       currency: config.currency,
     });
 
+    // Fail-closed outcomes are explicit and distinguishable (never a
+    // disguised success, never an opaque 500):
+    //   503 SHIPPING_TABLES_MISSING — the shipping/FX migration never ran
+    //   502 SHIPPING_FX_UNAVAILABLE — table present, rate row missing/invalid
+    if (result && /** @type {any} */ (result).code === 'SHIPPING_TABLES_MISSING') {
+      return res.status(/** @type {any} */ (result).status || 503).json({
+        message: /** @type {any} */ (result).message,
+        supported: false,
+        code: "SHIPPING_TABLES_MISSING",
+        countryCode: code,
+        currency: config.currency,
+        chargeCurrency: CHARGE_CURRENCY,
+        options: [],
+      });
+    }
+
     // A missing FX rate is a fail-closed outage, never parity pricing.
     if (result && /** @type {any} */ (result).fxUnavailable) {
       return res.status(502).json({
         message: "Shipping rates are temporarily unavailable for this currency",
         supported: false,
+        code: "SHIPPING_FX_UNAVAILABLE",
         countryCode: code,
         currency: config.currency,
         chargeCurrency: CHARGE_CURRENCY,
@@ -480,8 +520,19 @@ export const getShippingOptions = async (req, res) => {
 
     res.json({ ...result, chargeCurrency: CHARGE_CURRENCY, mock: false });
   } catch (error) {
+    // The table name / driver text goes to the server log only — a customer
+    // must never see SQL, host names, or credentials.
+    if (isMissingTableError(error)) {
+      console.warn(`[shipping] required table missing: ${error.message}. Run \`npm run db:migrate\` (backend).`);
+      return res.status(503).json({
+        message: "International shipping is temporarily unavailable. Please try again later.",
+        supported: false,
+        code: "SHIPPING_TABLES_MISSING",
+        options: [],
+      });
+    }
     console.error("getShippingOptions error:", error.message);
-    res.status(500).json({ message: "Failed to fetch shipping options" });
+    res.status(500).json({ message: "Failed to fetch shipping options", supported: false, code: "SHIPPING_QUOTE_FAILED" });
   }
 };
 
@@ -514,7 +565,15 @@ export const checkVendorShippingEligibility = async (req, res) => {
     const allEligible = results.every(r => r.eligible);
     res.json({ eligible: allEligible, vendors: results });
   } catch (error) {
+    if (isMissingTableError(error)) {
+      console.warn(`[shipping] required table missing: ${error.message}. Run \`npm run db:migrate\` (backend).`);
+      return res.status(503).json({
+        eligible: false,
+        code: "SHIPPING_TABLES_MISSING",
+        message: "International shipping is temporarily unavailable. Please try again later.",
+      });
+    }
     console.error("checkVendorShippingEligibility error:", error.message);
-    res.status(500).json({ message: "Failed to check shipping eligibility" });
+    res.status(500).json({ message: "Failed to check shipping eligibility", eligible: false });
   }
 };

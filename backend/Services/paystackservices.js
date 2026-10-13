@@ -1,6 +1,14 @@
 // @ts-check
 import axios from 'axios';
 import { CHARGED_CURRENCY } from './paymentCurrency.js';
+import { frontendBaseUrl } from '../config/frontendOrigins.js';
+
+// FV-5: axios has no default timeout, so a hung Paystack connection held a
+// checkout, refund or scheduled money job (and its lock) indefinitely. A
+// timeout surfaces as an error with no provider response, which every money
+// path already treats as an UNKNOWN outcome (claim kept, reconciled later).
+// Same bound as transferReconciliationService.
+export const PAYSTACK_TIMEOUT_MS = 15000;
 
 /**
  * Standard Paystack API envelope. `data` carries endpoint-specific fields
@@ -39,11 +47,11 @@ class PaystackService {
           amount: Math.round(amount * 100), // Convert to pesewas
           currency: CHARGED_CURRENCY,
           metadata,
-          callback_url: process.env.FRONTEND_URL 
-            ? `${process.env.FRONTEND_URL}/order/success` 
+          callback_url: frontendBaseUrl()
+            ? `${frontendBaseUrl()}/order/success` 
             : undefined,
         },
-        { headers: this.headers }
+        { headers: this.headers, timeout: PAYSTACK_TIMEOUT_MS }
       );
       return response.data;
     } catch (error) {
@@ -68,7 +76,7 @@ class PaystackService {
     try {
       const response = await axios.get(
         `${this.baseUrl}/transaction/verify/${encodeURIComponent(reference)}`,
-        { headers: this.headers }
+        { headers: this.headers, timeout: PAYSTACK_TIMEOUT_MS }
       );
       return response.data;
     } catch (error) {
@@ -95,7 +103,7 @@ class PaystackService {
           amount: Math.round(amount * 100),
           currency: CHARGED_CURRENCY,
         },
-        { headers: this.headers }
+        { headers: this.headers, timeout: PAYSTACK_TIMEOUT_MS }
       );
       return response.data;
     } catch (error) {
@@ -113,7 +121,7 @@ class PaystackService {
     try {
       const response = await axios.get(
         `${this.baseUrl}/transaction?perPage=${perPage}&page=${page}`,
-        { headers: this.headers }
+        { headers: this.headers, timeout: PAYSTACK_TIMEOUT_MS }
       );
       return response.data;
     } catch (error) {
@@ -142,7 +150,7 @@ class PaystackService {
           bank_code: bankCode,
           currency: CHARGED_CURRENCY,
         },
-        { headers: this.headers }
+        { headers: this.headers, timeout: PAYSTACK_TIMEOUT_MS }
       );
       return response.data;
     } catch (error) {
@@ -178,11 +186,19 @@ class PaystackService {
           // NEW reference because it claims fresh funds.
           ...(reference ? { reference } : {}),
         },
-        { headers: this.headers }
+        { headers: this.headers, timeout: PAYSTACK_TIMEOUT_MS }
       );
       return response.data;
     } catch (error) {
-      throw new Error(error.response?.data?.message || 'Transfer failed');
+      // Same shape as refundTransaction: callers must be able to tell "the
+      // provider answered" from "no answer" (timeout/network), because only
+      // provider evidence may ever release a reserved payout.
+      const err = new Error(error.response?.data?.message || 'Transfer failed');
+      Object.assign(err, {
+        hadProviderResponse: Boolean(error.response),
+        providerStatus: error.response?.status ?? null,
+      });
+      throw err;
     }
   }
 
@@ -195,7 +211,7 @@ class PaystackService {
     try {
       const response = await axios.get(
         `${this.baseUrl}/bank?country=${country}`,
-        { headers: this.headers }
+        { headers: this.headers, timeout: PAYSTACK_TIMEOUT_MS }
       );
       return response.data;
     } catch (error) {
@@ -212,7 +228,7 @@ class PaystackService {
     try {
       const response = await axios.get(
         `${this.baseUrl}/bank?currency=${currency}&type=mobile_money`,
-        { headers: this.headers }
+        { headers: this.headers, timeout: PAYSTACK_TIMEOUT_MS }
       );
       return response.data;
     } catch (error) {
@@ -239,7 +255,7 @@ class PaystackService {
           bank_code: telco,
           currency: CHARGED_CURRENCY,
         },
-        { headers: this.headers }
+        { headers: this.headers, timeout: PAYSTACK_TIMEOUT_MS }
       );
       return response.data;
     } catch (error) {
@@ -257,7 +273,7 @@ class PaystackService {
     try {
       const response = await axios.get(
         `${this.baseUrl}/bank/resolve?account_number=${accountNumber}&bank_code=${bankCode}`,
-        { headers: this.headers }
+        { headers: this.headers, timeout: PAYSTACK_TIMEOUT_MS }
       );
       return response.data;
     } catch (error) {
@@ -276,7 +292,7 @@ class PaystackService {
     try {
       const response = await axios.get(
         `${this.baseUrl}/transaction/${id}`,
-        { headers: this.headers }
+        { headers: this.headers, timeout: PAYSTACK_TIMEOUT_MS }
       );
       return response.data;
     } catch (error) {
@@ -305,12 +321,47 @@ class PaystackService {
       const response = await axios.post(
         `${this.baseUrl}/refund`,
         payload,
-        { headers: this.headers }
+        { headers: this.headers, timeout: PAYSTACK_TIMEOUT_MS }
+      );
+      return response.data;
+    } catch (error) {
+      // Preserve enough provider context for callers to distinguish a
+      // DEFINITIVE rejection (the provider answered — no money moved, so the
+      // caller may release its refund claim and let a retry re-attempt) from
+      // an UNKNOWN outcome (timeout / network drop / 5xx — the refund MAY
+      // have been accepted, so the claim must be kept and the actual refund
+      // state reconciled from the provider before anything is re-issued).
+      // Object.assign (not direct property writes) keeps this file clean
+      // under checkJs: Error has no such declared properties.
+      const err = new Error(
+        error.response?.data?.message || 'Refund failed'
+      );
+      Object.assign(err, {
+        hadProviderResponse: Boolean(error.response),
+        providerStatus: error.response?.status ?? null,
+      });
+      throw err;
+    }
+  }
+
+  /**
+   * List the refunds that exist at Paystack for a transaction. Used by refund
+   * reconciliation to establish the ACTUAL provider-side refund state instead
+   * of trusting a stored claim marker or a caller's memory of a call.
+   * @param {string|number} transactionRefOrId - Transaction reference or id
+   * @param {number} [perPage]
+   * @returns {Promise<PaystackEnvelope>} Refund rows ({ id, status, amount, transaction, ... })
+   */
+  async listRefunds(transactionRefOrId, perPage = 50) {
+    try {
+      const response = await axios.get(
+        `${this.baseUrl}/refund?transaction=${encodeURIComponent(String(transactionRefOrId))}&perPage=${perPage}`,
+        { headers: this.headers, timeout: PAYSTACK_TIMEOUT_MS }
       );
       return response.data;
     } catch (error) {
       throw new Error(
-        error.response?.data?.message || 'Refund failed'
+        error.response?.data?.message || 'Failed to fetch refunds'
       );
     }
   }

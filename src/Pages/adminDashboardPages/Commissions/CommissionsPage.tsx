@@ -13,7 +13,7 @@ import type { CommissionRule } from '../../../slices/apiTypes';
 interface CommissionRuleRow extends CommissionRule {
   id: number | string;
   scope: string;
-  target?: string | number;
+  targetId?: string | null;
   created_at?: string;
 }
 
@@ -47,7 +47,7 @@ const CreateRuleModal = ({ onClose }: { onClose: () => void }) => {
     try {
       await createRule({
         scope,
-        target: scope === 'global' ? null : target.trim(),
+        targetId: scope === 'global' ? null : target.trim(),
         rate: rateNum,
       }).unwrap();
       toast.success('Commission rule created');
@@ -83,7 +83,7 @@ const CreateRuleModal = ({ onClose }: { onClose: () => void }) => {
           )}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Rate (0.00 – 0.50 = 0%–50%)</label>
-            <input type="number" step="0.01" min="0" max="0.5" value={rate} onChange={(e) => setRate(e.target.value as unknown as number)}
+            <input type="number" step="0.0001" min="0" max="0.5" value={rate} onChange={(e) => setRate(e.target.value as unknown as number)}
               className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" />
           </div>
           <button type="submit" disabled={isLoading}
@@ -161,7 +161,7 @@ const CommissionsPage = () => {
                         {scopeLabel(r.scope)}
                       </span>
                     </td>
-                    <td className="text-sm text-gray-800 dark:text-white">{r.target || '—'}</td>
+                    <td className="text-sm text-gray-800 dark:text-white">{r.targetId || '—'}</td>
                     <td className="text-sm font-semibold text-gray-800 dark:text-white">{((r.rate as number) * 100).toFixed(1)}%</td>
                     <td className="text-sm text-gray-500 dark:text-gray-400">
                       {new Date(r.created_at as string).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}

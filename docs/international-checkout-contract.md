@@ -12,8 +12,8 @@ per-workstream contract drafts.
 | GET | `/countries` | public | Supported destinations `{code,name,currency,phoneExample,zipLabel}[]` + `chargeCurrency: "GHS"` |
 | GET | `/countries/:countryCode` | public | Per-country form config + `chargeCurrency: "GHS"` |
 | POST | `/validate-address` | public | Full address validation → `{valid, normalized, currency, chargeCurrency}` or `400 {valid:false, errors}` |
-| POST | `/shipping-options` | public | DB-backed rates `{supported,countryCode,currency,chargeCurrency,mock:false,options[]}`; `502 {supported:false}` when FX is unavailable |
-| POST | `/vendor-eligibility` | `protect` | DB-backed `{eligible,vendors[]}` (fail-closed: missing row = not eligible) |
+| POST | `/shipping-options` | public | DB-backed rates `{supported,countryCode,currency,chargeCurrency,mock:false,warnings[],options[]}`; each option is `{carrier,serviceLevel,amount,currency,rateCurrency,amountGHS,freeThreshold,freeThresholdGHS,isFree}`; `502 {supported:false,code:"SHIPPING_FX_UNAVAILABLE"}` when the required rate row is missing/invalid; `503 {supported:false,code:"SHIPPING_TABLES_MISSING"}` when the migration never ran |
+| POST | `/vendor-eligibility` | `protect` | DB-backed `{eligible,vendors[]}` (fail-closed: missing row = not eligible; missing table = `503 {eligible:false,code:"SHIPPING_TABLES_MISSING"}`) |
 
 Supported destinations: GH/GB/US/CA/DE/NL only. Anything else → `UNSUPPORTED_DESTINATION` / `supported:false`.
 
@@ -40,15 +40,32 @@ Supported destinations: GH/GB/US/CA/DE/NL only. Anything else → `UNSUPPORTED_D
    or paid (`PAID_SNAPSHOT_IMMUTABLE`). Client totals are never trusted.
 6. **FX is seeded manual data with fail-closed misses.** Missing/invalid rates
    refuse the quote (`502 SHIPPING_FX_UNAVAILABLE`); rates >90 days old emit a
-   server log warning. Production should feed `exchange_rates` from a real
-   source; seeds are documented estimates.
+   server log warning **and** a `warnings: ["STALE_EXCHANGE_RATE"]` entry on the
+   quote (a stale rate is a warning, not an outage). Production should feed
+   `exchange_rates` from a real source; seeds are documented estimates.
+7. **Free shipping is decided in ONE currency: GHS.** `shipping_rates.currency`
+   and `shipping_rates.freeThreshold` are denominated in the *rate row's*
+   currency (seeded GB row: 100 with `currency = 'GBP'`), and the static
+   fallback table is denominated in the destination *display* currency. Both
+   the quote path (`getShippingOptions`) and the booking path
+   (`getChargeableShippingGHS`) convert amount **and** threshold to GHS through
+   the same `toGHS()` helper before comparing with the GHS cart subtotal. A
+   quote option therefore reports what was actually compared:
+   `freeThreshold` (source currency, explicit via `rateCurrency`),
+   `freeThresholdGHS` (compared value), `amount` (display) and `amountGHS`
+   (what order creation books). Quote `isFree`/`amountGHS` always equal the
+   booked figure — never a `subtotal >= freeThreshold` raw comparison.
 
 ## Operator checklist (must be true in production)
 
 - `npm run db:migrate --prefix backend` has run (creates `shipping_carriers`,
   `shipping_rates`, `vendor_shipping_destinations`, `exchange_rates` + order/
-  address currency columns). Without these tables, international checkout
-  returns `503 SHIPPING_TABLES_MISSING`; domestic GH checkout is unaffected.
+  address currency columns, and seeds carriers/rates/FX **once**). The canonical
+  `branding_house.sql` now also creates those four tables, so a dump-only
+  restore already has them; the migrations stay additive and seed-once, so
+  re-running them never restacks or re-dates rate rows. Without these tables,
+  international checkout returns `503 SHIPPING_TABLES_MISSING`; domestic GH
+  checkout is unaffected.
 - Vendors opt into each destination at `GET/POST/DELETE
   /api/vendors/shipping/destinations` (`manage_orders` permission). Only GH is
   backfilled; a vendor with no row for a country cannot sell there.

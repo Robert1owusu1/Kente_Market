@@ -1,6 +1,14 @@
 import pool from "../config/db.js";
 
 class Order {
+  // Columns Order.update may write; anything else in updateData is ignored.
+  static UPDATABLE_FIELDS = [
+    'orderStatus', 'paymentStatus', 'paymentMethod', 'shippingCost',
+    'tax', 'discount', 'notes', 'items', 'shippingAddress', 'billingAddress',
+    'paymentReference', 'totalAmount', 'couponId', 'escrowStatus', 'escrowReleaseDeadline',
+    'expectedCompletionDate', 'productionNote', 'deliveredAt'
+  ];
+
   constructor(orderData) {
     this.id = orderData.id;
     this.userId = orderData.userId;
@@ -322,12 +330,7 @@ static async findAll(options = {}) {
       const [check] = await connection.execute(`SELECT id FROM orders WHERE id = ?`, [id]);
       if (check.length === 0) throw new Error("Order not found");
 
-      const allowedFields = [
-        'orderStatus', 'paymentStatus', 'paymentMethod', 'shippingCost',
-        'tax', 'discount', 'notes', 'items', 'shippingAddress', 'billingAddress',
-        'paymentReference', 'totalAmount', 'couponId', 'escrowStatus', 'escrowReleaseDeadline',
-        'expectedCompletionDate', 'productionNote', 'deliveredAt'
-      ];
+      const allowedFields = Order.UPDATABLE_FIELDS;
 
       const fields = [];
       const values = [];

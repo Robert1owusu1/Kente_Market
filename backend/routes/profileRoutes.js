@@ -1,12 +1,13 @@
 import express from 'express';
-import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { randomUUID } from 'crypto';
 import { fileURLToPath } from 'url';
 import { protect } from '../middleware/authMiddleware.js';
 import { uploadLimiter } from '../middleware/rateLimitMiddleware.js';
+import upload from '../middleware/uploadMiddleware.js';
 import { validateImageFile } from '../utils/imageValidator.js';
+import { putObject, deleteObject, storageBackend } from '../Services/storageService.js';
 import User from '../models/usersModel.js';
 
 const router = express.Router();
@@ -15,62 +16,52 @@ const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Create profiles directory if it doesn't exist
+// Pictures stored before STORE-1 live on local disk under uploads/profiles.
 const profilesDir = path.join(__dirname, '..', 'uploads', 'profiles');
-if (!fs.existsSync(profilesDir)) {
-  fs.mkdirSync(profilesDir, { recursive: true });
- console.log(' Created profiles directory:', profilesDir);
-}
 
 // Belt-and-braces: users.profile_picture is only ever written by this route,
 // but if a traversal value ever landed in the column, unlinking it would
 // delete arbitrary files. Only delete inside uploads/profiles.
 const resolveProfilePath = (storedPath) => {
-  const resolved = path.resolve(__dirname, '..', storedPath);
+  const resolved = path.resolve(__dirname, '..', String(storedPath).replace(/^\/+/, ''));
   return resolved.startsWith(profilesDir + path.sep) ? resolved : null;
 };
 
-// Configure storage
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, profilesDir);
-  },
-  filename: (req, file, cb) => {
-    // Unguessable filename. This used to be `profile_<userId>_<Date.now()>.ext`
-    // where userId is a small sequential integer and the millisecond timestamp
-    // is the only other secret - so profile pictures were enumerable by anyone
-    // who could guess a plausible id and time window, and /uploads is served
-    // from the API origin so the URL is directly probeable.
-    const ext = path.extname(file.originalname).toLowerCase();
-    cb(null, `profile_${randomUUID()}${ext}`);
-  },
-});
-
-// File filter - only allow images. Anchored regexes (the old unanchored
-// /jpeg|jpg|png/ matched any MIME or filename CONTAINING a token).
-const fileFilter = (req, file, cb) => {
-  const allowedExt = /\.(jpe?g|png|gif|webp)$/i;
-  const allowedMime = /^image\/(jpe?g|png|gif|webp)$/;
-
-  if (allowedMime.test(file.mimetype) && allowedExt.test(path.extname(file.originalname))) {
-    return cb(null, true);
-  } else {
-    cb(new Error('Only image files are allowed (jpeg, jpg, png, gif, webp)'));
-  }
+// The object name inside the stored value, whatever the backend: a local
+// '/uploads/profiles/<name>', or an S3 / CDN URL ending in 'profiles/<name>'.
+const profileObjectName = (stored) => {
+  const m = /(?:^|\/)profiles\/(profile_[A-Za-z0-9_-]+\.[a-z0-9]+)$/i.exec(String(stored || ''));
+  return m ? m[1] : null;
 };
 
-// Initialize multer
-const upload = multer({
-  storage: storage,
-  limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB max
-  },
-  fileFilter: fileFilter,
-});
+// Remove a previous picture from the active backend, and from local disk if it
+// predates a switch to object storage. Best-effort: a failed delete must not
+// fail the upload/delete request.
+const removeStoredPicture = async (stored) => {
+  const name = profileObjectName(stored);
+  if (name) {
+    await deleteObject(`profiles/${name}`).catch((err) => {
+ console.warn(` Could not delete old profile picture ${name}: ${err.message}`);
+    });
+  }
+  const legacy = stored && String(stored).startsWith('/uploads/profiles/') ? resolveProfilePath(stored) : null;
+  if (legacy && fs.existsSync(legacy)) fs.unlinkSync(legacy);
+};
+
+const cleanupStaged = (file) => {
+  try {
+    if (file?.path && fs.existsSync(file.path)) fs.unlinkSync(file.path);
+  } catch { /* best-effort */ }
+};
 
 // @desc    Upload profile picture
 // @route   POST /api/profile/upload
 // @access  Private
+// STORE-1: the picture used to be written straight to backend/uploads/profiles
+// by a route-local multer disk engine, bypassing storageService — with STORAGE_BACKEND=s3
+// on a host without a persistent disk every profile picture vanished on the
+// next deploy. Now: stage to tmp (shared upload middleware: image filter,
+// 5 MB), validate the real bytes, then store through the configured backend.
 router.post('/upload', protect, uploadLimiter, upload.single('profilePicture'), async (req, res) => {
   try {
     if (!req.file) {
@@ -82,7 +73,7 @@ router.post('/upload', protect, uploadLimiter, upload.single('profilePicture'), 
     // upload path does. Invalid content is deleted, never stored.
     const verdict = validateImageFile(req.file.path);
     if (!verdict.valid) {
-      fs.unlinkSync(req.file.path);
+      cleanupStaged(req.file);
       return res.status(400).json({ message: verdict.reason || 'Invalid image file' });
     }
 
@@ -90,43 +81,38 @@ router.post('/upload', protect, uploadLimiter, upload.single('profilePicture'), 
     const user = await User.findById(userId);
 
     if (!user) {
-      // Delete uploaded file if user not found
-      fs.unlinkSync(req.file.path);
+      cleanupStaged(req.file);
       return res.status(404).json({ message: 'User not found' });
     }
 
-    // Delete old profile picture if exists
-    if (user.profile_picture) {
-      const oldPicturePath = resolveProfilePath(user.profile_picture);
-      if (oldPicturePath && fs.existsSync(oldPicturePath)) {
-        fs.unlinkSync(oldPicturePath);
- console.log(' Deleted old profile picture:', oldPicturePath);
-      }
-    }
+    // Unguessable name; the extension comes from the sniffed bytes, never the
+    // client's filename (same rule as product uploads).
+    const filename = `profile_${randomUUID()}.${verdict.format}`;
+    const profilePicturePath = await putObject({ key: `profiles/${filename}`, sourcePath: req.file.path });
 
-    // Update user with new profile picture path
-    const profilePicturePath = `/uploads/profiles/${req.file.filename}`;
-    
     await User.updateProfilePicture(userId, profilePicturePath);
 
- console.log(` Profile picture uploaded for user ${userId}:`, profilePicturePath);
+    // Only after the new picture is saved: remove the previous one.
+    // PIC-1: the model exposes `profilePicture` (camelCase). This route read
+    // `user.profile_picture`, which is always undefined, so replaced pictures
+    // were never removed and DELETE always answered 400.
+    if (user.profilePicture && user.profilePicture !== profilePicturePath) {
+      await removeStoredPicture(user.profilePicture);
+    }
+
+ console.log(` Profile picture uploaded for user ${userId} (${storageBackend.name}):`, filename);
 
     res.json({
       message: 'Profile picture uploaded successfully',
       profilePicture: profilePicturePath,
-      filename: req.file.filename,
+      filename,
       size: req.file.size,
     });
   } catch (error) {
  console.error(' Error uploading profile picture:', error);
-    
-    // Delete uploaded file if error occurs
-    if (req.file && fs.existsSync(req.file.path)) {
-      fs.unlinkSync(req.file.path);
-    }
-    
-    // No raw error.message here: it is fs/driver text (ENOENT, EACCES, SQL)
-    // and this route is reachable by any signed-in user.
+    cleanupStaged(req.file);
+    // No raw error.message here: it is fs/driver/storage text and this route
+    // is reachable by any signed-in user.
     res.status(500).json({ message: 'Failed to upload profile picture' });
   }
 });
@@ -143,18 +129,11 @@ router.delete('/picture', protect, async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    if (!user.profile_picture) {
+    if (!user.profilePicture) {
       return res.status(400).json({ message: 'No profile picture to delete' });
     }
 
-    // Delete file from filesystem (only inside uploads/profiles)
-    const picturePath = resolveProfilePath(user.profile_picture);
-    if (picturePath && fs.existsSync(picturePath)) {
-      fs.unlinkSync(picturePath);
- console.log(' Deleted profile picture:', picturePath);
-    }
-
-    // Update database
+    await removeStoredPicture(user.profilePicture);
     await User.updateProfilePicture(userId, null);
 
     res.json({ message: 'Profile picture deleted successfully' });

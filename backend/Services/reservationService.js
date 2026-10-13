@@ -15,6 +15,7 @@
 import pool from '../config/db.js';
 import { recordStockMove } from './stockMoves.js';
 import Coupon from '../models/couponModel.js';
+import { cancelEscrowForOrder } from './escrowService.js';
 
 /**
  * N-7/V-04: hand back the coupon slot held by an abandoned checkout. Only a
@@ -125,6 +126,10 @@ export const releaseExpiredReservations = async (maxAgeMinutes = 45, { notesLike
           [order.id]
         );
         await releaseCouponSlot(order);
+        // F-2: placement-created 'pending' allocations must not linger as
+        // future-releasable rows on a cancelled order. Idempotent no-op when
+        // there is nothing to void.
+        try { await cancelEscrowForOrder(order.id); } catch { /* best-effort */ }
         released += 1;
       } catch { /* best-effort */ }
       continue;
@@ -190,6 +195,9 @@ export const releaseExpiredReservations = async (maxAgeMinutes = 45, { notesLike
     }
     if (claimWon) {
       await releaseCouponSlot(order);
+      // F-2: void placement-created 'pending' allocations on the order this
+      // sweeper just cancelled (same reasoning as above; idempotent).
+      try { await cancelEscrowForOrder(order.id); } catch { /* best-effort */ }
     }
   }
 

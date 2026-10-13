@@ -14,6 +14,7 @@ import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
+import { deviceId } from './middleware/deviceIdMiddleware.js';
 import cookieParser from 'cookie-parser';
 import compression from 'compression';
 import session from 'express-session'; // NEW
@@ -28,6 +29,7 @@ import pool from './config/db.js';
 
 // Middleware
 import { setupSecurity } from './middleware/securityMiddleware.js';
+import { frontendOrigins } from './config/frontendOrigins.js';
 import { apiLimiter } from './middleware/rateLimitMiddleware.js';
 import { csrfProtection } from './middleware/csrfMiddleware.js';
 import { errorHandeler, notFound } from './middleware/errorMiddleware.js';
@@ -71,6 +73,8 @@ import certificateRoutes from './routes/certificateRoutes.js'; // NEW - Authenti
 import commissionRoutes from './routes/commissionRoutes.js'; // NEW - Commission engine
 import moderationRoutes from './routes/moderationRoutes.js'; // NEW - Product moderation
 import adminOpsRoutes from './routes/adminOpsRoutes.js'; // Audit log + scheduler status
+import { referralRouter, adminReferralRouter } from './routes/referralRoutes.js';
+import adminPayoutRoutes from './routes/adminPayoutRoutes.js'; // Payout investigation + verify-only recovery
 import suggestionRoutes from './routes/suggestionRoutes.js';
 import customRequestRoutes from './routes/customRequestRoutes.js'; // Custom orders // NEW - User suggestions
 import internationalCheckoutRoutes from './routes/internationalCheckoutRoutes.js'; // Intl checkout: country/address/ship-options (DB carrier rates + vendor destination checks); charge currency stays GHS
@@ -151,6 +155,8 @@ setupSecurity(app);
 
 // 3. Cookie Parser - MUST be first for JWT authentication
 app.use(cookieParser());
+// Referral anti-abuse device id (httpOnly, first-party; API routes only).
+app.use('/api', deviceId);
 
 // 4. Session middleware (required for OAuth flow)
 // Security: never fall back to a hardcoded secret. Refuse to boot in production
@@ -196,8 +202,24 @@ if (process.env.NODE_ENV === 'production') {
   }
   // CORS is an explicit allow-list; without FRONTEND_URL the live SPA is blocked
   // silently. Fail fast at boot instead of shipping a quietly broken API.
-  if (!process.env.FRONTEND_URL) {
+  if (frontendOrigins().length === 0) {
  console.error(' FRONTEND_URL must be set in production (CORS allow-list)');
+    process.exit(1);
+  }
+  // CFG-1: each entry must be a bare https origin (http only for loopback). The first one is also the
+  // base of every emailed link and OAuth/Paystack redirect, so a path, a typo
+  // or plain http is refused here instead of breaking those flows later.
+  const badOrigins = frontendOrigins().filter((o) => {
+    try {
+      const u = new URL(o);
+      const loopback = u.hostname === 'localhost' || u.hostname === '127.0.0.1';
+      return (u.protocol !== 'https:' && !(loopback && u.protocol === 'http:')) || u.origin !== o;
+    } catch {
+      return true;
+    }
+  });
+  if (badOrigins.length > 0) {
+ console.error(` FRONTEND_URL entries must be bare https origins (no path): ${badOrigins.join(', ')}`);
     process.exit(1);
   }
   // P0-9: without the secret every paid path degrades to "charged but
@@ -418,6 +440,9 @@ app.use('/api/certificates', certificateRoutes);
 app.use('/api/admin/commissions', commissionRoutes);
 app.use('/api/admin/moderation', moderationRoutes);
 app.use('/api/admin/ops', adminOpsRoutes);
+app.use('/api/admin/payouts', adminPayoutRoutes);
+app.use('/api/referrals', referralRouter);
+app.use('/api/admin/referrals', adminReferralRouter);
 app.use('/api/suggestions', suggestionRoutes);
 app.use('/api/custom-requests', customRequestRoutes); // Custom orders
 app.use('/api/checkout/international', internationalCheckoutRoutes); // Intl checkout: country/address/ship-options (DB rates + vendor checks); charge currency stays GHS

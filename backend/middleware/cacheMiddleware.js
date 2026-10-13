@@ -37,7 +37,13 @@ export const cacheMiddleware = (duration = 300) => {
     const originalJson = res.json.bind(res);
     
     res.json = (body) => {
-      cache.set(key, body, duration);
+      // Only successful bodies are cacheable. A hit is replayed with status
+      // 200, so caching a 404/500 body would serve an error (e.g. a transient
+      // DB failure's "An error occurred") as a successful response for the
+      // whole TTL.
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        cache.set(key, body, duration);
+      }
       return originalJson(body);
     };
 

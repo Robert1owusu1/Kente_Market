@@ -15,6 +15,16 @@ const parsePermissions = (value) => {
 };
 
 /**
+ * Purpose-bound tokens (oauth_exchange, oauth_state, register_pending,
+ * legal_consent, referral_visit) share JWT_SECRET with session tokens but are
+ * never sessions. oauth_exchange carries { id, tv }, so without this check a
+ * leaked exchange token worked as a 10-minute session cookie and skipped its
+ * single-use (jti) consumption. Session and staff tokens carry no `purpose`.
+ */
+const isPurposeToken = (decoded) =>
+  !decoded || typeof decoded !== 'object' || decoded.purpose !== undefined;
+
+/**
  * Optional auth middleware - Attach user if a valid JWT cookie exists, otherwise
  * continue anonymously. Used by anonymous-friendly endpoints (server-side cart)
  * that behave differently for logged-in vs guest visitors.
@@ -24,7 +34,7 @@ const optionalAuth = asyncHandler(async (req, res, next) => {
   if (token) {
     try {
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      const user = await User.findById(decoded.id);
+      const user = isPurposeToken(decoded) ? null : await User.findById(decoded.id);
       if (
         user && user.isActive &&
         decoded.role !== 'vendor_staff' &&
@@ -105,7 +115,7 @@ const protect = asyncHandler(async(req, res, next) => {
             // to staff tokens, or the version check is relaxed, staff_staff.id=5
             // would silently authenticate as users.id=5. `vendorOrStaff` and
             // `optionalAuth` already make this distinction explicitly.
-            if (decoded.role === 'vendor_staff') {
+            if (decoded.role === 'vendor_staff' || isPurposeToken(decoded)) {
                 res.status(401);
                 throw new Error('Not authorized');
             }
@@ -279,6 +289,7 @@ const vendorOrStaff = async (req, res, next) => {
         const token = req.cookies.jwt;
         if (!token) throw new Error('Not authorized, no token');
         decoded = jwt.verify(token, process.env.JWT_SECRET);
+        if (isPurposeToken(decoded)) throw new Error('Not authorized, token failed');
     } catch (error) {
         res.status(401);
         return next(
@@ -382,12 +393,19 @@ const vendorOrStaff = async (req, res, next) => {
             email: staff.email,
             permissions: parsePermissions(staff.permissions),
         };
-        next();
     } catch (error) {
+        // Same contract as the owner branch above: a decided status (403 for a
+        // deactivated staff member or inactive store) is kept, so the SPA does
+        // not mistake it for session expiry. Only an undecided failure (a
+        // driver error) becomes the generic 401, without leaking its text.
         console.error('Staff auth error:', error.message);
-        res.status(401);
-        throw new Error('Not authorized, staff token failed');
+        if (res.statusCode === 200) {
+            res.status(401);
+            return next(new Error('Not authorized, staff token failed'));
+        }
+        return next(error);
     }
+    return next();
 };
 
 /**

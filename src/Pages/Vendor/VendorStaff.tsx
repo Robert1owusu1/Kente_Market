@@ -20,6 +20,9 @@ const ALL_PERMISSIONS = [
   'view_customers',
   'manage_inventory',
   'view_earnings',
+  // Initiating withdrawals is separate from viewing earnings; only the store
+  // owner can grant it (backend grantCeiling).
+  'request_payouts',
   'manage_products',
   'manage_coupons',
   // `reply_reviews` removed with the backend list: no endpoint consumes it
@@ -35,7 +38,8 @@ const permLabels: Record<string, string> = {
   manage_orders: 'Manage orders & fulfilment',
   view_customers: 'View customer details',
   manage_inventory: 'Manage inventory & stock',
-  view_earnings: 'View earnings & payout',
+  view_earnings: 'View earnings & payout history',
+  request_payouts: 'Request withdrawals (owner can grant)',
   manage_products: 'Manage products',
   manage_coupons: 'Manage coupons',
   manage_staff: 'Manage staff',

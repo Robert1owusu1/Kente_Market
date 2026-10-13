@@ -19,6 +19,7 @@
 
 import crypto from 'crypto';
 import { cookieSameSite, cookieSecure } from '../config/cookieConfig.js';
+import { frontendOrigins } from '../config/frontendOrigins.js';
 
 export const CSRF_COOKIE_NAME = 'csrf_token';
 export const CSRF_HEADER_NAME = 'x-csrf-token';
@@ -98,10 +99,7 @@ const isAllowedOrigin = (origin) => {
     const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin);
     if (isLocalhost && process.env.NODE_ENV !== 'production') return true;
 
-    const allowedOrigins = (process.env.FRONTEND_URL || '')
-      .split(',')
-      .map((o) => o.trim())
-      .filter(Boolean);
+    const allowedOrigins = frontendOrigins();
     return allowedOrigins.includes(origin);
   } catch {
     return false;
