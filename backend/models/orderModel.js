@@ -233,8 +233,9 @@ static async findAll(options = {}) {
       params.push(parseInt(userId));
     }
     if (search) {
-      conditions.push("(o.orderNumber LIKE ? OR u.firstName LIKE ? OR u.lastName LIKE ? OR u.email LIKE ?)");
-      const searchTerm = `%${search}%`;
+      // Case-insensitive on every engine: TiDB's default collation is utf8mb4_bin (TIDB-COLL), so a plain LIKE missed 'Kente' for 'kente'.
+      conditions.push("(LOWER(o.orderNumber) LIKE ? OR LOWER(u.firstName) LIKE ? OR LOWER(u.lastName) LIKE ? OR LOWER(u.email) LIKE ?)");
+      const searchTerm = `%${String(search).toLowerCase()}%`;
       params.push(searchTerm, searchTerm, searchTerm, searchTerm);
     }
 

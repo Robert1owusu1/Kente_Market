@@ -72,3 +72,50 @@ STORED generated columns, no MariaDB `IF [NOT] EXISTS` DDL). Untested on TiDB: F
 `SELECT … FOR UPDATE` lock semantics under the concurrency tests, `INSERT IGNORE` + unique-key dedupe, JSON
 functions in the recovery queries, deadlock/lock-wait behaviour (the REF wallet fix relies on InnoDB S→X lock
 upgrade semantics). **Status: UNVERIFIED** — run `STAGING_VALIDATION_RUNBOOK.md` §1, §9 on a dedicated staging TiDB.
+
+## 7. TiDB verification on the hosted development cluster (2026-10-13)
+
+The owner confirmed the hosted database in `backend/.env` is a **development/test** database (production will be a
+separate database). Two kinds of access, nothing else:
+
+1. **Read-only inspection** of the development schema `branding_house` (SELECT / SHOW only; no rows, schema or
+   settings changed).
+2. **Full release test inside an isolated scratch database** (`km_scratch_tidb_rc1`) on the same TiDB server:
+   fresh install, second migration run, entire backend suite, then `DROP DATABASE` of the scratch schema
+   (confirmed dropped after every run). Only `DB_HOST/PORT/USER/PASSWORD/SSL` came from `.env`; every other key
+   was a placeholder (Paystack/email/OAuth/Redis/Sentry off) and outbound HTTP was routed to a dead proxy.
+   Runner: `<scratchpad>/tidb_scratch_test.sh` (guards tested: refuses loopback, non-`km_scratch_` names, the live
+   schema name, and any unshadowed `.env` key).
+
+### 7.1 Server facts
+TiDB **v8.5.3-serverless** (AWS eu-central-1), MySQL-compatible 8.0.11; foreign keys **enforced**
+(`tidb_enable_foreign_key=1`); pessimistic transactions, REPEATABLE-READ; strict SQL mode; default collation
+**`utf8mb4_bin`** (case-sensitive); certificate chains to a public CA (verified TLS works with the standard CA
+bundle). The development schema has 52 of the release's 60 tables (pending: 8 tables, 39 columns, 19 indexes —
+the release's migrations); it holds development data (261 users, 204 orders).
+
+### 7.2 Results on TiDB (scratch database)
+| Check | Result |
+|---|---|
+| Fresh install (`db:setup` → 33 migrations) | exit 0 |
+| Second `db:migrate` (idempotency) | exit 0; every log line explained (7 FULLTEXT skips, rest "already exists") |
+| Full backend suite (run 2, all money/concurrency suites enabled on the disposable scratch schema) | **915/921 pass**; 5 failures = FX suite connecting without TLS (fixed after) ; 1 skip = CHECK not enforced (TIDB-CHECK) |
+| FX / search / notification suites after the TLS fix (run 3) | 44/45 — the 1 failure was a test normalizer artefact (TiDB prints `AUTO_INCREMENT` last); fixed, re-run in §7.4 |
+| FX suite after the normalizer fix (run 4) | **40/40** on TiDB (fresh install + re-migrate exit 0; scratch dropped) |
+| Money and concurrency suites on TiDB | escrow cancellation lifecycle + concurrent races, payout lifecycle (incl. failure injection + index-usage check), payout permissions, reconciliation policy, concurrent withdrawals, webhook pool occupancy, stale refund claims, refund lifecycle, referral system — **all pass** |
+
+### 7.3 Findings (TiDB-specific or exposed by TiDB)
+| ID | Severity | Finding | Status |
+|---|---|---|---|
+| DB-PING | **Medium (availability, production)** | `config/db.js` keep-alive pinged connections that were **in use**; a statement slower than 5 s (lock wait, report, remote latency) got its socket destroyed → request 500 "DB ping failed" (seen in custom-request checkout on TiDB; reproduced on MySQL too) | **Fixed** — only idle connections are pinged; `dbPingBusyConnection.test.js` (original fails 2/3) |
+| TIDB-COLL | **Medium (functional)** | `utf8mb4_bin` makes `LIKE` case-sensitive: product search "kente" found 0, "Kente" 1 (read-only probe on dev). Admin user/order search, vendor directory, referral search affected | **Fixed** — `LOWER(col) LIKE lower(term)` in all free-text searches; `caseInsensitiveSearch.test.js` passes **on TiDB** (and its source guard fails on the old code) |
+| NOTIF-1 | Low–Medium (functional, all engines) | Custom-request (`custom`, 7 sites) and buyback (`buyback`, 3) notifications were never stored — ENUM rejected the type, error swallowed | **Fixed** — `migrateNotificationTypes.js` (appended to `db:migrate`; idempotent); `notificationTypes.test.js` incl. a drift guard |
+| TIDB-CHECK | Low (defence in depth) | TiDB parses but does **not enforce** CHECK constraints unless `tidb_enable_check_constraint=ON`; negative stock is then prevented only by the application clamp (`utils/nonNegativeInt.js`) | **Open — decision**: enable the variable on the production cluster and re-run the migration that adds the constraint, or accept app-only enforcement |
+| TIDB-FT | Info | FULLTEXT needs a TiFlash columnar replica; skipped by the migration; search uses the LIKE path (now case-insensitive) | Accepted (by design) |
+| TIDB-TLS | Low (config) | `.env` uses `DB_SSL=1` without `DB_SSL_CA` → unverified TLS (production boot refuses this). Verified TLS works with the public CA bundle | Set `DB_SSL_CA` to the host CA bundle (runbook) |
+| T-PORT | — | Test portability: three money suites + three more refused any remote DB; MySQL-only trigger/EXPLAIN techniques; FX suite without TLS | Fixed — shared `tests/helpers/disposableDb.mjs` (loopback, or `ALLOW_REMOTE_TEST_DB=1` + `km_scratch_*` only); engine-aware injection/plan checks |
+
+### 7.4 Status
+TiDB compatibility: **verified on the development cluster** (TiDB v8.5.3 serverless) for the full test suite, with the
+fixes above. Not yet done: the production cluster's own settings (CHECK, TLS CA) and migrating the development
+schema `branding_house` itself (pending owner go-ahead; additive, but irreversible without a backup).

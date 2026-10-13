@@ -232,7 +232,8 @@ export const adminListAmbassadors = async (req, res) => {
     const tier = req.query.tier === 'super' ? 'super' : null;
     const where = [];
     const bind = [];
-    if (search) { where.push('(u.email LIKE ? OR u.firstName LIKE ? OR u.lastName LIKE ? OR u.referralCode = ?)'); bind.push(`%${search}%`, `%${search}%`, `%${search}%`, search.toUpperCase()); }
+    // Case-insensitive on every engine: TiDB's default collation is utf8mb4_bin (TIDB-COLL), so a plain LIKE missed 'Kente' for 'kente'.
+    if (search) { const s = `%${String(search).toLowerCase()}%`; where.push('(LOWER(u.email) LIKE ? OR LOWER(u.firstName) LIKE ? OR LOWER(u.lastName) LIKE ? OR u.referralCode = ?)'); bind.push(s, s, s, search.toUpperCase()); }
     if (tier) { where.push(`u.ambassadorTier = 'super'`); }
     if (!search && !tier) where.push(`(u.ambassadorTier = 'super' OR EXISTS (SELECT 1 FROM referral_commissions rc WHERE rc.referrerId = u.id))`);
     const [rows] = await pool.execute(

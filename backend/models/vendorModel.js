@@ -119,8 +119,9 @@ class Vendor {
       params.push(status);
     }
     if (search) {
-      conditions.push('(v.businessName LIKE ? OR u.firstName LIKE ? OR u.lastName LIKE ? OR u.email LIKE ?)');
-      const term = `%${search}%`;
+      // Case-insensitive on every engine: TiDB's default collation is utf8mb4_bin (TIDB-COLL), so a plain LIKE missed 'Kente' for 'kente'.
+      conditions.push('(LOWER(v.businessName) LIKE ? OR LOWER(u.firstName) LIKE ? OR LOWER(u.lastName) LIKE ? OR LOWER(u.email) LIKE ?)');
+      const term = `%${String(search).toLowerCase()}%`;
       params.push(term, term, term, term);
     }
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';

@@ -9,6 +9,7 @@
 //   - every admin action lands in the per-attempt history; inputs validated.
 // Real routers + middleware over HTTP; Paystack stubbed; disposable DB only.
 import { describe, test, before, after } from 'node:test';
+import { assertDisposableDb } from './helpers/disposableDb.mjs';
 import assert from 'node:assert/strict';
 import express from 'express';
 import cookieParser from 'cookie-parser';
@@ -97,7 +98,7 @@ const walletOf = async (v) => Number((await pool.execute(`SELECT available_balan
 before(async () => {
   if (!dbAvailable) return;
   pool = (await import('../config/db.js')).default;
-  assert.ok(['127.0.0.1', 'localhost', '::1'].includes(String(process.env.DB_HOST)), 'disposable local DB only');
+  await assertDisposableDb(pool);
   ({ default: paystackServices } = await import('../Services/paystackservices.js'));
   ({ creditVendorBalance } = await import('../Services/walletService.js'));
   ({ settleTransferSuccess } = await import('../Services/transferSettlementService.js'));

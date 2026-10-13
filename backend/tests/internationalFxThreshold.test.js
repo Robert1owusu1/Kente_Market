@@ -33,6 +33,8 @@
 // DB_HOST points at TiDB Cloud, so this suite cannot touch the shared DB.
 // No payment-provider calls are made anywhere.
 import { test, describe, before, after } from 'node:test';
+import { isDisposableDb } from './helpers/disposableDb.mjs';
+import { mysqlTls } from '../config/mysqlTls.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { execFile } from 'node:child_process';
@@ -55,7 +57,10 @@ const read = (rel) => readFileSync(path.join(BACKEND_ROOT, rel.replace(/^(\.\.\/
 const HOST = process.env.DB_HOST || '';
 // Destructive/schema-executing cases are refused against TiDB Cloud — the
 // shared dev database is off limits by the working rules.
-const isTiDB = /tidbcloud\.com/i.test(HOST);
+// Destructive/schema-executing cases need a disposable database: local, or a
+// km_scratch_* schema on a remote server with ALLOW_REMOTE_TEST_DB=1 (never the
+// shared development schema).
+const isTiDB = /tidbcloud\.com/i.test(HOST) && !isDisposableDb();
 
 let pool = null;
 let dbAvailable = true;
@@ -287,6 +292,7 @@ after(async () => {
           user: process.env.DB_USER,
           password: process.env.DB_PASSWORD || '',
           port: process.env.DB_PORT || 3306,
+          ssl: mysqlTls(), // TLS like the app pool (TiDB Cloud refuses plain connections)
         });
         // Close in finally: a refused DROP used to skip conn.end(), and the
         // open socket kept the test process alive forever (CI timeout).
@@ -441,6 +447,7 @@ describe('F-6: the migration runs on a clean MySQL database and is re-runnable',
       user: process.env.DB_USER,
       password: process.env.DB_PASSWORD || '',
       port: process.env.DB_PORT || 3306,
+      ssl: mysqlTls(), // TLS like the app pool (TiDB Cloud refuses plain connections)
       multipleStatements: true,
     });
     try {
@@ -464,15 +471,19 @@ describe('F-6: the migration runs on a clean MySQL database and is re-runnable',
       user: process.env.DB_USER,
       password: process.env.DB_PASSWORD || '',
       port: process.env.DB_PORT || 3306,
+      ssl: mysqlTls(), // TLS like the app pool (TiDB Cloud refuses plain connections)
       database: dbName,
     });
     try {
       const [[row]] = await conn.query(`SHOW CREATE TABLE \`${table}\``);
       // AUTO_INCREMENT advances as rows are seeded; the space it leaves
       // behind is not a structural difference, so compare structure.
+      // TiDB prints AUTO_INCREMENT=N last (MySQL mid-statement), so strip it
+      // with its leading space and trim around the closing quote.
       return JSON.stringify(row)
-        .replace(/AUTO_INCREMENT=\d+/g, '')
-        .replace(/\s+/g, ' ');
+        .replace(/\s*AUTO_INCREMENT=\d+/g, '')
+        .replace(/\s+/g, ' ')
+        .replace(/\s+"\}$/, '"}');
     } finally {
       await conn.end();
     }
@@ -485,6 +496,7 @@ describe('F-6: the migration runs on a clean MySQL database and is re-runnable',
       user: process.env.DB_USER,
       password: process.env.DB_PASSWORD || '',
       port: process.env.DB_PORT || 3306,
+      ssl: mysqlTls(), // TLS like the app pool (TiDB Cloud refuses plain connections)
       database: dbName,
     });
     try {

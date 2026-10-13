@@ -9,6 +9,7 @@
 //              with complete side effects, promptly.
 // DISPOSABLE DATABASE ONLY.
 import { describe, test, before, after } from 'node:test';
+import { assertDisposableDb } from './helpers/disposableDb.mjs';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 
@@ -30,7 +31,7 @@ const fx = { users: [], orders: [] };
 
 before(async () => {
   if (!dbAvailable) return;
-  assert.ok(['127.0.0.1', 'localhost', '::1'].includes(String(process.env.DB_HOST)), 'disposable local DB only');
+  await assertDisposableDb(pool);
   const express = (await import('express')).default;
   const paymentRoutes = (await import('../routes/paymentRoutes.js')).default;
   const { startServer } = await import('./helpers/httpHarness.js');

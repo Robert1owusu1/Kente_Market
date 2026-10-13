@@ -316,3 +316,13 @@ Tools added for this (no data changes, never print secret values):
 | 11 | **Cleanup / teardown** (§9.9). | staging DB dropped or test data removed |
 
 Stop conditions: any FAIL in steps 6–7 that is not understood; §5 rollback criteria.
+
+## 11. TiDB facts from the development-cluster run (2026-10-13)
+
+- `DB_SSL=1` + `DB_SSL_CA=<host CA bundle>` (e.g. `/etc/ssl/certs/ca-certificates.crt`): the TiDB Cloud certificate
+  chains to a public CA, verified TLS was confirmed. Without a CA the production boot refuses.
+- FULLTEXT search indexes are skipped (need a TiFlash replica); search uses case-insensitive LIKE. Expected log lines.
+- CHECK constraints are not enforced unless `tidb_enable_check_constraint=ON` (decision TIDB-CHECK). If enabled on the
+  staging/production cluster, enable it **before** running `db:migrate` so the constraint is created.
+- Re-runnable full-suite check against a disposable schema on any TiDB server: `ALLOW_REMOTE_TEST_DB=1` with a
+  `km_scratch_*` `DB_NAME` (see `tests/helpers/disposableDb.mjs`); never point the suite at a shared schema.

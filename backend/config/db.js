@@ -93,18 +93,37 @@ pool.on('connection', (conn) => {
   });
 });
 
+// Checked-out connections are never pinged. mysql2 runs one command at a time
+// per connection, so a ping issued on a busy connection waited behind the
+// request's own statement; when that statement legitimately took longer than
+// DB_PING_TIMEOUT_MS (a lock wait, a slow report, remote-TiDB latency) the
+// ping "timed out" and destroyed the socket UNDER the request, which failed
+// with 'DB ping failed'. Busy connections are covered by DB_QUERY_TIMEOUT_MS.
+// `checkouts` also lets a timed-out ping skip the destroy if a request took
+// the connection while the ping was in flight.
+pool.on('acquire', (conn) => {
+  conn._kmBusy = true;
+  conn._kmCheckouts = (conn._kmCheckouts || 0) + 1;
+});
+pool.on('release', (conn) => {
+  conn._kmBusy = false;
+});
+
 let pinging = false;
 const pingSockets = () => {
   if (pinging || trackedSockets.size === 0) return;
   pinging = true;
   const attempts = [...trackedSockets].map((sock) => {
     const conn = sock._poolConnection ?? null;
+    if (conn?._kmBusy) return Promise.resolve();
+    const checkoutsAtPing = conn?._kmCheckouts || 0;
     const ping = conn
       ? new Promise((resolve, reject) =>
           conn.query('SELECT 1', (err, rows) => (err ? reject(err) : resolve(rows)))
         )
       : Promise.reject(new Error('no pool connection bound to socket'));
     return withDeadline(ping, DB_PING_TIMEOUT_MS, 'DB ping').catch(() => {
+      if (conn && (conn._kmBusy || (conn._kmCheckouts || 0) !== checkoutsAtPing)) return;
       sock.destroy(new Error('DB ping failed'));
     });
   });

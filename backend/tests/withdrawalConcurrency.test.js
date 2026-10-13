@@ -14,6 +14,7 @@
 //
 // DISPOSABLE DATABASE ONLY (tests/helpers/testDbGuard.mjs + interlock below).
 import { describe, test, before, after } from 'node:test';
+import { assertDisposableDb } from './helpers/disposableDb.mjs';
 import assert from 'node:assert/strict';
 
 let dbAvailable = true;
@@ -108,8 +109,7 @@ const ledger = async (vendorId, allocIds) => {
 before(async () => {
   if (!dbAvailable) return;
   pool = (await import('../config/db.js')).default;
-  assert.ok(['127.0.0.1', 'localhost', '::1'].includes(String(process.env.DB_HOST)),
-    `REFUSING TO RUN: DB_HOST ${process.env.DB_HOST} is not a local disposable database`);
+  await assertDisposableDb(pool);
   ({ withdrawVendorBalance } = await import('../controllers/vendorController.js'));
   ({ default: paystackServices } = await import('../Services/paystackservices.js'));
   // No network, no real funds. A small delay widens the race window so the

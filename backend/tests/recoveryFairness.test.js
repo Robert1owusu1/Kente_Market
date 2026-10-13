@@ -15,6 +15,7 @@
 // the same selection SQL (due filter, ordering, back-off) the scheduler runs.
 // DISPOSABLE DATABASE ONLY.
 import { describe, test, before, after, mock } from 'node:test';
+import { assertDisposableDb } from './helpers/disposableDb.mjs';
 import assert from 'node:assert/strict';
 
 process.env.EMAIL_DISABLED = '1';
@@ -67,7 +68,7 @@ const makeDue = (job, ids) => pool.query(
 
 before(async () => {
   if (!dbAvailable) return;
-  assert.ok(['127.0.0.1', 'localhost', '::1'].includes(String(process.env.DB_HOST)), 'disposable local DB only');
+  await assertDisposableDb(pool);
   await pool.query('SELECT entityId FROM reconciliation_checks LIMIT 0')
     .catch((e) => { throw new Error(`reconciliation_checks missing — run npm run db:migrate: ${e.message}`); });
   ({ default: paystackServices } = await import('../Services/paystackservices.js'));

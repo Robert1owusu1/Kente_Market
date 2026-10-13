@@ -215,3 +215,11 @@ Still open: MIG-2, SEC-3, SEC-5, SEC-6, SEC-10, OPS-1 (measurement), decisions R
 New operator tools (no data changes, no secret output): `scripts/staging-preflight.mjs` (tested 6/6, including a
 no-secret-leak assertion) and `scripts/staging-smoke.mjs` (13 read-only checks, rehearsed against a production-mode
 local stack).
+
+## 9. TiDB verification (2026-10-13)
+
+New, fixed with regression tests: **DB-PING** (Medium, availability — keep-alive ping killed in-use connections →
+500s under slow statements), **TIDB-COLL** (Medium, functional — case-sensitive search on TiDB), **NOTIF-1**
+(Low–Medium — custom-request and buyback notifications never stored). Open: **TIDB-CHECK** (CHECK constraints not
+enforced on TiDB by default; negative stock prevented by application code only), **TIDB-TLS** (development `.env`
+uses unverified TLS; set `DB_SSL_CA`). Evidence: `DATABASE_AND_FINANCIAL_INTEGRITY_REPORT.md` §7.

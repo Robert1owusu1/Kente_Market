@@ -8,6 +8,7 @@
 // machine (tests/helpers/testDbGuard.mjs enforces the same for the whole
 // suite), and skip — like every other DB suite — when no database answers.
 import { describe, test, before, after } from 'node:test';
+import { assertDisposableDb } from './helpers/disposableDb.mjs';
 import assert from 'node:assert/strict';
 
 let dbAvailable = true;
@@ -116,8 +117,7 @@ before(async () => {
   const db = await import('../config/db.js');
   pool = db.default;
   // SAFETY INTERLOCK: only a database on this machine (disposable by policy).
-  assert.ok(['127.0.0.1', 'localhost', '::1'].includes(String(process.env.DB_HOST)),
-    `REFUSING TO RUN: DB_HOST ${process.env.DB_HOST} is not a local disposable database`);
+  await assertDisposableDb(pool);
 
   const escrow = await import('../Services/escrowService.js');
   ({ releaseAllocation, releaseEscrowForOrder, releaseVendorEscrow,

@@ -184,3 +184,23 @@ vitest 89/89, build OK, gitleaks 0 (after deriving test fixture secrets at runti
 | CI-6 (known flake, open) | node:test runner "Unable to deserialize cloned data" on `verification-fixes.test.js` in 1 of 5 CI-identical runs at concurrency 4 (file passes alone 3/3; runner IPC, not test logic) | none — re-run the job if seen; consider `--test-concurrency=2` if it recurs | 4 of 5 full runs 913/913 |
 
 Final CI-identical result: 913/913, exit 0, 0 `# SKIP` (3 consecutive runs after the fixes, plus the workflow-script run).
+
+---
+
+## TiDB verification on the hosted development cluster (2026-10-13)
+
+Owner confirmed the `.env` database is development/test. Read-only inspection of `branding_house`; full suite in an
+isolated `km_scratch_tidb_rc1` schema on the same TiDB v8.5.3-serverless server (dropped after each run). Details:
+`DATABASE_AND_FINANCIAL_INTEGRITY_REPORT.md` §7.
+
+| ID | Sev | Finding | Files | Status |
+|---|---|---|---|---|
+| DB-PING | Medium | Keep-alive ping destroyed busy connections → 500 "DB ping failed" on slow statements | `config/db.js` | FIXED (verified) — `dbPingBusyConnection.test.js`; TiDB pass |
+| TIDB-COLL | Medium | Case-sensitive LIKE on TiDB (`utf8mb4_bin`) broke search | `productModel.js`, `usersModel.js`, `vendorModel.js`, `orderModel.js`, `referralController.js` | FIXED (verified on TiDB) — `caseInsensitiveSearch.test.js` |
+| NOTIF-1 | Low–Med | `custom`/`buyback` notifications never stored (ENUM) | `migrateNotificationTypes.js` (new, in `db:migrate`) | FIXED (verified) — `notificationTypes.test.js` |
+| TIDB-CHECK | Low | CHECK constraints not enforced on TiDB by default | — | OPEN — decision (enable `tidb_enable_check_constraint` on prod) |
+| TIDB-TLS | Low | Dev `.env` uses unverified TLS | config | OPEN — set `DB_SSL_CA` (public CA bundle works) |
+| T-PORT | — | Money suites refused remote DBs; MySQL-only test techniques; FX suite without TLS; TiDB `SHOW CREATE` spacing | tests + `tests/helpers/disposableDb.mjs` | FIXED |
+
+Results: TiDB fresh install + re-migrate exit 0; full suite 915/921 (remaining 5+1 explained and fixed/recorded), FX
+40/40 after fixes; local MySQL 921/921.

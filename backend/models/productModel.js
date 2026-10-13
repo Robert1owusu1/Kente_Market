@@ -100,8 +100,9 @@ const searchPredicate = async (connection, search, alias) => {
   const groups = [];
   const params = [];
   for (const w of words) {
-    const term = `%${w}%`;
-    groups.push(`(${SEARCH_COLS.map((c) => `${pfx}${c} LIKE ?`).join(' OR ')})`);
+    // Case-insensitive on every engine: TiDB's default collation is utf8mb4_bin (TIDB-COLL), so a plain LIKE missed 'Kente' for 'kente'.
+    const term = `%${w.toLowerCase()}%`;
+    groups.push(`(${SEARCH_COLS.map((c) => `LOWER(${pfx}${c}) LIKE ?`).join(' OR ')})`);
     for (let i = 0; i < SEARCH_COLS.length; i++) params.push(term);
   }
   return { where: ` AND ${groups.join(' AND ')}`, params, relevance: null };

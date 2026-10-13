@@ -8,6 +8,7 @@
 //
 // DISPOSABLE DATABASE ONLY (tests/helpers/testDbGuard.mjs + interlock below).
 import { describe, test, before, after } from 'node:test';
+import { assertDisposableDb, isTiDBServer } from './helpers/disposableDb.mjs';
 import assert from 'node:assert/strict';
 import express from 'express';
 import cookieParser from 'cookie-parser';
@@ -135,8 +136,7 @@ const ev = (attempt, extra = {}) => ({ amountMinor: Math.round(Number(attempt.am
 before(async () => {
   if (!dbAvailable) return;
   pool = (await import('../config/db.js')).default;
-  assert.ok(['127.0.0.1', 'localhost', '::1'].includes(String(process.env.DB_HOST)),
-    `REFUSING TO RUN: DB_HOST ${process.env.DB_HOST} is not a local disposable database`);
+  await assertDisposableDb(pool);
   // A reachable database without the payout lifecycle schema is a FAILURE,
   // not a skip — otherwise a missing migration would look green.
   await pool.query('SELECT withdrawalId, amountMinor, lastCheckedAt FROM payout_attempts LIMIT 0')
@@ -311,15 +311,44 @@ describe('payout lifecycle (R-8)', { skip: !dbAvailable }, () => {
     const { allocId } = await mkCreditedAlloc(v, 60);
     await withdraw(v, { amount: 60 });
     const [a] = await attemptsOf(v);
+    // Inject a failure into the ledger INSERT for this reference only. MySQL:
+    // a trigger (the database itself refuses the row). TiDB has no triggers, so
+    // there the pooled connections are wrapped to reject that one statement —
+    // the transaction/rollback behaviour under test is the database's either way.
+    const tidb = await isTiDBServer(pool);
     const trig = `trg_r8_${TS}`;
-    await pool.query(
-      `CREATE TRIGGER ${trig} BEFORE INSERT ON wallet_transactions FOR EACH ROW
-       BEGIN IF NEW.reference = '${a.reference}' THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'injected ledger failure'; END IF; END`
-    );
+    const wrapped = [];
+    const realGet = pool.getConnection.bind(pool);
+    if (tidb) {
+      pool.getConnection = async (...args) => {
+        const c = await realGet(...args);
+        for (const m of ['execute', 'query']) {
+          const real = c[m];
+          wrapped.push([c, m, real]);
+          c[m] = function (sql, params, ...rest) {
+            if (/INSERT\s+(IGNORE\s+)?INTO\s+wallet_transactions/i.test(String(sql)) && JSON.stringify(params ?? []).includes(a.reference)) {
+              return Promise.reject(new Error('injected ledger failure'));
+            }
+            return real.call(this, sql, params, ...rest);
+          };
+        }
+        return c;
+      };
+    } else {
+      await pool.query(
+        `CREATE TRIGGER ${trig} BEFORE INSERT ON wallet_transactions FOR EACH ROW
+         BEGIN IF NEW.reference = '${a.reference}' THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'injected ledger failure'; END IF; END`
+      );
+    }
     try {
       await assert.rejects(() => settleTransferSuccess(a.reference, ev(a)), /injected ledger failure/);
     } finally {
-      await pool.query(`DROP TRIGGER IF EXISTS ${trig}`);
+      if (tidb) {
+        pool.getConnection = realGet;
+        for (const [c, m, real] of wrapped) c[m] = real;
+      } else {
+        await pool.query(`DROP TRIGGER IF EXISTS ${trig}`);
+      }
     }
     const mid = await reload(a.reference);
     assert.equal(mid.status, 'processing', 'nothing half-applied');
@@ -691,8 +720,16 @@ describe('payout lifecycle (R-8)', { skip: !dbAvailable }, () => {
       `EXPLAIN SELECT * FROM payout_attempts WHERE status = 'processing'
          AND created_at < DATE_SUB(NOW(), INTERVAL 30 MINUTE) ORDER BY lastCheckedAt ASC, id ASC LIMIT 25`
     );
-    assert.notEqual(plan[0].type, 'ALL', `reconciler query must use an index: ${JSON.stringify(plan[0])}`);
-    assert.ok(plan[0].key, 'an index is chosen');
+    if (await isTiDBServer(pool)) {
+      // TiDB EXPLAIN is an operator tree (id / task / access object), not MySQL's
+      // type/key row: require an index access on payout_attempts and no full scan of it.
+      const ops = plan.map((r) => `${r.id} ${r['access object'] || ''}`).join(' | ');
+      assert.doesNotMatch(ops, /TableFullScan[^|]*table:payout_attempts/, `reconciler query must use an index: ${ops}`);
+      assert.match(ops, /Index(RangeScan|FullScan|Lookup)[^|]*index:/, `an index is chosen: ${ops}`);
+    } else {
+      assert.notEqual(plan[0].type, 'ALL', `reconciler query must use an index: ${JSON.stringify(plan[0])}`);
+      assert.ok(plan[0].key, 'an index is chosen');
+    }
 
     await pool.execute(`DELETE FROM payout_attempts WHERE reference LIKE ? OR reference LIKE ?`, [`r8bl_${TS}_%`, `r8hist_${TS}_%`]);
   });

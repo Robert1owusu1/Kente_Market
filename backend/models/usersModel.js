@@ -171,8 +171,9 @@ class User {
       }
 
       if (search) {
-        query += ' AND (firstName LIKE ? OR lastName LIKE ? OR email LIKE ?)';
-        const searchTerm = `%${search}%`;
+        // Case-insensitive on every engine: TiDB's default collation is utf8mb4_bin (TIDB-COLL), so a plain LIKE missed 'Kente' for 'kente'.
+        query += ' AND (LOWER(firstName) LIKE ? OR LOWER(lastName) LIKE ? OR LOWER(email) LIKE ?)';
+        const searchTerm = `%${String(search).toLowerCase()}%`;
         params.push(searchTerm, searchTerm, searchTerm);
       }
 
