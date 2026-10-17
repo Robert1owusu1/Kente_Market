@@ -1,1 +1,4 @@
 ab6c42160663027d7c23f62cee4ee0f490e55b8f:backend/.env.example:generic-api-key:42
+# Test fixtures, not credentials (commit c31111a): an idempotency key literal and a fake base64("test") webhook secret.
+c31111a9db6ce7d734f68910f42319c0649d6d2e:src/ai-tryon/__tests__/tryOnService.test.ts:generic-api-key:36
+c31111a9db6ce7d734f68910f42319c0649d6d2e:backend/tests/tryOnGenerateFlow.test.js:generic-api-key:509
