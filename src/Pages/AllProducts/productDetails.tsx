@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useCart } from "../../Context/CartContext";
 import { useGetProductsDetailsQuery } from "../../slices/productsApiSlice";
-import { FaShoppingCart, FaChevronLeft, FaStore, FaCheckCircle, FaMagic, FaEnvelope, FaExclamationTriangle, FaStar, FaTags } from "react-icons/fa";
+import { FaShoppingCart, FaChevronLeft, FaStore, FaCheckCircle, FaMagic, FaEnvelope, FaExclamationTriangle, FaStar, FaTags, FaHeart, FaRegHeart } from "react-icons/fa";
 import ProductReviews from "../../components/reviews/ProductReviews";
 import SocialShare from "../../components/SocialShare/SocialShare";
 import { resolveImageUrl } from "../../utils/imageUrl";
@@ -13,12 +13,14 @@ import AskModal from "../../components/Messages/AskModal";
 import { yardOptionsFor } from "../../utils/yards";
 import { toCartItem } from "../../utils/cartItem";
 import tryOnService, { type TryOnEligibility } from "../../ai-tryon/api/tryOnService";
+import { useWishlistToggle } from "../../hooks/useWishlistToggle";
 
 const ProductDetails = () => {
   const { id: productId } = useParams();
   const navigate = useNavigate();
   const { addToCart } = useCart();
   const userInfo = useSelector((state: RootState) => state.auth?.userInfo);
+  const wishlist = useWishlistToggle();
 
   const { data: product, isLoading, error } = useGetProductsDetailsQuery(Number(productId!));
   const apiError = error as { data?: { message?: string }; error?: string } | undefined;
@@ -331,6 +333,22 @@ const ProductDetails = () => {
               <FaShoppingCart />
               {isOutOfStock ? 'Sold out' : 'Add to Cart'}
             </button>
+            {(() => {
+              const saved = wishlist.isSaved(product.id);
+              return (
+                <button
+                  type="button"
+                  onClick={() => wishlist.toggle(product.id)}
+                  aria-pressed={saved}
+                  aria-label={saved ? "Remove from wishlist" : "Save to wishlist"}
+                  title={saved ? "Remove from wishlist" : "Save to wishlist"}
+                  className="flex min-h-12 items-center justify-center gap-2 rounded-xl border-2 border-gray-300 px-4 py-3 font-semibold text-gray-800 transition hover:border-red-400 hover:text-red-700 xs:w-14 xs:px-0 dark:border-gray-600 dark:text-gray-100"
+                >
+                  {saved ? <FaHeart aria-hidden="true" className="text-red-600" /> : <FaRegHeart aria-hidden="true" />}
+                  <span className="xs:sr-only">{saved ? "Saved" : "Save to wishlist"}</span>
+                </button>
+              );
+            })()}
           </div>
 
           {!tryOnChecking && tryOn?.enabled && (

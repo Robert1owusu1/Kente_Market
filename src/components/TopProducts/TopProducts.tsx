@@ -3,7 +3,8 @@ import React from "react";
 import { FaTags, FaFire, FaExclamationTriangle } from "react-icons/fa";
 import { useCart } from "../../Context/CartContext";
 import { Link } from "react-router-dom";
-import { useWishlistAction } from "../../hooks/useWishlistAction";
+import { useWishlistToggle } from "../../hooks/useWishlistToggle";
+import { useTryOnEnabled } from "../../slices/tryOnApiSlice";
 import {
   useGetFeaturedProductsQuery,
   useGetTrendingProductsQuery,
@@ -29,7 +30,8 @@ interface TopProduct extends Product {
 
 const TopProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) => {
   const { addToCart } = useCart();
-  const saveToFavorites = useWishlistAction();
+  const wishlist = useWishlistToggle();
+  const tryOnEnabled = useTryOnEnabled();
 
  // RTK Query hook - cached in the Redux store, no duplicate network calls
   // when navigating between pages.
@@ -149,7 +151,9 @@ const TopProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
               key={product.id}
               product={product}
               onAddToCart={() => handleAddToCart(product)}
-              onToggleWishlist={saveToFavorites}
+              onToggleWishlist={wishlist.toggle}
+              isSaved={wishlist.isSaved(product.id)}
+              tryOnAvailable={tryOnEnabled}
               badge={showingFeatured ? "Featured" : undefined}
               priority={index < 2}
             />

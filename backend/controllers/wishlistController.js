@@ -1,6 +1,7 @@
 // FILE LOCATION: backend/controllers/wishlistController.js
 // DESCRIPTION: User wishlist operations
 import Wishlist from "../models/wishlistModel.js";
+import Product from "../models/productModel.js";
 import isValidId from "../utils/isValidId.js";
 
 export const addToWishlist = async (req, res) => {
@@ -8,6 +9,15 @@ export const addToWishlist = async (req, res) => {
     const { productId } = req.body || {};
     if (!isValidId(productId)) {
       return res.status(400).json({ message: "Valid product id is required" });
+    }
+
+    // Only products the public product page shows can be saved: approved
+    // listing, from an approved vendor or the platform (N-6). Otherwise any
+    // signed-in user could save a hidden product's id and read its title,
+    // image and price back from GET /wishlist.
+    const product = await Product.findById(parseInt(productId));
+    if (!product || product.approvalStatus !== "approved") {
+      return res.status(404).json({ message: "Product not found" });
     }
 
     await Wishlist.add(req.user.id, parseInt(productId));

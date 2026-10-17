@@ -2,8 +2,8 @@
 // hover, let sold-out items be added, showed invented details and computed
 // "Save ₵X" by comparing price strings.
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import '@testing-library/jest-dom/vitest';
 import ProductCard from '../ProductCard';
 import { saleInfo, stockOnHand } from '../../../utils/productDisplay';
@@ -71,6 +71,57 @@ describe('ProductCard', () => {
   it('only shows a section badge it is given', () => {
     renderCard({}, { badge: 'Featured' });
     expect(screen.getByText('Featured')).toBeInTheDocument();
+  });
+
+  it('the heart shows saved state and offers removal', () => {
+    const { onToggleWishlist } = renderCard({}, { isSaved: true });
+    const heart = screen.getByRole('button', { name: 'Remove Adinkra Royal Stole from wishlist' });
+    expect(heart).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(heart);
+    expect(onToggleWishlist).toHaveBeenCalledWith(11);
+  });
+
+  it('offers Try on only when try-on is available and the piece is in stock', () => {
+    renderCard({}, { tryOnAvailable: true });
+    expect(screen.getByRole('link', { name: 'Try on Adinkra Royal Stole with AI' })).toHaveAttribute('href', '/ai-tryon?product=11');
+    cleanup();
+    renderCard({});
+    expect(screen.queryByRole('link', { name: /Try on/ })).not.toBeInTheDocument();
+    cleanup();
+    renderCard({ stock: 0 }, { tryOnAvailable: true });
+    expect(screen.queryByRole('link', { name: /Try on/ })).not.toBeInTheDocument();
+  });
+
+  it('on a touch screen the first tap on the image reveals the actions, the second opens the product', () => {
+    // jsdom has no matchMedia, which the card treats as a device that cannot hover.
+    render(
+      <MemoryRouter initialEntries={['/products']}>
+        <Routes>
+          <Route path="/products" element={<ProductCard product={base as never} onAddToCart={vi.fn()} />} />
+          <Route path="/product/:id" element={<p>product page</p>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    const actions = screen.getByTestId('card-actions');
+    expect(actions).toHaveAttribute('data-open', 'false');
+    const imageLink = actions.parentElement!.querySelector('a[aria-hidden="true"]')!;
+    fireEvent.click(imageLink);
+    expect(actions).toHaveAttribute('data-open', 'true');
+    expect(screen.getByRole('link', { name: 'View details of Adinkra Royal Stole' })).toHaveAttribute('href', '/product/11');
+    fireEvent.click(imageLink);
+    expect(screen.getByText('product page')).toBeInTheDocument();
+  });
+
+  it('a tap elsewhere or Escape hides the revealed actions', () => {
+    renderCard({});
+    const actions = screen.getByTestId('card-actions');
+    fireEvent.click(actions.parentElement!.querySelector('a[aria-hidden="true"]')!);
+    expect(actions).toHaveAttribute('data-open', 'true');
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(actions).toHaveAttribute('data-open', 'false');
+    fireEvent.click(actions.parentElement!.querySelector('a[aria-hidden="true"]')!);
+    fireEvent.pointerDown(document.body);
+    expect(actions).toHaveAttribute('data-open', 'false');
   });
 });
 

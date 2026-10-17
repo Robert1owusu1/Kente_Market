@@ -4,7 +4,8 @@ import { FaFire, FaTags, FaExclamationTriangle } from "react-icons/fa";
 import { Link } from 'react-router-dom';
 import { useCart } from "../../Context/CartContext";
 import { useGetTrendingProductsQuery } from "../../slices/productsApiSlice";
-import { useWishlistAction } from "../../hooks/useWishlistAction";
+import { useWishlistToggle } from "../../hooks/useWishlistToggle";
+import { useTryOnEnabled } from "../../slices/tryOnApiSlice";
 import { ProductGridSkeleton } from "../loader/Skeleton";
 import ProductCard from "../ProductCard/ProductCard";
 import { toCartItem } from "../../utils/cartItem";
@@ -26,7 +27,8 @@ interface TrendProduct extends Product {
 
 const TrendingProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) => {
   const { addToCart } = useCart();
-  const saveToFavorites = useWishlistAction();
+  const wishlist = useWishlistToggle();
+  const tryOnEnabled = useTryOnEnabled();
 
  // RTK Query hook - cached in the Redux store, no duplicate network calls
   // when navigating between pages.
@@ -145,7 +147,9 @@ const TrendingProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void 
                 key={data.id}
                 product={data}
                 onAddToCart={() => handleAddToCart(data)}
-                onToggleWishlist={saveToFavorites}
+                onToggleWishlist={wishlist.toggle}
+                isSaved={wishlist.isSaved(data.id)}
+                tryOnAvailable={tryOnEnabled}
                 priority={index < 2}
               />
             ))}

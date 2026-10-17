@@ -69,7 +69,13 @@ class Wishlist {
                 p.title, p.img, p.price, p.originalPrice, p.rating, p.reviews, p.category
          FROM wishlist w
          LEFT JOIN product p ON p.id = w.productId
+         LEFT JOIN vendors v ON v.userId = p.vendorId
          WHERE w.userId = ?
+           -- Same visibility as the public product page: an approved listing
+           -- from an approved vendor or the platform (N-6). A saved product
+           -- that stops being visible drops out until it is visible again.
+           -- (A deleted product keeps its row, with no product details.)
+           AND (p.id IS NULL OR (p.approvalStatus = 'approved' AND (p.vendorId IS NULL OR v.status = 'approved')))
          ORDER BY w.created_at DESC`,
         [parseInt(userId)]
       );

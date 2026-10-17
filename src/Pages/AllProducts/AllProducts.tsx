@@ -4,7 +4,8 @@ import { useCart } from "../../Context/CartContext";
 import Brands from "../../Pages/AllProducts/Brands";
 import { useGetProductsQuery } from '../../slices/productsApiSlice';
 import { useGetCategoriesQuery } from '../../slices/categoriesApiSlice';
-import { useWishlistAction } from '../../hooks/useWishlistAction';
+import { useWishlistToggle } from '../../hooks/useWishlistToggle';
+import { useTryOnEnabled } from '../../slices/tryOnApiSlice';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ProductGridSkeleton } from '../../components/loader/Skeleton';
 import ProductCard from '../../components/ProductCard/ProductCard';
@@ -52,7 +53,8 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
 
   
   const { addToCart } = useCart();
-  const saveToFavorites = useWishlistAction();
+  const wishlist = useWishlistToggle();
+  const tryOnEnabled = useTryOnEnabled();
   
   // State management
   const [searchQuery, setSearchQuery] = useState(urlSearchQuery);
@@ -574,7 +576,9 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
                 key={product.id}
                 product={product}
                 onAddToCart={() => addToCartHandler(product)}
-                onToggleWishlist={saveToFavorites}
+                onToggleWishlist={wishlist.toggle}
+                isSaved={wishlist.isSaved(product.id)}
+                tryOnAvailable={tryOnEnabled}
                 priority={i < 4}
               />
             ))}

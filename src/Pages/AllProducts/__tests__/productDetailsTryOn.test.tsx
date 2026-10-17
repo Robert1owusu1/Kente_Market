@@ -16,6 +16,8 @@ vi.mock('../../../slices/productsApiSlice', () => ({
 }));
 vi.mock('../../../Context/CartContext', () => ({ useCart: () => ({ addToCart: vi.fn() }) }));
 vi.mock('react-redux', () => ({ useSelector: () => null }));
+const wishlistToggle = vi.hoisted(() => vi.fn());
+vi.mock('../../../hooks/useWishlistToggle', () => ({ useWishlistToggle: () => ({ isSaved: () => false, toggle: wishlistToggle }) }));
 vi.mock('../../../components/reviews/ProductReviews', () => ({ default: () => null }));
 vi.mock('../../../components/SocialShare/SocialShare', () => ({ default: () => null }));
 vi.mock('../../../components/Seo/Seo', () => ({ default: () => null }));
@@ -75,5 +77,14 @@ describe('product page Try It On', () => {
     await waitFor(() => expect(screen.queryByRole('button', { name: /Checking AI try-on/ })).not.toBeInTheDocument());
     expect(screen.queryByRole('button', { name: 'Try It On' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Add to Cart/ })).toBeEnabled();
+  });
+
+  it('the product can be saved to the wishlist from its page', async () => {
+    getProductEligibility.mockResolvedValue({ productId: 11, enabled: false, eligible: false, reason: null });
+    renderPage();
+    const save = screen.getByRole('button', { name: 'Save to wishlist' });
+    expect(save).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(save);
+    expect(wishlistToggle).toHaveBeenCalledWith(11);
   });
 });
