@@ -112,3 +112,18 @@ describe('S3/R2 putObject request', () => {
     await assert.rejects(storage.deleteObject('products/../secrets'), /Unsafe storage key|Unsupported storage key/);
   });
 });
+
+describe('S3/R2 boot check', () => {
+  test('exits naming the missing settings, never printing a secret value', async () => {
+    const { spawnSync } = await import('node:child_process');
+    const r = spawnSync(process.execPath, ['--input-type=module', '-e', "await import('./Services/storageService.js')"], {
+      cwd: path.join(path.dirname(new URL(import.meta.url).pathname), '..'),
+      encoding: 'utf8',
+      timeout: 60000,
+      env: { PATH: process.env.PATH, ...ENV, S3_BUCKET: '', S3_ACCESS_KEY_ID: '' },
+    });
+    assert.equal(r.status, 1, r.stderr);
+    assert.match(r.stderr, /missing or empty: S3_BUCKET, S3_ACCESS_KEY_ID/);
+    assert.ok(!r.stderr.includes(ENV.S3_SECRET_ACCESS_KEY), 'secret value leaked');
+  });
+});

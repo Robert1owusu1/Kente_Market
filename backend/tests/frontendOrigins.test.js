@@ -60,7 +60,11 @@ describe('production boot refuses a malformed FRONTEND_URL', () => {
   const boot = (frontendUrl) => spawnSync(process.execPath, ['server.js'], {
     cwd: backendDir,
     encoding: 'utf8',
-    timeout: 20000,
+    // A full boot takes ~3s on an idle machine but well over 20s on a busy CI
+    // runner with 4 test files in parallel; that killed the child (SIGTERM,
+    // exit null) and failed this test intermittently. The refusal itself is
+    // what is asserted, so a generous deadline costs nothing.
+    timeout: 60000,
     env: {
       // Every key backend/.env could inject is set, so dotenv adds nothing;
       // the DB points at a closed loopback port (never a real database).

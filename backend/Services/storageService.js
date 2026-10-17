@@ -63,8 +63,16 @@ const s3conf = () => {
   const bucket = process.env.S3_BUCKET || '';
   const accessKeyId = process.env.S3_ACCESS_KEY_ID || '';
   const secretAccessKey = process.env.S3_SECRET_ACCESS_KEY || '';
-  if (!endpoint || !bucket || !accessKeyId || !secretAccessKey) {
-    throw new Error('STORAGE_BACKEND=s3 requires S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY');
+  // Name the missing variables (never their values) so a deploy log says
+  // exactly which one to fix.
+  const missing = Object.entries({
+    S3_ENDPOINT: endpoint,
+    S3_BUCKET: bucket,
+    S3_ACCESS_KEY_ID: accessKeyId,
+    S3_SECRET_ACCESS_KEY: secretAccessKey,
+  }).filter(([, v]) => !v).map(([k]) => k);
+  if (missing.length) {
+    throw new Error(`STORAGE_BACKEND=s3 requires S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY; missing or empty: ${missing.join(', ')}`);
   }
   return {
     endpoint,
