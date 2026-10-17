@@ -21,7 +21,7 @@ const KenteMuseum = () => {
       <div className="container mx-auto px-4">
         <div className="text-center max-w-3xl mx-auto mb-12">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-amber-100 dark:bg-amber-900/30 mb-5">
-            <FaLandmark className="text-3xl text-amber-600 dark:text-amber-400" />
+            <FaLandmark className="text-3xl text-amber-700 dark:text-amber-400" />
           </div>
           <h1 className="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-3">The Kente Museum</h1>
           <p className="text-gray-600 dark:text-gray-400">
@@ -61,7 +61,7 @@ const KenteMuseum = () => {
                 </div>
                 <div className="p-5">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-400">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">
                       {p.patternName || p.title}
                     </span>
                     {p.origin && (
@@ -83,7 +83,7 @@ const KenteMuseum = () => {
                     </span>
                     <Link
                       to={`/product/${p.id}`}
-                      className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400 font-semibold hover:underline"
+                      className="inline-flex items-center gap-1 text-amber-700 dark:text-amber-400 font-semibold hover:underline"
                     >
                       <FaEye /> View piece
                     </Link>
@@ -102,7 +102,7 @@ const KenteMuseum = () => {
           </p>
           <Link
             to="/products"
-            className="inline-block px-6 py-3 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-semibold"
+            className="inline-block px-6 py-3 bg-amber-700 hover:bg-amber-800 text-white rounded-lg font-semibold"
           >
             Browse the collection
           </Link>

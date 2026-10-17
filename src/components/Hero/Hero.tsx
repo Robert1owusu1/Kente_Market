@@ -1,4 +1,5 @@
-import React from "react";
+import React, { useRef, useState } from "react";
+import { FaPause, FaPlay } from "react-icons/fa";
 import Hero1 from "../../assets/images/heropage1.jpg";
 import Hero2 from "../../assets/images/heropage2.jpeg";
 import Hero3 from "../../assets/images/heropage3.jpeg";
@@ -81,7 +82,18 @@ const defaultSlides: HeroSlide[] = [
   },
 ];
 
-const Hero = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) => {
+const Hero = () => {
+  // Accessibility (ACCESSIBILITY_REPORT.md A-3): only the visible slide's links
+  // are focusable, the dots are real named buttons, and autoplay can be paused
+  // (WCAG 2.2.2) — hover/focus pausing alone does not cover touch users.
+  const sliderRef = useRef<Slider | null>(null);
+  const [current, setCurrent] = useState(0);
+  const [paused, setPaused] = useState(false);
+  const togglePause = () => {
+    if (paused) sliderRef.current?.slickPlay();
+    else sliderRef.current?.slickPause();
+    setPaused(!paused);
+  };
   const { data: adminBanners = [] } = useGetActiveBannersQuery();
 
   const dynamicSlides: HeroSlide[] = adminBanners.map((b) => ({
@@ -111,13 +123,22 @@ const Hero = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) => {
     pauseOnHover: true,
     pauseOnFocus: true,
     fade: true,
-    appendDots: (dots: React.ReactNode) => (
-      <div className="absolute bottom-6 left-0 right-0 flex justify-center gap-2 z-20">
-        {dots}
-      </div>
-    ),
-    customPaging: () => (
-      <div className="w-3 h-3 rounded-full bg-white/40 hover:bg-white/80 transition-all duration-300 cursor-pointer" />
+    beforeChange: (_from: number, to: number) => setCurrent(to),
+    // react-slick replaces the className of the appendDots element with
+    // `dotsClass`, so dot sizing lives in index.css (.kente-hero-dots).
+    dotsClass: "slick-dots kente-hero-dots",
+    appendDots: (dots: React.ReactNode) => <ul>{dots}</ul>,
+    customPaging: (i: number) => (
+      <button
+        type="button"
+        aria-label={`Show slide ${i + 1}`}
+        className="group/dot flex h-6 w-6 items-center justify-center"
+      >
+        <span
+          aria-hidden="true"
+          className="block h-3 w-3 rounded-full bg-gray-900/30 group-hover/dot:bg-gray-900/60 dark:bg-white/40 [.slick-active_&]:w-6 [.slick-active_&]:bg-primary-dark transition-all duration-300"
+        />
+      </button>
     ),
   };
 
@@ -135,7 +156,7 @@ const Hero = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) => {
       />
 
       <div className="container mx-auto px-4 pb-20 sm:pb-0">
-        <Slider {...settings}>
+        <Slider ref={sliderRef} {...settings}>
           {slides.map((data, index) => {
             const hasCustomBg = data.bgColor && data.bgColor !== '#f59e0b';
             return (
@@ -151,14 +172,12 @@ const Hero = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) => {
                         {data.title.includes('%') ? 'Limited Offer' : 'New'}
                       </span>
                     )}
-                    <h1
-                      data-aos="zoom-out"
-                      data-aos-duration="600"
-                      data-aos-once="true"
-                      className="text-3xl sm:text-5xl lg:text-6xl font-extrabold leading-tight tracking-tight"
-                    >
-                      {data.title}
-                    </h1>
+                    {/* One h1 per page: the first slide's title; the others are h2. */}
+                    {React.createElement(
+                      index === 0 ? "h1" : "h2",
+                      { className: "text-3xl sm:text-5xl lg:text-6xl font-extrabold leading-tight tracking-tight" },
+                      data.title,
+                    )}
                     <p
                       data-aos="fade-up"
                       data-aos-delay="0"
@@ -171,26 +190,19 @@ const Hero = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) => {
                       data-aos-delay="0"
                       className="flex flex-col xs:flex-row items-center justify-center sm:justify-start gap-3 sm:gap-4"
                     >
-                      {data.link === "/ai-tryon" ? (
-                        <Link to={data.link} className="w-full xs:w-auto">
-                          <button className="w-full xs:w-auto bg-gradient-to-r from-primary to-secondary hover:scale-105 duration-200 text-white py-3 px-7 rounded-full whitespace-nowrap font-semibold shadow-lg shadow-primary/25">
-                            {data.linkText || "Try It On"}
-                          </button>
-                        </Link>
-                      ) : (
-                        <Link to={data.link || "/products"} className="w-full xs:w-auto">
-                          <button
-                            onClick={handleOrderPopup}
-                            className="w-full xs:w-auto bg-gradient-to-r from-primary to-secondary hover:scale-105 duration-200 text-white py-3 px-7 rounded-full whitespace-nowrap font-semibold shadow-lg shadow-primary/25"
-                          >
-                            {data.linkText || "Shop Kente"}
-                          </button>
-                        </Link>
-                      )}
-                      <Link to="/products" className="w-full xs:w-auto">
-                        <button className="w-full xs:w-auto border-2 border-primary/30 bg-primary/5 hover:bg-primary/15 duration-200 text-primary dark:text-white py-3 px-7 rounded-full whitespace-nowrap font-semibold">
-                          Browse All
-                        </button>
+                      <Link
+                        to={data.link || "/products"}
+                        tabIndex={index === current ? undefined : -1}
+                        className="btn btn-primary w-full xs:w-auto rounded-full px-7"
+                      >
+                        {data.linkText || (data.link === "/ai-tryon" ? "Try It On" : "Shop Kente")}
+                      </Link>
+                      <Link
+                        to="/products"
+                        tabIndex={index === current ? undefined : -1}
+                        className="btn btn-secondary w-full xs:w-auto rounded-full px-7"
+                      >
+                        Browse All
                       </Link>
                     </div>
                   </div>
@@ -225,6 +237,15 @@ const Hero = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) => {
             );
           })}
         </Slider>
+        <button
+          type="button"
+          onClick={togglePause}
+          aria-pressed={paused}
+          aria-label={paused ? "Play slideshow" : "Pause slideshow"}
+          className="absolute bottom-4 right-4 z-30 flex h-10 w-10 items-center justify-center rounded-full bg-white/90 text-gray-900 shadow-sm hover:bg-white dark:bg-gray-800 dark:text-white"
+        >
+          {paused ? <FaPlay aria-hidden="true" /> : <FaPause aria-hidden="true" />}
+        </button>
       </div>
     </div>
   );

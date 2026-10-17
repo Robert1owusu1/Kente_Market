@@ -111,6 +111,15 @@ describe('staging-preflight', () => {
     assertNoSecrets(r.out);
   });
 
+  test('object storage without an https public URL fails on production, warns on staging', () => {
+    const prod = run({ ...goodEnv(), PAYSTACK_SECRET_KEY: LIVE_KEY, S3_PUBLIC_BASE_URL: '' }, '--target=production');
+    assert.equal(prod.status, 1);
+    assert.match(prod.out, /FAIL\s+S3_PUBLIC_BASE_URL must be the https public bucket domain/);
+    const stg = run({ ...goodEnv(), S3_PUBLIC_BASE_URL: 'http://cdn.staging.example.test' }, '--target=staging');
+    assert.match(stg.out, /WARN\s+S3_PUBLIC_BASE_URL must be the https public bucket domain/);
+    assertNoSecrets(prod.out + stg.out);
+  });
+
   test('TLS without a CA fails unless unverified TLS is explicitly allowed (then WARN)', () => {
     const noCa = run({ ...goodEnv(), DB_SSL_CA: '' }, '--target=staging');
     assert.equal(noCa.status, 1);

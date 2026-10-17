@@ -180,7 +180,7 @@ const ProductReviews = ({ productId }: { productId?: number | string }) => {
       ) : (
         <div className="border-b dark:border-gray-700 py-6">
           <p className="text-sm text-gray-600 dark:text-gray-300">
-            <Link to="/login" className="text-yellow-500 hover:underline font-medium">
+            <Link to="/login" className="text-amber-800 dark:text-yellow-400 hover:underline font-medium">
               Sign in
             </Link>{" "}
             to write a review.

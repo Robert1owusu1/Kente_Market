@@ -100,7 +100,7 @@ const CartItem = React.memo(({ item, onRemove, onUpdateQuantity, onUpdateYards, 
         </div>
 
         {/* Quantity & Remove */}
-        <div className="flex w-full flex-row items-center justify-between gap-3 border-t border-gray-100 pt-4 lg:w-1/3 lg:flex-col lg:items-end lg:border-t-0 lg:pt-0 dark:border-gray-700">
+        <div className="flex w-full flex-row flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-4 lg:w-1/3 lg:flex-col lg:items-end lg:border-t-0 lg:pt-0 dark:border-gray-700">
           <div className="flex items-center rounded-2xl bg-gray-100 p-1 dark:bg-gray-700" role="group" aria-label="Quantity controls">
             <button
               onClick={() => onUpdateQuantity(item.id, Math.max(1, item.quantity - 1))}
@@ -131,7 +131,7 @@ const CartItem = React.memo(({ item, onRemove, onUpdateQuantity, onUpdateYards, 
 
           <button
             onClick={() => onRemove(item)}
-            className="flex min-h-10 items-center gap-2 rounded-xl px-3 py-2 text-red-500 transition-all duration-300 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-900/20 dark:hover:text-red-400 sm:px-4"
+            className="flex min-h-10 items-center gap-2 rounded-xl px-3 py-2 text-red-700 dark:text-red-400 transition-all duration-300 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-900/20 dark:hover:text-red-400 sm:px-4"
             aria-label={`Remove ${item.title} from cart`}
           >
             <FaTrash className="w-4 h-4" />
@@ -319,7 +319,7 @@ const CartPage = () => {
             </Link>
           </div>
         ) : (
-          <div className="grid gap-6 lg:grid-cols-3 lg:gap-8">
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-3 lg:gap-8">
             {/* Cart Items */}
             <div className="space-y-4 lg:col-span-2 lg:space-y-6">
               {cartItems.map((item, index) => (

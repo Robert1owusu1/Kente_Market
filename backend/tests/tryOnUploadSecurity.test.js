@@ -8,6 +8,8 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'path';
+import fs from 'fs';
+import os from 'os';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
@@ -24,7 +26,8 @@ import {
   MAX_INLINE_IMAGE_BYTES,
   MAX_OUTPUT_LONG_EDGE,
 } from '../utils/tryOnImage.js';
-import { countInFlight, tryOnTestHooks } from '../controllers/tryOnController.js';
+import { getTryOnConfig } from '../Services/tryOn/config.js';
+import resultStore, { resultDir } from '../Services/tryOn/resultStore.js';
 import { errorHandeler } from '../middleware/errorMiddleware.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -279,7 +282,8 @@ describe('try-on catalog garment: server-derived text', () => {
     assert.equal(toGarmentCategory('Evening Gown'), 'dresses');
     assert.equal(toGarmentCategory('Kente Wraps'), 'upper_body');
     assert.equal(toGarmentCategory('Kente Headwraps'), 'upper_body');
-    assert.equal(toGarmentCategory(''), 'others');
+    assert.equal(toGarmentCategory(''), 'upper_body');
+    assert.equal(toGarmentCategory('Double Weaving'), 'upper_body', 'live catalog categories are weaving techniques');
     // Anything else — including hostile text — collapses into one of four
     // literal values; nothing user-shaped is forwarded.
     assert.equal(toGarmentCategory('"; drop table products; --'), 'upper_body');
@@ -296,32 +300,103 @@ describe('try-on catalog garment: server-derived text', () => {
 // ---------------------------------------------------------------------------
 // 6. Concurrency accounting (cost bound)
 // ---------------------------------------------------------------------------
-describe('try-on concurrency caps', () => {
-  const seed = (entry) => {
-    const id = `test-${Math.random().toString(36).slice(2)}`;
-    tryOnTestHooks.predictions.set(id, entry);
-    return id;
+describe('try-on cost-control configuration', () => {
+  // The caps are enforced against ai_tryon_jobs (behaviour: tryOnGenerateFlow
+  // and tryOnJobRepository suites); here: a typo cannot loosen them unboundedly.
+  const withVars = (vars, fn) => {
+    const saved = Object.fromEntries(Object.keys(vars).map((k) => [k, process.env[k]]));
+    Object.assign(process.env, vars);
+    try { return fn(); } finally {
+      for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+    }
   };
 
-  test('in-flight counting ignores terminal and expired entries, honours user scope', () => {
-    const before = countInFlight();
-    const a = seed({ userId: 777, status: 'processing', createdAt: Date.now() });
-    const b = seed({ userId: 777, status: 'succeeded', createdAt: Date.now() });
-    const c = seed({ userId: 778, status: 'processing', createdAt: Date.now() - tryOnTestHooks.INFLIGHT_WINDOW_MS - 1000 });
+  test('defaults are sane', () => {
+    withVars({ AI_TRYON_MAX_ACTIVE_PER_USER: '', AI_TRYON_MAX_ACTIVE_GLOBAL: '', AI_TRYON_JOB_TIMEOUT_MINUTES: '', AI_TRYON_RESULT_TTL_HOURS: '' }, () => {
+      const c = getTryOnConfig();
+      assert.equal(c.maxActivePerUser, 2);
+      assert.equal(c.maxActiveGlobal, 8);
+      assert.equal(c.jobTimeoutMinutes, 10);
+      assert.equal(c.resultTtlHours, 24);
+    });
+  });
+
+  test('out-of-range or junk values fall back to the defaults', () => {
+    withVars({ AI_TRYON_MAX_ACTIVE_PER_USER: '5000', AI_TRYON_MAX_ACTIVE_GLOBAL: '-1', AI_TRYON_JOB_TIMEOUT_MINUTES: '600', AI_TRYON_RESULT_TTL_HOURS: 'forever' }, () => {
+      const c = getTryOnConfig();
+      assert.equal(c.maxActivePerUser, 2);
+      assert.equal(c.maxActiveGlobal, 8);
+      assert.equal(c.jobTimeoutMinutes, 10);
+      assert.equal(c.resultTtlHours, 24);
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 6b. Private result storage (real filesystem, temp directory)
+// ---------------------------------------------------------------------------
+describe('try-on private result store', () => {
+  const ID = '00000000-0000-4000-8000-000000000001';
+  let tmpRoot;
+  let savedDir;
+
+  test('results are written outside /uploads, owner-only file mode, atomically', async () => {
+    tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'tryon-store-'));
+    savedDir = process.env.AI_TRYON_RESULT_DIR;
+    process.env.AI_TRYON_RESULT_DIR = tmpRoot;
     try {
-      assert.equal(countInFlight(777), 1, 'terminal entries must not consume a slot');
-      assert.equal(countInFlight(778), 0, 'expired entries must not consume a slot forever');
-      assert.equal(countInFlight(), before + 1, 'global count includes only live processing entries');
+      const key = await resultStore.put(ID, Buffer.from('jpeg-bytes'));
+      assert.equal(key, `${ID}.jpg`);
+      const full = path.join(resultDir(), key);
+      assert.equal((fs.statSync(full).mode & 0o777), 0o600);
+      assert.deepEqual(fs.readdirSync(tmpRoot), [key], 'no temp file may be left behind');
+      assert.equal((await resultStore.read(ID)).toString(), 'jpeg-bytes');
+      await resultStore.remove(ID);
+      assert.equal(await resultStore.read(ID), null);
     } finally {
-      tryOnTestHooks.predictions.delete(a);
-      tryOnTestHooks.predictions.delete(b);
-      tryOnTestHooks.predictions.delete(c);
+      fs.rmSync(tmpRoot, { recursive: true, force: true });
+      if (savedDir === undefined) delete process.env.AI_TRYON_RESULT_DIR; else process.env.AI_TRYON_RESULT_DIR = savedDir;
     }
   });
 
-  test('the caps themselves are sane defaults', () => {
-    assert.ok(tryOnTestHooks.MAX_ACTIVE_PER_USER >= 1 && tryOnTestHooks.MAX_ACTIVE_PER_USER <= 10);
-    assert.ok(tryOnTestHooks.MAX_ACTIVE_GLOBAL >= tryOnTestHooks.MAX_ACTIVE_PER_USER);
+  test('the default directory is not under the publicly served uploads folder', () => {
+    const saved = process.env.AI_TRYON_RESULT_DIR;
+    delete process.env.AI_TRYON_RESULT_DIR;
+    try {
+      assert.ok(!resultDir().split(path.sep).includes('uploads'), resultDir());
+    } finally {
+      if (saved !== undefined) process.env.AI_TRYON_RESULT_DIR = saved;
+    }
+  });
+
+  test('job ids that are not UUIDs can never become a path', async () => {
+    for (const bad of ['../../etc/passwd', 'a/b', '', '00000000-0000-4000-8000-00000000000g']) {
+      await assert.rejects(() => resultStore.put(bad, Buffer.from('x')), /invalid try-on job id/);
+      await assert.rejects(() => resultStore.read(bad), /invalid try-on job id/);
+    }
+  });
+
+  test('sweep removes stale temp files and orphan results, keeps live and fresh ones', async () => {
+    tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'tryon-sweep-'));
+    savedDir = process.env.AI_TRYON_RESULT_DIR;
+    process.env.AI_TRYON_RESULT_DIR = tmpRoot;
+    const LIVE = '00000000-0000-4000-8000-0000000000a1';
+    const ORPHAN = '00000000-0000-4000-8000-0000000000a2';
+    const FRESH_ORPHAN = '00000000-0000-4000-8000-0000000000a3';
+    try {
+      const old = new Date(Date.now() - 60 * 60 * 1000);
+      for (const name of [`${LIVE}.jpg`, `${ORPHAN}.jpg`, `${ORPHAN}.jpg.1.2.tmp`]) {
+        fs.writeFileSync(path.join(tmpRoot, name), 'x');
+        fs.utimesSync(path.join(tmpRoot, name), old, old);
+      }
+      fs.writeFileSync(path.join(tmpRoot, `${FRESH_ORPHAN}.jpg`), 'x'); // just written, row not committed yet
+      const removed = await resultStore.sweep(async (ids) => new Set(ids.filter((i) => i === LIVE)));
+      assert.equal(removed, 2);
+      assert.deepEqual(fs.readdirSync(tmpRoot).sort(), [`${LIVE}.jpg`, `${FRESH_ORPHAN}.jpg`].sort());
+    } finally {
+      fs.rmSync(tmpRoot, { recursive: true, force: true });
+      if (savedDir === undefined) delete process.env.AI_TRYON_RESULT_DIR; else process.env.AI_TRYON_RESULT_DIR = savedDir;
+    }
   });
 });
 
@@ -341,7 +416,7 @@ describe('oversized request bodies', () => {
         return this;
       },
     };
-    errorHandeler(err, { method: 'POST', originalUrl: '/api/tryon/generate' }, res, () => {});
+    errorHandeler(err, { method: 'POST', originalUrl: '/api/tryon/jobs' }, res, () => {});
   });
 
   // An unhandled provider error must stay a generic 500: AxiosError carries
@@ -369,14 +444,34 @@ describe('oversized request bodies', () => {
 // 8. Route wiring: the paid route carries its dedicated limiter
 // ---------------------------------------------------------------------------
 describe('try-on route wiring', () => {
-  test('POST /generate is mounted behind protect + the try-on limiter', () => {
-    const src = readFileSync(fileURLToPath(new URL('../routes/tryOnRoutes.js', import.meta.url)), 'utf8');
-    const line = src.split('\n').find((l) => l.includes('"/generate"')) || '';
-    assert.match(line, /protect/, 'generate is unauthenticated');
-    assert.match(line, /tryOnGenerateLimiter/, 'generate has no dedicated rate limit');
-    assert.match(line, /apiLimiter/, 'generate bypasses the general API limiter');
+  const routes = () => readFileSync(fileURLToPath(new URL('../routes/tryOnRoutes.js', import.meta.url)), 'utf8');
+  const lineFor = (needle) => routes().split('\n').find((l) => l.includes(needle)) || '';
+
+  test('POST /jobs is mounted behind protect + the try-on limiter', () => {
+    const line = lineFor('router.post("/jobs"');
+    assert.match(line, /protect/, 'job creation is unauthenticated');
+    assert.match(line, /tryOnGenerateLimiter/, 'job creation has no dedicated rate limit');
+    assert.match(line, /apiLimiter/, 'job creation bypasses the general API limiter');
     assert.ok(line.indexOf('protect') < line.indexOf('tryOnGenerateLimiter'),
       'the limiter runs before authentication, so it cannot key on the user');
   });
-});
 
+  test('job status and result routes require authentication', () => {
+    assert.match(lineFor('router.get("/jobs/:id"'), /protect/);
+    assert.match(lineFor('router.get("/jobs/:id/result"'), /protect/);
+  });
+
+  test('the old unbound generate/status routes are gone', () => {
+    assert.ok(!routes().includes('"/generate"'));
+    assert.ok(!routes().includes('"/status/:id"'));
+  });
+
+  test('the webhook is mounted with a raw body parser before the JSON parser', () => {
+    const server = readFileSync(fileURLToPath(new URL('../server.js', import.meta.url)), 'utf8');
+    const hook = server.indexOf("'/api/tryon/webhooks/:provider'");
+    const json = server.indexOf('app.use(express.json(');
+    assert.ok(hook > -1 && json > -1);
+    assert.ok(hook < json, 'the JSON parser would consume (and size-limit) the signed body first');
+    assert.match(server.slice(hook, hook + 200), /express\.raw\(/);
+  });
+});

@@ -16,6 +16,7 @@ const __dirname = path.dirname(__filename);
 
 const STORAGE_ROOT = path.join(__dirname, '..', 'uploads');
 const BACKEND = process.env.STORAGE_BACKEND || 'local';
+const S3_TIMEOUT_MS = Math.max(1000, parseInt(process.env.S3_TIMEOUT_MS, 10) || 30000);
 
 const assertKeySafe = (key) => {
   const candidate = path.normalize(key);
@@ -80,9 +81,11 @@ const sha256Hex = (data) => crypto.createHash('sha256').update(data).digest('hex
 const sha256Hmac = (key, data) => crypto.createHmac('sha256', key).update(data).digest();
 const sha256HmacHex = (key, data) => crypto.createHmac('sha256', key).update(data).digest('hex');
 
-const signV4 = ({ method, url, region, service, accessKeyId, secretAccessKey, payloadHash }) => {
+// Exported for the signature test (tests/storageS3.test.js), which checks it
+// against AWS's own signer; `now` is injectable only for that.
+export const signV4 = ({ method, url, region, service, accessKeyId, secretAccessKey, payloadHash, now = new Date() }) => {
   const parsed = new URL(url);
-  const amzDate = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
+  const amzDate = now.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
   const dateStamp = amzDate.slice(0, 8);
 
   const headers = {
@@ -158,9 +161,21 @@ const s3Request = async (config, method, key, { body } = {}) => {
     'x-amz-date': amzDate,
     'x-amz-content-sha256': payloadHash,
   };
-  if (body) headers['Content-Type'] = mimeFromBuffer(body);
+  if (body) {
+    headers['Content-Type'] = mimeFromBuffer(body);
+    // Same policy as the local /uploads static route (server.js): short, so a
+    // delete takes effect at the CDN within the hour. Keys are random UUIDs.
+    headers['Cache-Control'] = 'public, max-age=3600';
+  }
 
-  const res = await fetch(url, { method, headers, body: method === 'HEAD' || method === 'DELETE' ? undefined : body });
+  // fetch has no default deadline: a stalled object store would otherwise
+  // hold the upload request (and its temp file) open indefinitely.
+  const res = await fetch(url, {
+    method,
+    headers,
+    body: method === 'HEAD' || method === 'DELETE' ? undefined : body,
+    signal: AbortSignal.timeout(S3_TIMEOUT_MS),
+  });
   return res;
 };
 
@@ -207,7 +222,23 @@ const s3Backend = {
 
 const selectBackend = () => {
   if (BACKEND === 'local') return localBackend;
-  if (BACKEND === 's3') return s3Backend;
+  if (BACKEND === 's3') {
+    // Validate at boot, not on the first upload: a missing key used to surface
+    // only when a vendor tried to add a product.
+    try {
+      s3Backend.config = s3conf();
+    } catch (err) {
+ console.error(` ${err.message}. See .deploy/UPLOADS_OBJECT_STORAGE.md.`);
+      process.exit(1);
+    }
+    // An R2 (or private S3) API endpoint is not publicly readable, so without
+    // a public base every stored image URL is a 4xx in the browser.
+    if (process.env.NODE_ENV === 'production' && !/^https:\/\//.test(s3Backend.config.publicBase || '')) {
+ console.error(' STORAGE_BACKEND=s3 in production requires S3_PUBLIC_BASE_URL (https) — the public bucket domain. See .deploy/UPLOADS_OBJECT_STORAGE.md.');
+      process.exit(1);
+    }
+    return s3Backend;
+  }
  console.error(` STORAGE_BACKEND=${BACKEND} is not implemented. Use 'local' or 's3'. See .deploy/UPLOADS_OBJECT_STORAGE.md.`);
   process.exit(1);
 };

@@ -1,370 +1,355 @@
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useSearchParams, Link } from "react-router-dom";
-import { FaUserEdit, FaChair, FaMagic, FaInfoCircle, FaCheckCircle } from "react-icons/fa";
+import { FaMagic, FaInfoCircle, FaArrowLeft } from "react-icons/fa";
 import CameraCapture from "./CameraCapture";
 import ImageUpload from "./ImageUpload";
-import StyleSelector from "./StyleSelector";
 import TryOnPreview from "./TryOnPreview";
-import DecorateMode from "./DecorateMode";
-import tryOnService, { TryOnRequestError } from "./api/tryOnService";
-import { SAMPLE_PRODUCTS, getProductById } from "../allProductsData/products";
+import tryOnService, {
+  TryOnRequestError,
+  newIdempotencyKey,
+  type TryOnEligibility,
+  type TryOnJob,
+} from "./api/tryOnService";
 import { useGetProductsDetailsQuery } from "../slices/productsApiSlice";
+import { resolveImageUrl } from "../utils/imageUrl";
 import type { Product } from "../types/domain";
 import "./AiTryOnStyles.css";
 
+/**
+ * AI Virtual Try-On, always for ONE catalog product.
+ *
+ * The product comes from the URL (`/ai-tryon?product=<id>`, set by the
+ * product page's "Try It On" button) and never changes for the life of the
+ * session: there is no garment picker, no sample gallery and no fallback
+ * catalog. The browser sends only the customer's photo and that id; the
+ * server resolves the product's own image, runs the job, binds the result to
+ * the product and serves the image privately to this customer.
+ */
+
+const parseProductId = (raw: string | null): number | null => {
+  const n = Number(raw);
+  return Number.isInteger(n) && n > 0 ? n : null;
+};
+
 const AiTryOn = () => {
   const [searchParams] = useSearchParams();
-  const productIdParam = searchParams.get("product");
-
-  const [mode, setMode] = useState("wear"); // "wear" | "decorate"
-  const [step, setStep] = useState(1); // 1: upload, 2: select style, 3: result
-  const [modelImage, setModelImage] = useState<string | null>(null);
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-  const [resultImage, setResultImage] = useState<string | null>(null);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [processingMessage, setProcessingMessage] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [captureMethod, setCaptureMethod] = useState("upload"); // "upload" | "camera"
-
-  // Fetch the real product from the backend when navigating here from a
-  // product detail page. The product detail page uses DB products (any id),
-  // not the static SAMPLE_PRODUCTS, so we must fetch it to preselect the
-  // exact cloth the user was viewing.
-  const productIdForQuery = productIdParam ? parseInt(productIdParam) : null;
-  const { data: dbProduct } = useGetProductsDetailsQuery(productIdForQuery!, {
-    skip: !productIdParam,
-  });
-
-  // If product ID passed in URL, preselect it
-  useEffect(() => {
-    if (productIdParam) {
-      const parsedId = parseInt(productIdParam);
-      // Prefer the real DB product so the try-on matches the item the user
-      // was viewing. Fall back to the static catalog for demo product ids.
-      const product =
-        dbProduct && dbProduct.id !== undefined && dbProduct.id !== null
-          ? dbProduct
-          : getProductById(parsedId);
-      if (product) {
-        setSelectedProduct(product as Product);
-        setStep(2);
-      }
-    }
-  }, [productIdParam, dbProduct]);
-
-  const handleModeChange = (newMode: string) => {
-    setMode(newMode);
-    setStep(1);
-    setModelImage(null);
-    setResultImage(null);
-    setSelectedProduct(null);
-    setError(null);
-  };
-
-  const handleProductSelect = (product: Product) => {
-    setSelectedProduct(product);
-  };
-
-  const handleGenerate = async () => {
-    if (!modelImage || !selectedProduct) {
-      setError("Please upload your photo and select a Kente cloth first.");
-      return;
-    }
-    // Duplicate-submit guard: the button is disabled while processing, but a
-    // double click (or Enter key) can still fire before React re-renders.
-    if (isProcessing) return;
-
-    setIsProcessing(true);
-    setError(null);
-    setProcessingMessage("Contacting the AI stylist...");
-
-    try {
-      setProcessingMessage("Reading your photo and the Kente weave...");
-      // Only the photo and the product ID leave the browser. The garment
-      // image, name and category are resolved server-side from the catalog,
-      // and the server polls the prediction to completion.
-      const output = await tryOnService.generateTryOn(
-        modelImage,
-        selectedProduct.id as number,
-      );
-      setResultImage(output);
-      setStep(3);
-    } catch (err) {
-      console.error("Try-on generation failed");
-      // Show the real reason and STAY on the selection step so the user can
-      // retry. (The old behaviour substituted the user's own photo as a
-      // fake "result", which misrepresented a failed generation as a
-      // successful preview.)
-      setError(
-        err instanceof TryOnRequestError
-          ? err.message
-          : "The AI stylist is busy right now. Please try again in a moment.",
-      );
-    } finally {
-      setIsProcessing(false);
-      setProcessingMessage("");
-    }
-  };
-
-  const handleReset = () => {
-    setStep(1);
-    setModelImage(null);
-    setResultImage(null);
-    setSelectedProduct(null);
-    setError(null);
-  };
+  const productId = parseProductId(searchParams.get("product"));
+  const yards = searchParams.get("yards");
 
   return (
     <div className="aitryon-page py-12">
       <div className="container">
-        {/* Page Header */}
         <div className="text-center mb-10 max-w-3xl mx-auto">
           <div className="inline-flex items-center gap-2 px-4 py-2 bg-primary/10 text-primary rounded-full text-sm font-medium mb-4">
             <FaMagic /> AI Virtual Try-On
           </div>
           <h1 className="text-4xl md:text-5xl font-bold text-gray-900 dark:text-white mb-4">
-            Try On Bonwire Kente <span className="text-primary">Before You Buy</span>
+            See It On You <span className="text-primary">Before You Buy</span>
           </h1>
           <p className="text-lg text-gray-600 dark:text-gray-300">
-            See yourself wearing authentic Ghanaian Kente cloth, or preview how
-            it transforms your home — all powered by AI.
+            Upload a photo and our AI shows you an approximate preview of the
+            exact Kente piece you picked from the marketplace.
           </p>
         </div>
 
-        {/* Error banner */}
-        {error && (
-          <div className="max-w-2xl mx-auto mb-8 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-4 flex items-start gap-3 text-red-700 dark:text-red-300">
-            <FaInfoCircle className="mt-0.5 flex-shrink-0" />
-            <div>
-              <p className="font-medium">{error}</p>
-              <p className="text-sm mt-1">
-                Your photo stays private: it is only used to generate this
-                preview, and the server re-processes it (stripping location and
-                camera metadata) before it reaches the AI model.
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* Mode Selector */}
-        <div className="max-w-xl mx-auto mb-10 bg-white dark:bg-gray-800 rounded-2xl p-2 shadow-lg grid grid-cols-2 gap-2">
-          <button
-            onClick={() => handleModeChange("wear")}
-            className={`flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-semibold transition-all ${
-              mode === "wear"
-                ? "bg-gradient-to-r from-primary to-secondary text-white shadow-md"
-                : "text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-            }`}
-          >
-            <FaUserEdit /> Wear Mode
-          </button>
-          <button
-            onClick={() => handleModeChange("decorate")}
-            className={`flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-semibold transition-all ${
-              mode === "decorate"
-                ? "bg-gradient-to-r from-primary to-secondary text-white shadow-md"
-                : "text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-            }`}
-          >
-            <FaChair /> Decorate Mode
-          </button>
-        </div>
-
-        {mode === "wear" ? (
-          <div>
-            {/* Step Indicator */}
-            <div className="max-w-2xl mx-auto flex items-center justify-center gap-2 mb-10">
-              {[1, 2, 3].map((i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <div
-                    className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-all ${
-                      step >= i
-                        ? "bg-primary text-white"
-                        : "bg-gray-200 dark:bg-gray-700 text-gray-500"
-                    }`}
-                  >
-                    {step > i ? <FaCheckCircle /> : i}
-                  </div>
-                  {i < 3 && (
-                    <div
-                      className={`w-16 h-1 rounded-full ${
-                        step > i ? "bg-primary" : "bg-gray-200 dark:bg-gray-700"
-                      }`}
-                    ></div>
-                  )}
-                </div>
-              ))}
-            </div>
-
-            {/* Step 1: Upload photo */}
-            {step === 1 && (
-              <div className="max-w-2xl mx-auto">
-                <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 mb-6">
-                  <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">
- Step 1: Upload a clear photo of yourself
-                  </h2>
-
-                  {/* Upload method toggle */}
-                  <div className="flex gap-2 mb-6">
-                    <button
-                      onClick={() => setCaptureMethod("upload")}
-                      className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all ${
-                        captureMethod === "upload"
-                          ? "bg-primary text-white"
-                          : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300"
-                      }`}
-                    >
-                      Upload Photo
-                    </button>
-                    <button
-                      onClick={() => setCaptureMethod("camera")}
-                      className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all ${
-                        captureMethod === "camera"
-                          ? "bg-primary text-white"
-                          : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300"
-                      }`}
-                    >
-                      Use Camera
-                    </button>
-                  </div>
-
-                  {captureMethod === "upload" ? (
-                    <ImageUpload
-                      onImageSelected={setModelImage}
-                      label="Upload a photo of yourself"
-                    />
-                  ) : (
-                    <CameraCapture onCapture={setModelImage} />
-                  )}
-
-                  {modelImage && (
-                    <div className="mt-6 flex justify-end">
-                      <button
-                        onClick={() => setStep(2)}
-                        className="aitryon-btn-primary"
-                      >
-                        Continue to Select Kente →
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4 text-sm text-amber-800 dark:text-amber-200">
- <p className="font-medium mb-1"> Tips for best results:</p>
-                  <ul className="list-disc list-inside space-y-1">
-                    <li>Face the camera directly with good lighting</li>
-                    <li>Avoid busy backgrounds — plain is best</li>
-                    <li>Wear simple clothing so the Kente stands out</li>
-                    <li>Photo should show from head to at least your waist</li>
-                  </ul>
-                </div>
-              </div>
-            )}
-
-            {/* Step 2: Select Kente style */}
-            {step === 2 && (
-              <div className="max-w-4xl mx-auto">
-                <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6">
-                  <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-2">
- Step 2: Choose your Kente cloth
-                  </h2>
-                  <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
-                    Select which Bonwire Kente piece you'd like to try on. The
-                    AI will drape it on your photo.
-                  </p>
-
-                  <StyleSelector
-                    selected={selectedProduct}
-                    onSelect={handleProductSelect}
-                  />
-
-                  <div className="mt-6 flex justify-between">
-                    <button
-                      onClick={() => setStep(1)}
-                      className="aitryon-btn-secondary"
-                    >
-                      ← Back
-                    </button>
-                    <button
-                      onClick={handleGenerate}
-                      disabled={!selectedProduct || isProcessing}
-                      className="aitryon-btn-primary"
-                    >
-                      {isProcessing
- ? ` ${processingMessage || "Processing..."}`
- : " Generate My Try-On"}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Step 3: Result */}
-            {step === 3 && (
-              <div className="max-w-4xl mx-auto">
-                <TryOnPreview
-                  originalImage={modelImage}
-                  resultImage={resultImage}
-                  product={selectedProduct}
-                  onReset={handleReset}
-                />
-              </div>
-            )}
-          </div>
+        {productId === null ? (
+          <ChooseProductFirst />
         ) : (
-          /* Decorate Mode */
-          <div className="max-w-5xl mx-auto">
-            <DecorateMode
-              product={selectedProduct}
-              onProductChange={setSelectedProduct}
-            />
-            <div className="mt-8 text-center max-w-2xl mx-auto">
-              <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-                Not sure which Kente piece to try? Browse our full collection.
-              </p>
-              <Link to="/products" className="aitryon-btn-primary inline-flex">
-                Browse All Kente Cloth →
-              </Link>
-            </div>
-          </div>
+          // keyed so a different product starts a completely fresh session
+          <ProductTryOn key={productId} productId={productId} yards={yards} />
         )}
-
-        {/* Feature cards */}
-        <div className="grid sm:grid-cols-3 gap-6 mt-16 max-w-4xl mx-auto">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-lg text-center">
- <FaUserEdit className="text-4xl mb-3 mx-auto text-primary" />
-            <h3 className="font-semibold text-gray-800 dark:text-white mb-2">
-              Photorealistic Wear Try-On
-            </h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              Powered by the IDM-VTON virtual try-on model, see your exact
-              photo wearing the Kente with realistic fabric draping.
-            </p>
-          </div>
-          <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-lg text-center">
- <FaChair className="text-4xl mb-3 mx-auto text-primary" />
-            <h3 className="font-semibold text-gray-800 dark:text-white mb-2">
-              Decorate Your Home
-            </h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              Preview Kente as a table runner, wall hanging, or sofa throw by
-              uploading a photo of your own room.
-            </p>
-          </div>
-          <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-lg text-center">
- <FaCheckCircle className="text-4xl mb-3 mx-auto text-primary" />
-            <h3 className="font-semibold text-gray-800 dark:text-white mb-2">
-              100% Authentic & GI-Certified
-            </h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              Every Kente in our catalog is handwoven in Bonwire, Ghana — a
-              UNESCO-recognized and GI-protected heritage craft.
-            </p>
-          </div>
-        </div>
       </div>
     </div>
   );
 };
+
+/** Landing state for the nav/footer links: try-on starts from a product. */
+const ChooseProductFirst = () => (
+  <div className="max-w-xl mx-auto bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 text-center">
+    <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-3">
+      Start from a product you love
+    </h2>
+    <ol className="text-left text-gray-600 dark:text-gray-300 space-y-2 mb-6 list-decimal list-inside">
+      <li>Browse the marketplace and open a Kente piece.</li>
+      <li>Tap <strong>Try It On</strong> on its page.</li>
+      <li>Upload a photo and see that piece on you.</li>
+    </ol>
+    <Link to="/products" className="aitryon-btn-primary inline-flex">
+      Browse Kente →
+    </Link>
+  </div>
+);
+
+const Notice = ({ message, productId }: { message: string; productId?: number }) => (
+  <div className="max-w-xl mx-auto bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 text-center">
+    <FaInfoCircle className="text-3xl text-primary mx-auto mb-3" />
+    <p className="text-gray-700 dark:text-gray-200 mb-6" role="status">{message}</p>
+    <div className="flex flex-wrap justify-center gap-3">
+      {productId !== undefined && (
+        <Link to={`/product/${productId}`} className="aitryon-btn-secondary inline-flex">
+          <FaArrowLeft className="mr-2" /> Back to product
+        </Link>
+      )}
+      <Link to="/products" className="aitryon-btn-primary inline-flex">
+        Browse Kente
+      </Link>
+    </div>
+  </div>
+);
+
+type Phase =
+  | { name: "idle" }
+  | { name: "submitting" }
+  | { name: "running"; job: TryOnJob }
+  | { name: "loadingResult"; job: TryOnJob }
+  | { name: "done"; job: TryOnJob; imageUrl: string }
+  | { name: "failed"; message: string; retryable: boolean };
+
+/** Honest progress copy for each real server state. */
+const RUNNING_COPY: Record<string, string> = {
+  queued: "Waiting for the AI stylist to start your try-on…",
+  processing: "The AI is creating your try-on. This usually takes about a minute.",
+};
+
+interface ProductTryOnProps {
+  productId: number;
+  yards: string | null;
+}
+
+const ProductTryOn = ({ productId, yards }: ProductTryOnProps) => {
+  // The public product endpoint applies the same visibility rules as the
+  // product page (approved product, approved vendor).
+  const { data: product, isLoading, error: productError } = useGetProductsDetailsQuery(productId);
+  const [eligibility, setEligibility] = useState<TryOnEligibility | null>(null);
+  const [eligibilityError, setEligibilityError] = useState<string | null>(null);
+
+  const [modelImage, setModelImage] = useState<string | null>(null);
+  const [captureMethod, setCaptureMethod] = useState<"upload" | "camera">("upload");
+  const [consent, setConsent] = useState(false);
+  const [phase, setPhase] = useState<Phase>({ name: "idle" });
+
+  const abortRef = useRef<AbortController | null>(null);
+  const objectUrlRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    tryOnService
+      .getProductEligibility(productId)
+      .then((r) => { if (!cancelled) setEligibility(r); })
+      .catch((err) => {
+        if (!cancelled) {
+          setEligibilityError(
+            err instanceof TryOnRequestError
+              ? err.message
+              : "We couldn't check AI try-on for this product. Please try again.",
+          );
+        }
+      });
+    return () => { cancelled = true; };
+  }, [productId]);
+
+  // Stop polling and release the private result image when leaving the page.
+  useEffect(() => () => {
+    abortRef.current?.abort();
+    if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
+  }, []);
+
+  if (isLoading || (!eligibility && !eligibilityError && !productError)) {
+    return (
+      <div className="flex justify-center py-16" role="status" aria-label="Loading product">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-4 border-b-4 border-primary" />
+      </div>
+    );
+  }
+  if (productError || !product) {
+    return <Notice message="This product isn't available. Please choose another piece from the marketplace." />;
+  }
+  if (eligibilityError || !eligibility) {
+    return <Notice message={eligibilityError || "AI try-on isn't available right now."} productId={productId} />;
+  }
+  if (!eligibility.enabled) {
+    return <Notice message="AI try-on is offline right now. You can still buy this piece from its product page." productId={productId} />;
+  }
+  if (!eligibility.eligible) {
+    return <Notice message={eligibility.reason || "AI try-on isn't available for this product."} productId={productId} />;
+  }
+
+  const busy = phase.name === "submitting" || phase.name === "running" || phase.name === "loadingResult";
+
+  const handleGenerate = async () => {
+    // Duplicate-submit guard: the button is disabled while busy, and the
+    // idempotency key makes a repeat of THIS attempt return the same job.
+    if (!modelImage || !consent || busy) return;
+    const controller = new AbortController();
+    abortRef.current?.abort();
+    abortRef.current = controller;
+    setPhase({ name: "submitting" });
+    try {
+      const created = await tryOnService.createJob(modelImage, productId, newIdempotencyKey());
+      setPhase({ name: "running", job: created });
+      const finished = await tryOnService.waitForJob(created, productId, (job) => {
+        if (!controller.signal.aborted) setPhase({ name: "running", job });
+      }, { signal: controller.signal });
+
+      if (finished.status !== "succeeded") {
+        setPhase({
+          name: "failed",
+          message: finished.error?.message || "The AI could not create this try-on. Please try again.",
+          retryable: finished.error?.retryable ?? true,
+        });
+        return;
+      }
+      setPhase({ name: "loadingResult", job: finished });
+      const imageUrl = await tryOnService.getResultObjectUrl(finished.jobId);
+      if (controller.signal.aborted) { URL.revokeObjectURL(imageUrl); return; }
+      if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
+      objectUrlRef.current = imageUrl;
+      setPhase({ name: "done", job: finished, imageUrl });
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
+      console.error("Try-on generation failed");
+      setPhase({
+        name: "failed",
+        message: err instanceof TryOnRequestError
+          ? err.message
+          : "The AI stylist is busy right now. Please try again in a moment.",
+        retryable: true,
+      });
+    }
+  };
+
+  const handleTryAgain = () => {
+    // Same product, fresh photo — and fresh consent for that new photo.
+    if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
+    objectUrlRef.current = null;
+    setModelImage(null);
+    setConsent(false);
+    setPhase({ name: "idle" });
+  };
+
+  if (phase.name === "done" && phase.job.productId === productId) {
+    return (
+      <div className="max-w-5xl mx-auto">
+        <TryOnPreview
+          originalImage={modelImage}
+          resultImage={phase.imageUrl}
+          product={product as Product}
+          yards={yards}
+          onTryAgain={handleTryAgain}
+        />
+      </div>
+    );
+  }
+
+  const statusText =
+    phase.name === "submitting" ? "Sending your photo securely…"
+      : phase.name === "running" ? RUNNING_COPY[phase.job.status] || RUNNING_COPY.processing
+        : phase.name === "loadingResult" ? "Almost there — loading your try-on…"
+          : null;
+
+  return (
+    <div className="max-w-5xl mx-auto grid md:grid-cols-5 gap-6">
+      <SelectedProductCard product={product as Product} />
+
+      <div className="md:col-span-3 bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6">
+        <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">
+          Add a clear photo of yourself
+        </h2>
+
+        {phase.name === "failed" && (
+          <div role="alert" className="mb-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-4 flex items-start gap-3 text-red-700 dark:text-red-300">
+            <FaInfoCircle className="mt-0.5 flex-shrink-0" />
+            <div>
+              <p className="font-medium">{phase.message}</p>
+              {phase.retryable && <p className="text-sm mt-1">Your photo is still selected, so you can try again.</p>}
+            </div>
+          </div>
+        )}
+
+        <fieldset disabled={busy} className="disabled:opacity-60">
+          <div className="flex gap-2 mb-6">
+            {(["upload", "camera"] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setCaptureMethod(m)}
+                aria-pressed={captureMethod === m}
+                className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all ${
+                  captureMethod === m
+                    ? "bg-primary text-white"
+                    : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300"
+                }`}
+              >
+                {m === "upload" ? "Upload Photo" : "Use Camera"}
+              </button>
+            ))}
+          </div>
+
+          {captureMethod === "upload" ? (
+            <ImageUpload onImageSelected={setModelImage} label="Upload a photo of yourself" />
+          ) : (
+            <CameraCapture onCapture={setModelImage} />
+          )}
+
+          <ul className="mt-4 text-sm text-gray-600 dark:text-gray-300 list-disc list-inside space-y-1">
+            <li>Just you, facing the camera, in good light, against a plain background.</li>
+            <li>Show yourself from head to at least your waist.</li>
+            <li>JPG, PNG or WebP. Only use a photo of yourself.</li>
+          </ul>
+
+          <label className="mt-4 flex items-start gap-3 text-sm text-gray-700 dark:text-gray-200">
+            <input
+              type="checkbox"
+              checked={consent}
+              onChange={(e) => setConsent(e.target.checked)}
+              className="mt-1"
+            />
+            <span>
+              I agree that this photo is sent to our AI provider to create this
+              preview. We remove location and camera data first and do not
+              store your photo; the provider keeps it temporarily to process
+              it and then deletes it under its own retention policy (see{" "}
+              <Link to="/privacy" className="underline">privacy</Link>). The
+              preview image is kept for a limited time and only you can see it.
+            </span>
+          </label>
+        </fieldset>
+
+        <button
+          onClick={handleGenerate}
+          disabled={!modelImage || !consent || busy}
+          aria-busy={busy}
+          className="aitryon-btn-primary w-full mt-6"
+        >
+          {busy ? "Working on it…" : phase.name === "failed" ? "Try again" : `Try On ${product.title}`}
+        </button>
+
+        {statusText && (
+          <p role="status" aria-live="polite" className="mt-4 text-sm text-gray-600 dark:text-gray-300 flex items-center gap-2">
+            <span className="inline-block h-4 w-4 rounded-full border-2 border-primary border-t-transparent animate-spin" aria-hidden="true" />
+            {statusText}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+};
+
+/** The product being tried on — fixed, not selectable. */
+const SelectedProductCard = ({ product }: { product: Product }) => (
+  <div className="md:col-span-2 bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-4 self-start">
+    <p className="text-xs font-semibold uppercase tracking-wide text-primary mb-2">You're trying on</p>
+    <img
+      src={resolveImageUrl(product.img)}
+      alt={product.title}
+      className="w-full rounded-xl object-cover max-h-80"
+    />
+    <h3 className="mt-3 font-semibold text-gray-800 dark:text-white">{product.title}</h3>
+    <p className="text-primary font-semibold">GH₵{product.price}</p>
+    <Link to={`/product/${product.id}`} className="text-sm text-gray-500 dark:text-gray-400 underline mt-1 inline-block">
+      Back to product
+    </Link>
+  </div>
+);
 
 export default AiTryOn;

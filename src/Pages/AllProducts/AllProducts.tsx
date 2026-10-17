@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { FaStar, FaHeart, FaEye, FaShoppingCart, FaFilter, FaTh, FaList, FaChevronDown, FaTimes, FaPalette, FaPlus, FaStore, FaCheckCircle } from "react-icons/fa";
+import { FaFilter, FaTh, FaList, FaChevronDown, FaTimes, FaPalette } from "react-icons/fa";
 import { useCart } from "../../Context/CartContext";
 import Brands from "../../Pages/AllProducts/Brands";
 import { useGetProductsQuery } from '../../slices/productsApiSlice';
@@ -7,11 +7,11 @@ import { useGetCategoriesQuery } from '../../slices/categoriesApiSlice';
 import { useWishlistAction } from '../../hooks/useWishlistAction';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ProductGridSkeleton } from '../../components/loader/Skeleton';
-import { resolveImageUrl } from '../../utils/imageUrl';
+import ProductCard from '../../components/ProductCard/ProductCard';
+import { toCartItem } from '../../utils/cartItem';
 import { yardOptionsFor, evenYardsFrom } from '../../utils/yards';
 import Seo from '../../components/Seo/Seo';
 import type { Product } from '../../types/domain';
-import { formatCedi } from '../../utils/formatCurrency';
 
 type ProductCardType = Product & {
   printType?: string;
@@ -21,12 +21,6 @@ type ProductCardType = Product & {
   productionTime?: string;
 };
 
-// Honest stock level for a product card (missing value = treat as in stock).
-const stockOf = (p: Product): number => {
-  const raw = p.in_stock ?? p.stock;
-  if (raw === undefined || raw === null) return Number.MAX_SAFE_INTEGER;
-  return Number(raw) || 0;
-};
 
 const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -46,16 +40,16 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
     productsData as unknown as { pagination?: { total?: number; limit?: number; offset?: number; hasMore?: boolean } }
   )?.pagination;
   const serverHasMore = serverPagination?.hasMore ?? false;
-  const products: ProductCardType[] = (
+  // Memoised so filters/effects that depend on it don't re-run every render.
+  const products: ProductCardType[] = useMemo(() => (
     Array.isArray(productsData)
       ? productsData
       : productsData?.products || productsData?.docs || []
-  ) as ProductCardType[];
+  ) as ProductCardType[], [productsData]);
   const serverTotal = serverPagination?.total ?? products.length;
   const apiError = error as { data?: { message?: string }; error?: string } | undefined;
   const { data: platformCategories = [] } = useGetCategoriesQuery();
 
- console.log(' Products received from API:', products.length, products);
   
   const { addToCart } = useCart();
   const saveToFavorites = useWishlistAction();
@@ -78,7 +72,6 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
     if (urlSearch) {
       setSearchQuery(urlSearch);
       setShowFilters(true);
- console.log(' Search query updated from URL:', urlSearch);
     }
   }, [searchParams]);
 
@@ -134,33 +127,11 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
 
   // Enhanced cart handler
   const addToCartHandler = (product: ProductCardType) => {
-    // Kente is pre-designed: yardage (even numbers) is the only variant —
-    // buyers never pick a colour or a clothing size here.
-    const yardsOptions = yardOptionsFor(product);
-
-    const cartItem = {
-      id: product.id,
-      title: product.title,
-      price: Number(product.price) || 0,
-      basePrice: Number(product.price) || 0,
-      image: product.img,
-      img: product.img,
-      yards: yardsOptions[0],
-      yardsAvailable: yardsOptions,
-      threadTypes: product.threadTypes,
-      dominantThread: product.dominantThread,
-      fabricType: product.fabricType || product.material || 'Cotton',
-      material: product.material || product.fabricType || 'Cotton',
-      printType: product.printType || 'Standard',
-      printMethod: product.printType || 'Standard',
-      productionTime: product.productionTime || '3-5',
-      category: product.category,
-      rating: product.rating || 0,
-      reviews: product.reviews || 0,
-      isCustomizable: product.isCustomizable || false,
-      quantity: 1
-    };
-    
+    // Kente is pre-designed: yardage (even numbers) is the only variant. The
+    // listing adds the first offered length; the product page lets buyers pick.
+    // Same cart shape as the product page (utils/cartItem) — no invented
+    // material / print / production-time values.
+    const cartItem = toCartItem(product, yardOptionsFor(product)[0], 1);
     addToCart(cartItem);
     
     if (handleOrderPopup) {
@@ -170,7 +141,6 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
 
  // Enhanced filter logic - Backend handles search, frontend handles other filters
   const filteredProducts = useMemo(() => {
- console.log(' Filtering products. Total from backend:', products?.length || 0);
     
     if (!products || products.length === 0) {
       return [];
@@ -238,7 +208,6 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
       }
     });
 
- console.log(' Filtered products:', filtered.length);
     return filtered;
   }, [products, selectedCategory, selectedColors, selectedSizes, selectedPrintType, selectedMaterial, priceRange, sortBy]);
 
@@ -262,173 +231,6 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
       const maxPrice = Math.max(...prices);
       setPriceRange([minPrice, maxPrice]);
     }
-  };
-
-  const ProductCard = ({ product }: { product: ProductCardType }) => {
-    const productColors = product.colors || product.colorsAvailable || [];
-    const productPrice = Number(product.price) || 0;
-    const productRating = Number(product.rating) || 0;
-    const productReviews = product.reviews || 0;
-
-    return (
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-2 group relative overflow-hidden">
-        <div className="absolute top-3 left-3 z-10">
-          {product.tag && (
-            <span className="bg-gradient-to-r from-primary to-secondary text-white px-3 py-1 rounded-full text-xs font-bold shadow-lg">
-              {product.tag}
-            </span>
-          )}
-        </div>
-
-        <button
-          onClick={() => saveToFavorites(product.id)}
-          aria-label={`Add ${product.title} to wishlist`}
-          className="absolute top-3 right-3 z-10 p-2 bg-white/20 backdrop-blur-xs rounded-full hover:bg-white/30 transition-all duration-300 opacity-0 group-hover:opacity-100"
-        >
-          <FaHeart className="text-red-500 hover:text-red-600" />
-        </button>
-
-        <div className="relative overflow-hidden aspect-square">
-          <img
-            src={resolveImageUrl(product.img)}
-            alt={product.title}
-            loading="lazy"
-            decoding="async"
-            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-            onError={(e) => {
-              const target = e.target as HTMLImageElement;
-              target.onerror = null;
-              target.src = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300"><rect fill="#f4eee1" width="400" height="300"/><text x="200" y="155" font-family="sans-serif" font-size="20" fill="#8a6d3b" text-anchor="middle">Kente image coming soon</text></svg>');
-            }}
-          />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-
-          {(() => {
-            const rawStock = stockOf(product);
-            return rawStock === Number.MAX_SAFE_INTEGER || rawStock <= 0 ? (
-              <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                <span className="text-white text-xs font-semibold bg-red-600 px-3 py-1.5 rounded-full uppercase tracking-wide">Sold out</span>
-              </div>
-            ) : (
-              <div className="absolute top-2 right-2 flex flex-col items-end gap-1">
-                {rawStock <= 5 && (
-                  <span className="text-[10px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/70 px-2 py-0.5 rounded-full">
-                    Only {rawStock} left
-                  </span>
-                )}
-                {product.isRentable && (
-                  <span className="text-[10px] font-semibold text-[#7c2d12] dark:text-[#f2c169] bg-[#fbeacb] dark:bg-[#431407]/70 px-2 py-0.5 rounded-full">
-                    Rentable
-                  </span>
-                )}
-                {product.madeToOrder && (
-                  <span className="text-[10px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/70 px-2 py-0.5 rounded-full">
-                    Made to order
-                  </span>
-                )}
-              </div>
-            );
-          })()}
-          
-          <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300 transform translate-y-4 group-hover:translate-y-0">
-            <div className="flex gap-2">
-              <Link to={`/product/${product.id}`} className="p-3 bg-white rounded-full shadow-lg hover:bg-gray-100 transition-colors duration-200">
-                <FaEye className="text-gray-700" />
-              </Link>
-              <button 
-                onClick={() => addToCartHandler(product)}
-                disabled={stockOf(product) <= 0}
-                className="p-3 bg-primary text-white rounded-full shadow-lg disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors duration-200"
-              >
-                <FaShoppingCart />
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div className="p-3 sm:p-4">
-          <h3 className="font-bold text-sm sm:text-lg text-gray-800 dark:text-white mb-2 line-clamp-2">
-            {product.title}
-          </h3>
-
-          {product.vendorBusinessName && (
-            <div className="flex items-center gap-1 mb-2">
-              <FaStore className="text-[10px] sm:text-xs text-primary" />
-              <span className="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400 truncate">
-                Sold by {product.vendorBusinessName}
-              </span>
-              {product.vendorStatus === 'approved' && (
-                <span className="inline-flex items-center gap-0.5 text-[9px] sm:text-[10px] text-green-600 dark:text-green-400 font-medium whitespace-nowrap">
-                  <FaCheckCircle /> Verified
-                </span>
-              )}
-            </div>
-          )}
-          
-          {/* Rating — hidden until the product has real reviews */}
-          {(productRating > 0 || productReviews > 0) && (
-            <div className="flex items-center gap-2 mb-2">
-              {productRating > 0 && (
-                <div className="flex text-yellow-400 text-xs sm:text-sm">
-                  {[...Array(5)].map((_, i) => (
-                    <FaStar 
-                      key={`${product.id}-star-${i}`} 
-                      className={i < Math.floor(productRating) ? 'text-yellow-400' : 'text-gray-300'} 
-                    />
-                  ))}
-                </div>
-              )}
-              <span className="text-xs sm:text-sm text-gray-600 dark:text-gray-300">
-                ({productReviews})
-              </span>
-            </div>
-          )}
-
-          <div className="flex items-center gap-2 mb-3 flex-wrap">
-            <span className="text-lg sm:text-2xl font-bold text-primary">
-              {formatCedi(productPrice)}
-            </span>
-            {product.originalPrice && Number(product.originalPrice) > productPrice && (
-              <span className="text-sm sm:text-lg text-gray-500 line-through">
-                {formatCedi(Number(product.originalPrice))}
-              </span>
-            )}
-          </div>
-
-          {productColors.length > 0 && (
-            <div className="flex items-center gap-1 mb-3">
-              <span className="text-[10px] sm:text-xs text-gray-600 dark:text-gray-300 mr-1 hidden xs:inline">Colors:</span>
-              {productColors.slice(0, 4).map((color, index) => (
-                <div
-                  key={`${product.id}-color-${index}`}
-                  className="w-3 h-3 sm:w-4 sm:h-4 rounded-full border-2 border-gray-300"
-                  style={{ backgroundColor: color.toLowerCase() }}
-                  title={color}
-                />
-              ))}
-              {productColors.length > 4 && (
-                <span className="text-xs text-gray-500 ml-1">+{productColors.length - 4}</span>
-              )}
-            </div>
-          )}
-
-          <div className="text-[10px] sm:text-xs text-gray-600 dark:text-gray-300 mb-4">
-            <div className="flex justify-between">
-              <span className="truncate">{product.material || product.fabricType || 'Cotton'}</span>
-              <span className="whitespace-nowrap ml-1">{product.productionTime || '3-5'} days</span>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => addToCartHandler(product)}
-            className="w-full bg-gradient-to-r from-primary to-secondary text-white py-2 sm:py-2 px-2 sm:px-4 rounded-lg hover:from-primary/90 hover:to-secondary/90 transition-all duration-300 text-xs sm:text-sm font-medium"
-          >
-            Add to Cart
-          </button>
-        </div>
-      </div>
-    );
   };
 
   if (isLoading) {
@@ -456,7 +258,7 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
           <p className="text-gray-600 dark:text-gray-300 mb-4">{apiError?.data?.message || apiError?.error || 'Something went wrong'}</p>
           <button
             onClick={() => refetch()}
-            className="bg-primary text-white px-6 py-2 rounded-lg hover:bg-primary/90"
+            className="btn btn-primary px-6"
           >
             Retry
           </button>
@@ -495,7 +297,7 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
               <div className="text-left">
                 <h3 className="text-xl font-bold mb-1">Try It On Before You Buy</h3>
                 <p className="text-sm text-white/80">
-                  Use our AI Virtual Try-On to see yourself wearing the Kente, or preview it in your home
+                  Open any Kente piece and tap "Try It On" to see that exact piece on you
                 </p>
               </div>
               <span className="text-2xl">→</span>
@@ -543,6 +345,7 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
             <div className="flex items-center justify-between gap-2 md:justify-end">
               <div className="relative flex-1 md:flex-none">
                 <select
+                  aria-label="Sort products"
                   value={sortBy}
                   onChange={(e) => setSortBy(e.target.value)}
                   className="appearance-none bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-white px-3 md:px-4 py-2 pr-8 rounded-lg border border-gray-200 dark:border-gray-600 focus:outline-hidden focus:ring-2 focus:ring-primary w-full"
@@ -614,6 +417,7 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
               <div>
                 <h3 className="font-semibold text-gray-800 dark:text-white mb-3">Category</h3>
                 <select
+                  aria-label="Category"
                   value={selectedCategory}
                   onChange={(e) => setSelectedCategory(e.target.value)}
                   className="w-full bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-white px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 focus:outline-hidden focus:ring-2 focus:ring-primary"
@@ -628,6 +432,7 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
                 <div>
                   <h3 className="font-semibold text-gray-800 dark:text-white mb-3">Print Type</h3>
                   <select
+                  aria-label="Print type"
                     value={selectedPrintType}
                     onChange={(e) => setSelectedPrintType(e.target.value)}
                     className="w-full bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-white px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 focus:outline-hidden focus:ring-2 focus:ring-primary"
@@ -643,6 +448,7 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
                 <div>
                   <h3 className="font-semibold text-gray-800 dark:text-white mb-3">Material</h3>
                   <select
+                  aria-label="Material"
                     value={selectedMaterial}
                     onChange={(e) => setSelectedMaterial(e.target.value)}
                     className="w-full bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-white px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 focus:outline-hidden focus:ring-2 focus:ring-primary"
@@ -752,7 +558,7 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
             </p>
             <button
               onClick={clearAllFilters}
-              className="bg-primary text-white px-6 py-2 rounded-lg hover:bg-primary/90 transition-colors duration-200"
+              className="btn btn-primary px-6 transition-colors duration-200"
             >
               Clear All Filters
             </button>
@@ -763,8 +569,14 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
               ? "grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-8"
               : "space-y-6"
           }>
-            {filteredProducts.map(product => (
-              <ProductCard key={product.id} product={product} />
+            {filteredProducts.map((product, i) => (
+              <ProductCard
+                key={product.id}
+                product={product}
+                onAddToCart={() => addToCartHandler(product)}
+                onToggleWishlist={saveToFavorites}
+                priority={i < 4}
+              />
             ))}
           </div>
         )}
@@ -783,11 +595,6 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
           </div>
         )}
 
-        <div className="fixed bottom-20 right-6 sm:bottom-2 sm:right-6 z-50">
-          <button className="bg-gradient-to-r from-primary to-secondary text-white p-4 rounded-full shadow-2xl hover:shadow-3xl transition-all duration-300 transform hover:scale-110 group">
-            <FaPlus className="text-xl group-hover:rotate-180 transition-transform duration-300" />
-          </button>
-        </div>
       </div>
     </div>
     </>

@@ -43,7 +43,7 @@ const toJpegDataUrl = (img: HTMLImageElement, quality: number): string => {
 /**
  * Take any browser-produced image data URL (FileReader upload or canvas
  * camera capture) and return a small, EXIF-free JPEG data URL ready for
- * POST /api/tryon/generate. Throws with a user-readable message when the
+ * POST /api/tryon/jobs. Throws with a user-readable message when the
  * image cannot be decoded or stays too large.
  */
 export async function prepareTryOnImage(dataUrl: string): Promise<string> {

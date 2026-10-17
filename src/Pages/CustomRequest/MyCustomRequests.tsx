@@ -126,7 +126,7 @@ function RequestCard({ request }: { request: CustomRequest }) {
             {request.vendorCanMeet ? (
               <p className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1"><FaCheckCircle /> Can meet your timeline</p>
             ) : (
-              <p className="text-xs text-amber-600 dark:text-amber-400">Range: cannot meet your exact date</p>
+              <p className="text-xs text-amber-700 dark:text-amber-400">Range: cannot meet your exact date</p>
             )}
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
               You pay the full quote now. Half releases to the weaver right away; the rest is held in escrow until your kente is delivered.

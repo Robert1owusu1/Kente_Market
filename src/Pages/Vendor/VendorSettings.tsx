@@ -101,7 +101,7 @@ const VendorSettings = ({ vendor }: { vendor: SettingsVendor }) => {
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-gray-800 dark:text-white">Settings</h2>
         {profile?.slug && (
-          <Link to={`/store/${profile.slug}`} className="text-sm text-amber-600 dark:text-amber-400 font-medium hover:underline">
+          <Link to={`/store/${profile.slug}`} className="text-sm text-amber-700 dark:text-amber-400 font-medium hover:underline">
             View my storefront →
           </Link>
         )}

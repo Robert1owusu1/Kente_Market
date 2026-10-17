@@ -25,6 +25,22 @@ type LegalSection = {
   body: string | Array<string | { label: string; text: string }>;
 };
 
+type LabelledItem = { label: string; text: string };
+
+// Consecutive plain-string items become one real list; labelled items stay
+// paragraphs. (They used to render as bare <li> elements inside a <div>.)
+const groupBody = (items: Array<string | LabelledItem>): Array<string[] | LabelledItem> =>
+  items.reduce<Array<string[] | LabelledItem>>((out, item) => {
+    if (typeof item === "string") {
+      const last = out[out.length - 1];
+      if (Array.isArray(last)) last.push(item);
+      else out.push([item]);
+    } else {
+      out.push(item);
+    }
+    return out;
+  }, []);
+
 const LegalDocument = ({
   type = "terms", // 'terms' | 'privacy'
   title = "Terms of Service",
@@ -107,6 +123,9 @@ const LegalDocument = ({
         <div
           ref={scrollRef}
           onScroll={handleScroll}
+          tabIndex={0}
+          role="region"
+          aria-label={`${title} text`}
           className="overflow-y-auto flex-1 px-5 py-4 text-white/85 space-y-5 min-h-[40vh]"
         >
           {intro && <p className="text-sm leading-relaxed">{intro}</p>}
@@ -122,11 +141,11 @@ const LegalDocument = ({
                 <p className="text-sm leading-relaxed">{sec.body}</p>
               ) : (
                 <div className="text-sm leading-relaxed">
-                  {sec.body.map((item, idx) =>
-                    typeof item === "string" ? (
-                      <li key={idx} className="ml-5 list-disc marker:text-amber-400/70">
-                        {item}
-                      </li>
+                  {groupBody(sec.body).map((item, idx) =>
+                    Array.isArray(item) ? (
+                      <ul key={idx} className="ml-5 list-disc marker:text-amber-400/70">
+                        {item.map((line, j) => <li key={j}>{line}</li>)}
+                      </ul>
                     ) : (
                       <p key={idx}>
                         <span className="text-amber-300 font-medium">{item.label}: </span>
@@ -224,6 +243,9 @@ const LegalDocument = ({
         <div
           ref={scrollRef}
           onScroll={handleScroll}
+          tabIndex={0}
+          role="region"
+          aria-label={`${title} text`}
           className="overflow-y-auto px-6 sm:px-8 py-6 max-h-[50vh] sm:max-h-[60vh] text-white/85 space-y-6"
         >
           {intro && <p className="text-base leading-relaxed">{intro}</p>}
@@ -240,11 +262,11 @@ const LegalDocument = ({
                 <p className="text-sm sm:text-base leading-relaxed">{sec.body}</p>
               ) : (
                 <div className="text-sm sm:text-base leading-relaxed">
-                  {sec.body.map((item, idx) =>
-                    typeof item === "string" ? (
-                      <li key={idx} className="ml-5 list-disc marker:text-amber-400/70">
-                        {item}
-                      </li>
+                  {groupBody(sec.body).map((item, idx) =>
+                    Array.isArray(item) ? (
+                      <ul key={idx} className="ml-5 list-disc marker:text-amber-400/70">
+                        {item.map((line, j) => <li key={j}>{line}</li>)}
+                      </ul>
                     ) : (
                       <p key={idx}>
                         <span className="text-amber-300 font-medium">{item.label}: </span>

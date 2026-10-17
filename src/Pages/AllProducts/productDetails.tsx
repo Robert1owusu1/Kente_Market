@@ -11,6 +11,8 @@ import { useSelector } from "react-redux";
 import type { RootState } from "../../store";
 import AskModal from "../../components/Messages/AskModal";
 import { yardOptionsFor } from "../../utils/yards";
+import { toCartItem } from "../../utils/cartItem";
+import tryOnService, { type TryOnEligibility } from "../../ai-tryon/api/tryOnService";
 
 const ProductDetails = () => {
   const { id: productId } = useParams();
@@ -27,6 +29,24 @@ const ProductDetails = () => {
   const [selectedYards, setSelectedYards] = useState("");
   const [quantity, setQuantity] = useState(1);
   const [showAsk, setShowAsk] = useState(false);
+  // AI try-on eligibility is decided by the server for THIS product; null
+  // until it answers (the button stays hidden rather than guessing).
+  const [tryOn, setTryOn] = useState<TryOnEligibility | null>(null);
+  const [tryOnChecking, setTryOnChecking] = useState(true);
+
+  useEffect(() => {
+    const id = Number(productId);
+    if (!Number.isInteger(id) || id <= 0) return;
+    let cancelled = false;
+    setTryOn(null);
+    setTryOnChecking(true);
+    tryOnService
+      .getProductEligibility(id)
+      .then((r) => { if (!cancelled) setTryOn(r); })
+      .catch(() => { if (!cancelled) setTryOn(null); })
+      .finally(() => { if (!cancelled) setTryOnChecking(false); });
+    return () => { cancelled = true; };
+  }, [productId]);
 
   useEffect(() => {
     if (product) {
@@ -55,18 +75,7 @@ const ProductDetails = () => {
     );
 
   const handleAddToCart = () => {
-    addToCart({
-      ...product,
-      // Strip variant choices: the buyer's only decision is the yardage.
-      colors: [],
-      colorsAvailable: [],
-      sizes: [],
-      yards: selectedYards,
-      yardsAvailable: yardsOptions,
-      threadTypes: product.threadTypes,
-      dominantThread: product.dominantThread,
-      quantity,
-    });
+    addToCart(toCartItem(product, selectedYards, quantity));
     // Optionally navigate to cart or open drawer
   };
 
@@ -146,7 +155,7 @@ const ProductDetails = () => {
                 Sold by <span className="font-semibold text-gray-800 dark:text-white">{product.vendorBusinessName}</span>
               </span>
               {product.vendorStatus === 'approved' && (
-                <span className="inline-flex items-center gap-1 text-xs text-green-600 dark:text-green-400 font-medium">
+                <span className="inline-flex items-center gap-1 text-xs text-green-700 dark:text-green-400 font-medium">
                   <FaCheckCircle /> Verified
                 </span>
               )}
@@ -173,7 +182,7 @@ const ProductDetails = () => {
               {canAsk && (
                 <button
                   onClick={() => setShowAsk(true)}
-                  className="ml-auto inline-flex items-center gap-1.5 text-xs font-semibold text-amber-600 dark:text-amber-400 border border-amber-300 dark:border-amber-700 rounded-full px-3 py-1 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition"
+                  className="ml-auto inline-flex items-center gap-1.5 text-xs font-semibold text-amber-700 dark:text-amber-400 border border-amber-300 dark:border-amber-700 rounded-full px-3 py-1 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition"
                   aria-label="Ask the weaver a question"
                 >
                   <FaEnvelope /> Ask the weaver
@@ -186,13 +195,13 @@ const ProductDetails = () => {
             {product.description || "No description available."}
           </p>
           <div className="flex flex-wrap items-center gap-3 mb-6">
-            <p className="text-2xl font-semibold text-primary">GH₵{product.price}</p>
+            <p className="text-2xl font-semibold text-gray-900 dark:text-white">GH₵{product.price}</p>
             {isOutOfStock ? (
-              <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 rounded-full px-3 py-1">
+              <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-900/20 rounded-full px-3 py-1">
                 <FaExclamationTriangle /> Sold out
               </span>
             ) : isLowStock ? (
-              <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded-full px-3 py-1">
+              <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-800 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded-full px-3 py-1">
                 <FaExclamationTriangle /> Only {stockLevel} left
               </span>
             ) : (
@@ -227,7 +236,7 @@ const ProductDetails = () => {
                     onClick={() => setSelectedYards(String(yd))}
                     className={`px-4 py-2 rounded-lg border-2 transition-all duration-200 ${
                       selectedYards === String(yd)
-                        ? "border-primary bg-primary text-white"
+                        ? "border-gray-900 bg-gray-900 text-white dark:border-primary dark:bg-primary dark:text-gray-900"
                         : "border-gray-300 dark:border-gray-600 text-gray-800 dark:text-white hover:border-primary"
                     }`}
                     aria-label={`${yd} yards`}
@@ -276,7 +285,7 @@ const ProductDetails = () => {
               </button>
             </div>
             {isLowStock && !isOutOfStock && (
-              <p className="text-xs text-amber-600 dark:text-amber-400 mt-1.5">
+              <p className="text-xs text-amber-800 dark:text-amber-400 mt-1.5">
                 Only {stockLevel} available — we'll tell you honestly before you pay.
               </p>
             )}
@@ -289,12 +298,30 @@ const ProductDetails = () => {
 
           {/* Try It On + Add to cart */}
           <div className="flex flex-col xs:flex-row gap-3 sm:gap-4">
-            <button
-              onClick={() => navigate(`/ai-tryon?product=${product.id}`)}
-              className="flex-1 px-6 py-3 bg-gradient-to-r from-primary to-secondary text-white rounded-xl shadow-md hover:shadow-lg transition font-semibold"
-            >
- Try It On
-            </button>
+            {tryOnChecking && (
+              <button
+                disabled
+                aria-busy="true"
+                className="btn btn-primary flex-1 rounded-xl opacity-60 cursor-wait"
+              >
+                Checking AI try-on…
+              </button>
+            )}
+            {!tryOnChecking && tryOn?.enabled && (
+              <button
+                onClick={() =>
+                  navigate(
+                    `/ai-tryon?product=${product.id}${selectedYards ? `&yards=${encodeURIComponent(selectedYards)}` : ""}`,
+                  )
+                }
+                disabled={!tryOn.eligible}
+                title={tryOn.eligible ? "See this piece on you with AI" : tryOn.reason || ""}
+                aria-describedby="tryon-help"
+                className="btn btn-primary flex-1 rounded-xl"
+              >
+                Try It On
+              </button>
+            )}
             <button
               onClick={handleAddToCart}
               disabled={isOutOfStock}
@@ -306,10 +333,18 @@ const ProductDetails = () => {
             </button>
           </div>
 
+          {!tryOnChecking && tryOn?.enabled && (
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-2" id="tryon-help">
+              {tryOn.eligible
+                ? "Try It On: upload a photo to see an AI preview of this exact piece on you."
+                : tryOn.reason}
+            </p>
+          )}
+
           {product.isCustomizable && (
             <button
               onClick={() => navigate(`/customize/${product.id}`)}
-              className="w-full mt-3 px-6 py-3 border-2 border-primary text-primary dark:text-amber-300 rounded-xl font-semibold hover:bg-primary hover:text-white transition flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full mt-3 px-6 py-3 border-2 border-amber-700 text-amber-800 dark:border-primary dark:text-amber-300 rounded-xl font-semibold hover:bg-amber-50 dark:hover:bg-gray-800 transition flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <FaMagic />
               Customize This Kente (Choose Colours, Thread & Yards)

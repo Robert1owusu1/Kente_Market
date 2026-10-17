@@ -103,7 +103,7 @@ const AboutUs = () => {
                   className="w-16 h-16 mx-auto rounded-full border-4 border-gray-300 dark:border-gray-600 mb-4 shadow-inner"
                   style={{ backgroundColor: item.color }}
                 ></div>
-                <h3 className="text-xl font-semibold mb-2 text-yellow-500">
+                <h3 className="text-xl font-semibold mb-2 text-amber-700 dark:text-yellow-400">
                   {item.name}
                 </h3>
                 <p className="text-sm">{item.meaning}</p>
@@ -157,7 +157,7 @@ const AboutUs = () => {
             data-aos-delay={i * 100}
             className="p-6 bg-gray-100 dark:bg-gray-800 rounded-2xl shadow-md text-center hover:shadow-lg hover:scale-105 transition"
           >
-            <h3 className="text-xl font-semibold mb-3 text-yellow-500">
+            <h3 className="text-xl font-semibold mb-3 text-amber-700 dark:text-yellow-400">
               {value.title}
             </h3>
             <p>{value.desc}</p>

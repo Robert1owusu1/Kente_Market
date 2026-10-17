@@ -503,3 +503,13 @@ Done locally (nothing committed, pushed or deployed; no TiDB, no Paystack):
 **Verdict: ready to start staging** at `STAGING_VALIDATION_RUNBOOK.md` §10 step 1 (release commit + CI green).
 Production remains blocked on: TiDB verification, measured `TRUST_PROXY`, staging scenarios, owner decisions
 (FV-9, R-6, R-7, refund-failure follow-up, fees, DEC-PAY-1, SEC-3, D-1…D-4, referral defaults).
+
+## 16. Deployed to main (test mode) — 2026-10-13
+
+Owner decision: the whole system is in testing mode, so `main` takes the release.
+1. Encrypted, verified backup of the development DB `branding_house` (`~/.kente-backups/kente-branding_house-20261013-192311.sql.gz.aes`, passphrase in the `PASSPHRASE-premigration-…txt` beside it, both mode 600).
+2. `npm run db:migrate` on `branding_house`: exit 0; 60/60 tables and every migration-managed column present. Known drift not covered by any migration (unused by code): `campaigns.createdBy`, `campaign_products.created_at`, `campaign_vendors.created_at`, some secondary indexes and `vendors.uq_vendors_slug`.
+3. `main` fast-forwarded `4007630 → b9984d0` and pushed. CI on main: success. Vercel: success. Render: new backend live (boot checks passed, `/health/ready` db ok).
+4. `npm run smoke -- --web=https://kente-market.vercel.app --api=https://kente-api.onrender.com`: **13/13 PASS**. Live search is case-insensitive (`kente`/`Kente`/`KENTE` → same results).
+
+Still to do: set `DB_SSL_CA` on Render (TIDB-TLS), measure `TRUST_PROXY`, decide TIDB-CHECK, then the authorized penetration test with test accounts.

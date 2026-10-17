@@ -87,7 +87,7 @@ const ImageUpload = ({ onImageSelected, label = "Upload your photo" }: ImageUplo
             {isPreparing ? "Preparing your photo…" : "Drag & drop your photo here, or click to browse"}
           </p>
           {error && <p className="aitryon-error text-sm mt-2">{error}</p>}
-          <p className="text-xs text-gray-400 mt-2">
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
             JPG, PNG or WebP • Max 10MB • Front-facing photo recommended
           </p>
           <input

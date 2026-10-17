@@ -34,7 +34,7 @@ import { assertFetchableImageUrl, isTryOnEnabled } from '../controllers/tryOnCon
 
 const read = (relative) => readFileSync(fileURLToPath(new URL(relative, import.meta.url)), 'utf8');
 
-const SAVE = ['AI_TRYON_ALLOWED_HOSTS', 'AI_TRYON_ENABLED', 'REPLICATE_API_TOKEN'];
+const SAVE = ['AI_TRYON_ALLOWED_HOSTS', 'AI_TRYON_ENABLED', 'REPLICATE_API_TOKEN', 'AI_TRYON_PROVIDER', 'AI_TRYON_API_KEY', 'NODE_ENV'];
 
 const withEnv = async (vars, fn) => {
   const saved = Object.fromEntries(SAVE.map((k) => [k, process.env[k]]));
@@ -261,53 +261,43 @@ describe('F4a: the shapes that were never fetchable stay refused', () => {
   });
 });
 
-describe('F4a: the controller and the feature flag are both fail-closed', () => {
-  test('generateTryOn validates everything before it can spend anything', () => {
-    const src = read('../controllers/tryOnController.js');
-    const start = src.indexOf('export const generateTryOn');
-    assert.ok(start > -1, 'generateTryOn not found');
-    const body = src.slice(start, src.indexOf('\n});', start));
+describe('F4a: the job service and the feature flag are both fail-closed', () => {
+  // Behaviour is covered end-to-end in tryOnGenerateFlow.test.js; this pins
+  // the ORDER inside createTryOnJob, which is what keeps a rejected request
+  // from spending a credit or reaching the provider.
+  const serviceBody = () => {
+    const src = read('../Services/tryOn/tryOnJobService.js');
+    const start = src.indexOf('export const createTryOnJob');
+    assert.ok(start > -1, 'createTryOnJob not found');
+    return src.slice(start, src.indexOf('\n};', start));
+  };
 
-    // The model image must be sanitized (sniff + re-encode) and the garment
-    // must be resolved SERVER-side from the product row — both before
-    // reserveTryOnCredit, otherwise a rejected request burns one of the
-    // user's daily try-ons.
+  test('createTryOnJob validates everything before it can spend anything', () => {
+    const body = serviceBody();
     const sanitizeIndex = body.indexOf('sanitizeImageBuffer');
     const garmentIndex = body.indexOf('resolveGarmentForTryOn(productId)');
-    const creditIndex = body.indexOf('reserveTryOnCredit');
+    const creditIndex = body.indexOf('reserveDailyCredit');
+    const submitIndex = body.indexOf('provider.submitJob');
     assert.ok(sanitizeIndex > -1, 'modelImage is not sanitized');
     assert.ok(garmentIndex > -1, 'the garment is not resolved from the catalog');
     assert.ok(creditIndex > -1, 'the daily credit is not reserved');
     assert.ok(sanitizeIndex < creditIndex, 'the credit is reserved before the image is sanitized');
     assert.ok(garmentIndex < creditIndex, 'the credit is reserved before the garment is resolved');
-    assert.match(body, /res\.status\(400\)/, 'a rejected request must not fall through as a 500');
-
-    // A client-supplied garment URL must be gone: the garment now comes from
-    // the server's catalog, never from the request body.
-    assert.ok(
-      !body.includes('assertFetchableImageUrl(garmentImage'),
-      'garmentImage is still read from the request body',
-    );
-    // The model image must be inline (a URL would bypass sanitization).
-    assert.match(
-      body,
-      /must be an uploaded photo/,
-      'modelImage is not required to be an inline upload',
-    );
+    assert.ok(creditIndex < submitIndex, 'the provider is called before the credit is reserved');
+    assert.ok(!/garmentImage\s*[,}]\s*=\s*req|req\.body\.garm/.test(body), 'a garment is read from the request');
+    assert.match(body, /must be an uploaded photo/, 'modelImage is not required to be an inline upload');
   });
 
   test('concurrency caps are enforced before the credit is reserved', () => {
-    const src = read('../controllers/tryOnController.js');
-    const start = src.indexOf('export const generateTryOn');
-    const body = src.slice(start, src.indexOf('\n});', start));
-    const capacityIndex = body.indexOf('countInFlight');
-    const creditIndex = body.indexOf('reserveTryOnCredit');
-    assert.ok(capacityIndex > -1, 'in-flight capacity is not checked');
+    const body = serviceBody();
+    const capacityIndex = body.indexOf('repo.countActive');
+    const creditIndex = body.indexOf('reserveDailyCredit');
+    assert.ok(capacityIndex > -1, 'active-job capacity is not checked');
     assert.ok(capacityIndex < creditIndex, 'capacity is checked after the credit is reserved');
   });
 
   test('the old opt-in allow-list condition is gone', () => {
-    const src = read('../controllers/tryOnController.js');
+    const src = read('../Services/tryOn/garment.js');
     assert.ok(
       !src.includes('allowed.length > 0 &&'),
       'the allow-list is optional again — an unset list would permit every host',
@@ -319,20 +309,24 @@ describe('F4a: the controller and the feature flag are both fail-closed', () => 
   test('the feature flag compares to "true" literally, not "not false"', async () => {
     // Pre-existing, but it is the same class of mistake (a default that is
     // permissive because somebody wrote `!== 'false'`) and it is the switch
-    // that gates all of the above.
+    // that gates all of the above. A provider must also be named explicitly.
+    const ok = { AI_TRYON_PROVIDER: 'replicate-idm-vton', REPLICATE_API_TOKEN: 'tok' };
     await withEnv({}, async () => {
       assert.equal(isTryOnEnabled(), false, 'off with nothing set');
     });
     await withEnv({ AI_TRYON_ENABLED: 'true' }, async () => {
-      assert.equal(isTryOnEnabled(), false, 'on but no token');
-    });
-    await withEnv({ AI_TRYON_ENABLED: 'false', REPLICATE_API_TOKEN: 'tok' }, async () => {
-      assert.equal(isTryOnEnabled(), false, 'explicitly false must stay off');
-    });
-    await withEnv({ AI_TRYON_ENABLED: 'anything', REPLICATE_API_TOKEN: 'tok' }, async () => {
-      assert.equal(isTryOnEnabled(), false, 'anything but "true" must stay off');
+      assert.equal(isTryOnEnabled(), false, 'on but no provider or token');
     });
     await withEnv({ AI_TRYON_ENABLED: 'true', REPLICATE_API_TOKEN: 'tok' }, async () => {
+      assert.equal(isTryOnEnabled(), false, 'on with a token but no provider named');
+    });
+    await withEnv({ AI_TRYON_ENABLED: 'false', ...ok }, async () => {
+      assert.equal(isTryOnEnabled(), false, 'explicitly false must stay off');
+    });
+    await withEnv({ AI_TRYON_ENABLED: 'anything', ...ok }, async () => {
+      assert.equal(isTryOnEnabled(), false, 'anything but "true" must stay off');
+    });
+    await withEnv({ AI_TRYON_ENABLED: 'true', ...ok }, async () => {
       assert.equal(isTryOnEnabled(), true);
     });
   });

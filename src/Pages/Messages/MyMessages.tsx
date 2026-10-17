@@ -187,7 +187,7 @@ const MyMessages = () => {
             <p className="text-sm text-gray-500 dark:text-gray-500 mb-6">
               Visit an artisan store and ask about a custom Kente design.
             </p>
-            <Link to="/vendors" className="inline-block text-amber-600 dark:text-amber-400 font-semibold">
+            <Link to="/vendors" className="inline-block text-amber-700 dark:text-amber-400 font-semibold">
               Browse artisan stores →
             </Link>
           </div>

@@ -182,11 +182,16 @@ const Navbar = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  const menuToggleRef = useRef<HTMLButtonElement | null>(null);
+
   // Close the mobile menu with the Escape key
   useEffect(() => {
     if (!mobileMenuOpen) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setMobileMenuOpen(false);
+      if (e.key === 'Escape') {
+        setMobileMenuOpen(false);
+        menuToggleRef.current?.focus(); // return focus to the control that opened it
+      }
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
@@ -305,12 +310,15 @@ const Navbar = () => {
                   height={40}
                   className="w-9 h-9 sm:w-10 sm:h-10 object-contain rounded"
                 />
-                <span className="whitespace-nowrap">Bonwire Kente</span>
+                {/* Below 375px the wordmark no longer fits beside the actions
+                    (it pushed the menu button off-screen at 320px); the logo
+                    stays and the name remains available to screen readers. */}
+                <span className="whitespace-nowrap max-[374px]:sr-only">Bonwire Kente</span>
               </Link>
             </div>
             
             {/* Right Side Actions */}
-            <div className='flex justify-between items-center gap-2 sm:gap-4'>
+            <div className='flex justify-between items-center gap-1.5 min-[360px]:gap-2 sm:gap-4'>
               
  {/* Desktop Search. Paired with the full-width search bar below at lg, not
              sm: at 640-1023px this input sat next to the logo and the account
@@ -544,10 +552,14 @@ const Navbar = () => {
               <div><DarkMode /></div>
 
  {/* Mobile Menu Button */}
-              <button 
-                className="lg:hidden block text-3xl focus:outline-hidden" 
+              <button
+                ref={menuToggleRef}
+                type="button"
+                className="lg:hidden flex h-11 w-11 items-center justify-center rounded-full text-3xl focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-dark"
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                aria-label="Toggle mobile menu"
+                aria-label={mobileMenuOpen ? "Close menu" : "Open menu"}
+                aria-expanded={mobileMenuOpen}
+                aria-controls="mobile-menu"
               >
                 <HiMenuAlt3 />
               </button>
@@ -681,9 +693,10 @@ const Navbar = () => {
  {/* Mobile Menu */}
         {mobileMenuOpen && (
           <div
+            id="mobile-menu"
             className="lg:hidden bg-white dark:bg-gray-900 border-t border-gray-100 dark:border-gray-800 max-h-[calc(100dvh-112px)] overflow-y-auto overscroll-contain shadow-md pb-[max(1rem,env(safe-area-inset-bottom))]"
-            role="dialog"
-            aria-label="Mobile navigation menu"
+            role="navigation"
+            aria-label="Mobile menu"
           >
             <div className="flex items-center justify-between px-5 pt-3">
               <span className="text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-gray-400">

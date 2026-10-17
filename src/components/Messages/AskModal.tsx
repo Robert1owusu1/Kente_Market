@@ -170,7 +170,7 @@ const AskModal = ({ vendorId, vendorName, productId, onClose }: AskModalProps) =
             )}
 
             {thread.status === 'closed' ? (
-              <p className="text-sm text-amber-600 dark:text-amber-400">
+              <p className="text-sm text-amber-700 dark:text-amber-400">
                 This conversation is closed. Start a new one by asking the weaver again below.
               </p>
             ) : (

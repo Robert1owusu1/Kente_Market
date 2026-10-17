@@ -51,6 +51,8 @@ import settingRoutes from './routes/settingRoutes.js';
 import profileRoutes from './routes/profileRoutes.js';
 import authRoutes from './routes/authRoutes.js'; // NEW - OAuth routes
 import tryOnRoutes from './routes/tryOnRoutes.js'; // NEW - AI Try-On routes
+import { tryOnWebhook } from './controllers/tryOnController.js';
+import { getProviderReadiness } from './Services/tryOn/providers/index.js';
 import contactRoutes from './routes/contactRoutes.js'; // NEW - Contact & messages
 import cartRoutes from './routes/cartRoutes.js'; // NEW - Server-side cart
 import subscriberRoutes from './routes/subscriberRoutes.js'; // NEW - Newsletter
@@ -234,7 +236,16 @@ if (process.env.NODE_ENV === 'production') {
  if (!process.env[name]) console.log(`${name} not set — ${msg}`);
   };
   warn('EMAIL_USER', 'email delivery (OTP / password reset) will fail');
-  warn('REPLICATE_API_TOKEN', 'AI try-on is disabled (503)');
+  // AI try-on: report WHY new jobs are refused (operator-facing problems
+  // only; they never contain secret values).
+  {
+    const tryOn = getProviderReadiness();
+    if (tryOn.enabled && !tryOn.ready) {
+      console.log(`AI try-on is enabled but refusing new jobs: ${tryOn.problems.join('; ')}`);
+    } else if (!tryOn.enabled) {
+      console.log('AI try-on is disabled (AI_TRYON_ENABLED is not "true")');
+    }
+  }
   warn('GOOGLE_CLIENT_ID', 'Google sign-in is disabled');
   warn('REDIS_URL', 'rate limiting is per-instance; set it before scaling to multiple instances');
   warn('SENTRY_DSN', 'error tracking is disabled (recommended before launch)');
@@ -250,6 +261,18 @@ configurePassport();
 // global /api/ middlewares below, because this mount short-circuits before
 // they run — otherwise DELETE /api/upload/:filename would have neither.
 app.use('/api/upload', apiLimiter, csrfProtection, uploadRoutes);
+
+// 6b. AI try-on provider webhook - also BEFORE the JSON parser: the signature
+// covers the exact raw bytes, and the provider echoes the job's inputs (two
+// inline images) in the body, which exceeds the 1mb JSON limit. No cookie and
+// no Origin are involved (server-to-server), so CSRF does not apply; the
+// signature check in the adapter is the authentication.
+app.post(
+  '/api/tryon/webhooks/:provider',
+  apiLimiter,
+  express.raw({ type: 'application/json', limit: '8mb' }),
+  tryOnWebhook,
+);
 
 // 7. Body parser middleware - applied AFTER upload routes
 // Captures the raw body so Paystack webhook signatures can be verified against it.

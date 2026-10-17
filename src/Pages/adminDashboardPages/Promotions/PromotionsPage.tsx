@@ -399,7 +399,7 @@ const PromotionsPage = () => {
                     <input
                       value={form.bgColor}
                       onChange={(e) => setForm({ ...form, bgColor: e.target.value })}
-                      className="flex-1 px-4 py-2.5 border rounded-lg bg-white dark:bg-gray-800 text-gray-800 dark:text-white font-mono text-sm"
+                      className="min-w-0 flex-1 px-4 py-2.5 border rounded-lg bg-white dark:bg-gray-800 text-gray-800 dark:text-white font-mono text-sm"
                     />
                   </div>
                 </div>
@@ -415,7 +415,7 @@ const PromotionsPage = () => {
                     <input
                       value={form.textColor}
                       onChange={(e) => setForm({ ...form, textColor: e.target.value })}
-                      className="flex-1 px-4 py-2.5 border rounded-lg bg-white dark:bg-gray-800 text-gray-800 dark:text-white font-mono text-sm"
+                      className="min-w-0 flex-1 px-4 py-2.5 border rounded-lg bg-white dark:bg-gray-800 text-gray-800 dark:text-white font-mono text-sm"
                     />
                   </div>
                 </div>

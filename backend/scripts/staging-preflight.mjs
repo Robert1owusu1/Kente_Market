@@ -95,7 +95,9 @@ const storage = String(env.STORAGE_BACKEND || 'local');
 if (storage === 's3') {
   const missing = ['S3_ENDPOINT', 'S3_BUCKET', 'S3_ACCESS_KEY_ID', 'S3_SECRET_ACCESS_KEY'].filter((k) => !set(k));
   missing.length ? fail('STORAGE_BACKEND=s3 is missing settings', missing.join(', ')) : pass('STORAGE_BACKEND=s3', `bucket ${env.S3_BUCKET}`);
-  if (!set('S3_PUBLIC_BASE_URL')) warn('S3_PUBLIC_BASE_URL not set', 'object URLs will use the S3 endpoint directly; the bucket must allow public reads');
+  if (!/^https:\/\//.test(String(env.S3_PUBLIC_BASE_URL || ''))) {
+    (target === 'production' ? fail : warn)('S3_PUBLIC_BASE_URL must be the https public bucket domain', 'an R2 API endpoint is not publicly readable; production boot refuses without it');
+  } else pass('S3_PUBLIC_BASE_URL', new URL(env.S3_PUBLIC_BASE_URL).host);
 } else if (storage === 'local') {
   warn('STORAGE_BACKEND=local', 'uploads survive redeploys ONLY with a persistent disk mounted at backend/uploads');
 } else fail(`STORAGE_BACKEND=${storage} is not implemented (boot exits)`);
@@ -123,7 +125,7 @@ const REQUIRED_TABLES = [
   'vendor_withdrawals', 'payout_attempts', 'financial_events', 'platform_revenue', 'webhook_events', 'commission_rules',
   'scheduler_locks', 'scheduler_job_status', 'reconciliation_checks', 'referral_commissions', 'referral_wallets',
   'referral_ledger', 'referral_withdrawals', 'user_devices', 'exchange_rates', 'shipping_carriers', 'shipping_rates',
-  'vendor_shipping_destinations', 'sessions',
+  'vendor_shipping_destinations', 'sessions', 'ai_tryon_jobs',
 ];
 const REQUIRED_COLUMNS = [
   ['orders', 'paymentSideEffects'], ['orders', 'commissionSnapshot'], ['orders', 'refundReference'],

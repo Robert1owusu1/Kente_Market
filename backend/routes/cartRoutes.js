@@ -41,9 +41,20 @@ const resolveOwner = (req, res) => {
   return { userId: null, guestId };
 };
 
+// CART-1: client cart lines carry `img`, server lines `image`. Reading only
+// `image` stored null for every synced line, so a cart restored on another
+// device lost all its thumbnails. Accept either; keep only a site-relative path
+// or an http(s) URL (display-only value, never fetched server-side).
+const cartImage = (value) => {
+  if (typeof value !== 'string') return null;
+  const v = value.trim().slice(0, 500);
+  return /^\/(?!\/)/.test(v) || /^https?:\/\//i.test(v) ? v : null;
+};
+
 // Sanitize incoming items to the fields a cart should store, dropping anything
 // that isn't a plain product line (avoids junk shapes polluting the table).
-const sanitizeItems = (raw) => {
+// Exported for the regression suite.
+export const sanitizeItems = (raw) => {
   if (!Array.isArray(raw)) return [];
   return raw
     .map((item) => {
@@ -55,7 +66,7 @@ const sanitizeItems = (raw) => {
         name: typeof item.name === 'string' ? item.name.slice(0, 255) : (item.title || ''),
         qty: Math.max(1, parseInt(item.qty ?? item.quantity ?? 1, 10) || 1),
         price: Number(item.price ?? 0) || 0,
-        image: typeof item.image === 'string' ? item.image.slice(0, 500) : null,
+        image: cartImage(item.image ?? item.img),
         selectedColor: typeof item.selectedColor === 'string' ? item.selectedColor : (item.color || null),
         selectedSize: typeof item.selectedSize === 'string' ? item.selectedSize : (item.size || null),
         yards: item.yards ?? item.selectedSize ?? null,

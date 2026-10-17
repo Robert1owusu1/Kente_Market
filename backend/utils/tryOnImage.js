@@ -1,8 +1,8 @@
 // FILE LOCATION: backend/utils/tryOnImage.js
 // DESCRIPTION: Content-level validation + sanitization for AI Try-On images.
 //
-// The try-on endpoint receives the user's personal photograph (and room photos
-// in decorate mode) as an inline base64 data: URI. Before this module existed
+// The try-on endpoint receives the user's personal photograph as an inline
+// base64 data: URI. Before this module existed
 // the ONLY checks were a regex over the data: URI header and an approximate
 // size cap — the decoded bytes were never sniffed, never decoded, and were
 // forwarded verbatim (EXIF, GPS coordinates, camera serial numbers and all)
@@ -189,7 +189,7 @@ export const sanitizeImageBuffer = async (buffer, field = 'image') => {
 };
 
 /**
- * Full pipeline for an uploaded (model/room) photo: strict data: URI ->
+ * Full pipeline for an uploaded customer photo: strict data: URI ->
  * sniff -> decode -> re-encode. Returns the sanitized JPEG data: URI that is
  * the ONLY thing handed to the AI provider.
  * @param {unknown} value
@@ -209,14 +209,16 @@ const UPLOADS_ROOT = path.join(__dirname, '..', 'uploads'); // served at /upload
 const CATALOG_PATH_RE = /^\/(images|uploads\/(?:products|references))\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 /**
- * Read a catalog image referenced by a relative path in the product table
- * (`/images/x.jpg`, `/uploads/products/<id>.jpg`). Refuses traversal,
- * subdirectories beyond the two upload prefixes, non-image extensions and
- * oversized files. Throws TryOnInputError on anything suspect.
+ * Resolve a catalog image referenced by a relative path in the product table
+ * (`/images/x.jpg`, `/uploads/products/<id>.jpg`) to a checked file on disk,
+ * WITHOUT reading it — cheap enough for the public eligibility check. Refuses
+ * traversal, subdirectories beyond the two upload prefixes, non-image
+ * extensions, missing and oversized files. Throws TryOnInputError on anything
+ * suspect.
  * @param {string} imgPath e.g. "/images/image2.jpeg"
- * @returns {Promise<Buffer>} raw file bytes (caller runs sanitizeImageBuffer)
+ * @returns {string} absolute path of the file
  */
-export const readLocalCatalogImage = (imgPath) => {
+export const resolveLocalCatalogImagePath = (imgPath) => {
   if (typeof imgPath !== 'string' || !CATALOG_PATH_RE.test(imgPath)) {
     throw new TryOnInputError('This product\'s image cannot be used for AI try-on');
   }
@@ -246,25 +248,50 @@ export const readLocalCatalogImage = (imgPath) => {
   if (!stat.isFile() || stat.size > MAX_CATALOG_IMAGE_BYTES) {
     throw new TryOnInputError('This product\'s image cannot be used for AI try-on');
   }
-  return fs.promises.readFile(resolved);
+  return resolved;
 };
+
+/**
+ * Read a catalog image (see resolveLocalCatalogImagePath for the checks).
+ * @param {string} imgPath e.g. "/images/image2.jpeg"
+ * @returns {Promise<Buffer>} raw file bytes (caller runs sanitizeImageBuffer)
+ */
+export const readLocalCatalogImage = async (imgPath) =>
+  fs.promises.readFile(resolveLocalCatalogImagePath(imgPath));
 
 /**
  * Map a catalog category string to the garment categories IDM-VTON accepts.
  * The client no longer supplies this value — it is derived from the row the
  * server looked up.
+ *
+ * Only the three DressCode categories are emitted. The old fallback 'others'
+ * is not a documented IDM-VTON value, and the live catalog's categories are
+ * weaving techniques ("Double Weaving"), not garment types, so most real
+ * products would have hit it. Kente wraps, stoles and headwraps drape best
+ * with the upper-body model.
  * @param {string} category
- * @returns {'upper_body'|'lower_body'|'dresses'|'others'}
+ * @returns {'upper_body'|'lower_body'|'dresses'}
  */
 export const toGarmentCategory = (category) => {
   const c = String(category || '').toLowerCase();
   if (/\b(skirt|trouser|pant|short)s?\b/.test(c)) return 'lower_body';
   if (/\b(dress|gown)s?\b/.test(c)) return 'dresses';
-  // Kente wraps, stoles, headwraps, throws and table runners all drape best
-  // with the upper-body model; 'others' is the provider's catch-all.
-  if (!c.trim()) return 'others';
   return 'upper_body';
 };
+
+// Products that are not worn. A garment try-on model can only put cloth on a
+// body; feeding it a table runner produces a fabricated "outfit" that is not
+// the product being sold, so these are refused up front. Matched on category
+// AND title because the live catalog categorises by weaving technique.
+const NON_WEARABLE_RE = /\b(decor|table[\s-]?runners?|placemats?|wall[\s-]?hangings?|cushions?|pillows?|throws?|blankets?|bedspreads?|curtains?|coasters?|bags?|purses?|clutch(?:es)?|wallets?)\b/i;
+
+/**
+ * Is this catalog row something a person can wear?
+ * @param {{title?: string, category?: string}} row
+ * @returns {boolean}
+ */
+export const isWearableProduct = (row) =>
+  !NON_WEARABLE_RE.test(`${row?.category || ''} ${row?.title || ''}`);
 
 /** Trim and bound a garment description before it is sent to the provider. */
 export const sanitizeGarmentName = (title) => {

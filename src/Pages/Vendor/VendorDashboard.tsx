@@ -180,7 +180,7 @@ const VendorDashboard = () => {
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden sticky top-24">
             <div className="p-6 bg-primary text-white">
               <h2 className="text-xl font-bold">{vendor.businessName}</h2>
-              <p className="text-sm text-white/80 mt-1">Seller Dashboard</p>
+              <p className="text-sm text-gray-800 mt-1">Seller Dashboard</p>
             </div>
             <nav className="p-2">
               {menuItems.map((item) => {

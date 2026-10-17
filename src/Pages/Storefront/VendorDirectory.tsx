@@ -112,7 +112,7 @@ const VendorDirectory = () => {
                         </p>
                       )}
                     </div>
-                    <div className="flex items-center gap-1 text-sm text-amber-500 bg-amber-50 dark:bg-amber-900/20 px-2 py-1 rounded-full">
+                    <div className="flex items-center gap-1 text-sm text-amber-800 bg-amber-50 dark:bg-amber-900/20 px-2 py-1 rounded-full">
                       <FaStar /> {v.rating || '0.0'}
                     </div>
                   </div>
@@ -134,7 +134,7 @@ const VendorDirectory = () => {
                     <span className="flex items-center gap-1">
                       <FaBoxOpen /> {v.productCount || 0} {(v.productCount || 0) === 1 ? 'product' : 'products'}
                     </span>
-                    <span className="text-amber-600 dark:text-amber-400 font-medium">Visit store →</span>
+                    <span className="text-amber-700 dark:text-amber-400 font-medium">Visit store →</span>
                   </div>
                 </div>
               </Link>

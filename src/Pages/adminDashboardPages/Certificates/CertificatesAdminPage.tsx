@@ -124,7 +124,7 @@ const CertificatesAdminPage = () => {
           {certificates.map((c) => (
             <div key={c.id} className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-5 border-l-4 border-amber-500">
               <div className="flex items-center justify-between mb-2">
-                <span className="font-semibold text-amber-600 dark:text-amber-400">{c.certificateNumber}</span>
+                <span className="font-semibold text-amber-700 dark:text-amber-400">{c.certificateNumber}</span>
                 <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
                   c.status === 'revoked'
                     ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'

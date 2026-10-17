@@ -70,7 +70,7 @@ const Subscribe = () => {
                 type="submit"
                 data-aos="fade-up"
                 disabled={isLoading}
-                className="px-6 py-3 bg-orange-500 hover:bg-orange-600 transition text-white rounded-md shadow-md disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2"
+                className="px-6 py-3 bg-orange-700 hover:bg-orange-800 transition text-white rounded-md shadow-md disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2"
               >
                 {isLoading ? (
                   <>

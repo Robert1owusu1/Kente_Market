@@ -112,7 +112,7 @@ const VendorStorefront = () => {
         <FaStore className="text-6xl text-gray-300 dark:text-gray-600 mx-auto mb-6" />
         <h1 className="text-2xl font-bold mb-2">Store not found</h1>
         <p className="text-gray-600 dark:text-gray-400">This store may have been suspended or the link is incorrect.</p>
-        <Link to="/vendors" className="inline-block mt-6 text-amber-600 dark:text-amber-400 font-semibold">
+        <Link to="/vendors" className="inline-block mt-6 text-amber-700 dark:text-amber-400 font-semibold">
           ← Browse all stores
         </Link>
       </div>
@@ -156,7 +156,7 @@ const VendorStorefront = () => {
                 />
               ) : (
                 <div className="w-20 h-20 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
-                  <FaStore className="text-3xl text-amber-600 dark:text-amber-400" />
+                  <FaStore className="text-3xl text-amber-700 dark:text-amber-400" />
                 </div>
               )}
               <div>
@@ -173,7 +173,7 @@ const VendorStorefront = () => {
                     </span>
                   ))}
                   {(Number(rating) > 0 || Number(reviewCount) > 0) && (
-                    <span className="inline-flex items-center gap-1 text-sm text-amber-500 bg-amber-50 dark:bg-amber-900/20 px-2 py-0.5 rounded-full">
+                    <span className="inline-flex items-center gap-1 text-sm text-amber-800 bg-amber-50 dark:bg-amber-900/20 px-2 py-0.5 rounded-full">
                       <FaStar /> {rating} ({reviewCount} {Number(reviewCount) === 1 ? 'review' : 'reviews'})
                       {Number(viewData.verifiedReviewCount) > 0 && (
                         <span className="ml-1 text-emerald-600 dark:text-emerald-400">
@@ -262,11 +262,11 @@ const VendorStorefront = () => {
         <div className="mt-8 mb-12">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white">
-              Collection <span className="text-gray-400 font-medium">({productCount})</span>
+              Collection <span className="text-gray-500 dark:text-gray-400 font-medium">({productCount})</span>
             </h2>
             <Link
               to={`/products?vendor=${vendor.userId}`}
-              className="text-amber-600 dark:text-amber-400 font-semibold text-sm"
+              className="text-amber-700 dark:text-amber-400 font-semibold text-sm"
             >
               View all →
             </Link>
@@ -317,7 +317,7 @@ const VendorStorefront = () => {
                   <div className="p-3">
                     <h3 className="text-sm font-semibold text-gray-800 dark:text-white line-clamp-2">{p.title}</h3>
                     {p.patternName && (
-                      <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">{p.patternName}</p>
+                      <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">{p.patternName}</p>
                     )}
                     <p className="text-sm font-bold text-gray-900 dark:text-white mt-1.5">{formatCedi(p.price)}</p>
                   </div>

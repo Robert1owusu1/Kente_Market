@@ -231,3 +231,48 @@ Gates (disposable MySQL 8.4.11 `127.0.0.1:33155`, dotenv `injected env (0)` on e
 (13 pre-existing warnings), vitest **81/81**, build OK, DB-less run of the new files exit 0, `npm audit --omit=dev` 0/0,
 gitleaks history clean. Not re-run: a separate fresh-install-then-suite pass after the edits (no DDL changed; the
 850/850 run was on a DB freshly installed after the host reboot).
+
+### Phase M — AI Virtual Try-On completion (2026-10-14)
+
+Scope: AI try-on only (no checkout, payment, commission, inventory or vendor changes). Status:
+**CODE-COMPLETE, PROVIDER-SETUP-PENDING** — not production-ready. Details: `AI_TRYON_ARCHITECTURE.md`,
+`AI_TRYON_PROVIDER_SETUP.md`, `AI_TRYON_OPERATIONS.md`, `AI_TRYON_TEST_REPORT.md`.
+
+| ID | Finding | Disposition |
+|---|---|---|
+| TRY-1 | Try-on page offered a static demo catalog (`SAMPLE_PRODUCTS`) whose ids were resolved against the REAL product table — customers saw one garment and the AI received another | FIXED (gallery and Decorate Mode removed; product fixed from the product page; tested A/B) |
+| TRY-2 | Try-on garment lookup skipped the suspended-vendor visibility guard | FIXED (verified, DB mutation) |
+| TRY-3 | Jobs tracked in an in-memory map (lost on restart, single instance) | FIXED (`ai_tryon_jobs` + `sweepTryOnJobs`; migration `migrateTryOnJobs.js`, additive) |
+| TRY-4 | Browser received the provider's output URL directly | FIXED (private stored copy, owner-only endpoint) |
+| TRY-5 | No duplicate-submit protection or processing consent | FIXED (idempotency key; consent recorded) |
+| TRY-6 | Provider logic hard-wired in the controller | FIXED (adapter registry + Replicate adapter) |
+| TRY-7 | IDM-VTON licence is CC BY-NC-SA (non-commercial) | OPEN — production gate `AI_TRYON_PROVIDER_TERMS_ACCEPTED`; owner decision |
+| TRY-8 | IDM-VTON input schema/categories not verified against the live model | OPEN — operator step (setup §4.2) |
+| TRY-9 | Result images on local, ephemeral disk | OPEN — persistent disk or shared private storage before scaling |
+| TRY-10 | Privacy policy does not cover AI photo processing | OPEN — legal text |
+| TRY-11 | Testimonial (`Testimonials.tsx`) praises an AI "preview in your home" feature that no longer exists | OPEN — content decision, not edited |
+| TRY-12 | Provider-poll backoff started at 10 s (SQL `SET` order), delaying results | FIXED (verified, DB mutation) |
+| CART-1 | Server cart sync stores `item.image` but items carry `img` — thumbnails vanish when the cart is reloaded from the server (pre-existing, found in the try-on browser walkthrough) | FIXED (verified) in Phase N — `cartRoutes.js` reads `image ?? img`; `cartSanitize.test.js` (BUG_FIX_TRACKER B-06) |
+
+Gates (disposable MySQL 8.4.11 `127.0.0.1:33717`, `injected env (0)`): fresh `db:setup` then backend **995/995**,
+migration re-run exit 0; try-on suites with DB 129/129, without DB 119 pass + 10 DB tests skipped; browser walkthrough (mock provider) passed; vitest **135/135**;
+frontend + backend typecheck 0; lint 0 errors (13 pre-existing warnings); build OK; bundle free of provider key names.
+No paid AI call, no shared/staging/production DB contact.
+
+### Phase N — UI/UX, mobile responsiveness, accessibility (2026-10-14/15)
+
+Scope and evidence: `FULL_PROJECT_AUDIT.md`, `BUG_FIX_TRACKER.md`, `UI_UX_IMPROVEMENT_REPORT.md`,
+`MOBILE_RESPONSIVENESS_REPORT.md`, `ACCESSIBILITY_REPORT.md`, `FINAL_VALIDATION_REPORT.md`.
+No authentication, authorisation, payment, refund, payout, commission or tenant-isolation code changed.
+
+- 17 functional bugs fixed (B-01…B-17; no P0/P1 found), incl. CART-1 above, sold-out products addable from
+  grids, product page unreachable from grids on touch screens, fabricated product details/rankings, a
+  dark-mode flash on every load, and 5 small-phone layout overflows.
+- axe-core violations on 39 routes × 2 viewports: 727 → ≈5 nodes (critical 30 → 0).
+- Open: R-1 (contrast follow-up / dark mode not crawled), R-2 (27 modals, shared accessible Modal needed),
+  R-3 (/products hero density), R-4 (gallery UI absent), R-5; decisions D-1 (reject yard-less order lines?),
+  D-2 (grid Add to Cart picks first yard length), D-3 (testimonial/social content).
+
+Gates (disposable MySQL 8.4.11 `127.0.0.1:33717`, `injected env (0)`): backend **999/999** (0 skipped),
+vitest **151/151**, frontend + backend typecheck 0, lint 0 errors (11 pre-existing warnings), build OK,
+browser crawl 351 pages × 3 full runs + 2 targeted runs, 0 console errors / failed API calls.

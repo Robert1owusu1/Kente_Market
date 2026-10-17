@@ -159,7 +159,7 @@ const RequestCard = ({
             {request.vendorCanMeet ? (
               <p className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1"><FaCheckCircle /> Can meet your timeline</p>
             ) : (
-              <p className="text-xs text-amber-600 dark:text-amber-400">Range: cannot meet your exact date</p>
+              <p className="text-xs text-amber-700 dark:text-amber-400">Range: cannot meet your exact date</p>
             )}
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
               You pay the full quote now. Half releases to the weaver right away; the rest is held in escrow until your kente is delivered.
@@ -756,7 +756,7 @@ const CustomerProfile = () => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-gray-600 dark:text-gray-400">Total Spent</p>
-              <p className="text-2xl font-bold text-secondary">{formatCedi(customerData.totalSpent)}</p>
+              <p className="text-2xl font-bold text-amber-700 dark:text-secondary">{formatCedi(customerData.totalSpent)}</p>
             </div>
             <FaCreditCard className="text-3xl text-secondary/70" />
           </div>
@@ -791,7 +791,7 @@ const CustomerProfile = () => {
           <p className="text-gray-500 dark:text-gray-500 mb-4">
             {customerData.totalOrders === 0 ? 'Start shopping to see your orders here' : 'Your order history will appear here when available'}
           </p>
-          <Link to="/products" className="inline-flex items-center gap-2 bg-primary text-white px-6 py-2 rounded-lg hover:bg-primary/90 transition-colors">
+          <Link to="/products" className="btn btn-primary flex w-fit mx-auto px-6">
             <FaShoppingBag />
             {customerData.totalOrders === 0 ? 'Start Shopping' : 'Browse Products'}
           </Link>
@@ -1731,17 +1731,17 @@ const CustomerProfile = () => {
         <div className="flex flex-col lg:flex-row gap-8">
           {/* Mobile profile card + menu toggle */}
           <div className="lg:hidden">
-            <div className="bg-gradient-to-r from-primary to-secondary text-white rounded-lg shadow-md p-6 mb-4 flex items-center justify-between">
-              <div className="flex items-center gap-4">
+            <div className="bg-gradient-to-r from-primary to-secondary text-gray-900 rounded-lg shadow-md p-4 sm:p-6 mb-4 flex items-center justify-between gap-3">
+              <div className="flex min-w-0 flex-1 items-center gap-3 sm:gap-4">
                 <ProfilePictureUpload />
                 <div className="min-w-0">
                   <h3 className="font-bold text-lg truncate">{customerData.name}</h3>
-                  <p className="text-white/80 text-sm truncate">{customerData.email}</p>
+                  <p className="text-gray-800 text-sm truncate">{customerData.email}</p>
                 </div>
               </div>
               <button
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                className="bg-white/20 hover:bg-white/30 rounded-lg p-2 text-2xl leading-none"
+                className="flex h-11 w-11 shrink-0 items-center justify-center bg-white/40 hover:bg-white/60 rounded-lg text-2xl leading-none"
                 aria-expanded={mobileMenuOpen}
                 aria-label="Toggle menu"
               >

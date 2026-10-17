@@ -15,6 +15,7 @@ import { promoteReferralCommissions, reconcileReferralRefunds, recordMissingRefe
 import { reconcileReferralWithdrawals } from '../Services/referralPayoutService.js';
 import { reconcileStaleRefundClaims, reconcileUnmatchedCharges } from '../Services/paymentReconciliationService.js';
 import { runScheduledJob } from './schedulerJob.js';
+import { sweepTryOnJobs } from '../Services/tryOn/tryOnJobService.js';
 import { frontendBaseUrl } from '../config/frontendOrigins.js';
 
 // Deactivate (not destroy) stale unverified users. Never hard-delete a user
@@ -254,6 +255,10 @@ const scheduleJobs = () => {
   run('reconcileReferralRefunds', () => reconcileReferralRefunds(), 30 * 60 * 1000);
   run('recordMissingReferralCommissions', () => recordMissingReferralCommissions(), 30 * 60 * 1000);
   run('reconcileReferralWithdrawals', () => reconcileReferralWithdrawals(), 30 * 60 * 1000);
+  // AI try-on: finish jobs whose webhook never arrived, stop jobs past their
+  // deadline, fail submits interrupted by a restart, delete expired results
+  // and orphan/temp files, purge old (photo-free) job metadata. Bounded.
+  run('sweepTryOnJobs', sweepTryOnJobs, 2 * 60 * 1000);
   // Weekly vendor demand digest (Monday mornings). Settings-guarded and
   // idempotent per calendar week; not fired on boot (that would email everyone).
   setTimeout(() => runScheduledJob('sendWeeklyVendorDigest', sendWeeklyVendorDigest).catch(() => {}), 7 * DAY);

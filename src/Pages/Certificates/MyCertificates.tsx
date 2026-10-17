@@ -39,7 +39,7 @@ const CertificateCard = ({ c }: { c: CertificateView }) => (
     <div className="absolute right-3 top-3 text-amber-200 dark:text-amber-800">
       <FaCertificate className="text-4xl" />
     </div>
-    <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 mb-1">
+    <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400 mb-1">
       <FaMedal />
       <span className="font-semibold">{c.certificateNumber}</span>
     </div>
@@ -90,12 +90,13 @@ const VerifyBox = () => {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Certificate number or QR token"
-          className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
+          aria-label="Certificate number or QR token"
+          className="min-w-0 flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
         />
         <button
           type="submit"
           disabled={!query.trim() || isLoading}
-          className="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-60 text-white rounded-lg font-semibold flex items-center gap-2"
+          className="shrink-0 min-h-11 px-4 py-2 bg-amber-700 hover:bg-amber-800 disabled:opacity-60 text-white rounded-lg font-semibold flex items-center gap-2"
         >
           {isLoading ? <FaSpinner className="animate-spin" /> : <FaSearch />} Check
         </button>

@@ -66,7 +66,7 @@ const SuggestionsPage = () => {
       <div className="container mx-auto px-4 max-w-3xl">
         <div className="text-center mb-10">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-amber-100 dark:bg-amber-900/40 mb-4">
-            <FaLightbulb className="text-3xl text-amber-600 dark:text-amber-400" />
+            <FaLightbulb className="text-3xl text-amber-700 dark:text-amber-400" />
           </div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Suggestions</h1>
           <p className="text-gray-600 dark:text-gray-400 mt-2 max-w-xl mx-auto">
@@ -99,7 +99,7 @@ const SuggestionsPage = () => {
               <button
                 onClick={handleSubmit}
                 disabled={creating}
-                className="px-6 py-2.5 bg-amber-600 text-white rounded-lg font-semibold hover:bg-amber-700 disabled:opacity-60 inline-flex items-center gap-2"
+                className="px-6 py-2.5 bg-amber-700 text-white rounded-lg font-semibold hover:bg-amber-800 disabled:opacity-60 inline-flex items-center gap-2"
               >
                 {creating ? <FaSpinner className="animate-spin" /> : <FaPaperPlane />} Send suggestion
               </button>
@@ -112,7 +112,7 @@ const SuggestionsPage = () => {
             </p>
             <Link
               to="/login"
-              className="inline-block px-6 py-2.5 bg-amber-600 text-white rounded-lg font-semibold hover:bg-amber-700"
+              className="inline-block px-6 py-2.5 bg-amber-700 text-white rounded-lg font-semibold hover:bg-amber-800"
             >
               Sign in
             </Link>

@@ -154,7 +154,7 @@ const FooterNewsletter = () => {
           <button
             type="submit"
             disabled={isLoading}
-            className="px-4 py-2.5 rounded-md bg-primary text-white font-medium shrink-0 transition-colors duration-200 hover:opacity-90 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-transparent disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
+            className="px-4 py-2.5 rounded-md bg-primary text-gray-900 font-semibold shrink-0 transition-colors duration-200 hover:bg-primary-light focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-transparent disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
           >
             {isLoading ? (
               <>
@@ -171,36 +171,26 @@ const FooterNewsletter = () => {
   );
 };
 
+// Only networks with a configured URL are shown. Unconfigured ones used to
+// render as greyed-out "(not configured)" tiles — an operator concept that
+// meant nothing to customers (and put aria-label on a bare <span>).
+const configuredSocials = Socials.filter((s) => Boolean(s.url));
+
 const SocialTiles = () => (
   <ul className="flex items-center gap-2.5">
-    {Socials.map(({ label, icon: Icon, url }) => {
-      const tile = (
-        <Icon className="text-base" aria-hidden="true" />
-      );
-      return (
-        <li key={label}>
-          {url ? (
-            <a
-              href={url}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label={`Bonwire Kente on ${label}`}
-              className="flex items-center justify-center w-11 h-11 sm:w-9 sm:h-9 rounded-full bg-white/10 text-gray-300 hover:bg-primary hover:text-white transition-colors duration-200 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary"
-            >
-              {tile}
-            </a>
-          ) : (
-            <span
-              aria-label={`${label} (not configured)`}
-              title={`${label} (not configured)`}
-              className="flex items-center justify-center w-11 h-11 sm:w-9 sm:h-9 rounded-full bg-white/5 text-gray-500 cursor-not-allowed"
-            >
-              {tile}
-            </span>
-          )}
-        </li>
-      );
-    })}
+    {configuredSocials.map(({ label, icon: Icon, url }) => (
+      <li key={label}>
+        <a
+          href={url as string}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label={`Bonwire Kente on ${label}`}
+          className="flex items-center justify-center w-11 h-11 rounded-full bg-white/10 text-gray-300 hover:bg-primary hover:text-gray-900 transition-colors duration-200 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary"
+        >
+          <Icon className="text-base" aria-hidden="true" />
+        </a>
+      </li>
+    ))}
   </ul>
 );
 
@@ -311,10 +301,12 @@ const Footer = ({ className = '' }: { className?: string }) => {
               </ul>
             </div>
 
-            <div>
-              <h3 className="text-white text-base font-semibold mb-3">Follow</h3>
-              <SocialTiles />
-            </div>
+            {configuredSocials.length > 0 && (
+              <div>
+                <h3 className="text-white text-base font-semibold mb-3">Follow</h3>
+                <SocialTiles />
+              </div>
+            )}
           </div>
         </div>
 

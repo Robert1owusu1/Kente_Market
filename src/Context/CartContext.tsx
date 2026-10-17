@@ -1,5 +1,6 @@
 import { createContext, useContext, useReducer, useEffect, useRef, type ReactNode } from "react";
 import axios from "axios";
+import { toast } from "react-toastify";
 import { TAX_RATE, FREE_SHIPPING_THRESHOLD, STANDARD_SHIPPING_COST, calcTax, calcShipping } from "../utils/pricing";
 import { useAppSelector } from "../store";
 
@@ -312,6 +313,13 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
   // Actions
   const addToCart = (product: CartPayload) => {
     dispatch({ type: "ADD_TO_CART", payload: product });
+    // Every add-to-cart entry point (cards, product page, try-on result) used
+    // to give no feedback beyond the navbar count, which screen readers never
+    // announce. The toast container is global and announces as a live region;
+    // toastId collapses repeated clicks on the same product into one toast.
+    toast.success(`${product.title || product.name || "Item"} added to your cart`, {
+      toastId: `cart-add-${product.id}`,
+    });
   };
 
   const removeItem = (id: number | string) => {

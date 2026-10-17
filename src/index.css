@@ -192,6 +192,84 @@
   }
 }
 
+/* ---------------------------------------------------------------------------
+   Design system primitives (UI_UX_IMPROVEMENT_REPORT.md §2).
+   Brand amber is a background colour, not a text colour on white: white text
+   on #fea928/#ed8900 is 1.9–2.6:1 and fails WCAG AA, so primary actions use
+   amber with near-black text (7.4:1) and links/emphasis use amber-700+.
+   --------------------------------------------------------------------------- */
+@layer base {
+  /* One visible keyboard focus indicator everywhere (WCAG 2.4.7 / 2.4.11).
+     Components that draw their own ring keep it: utilities outrank base. */
+  :focus-visible {
+    outline: 2px solid var(--color-primary-dark);
+    outline-offset: 2px;
+  }
+
+  /* Honour reduced-motion for every transition/animation, including the
+     global colour transition and hover transforms (WCAG 2.3.3). */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  /* Buttons — one shape, three intents. Min 44px tall (touch target). */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-height: 2.75rem;
+    padding-inline: 1.25rem;
+    border-radius: var(--radius-lg);
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
+    font-weight: 600;
+    text-align: center;
+    transition-property: color, background-color, border-color, box-shadow;
+    transition-duration: 150ms;
+  }
+  .btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+  .btn-primary {
+    background-color: var(--color-primary-dark);
+    color: var(--color-gray-900);
+  }
+  .btn-primary:hover:not(:disabled) {
+    background-color: var(--color-primary);
+  }
+  .btn-secondary {
+    background-color: #fff;
+    color: var(--color-gray-900);
+    border: 1px solid var(--color-gray-300);
+  }
+  .btn-secondary:hover:not(:disabled) {
+    background-color: var(--color-gray-50);
+  }
+  .dark .btn-secondary {
+    background-color: var(--color-gray-800);
+    color: var(--color-gray-100);
+    border-color: var(--color-gray-600);
+  }
+  .btn-dark {
+    background-color: var(--color-gray-900);
+    color: #fff;
+  }
+  .btn-dark:hover:not(:disabled) {
+    background-color: var(--color-gray-800);
+  }
+}
+
 @layer components {
   /* v3's container was `{ center: true, padding: {1rem, 1.5rem, 2rem, 3rem} }`.
      v4's core container keeps width + per-breakpoint max-width but not the
@@ -404,4 +482,46 @@
   }
   .dark\:divide-gray-700:is(.dark *) > :not([hidden]) ~ :not([hidden]) { border-color:var(--color-gray-700); }
 
+}
+
+/* Brand amber as TEXT (`text-primary`, 159 uses) is #fea928 on white = 1.9:1,
+   which fails WCAG AA for every size. In light mode only, render it as
+   amber-700 (5.0:1 on white). Backgrounds (`bg-primary`) keep the brand amber,
+   dark mode keeps #fea928 (passes on the dark surfaces), and the footer —
+   a dark surface in both themes, where #fea928 already passes — is excluded.
+   Audit: every light-mode dark surface carrying text-primary is in <footer>
+   (ACCESSIBILITY_REPORT.md §4). */
+@layer utilities {
+  .text-primary:not(:is(.dark *)):not(footer *) {
+    color: var(--color-amber-700);
+  }
+}
+
+/* White text on brand amber (`bg-primary` / `from-primary` gradients, ~90
+   controls) is 1.9–2.6:1 and fails WCAG AA. Same rule as .btn-primary: amber
+   surfaces carry near-black text (7.4:1+). Applies in both themes — the amber
+   background does not change with the theme. */
+@layer utilities {
+  .bg-primary.text-white,
+  .bg-secondary.text-white,
+  .from-primary.text-white {
+    color: var(--color-gray-900);
+  }
+}
+
+/* Hero slider dots (components/Hero): 24x24 targets (WCAG 2.5.8). slick-theme
+   forces li/button to 20x20 and draws its own "•" via ::before; the visible
+   dot is a <span> inside our button instead. */
+.slick-dots.kente-hero-dots li {
+  width: 1.5rem;
+  height: 1.5rem;
+  margin: 0 0.25rem;
+}
+.slick-dots.kente-hero-dots li button {
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+}
+.slick-dots.kente-hero-dots li button::before {
+  display: none;
 }

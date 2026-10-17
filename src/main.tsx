@@ -1,3 +1,5 @@
+// Must stay the first import: sets the theme class before anything renders.
+import './utils/applyStoredTheme'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'

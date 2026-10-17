@@ -53,7 +53,7 @@ const TestingModePopup = () => {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-amber-100 dark:bg-amber-900/40 mb-4">
-          <FaLightbulb className="text-3xl text-amber-600 dark:text-amber-400" />
+          <FaLightbulb className="text-3xl text-amber-700 dark:text-amber-400" />
         </div>
 
         <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
@@ -69,7 +69,7 @@ const TestingModePopup = () => {
         <p className="text-gray-600 dark:text-gray-400 mt-2 text-sm leading-relaxed">
           We're building this out in the open. Got an idea? Your feedback goes straight to
           the admin team through the{' '}
-          <span className="font-semibold text-amber-600 dark:text-amber-400">Suggestions</span>{' '}
+          <span className="font-semibold text-amber-700 dark:text-amber-400">Suggestions</span>{' '}
           page.
         </p>
 

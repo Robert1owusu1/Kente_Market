@@ -1,12 +1,13 @@
 // FILE: frontend/src/components/TrendingProducts/TrendingProducts.jsx
 import React from 'react';
-import { FaStar, FaHeart, FaEye, FaShoppingCart, FaFire, FaTags, FaStore, FaCheckCircle, FaExclamationTriangle } from "react-icons/fa";
-import { Link, useNavigate } from 'react-router-dom';
+import { FaFire, FaTags, FaExclamationTriangle } from "react-icons/fa";
+import { Link } from 'react-router-dom';
 import { useCart } from "../../Context/CartContext";
 import { useGetTrendingProductsQuery } from "../../slices/productsApiSlice";
 import { useWishlistAction } from "../../hooks/useWishlistAction";
 import { ProductGridSkeleton } from "../loader/Skeleton";
-import { resolveImageUrl } from "../../utils/imageUrl";
+import ProductCard from "../ProductCard/ProductCard";
+import { toCartItem } from "../../utils/cartItem";
 import { yardOptionsFor } from "../../utils/yards";
 import type { Product } from "../../types/domain";
 
@@ -25,7 +26,6 @@ interface TrendProduct extends Product {
 
 const TrendingProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) => {
   const { addToCart } = useCart();
-  const navigate = useNavigate();
   const saveToFavorites = useWishlistAction();
 
  // RTK Query hook - cached in the Redux store, no duplicate network calls
@@ -45,33 +45,14 @@ const TrendingProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void 
 
   const handleAddToCart = (product: TrendProduct) => {
     // Kente is pre-designed: no colour/size choice — yardage only (even numbers).
-    const yardsOptions = yardOptionsFor(product);
-    const cartItem = {
-      id: product.id,
-      title: product.title,
-      price: product.price,
-      basePrice: (product.basePrice || product.base_price || product.price) as number | string,
-      image: product.image || product.img,
-      yards: yardsOptions[0],
-      yardsAvailable: yardsOptions,
-      quantity: 1,
-      fabricType: product.fabric_type || product.fabricType || product.material,
-      productionTime: (product.production_time || product.productionTime || 3) as string,
-      rating: Number(product.rating) || 0
-    };
-    
+    // Shared cart shape (utils/cartItem): this handler used to write `image`
+    // but not `img`, so lines added here showed no thumbnail in the cart.
+    const cartItem = toCartItem(product as unknown as Product, yardOptionsFor(product)[0], 1);
     addToCart(cartItem);
     
     if (handleOrderPopup) {
       handleOrderPopup();
     }
-  };
-
-  const calculateSavings = (price: number | string, originalPrice: number | string) => {
-    if (originalPrice && (originalPrice as number) > (price as number)) {
-      return (originalPrice as number) - (price as number);
-    }
-    return 0;
   };
 
  // Loading State with skeleton placeholders
@@ -80,15 +61,15 @@ const TrendingProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void 
       <div className='mt-14 mb-12'>
         <div className='container'>
           <div data-aos="fade-up" className='text-center mb-10 max-w-[600px] mx-auto'>
-            <p className='text-sm text-primary flex items-center justify-center gap-2'>
+            <p className='text-sm font-semibold text-amber-800 dark:text-primary flex items-center justify-center gap-2'>
               <FaFire className="text-orange-500" />
-              Top Selling Kente Cloth For You
+              Highly rated Kente
             </p>
-            <h2 data-aos="fade-up" className='text-3xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent'>
+            <h2 data-aos="fade-up" className='text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white'>
               Trending Products
             </h2>
             <p data-aos="fade-up" className='text-xs text-gray-500 dark:text-gray-300'>
-              Discover our most sought-after Kente patterns loved by heritage enthusiasts worldwide
+              Pieces shoppers on Kente Market rate highly
             </p>
           </div>
           <ProductGridSkeleton count={5} className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 place-items-center" />
@@ -144,192 +125,36 @@ const TrendingProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void 
       <div className='container'>
         {/* Header section */}
         <div className='text-center mb-10 max-w-[600px] mx-auto'>
-            <p data-aos="fade-up" className='text-sm text-primary flex items-center justify-center gap-2'>
+            <p data-aos="fade-up" className='text-sm font-semibold text-amber-800 dark:text-primary flex items-center justify-center gap-2'>
               <FaFire className="text-orange-500" />
-              Top Selling Kente Cloth For You
+              Highly rated Kente
             </p>
-          <h2 data-aos="fade-up" className='text-3xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent'>
+          <h2 data-aos="fade-up" className='text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white'>
             Trending Products
           </h2>
           <p data-aos="fade-up" className='text-xs text-gray-500 dark:text-gray-300'>
-            Discover our most sought-after Kente patterns loved by heritage enthusiasts worldwide
+            Pieces shoppers on Kente Market rate highly
           </p>
         </div>
 
         {/* Body section */}
         <div>
-          <div className='grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 place-items-center'>
-            {/* Card section */}
+          <div className='grid grid-cols-2 gap-3 sm:gap-6 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5'>
             {trendingProductsData.map((data: TrendProduct, index) => (
-              <div 
-                data-aos="fade-up"
-                data-aos-delay={index * 50}
-                key={data.id} 
-                className='group relative bg-white dark:bg-gray-800 rounded-xl shadow-lg hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-2 w-full max-w-[280px] overflow-hidden border border-gray-100 dark:border-gray-700'
-              >
-                {/* Image section */}
-                <div className='relative overflow-hidden rounded-t-xl'>
-                  <img 
-                    src={resolveImageUrl(data.image || data.img)} 
-                    alt={data.title}
-                    width={400}
-                    height={220}
-                    loading="lazy"
-                    decoding="async"
-                    className='h-[220px] w-full object-cover group-hover:scale-110 transition-transform duration-500'
-                    onError={(e) => {
-                      const target = e.target as HTMLImageElement;
-                      target.onerror = null;
-                      target.src = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300"><rect fill="#f4eee1" width="400" height="300"/><text x="200" y="155" font-family="sans-serif" font-size="20" fill="#8a6d3b" text-anchor="middle">Kente image coming soon</text></svg>');
-                    }}
-                  />
-                  
-                  {/* Trending badge */}
-                  {((data.rating ?? 0) >= 4.7 || ["Trending", "Hot", "Best Seller", "Popular"].includes(data.tag as string)) && (
-                    <div className='absolute top-3 left-3 bg-gradient-to-r from-orange-700 to-red-700 text-white text-xs px-2 py-1 rounded-full flex items-center gap-1'>
-                      <FaFire className="text-[10px]" />
-                      {data.tag || "Trending"}
-                    </div>
-                  )}
-
-                  {/* Savings badge */}
-                  {(data.original_price || data.originalPrice) && (
-                    <div className='absolute top-3 right-3 bg-green-700 text-white text-xs px-2 py-1 rounded-full'>
-                      Save ₵{calculateSavings(data.price, (data.original_price || data.originalPrice) as number | string)}
-                    </div>
-                  )}
-
-                  {/* Rating badge — only when the product actually has reviews */}
-                  {Number(data.rating) > 0 && (
-                    <div className='absolute bottom-3 left-3 bg-white/90 backdrop-blur-xs text-gray-800 text-xs px-2 py-1 rounded-full flex items-center gap-1'>
-                      <FaStar className='text-yellow-400 text-[10px]' />
-                      <span className="font-semibold">{Number(data.rating).toFixed(1)}</span>
-                    </div>
-                  )}
-
-                  {/* Quick actions overlay */}
-                  <div className='absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center gap-3'>
-                    <button
-                      type="button"
-                      onClick={() => navigate(`/product/${data.id}`)}
-                      aria-label={`Quick view ${data.title}`}
-                      className='bg-white/90 hover:bg-white p-2 rounded-full transform scale-0 group-hover:scale-100 transition-transform duration-200 delay-100'
-                    >
-                      <FaEye className='text-gray-700' />
-                    </button>
-                    <button 
-                      onClick={() => handleAddToCart(data)}
-                      aria-label={`Add ${data.title} to cart`}
-                      className='bg-primary hover:bg-primary/90 text-white p-2 rounded-full transform scale-0 group-hover:scale-100 transition-transform duration-200 delay-200'
-                    >
-                      <FaShoppingCart />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => saveToFavorites(data.id)}
-                      aria-label={`Add ${data.title} to wishlist`}
-                      className='bg-white/90 hover:bg-white p-2 rounded-full transform scale-0 group-hover:scale-100 transition-transform duration-200 delay-300'
-                    >
-                      <FaHeart className='text-red-500' />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Content section */}
-                <div className='p-4 space-y-3'>
-                  {/* Title and category */}
-                  <div>
-                    <h3 className='font-bold text-lg text-gray-800 dark:text-white group-hover:text-primary transition-colors duration-300'>
-                      {data.title}
-                    </h3>
-                    <p className='text-xs text-gray-600 dark:text-gray-300 flex items-center gap-1'>
-                      <FaTags className="text-[10px]" />
-                      {data.category}
-                    </p>
-                    {data.vendorBusinessName && (
-                      <p className='text-[10px] text-gray-600 dark:text-gray-300 flex items-center gap-1 mt-1'>
-                        <FaStore className="text-[10px] text-primary" />
-                        Sold by {data.vendorBusinessName}
-                        {data.vendorStatus === 'approved' && (
-                          <span className="inline-flex items-center gap-0.5 text-green-600 dark:text-green-400 font-medium whitespace-nowrap">
-                            <FaCheckCircle className="text-[10px]" /> Verified
-                          </span>
-                        )}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Color display */}
-                  <div className='flex items-center gap-2'>
-                    <span className='text-xs text-gray-600 dark:text-gray-300'>Color:</span>
-                    <div className='flex gap-1'>
-                      {(data.colors_available || data.colorsAvailable || data.colors) ? (
-                        (data.colors_available || data.colorsAvailable || data.colors)!.slice(0, 3).map((color, index) => (
-                          <div 
-                            key={index}
-                            className={`w-4 h-4 rounded-full border-2 border-white shadow-xs`}
-                            style={{ backgroundColor: color }}
-                            title={color}
-                          ></div>
-                        ))
-                      ) : (
-                        <div 
-                          className='w-4 h-4 rounded-full border-2 border-white shadow-xs'
-                          style={{ backgroundColor: data.color?.toLowerCase() || '#gray' }}
-                        ></div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Price section */}
-                  <div className='flex items-center justify-between'>
-                    <div>
-                      <div className='flex items-center gap-2'>
-                        <span className='text-lg font-bold text-primary'>
-                          ₵{data.price}
-                        </span>
-                        {(data.original_price || data.originalPrice) && (
-                          <span className='text-sm text-gray-500 line-through'>
-                            ₵{data.original_price || data.originalPrice}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Product features */}
-                  <div className='text-xs text-gray-600 dark:text-gray-300 space-y-1 pt-2 border-t border-gray-100 dark:border-gray-600'>
-                    <p>Material: {data.fabric_type || data.fabricType || data.material}</p>
-                    {data.sizes && <p>Available yards: {Array.isArray(data.sizes) ? data.sizes.join(', ') : data.sizes}</p>}
-                    {data.reviews && <p>Reviews: {data.reviews}+ customers</p>}
-                  </div>
-
-                  {/* Add to cart button */}
-                  <button
-                    onClick={() => handleAddToCart(data)}
-                    className='w-full bg-gradient-to-r from-primary to-secondary hover:from-secondary hover:to-primary text-white py-2 px-4 rounded-lg font-medium transition-all duration-300 transform hover:scale-105 flex items-center justify-center gap-2'
-                  >
-                    <FaShoppingCart className="text-sm" />
-                    Add to Cart
-                  </button>
-                </div>
-
-                {/* Animated border */}
-                <div className='absolute bottom-0 left-0 w-0 h-1 bg-gradient-to-r from-primary to-secondary group-hover:w-full transition-all duration-500'></div>
-              </div>
+              <ProductCard
+                key={data.id}
+                product={data}
+                onAddToCart={() => handleAddToCart(data)}
+                onToggleWishlist={saveToFavorites}
+                priority={index < 2}
+              />
             ))}
           </div>
 
           {/* View all products */}
           <div className='flex justify-center mt-12'>
-            <Link to="/products">
-              <button className='group relative overflow-hidden bg-gradient-to-r from-primary to-secondary hover:from-secondary hover:to-primary text-white py-3 px-8 rounded-full font-semibold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl flex items-center gap-3'>
-                <span>View All Products</span>
-                <FaEye className="group-hover:translate-x-1 transition-transform duration-300" />
-                
-                {/* Animated background */}
-                <div className='absolute inset-0 bg-gradient-to-r from-secondary to-primary opacity-0 group-hover:opacity-100 transition-opacity duration-300'></div>
-              </button>
+            <Link to="/products" className="btn btn-primary px-8">
+              View all products
             </Link>
           </div>
         </div>

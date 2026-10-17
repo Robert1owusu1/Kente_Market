@@ -93,8 +93,8 @@ const ReferralsPage = () => {
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-5">
         <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">Your referral link {data.tier === 'super' && <span className="ml-2 px-2 py-0.5 rounded-full text-xs bg-primary/10 text-primary">Super ambassador</span>}</p>
         <div className="flex flex-col sm:flex-row gap-2">
-          <input readOnly value={data.link} className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-800 dark:text-white text-sm" />
-          <button onClick={copy} className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-primary text-white hover:opacity-90"><FaCopy /> Copy</button>
+          <input readOnly aria-label="Your referral link" value={data.link} className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-800 dark:text-white text-sm" />
+          <button onClick={copy} className="btn btn-primary"><FaCopy aria-hidden="true" /> Copy</button>
         </div>
         <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">{data.referredCount} people signed up with your link.</p>
       </div>
@@ -120,17 +120,17 @@ const ReferralsPage = () => {
         <form onSubmit={onPayout} className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-5 space-y-3">
           <h2 className="font-semibold text-gray-900 dark:text-white flex items-center gap-2"><FaWallet /> Payout account</h2>
           {data.payoutAccount && <p className="text-sm text-gray-600 dark:text-gray-300">Current: {data.payoutAccount}</p>}
-          <select value={acct.type} onChange={(e) => setAcct({ ...acct, type: e.target.value as 'mobile_money' | 'bank' })}
+          <select aria-label="Payout method" value={acct.type} onChange={(e) => setAcct({ ...acct, type: e.target.value as 'mobile_money' | 'bank' })}
             className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white">
             <option value="mobile_money">Mobile Money</option>
             <option value="bank">Bank account</option>
           </select>
-          <input placeholder="Account name" value={acct.name} onChange={(e) => setAcct({ ...acct, name: e.target.value })}
+          <input aria-label="Account name" placeholder="Account name" value={acct.name} onChange={(e) => setAcct({ ...acct, name: e.target.value })}
             className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white" />
-          <input placeholder={acct.type === 'mobile_money' ? 'MoMo number' : 'Account number'} inputMode="numeric" value={acct.accountNumber}
+          <input aria-label={acct.type === 'mobile_money' ? 'MoMo number' : 'Account number'} placeholder={acct.type === 'mobile_money' ? 'MoMo number' : 'Account number'} inputMode="numeric" value={acct.accountNumber}
             onChange={(e) => setAcct({ ...acct, accountNumber: e.target.value.replace(/\D/g, '') })}
             className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white" />
-          <input placeholder={acct.type === 'mobile_money' ? 'Network code (MTN, VOD, ATL)' : 'Bank code'} value={acct.bankCode}
+          <input aria-label={acct.type === 'mobile_money' ? 'Mobile network code' : 'Bank code'} placeholder={acct.type === 'mobile_money' ? 'Network code (MTN, VOD, ATL)' : 'Bank code'} value={acct.bankCode}
             onChange={(e) => setAcct({ ...acct, bankCode: e.target.value })}
             className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white" />
           <button disabled={savingPayout} className="w-full py-2 rounded-lg bg-gray-900 dark:bg-gray-700 text-white disabled:opacity-60">
@@ -144,7 +144,7 @@ const ReferralsPage = () => {
             Minimum {money(data.minWithdrawal)}. You can also pay for a whole order with your balance at checkout —
             orders paid with earnings are final and cannot be refunded.
           </p>
-          <input placeholder="Amount (GH₵)" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value.trim())}
+          <input aria-label="Withdrawal amount in Ghana cedis" placeholder="Amount (GH₵)" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value.trim())}
             className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white" />
           <button disabled={withdrawing || !data.payoutAccount || data.wallet.balance < data.minWithdrawal}
             className="w-full py-2 rounded-lg bg-primary text-white disabled:opacity-60">
