@@ -25,9 +25,11 @@
 // mocked tests. See AI_TRYON_PROVIDER_SETUP.md.
 import { getTryOnConfig } from '../config.js';
 import replicateIdmVton from './replicateIdmVton.js';
+import fashnTryOn from './fashnTryOn.js';
 import mockProvider from './mockProvider.js';
 
 const PROVIDERS = new Map([
+  [fashnTryOn.id, fashnTryOn],
   [replicateIdmVton.id, replicateIdmVton],
   [mockProvider.id, mockProvider],
 ]);

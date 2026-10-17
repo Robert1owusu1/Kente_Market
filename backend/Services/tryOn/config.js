@@ -19,7 +19,7 @@ const trimmed = (name) => (process.env[name] || '').trim();
 /**
  * @returns {{
  *   enabled: boolean, providerId: string, apiKey: string, apiBaseUrl: string,
- *   modelVersion: string, webhookSecret: string, publicApiUrl: string,
+ *   modelVersion: string, generationMode: string, webhookSecret: string, publicApiUrl: string,
  *   termsAccepted: boolean, production: boolean,
  *   maxActivePerUser: number, maxActiveGlobal: number,
  *   jobTimeoutMinutes: number, resultTtlHours: number, jobRecordRetentionDays: number,
@@ -36,6 +36,9 @@ export const getTryOnConfig = () => ({
   apiKey: trimmed('AI_TRYON_API_KEY') || trimmed('REPLICATE_API_TOKEN'),
   apiBaseUrl: trimmed('AI_TRYON_API_BASE_URL'),
   modelVersion: trimmed('AI_TRYON_MODEL_VERSION'),
+  // Provider quality/cost tier where the provider has one (FASHN:
+  // fast | balanced | quality). Empty = the adapter's cheapest default.
+  generationMode: trimmed('AI_TRYON_GENERATION_MODE').toLowerCase(),
   webhookSecret: trimmed('AI_TRYON_WEBHOOK_SECRET'),
   publicApiUrl: trimmed('AI_TRYON_PUBLIC_API_URL').replace(/\/+$/, ''),
   termsAccepted: process.env.AI_TRYON_PROVIDER_TERMS_ACCEPTED === 'true',

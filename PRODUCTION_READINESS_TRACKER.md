@@ -246,8 +246,8 @@ Scope: AI try-on only (no checkout, payment, commission, inventory or vendor cha
 | TRY-4 | Browser received the provider's output URL directly | FIXED (private stored copy, owner-only endpoint) |
 | TRY-5 | No duplicate-submit protection or processing consent | FIXED (idempotency key; consent recorded) |
 | TRY-6 | Provider logic hard-wired in the controller | FIXED (adapter registry + Replicate adapter) |
-| TRY-7 | IDM-VTON licence is CC BY-NC-SA (non-commercial) | OPEN — production gate `AI_TRYON_PROVIDER_TERMS_ACCEPTED`; owner decision |
-| TRY-8 | IDM-VTON input schema/categories not verified against the live model | OPEN — operator step (setup §4.2) |
+| TRY-7 | IDM-VTON licence is CC BY-NC-SA (non-commercial) | ADDRESSED IN CODE (2026-10-17) — owner chose FASHN; `fashn` adapter added (`providers/fashnTryOn.js`). Owner must still confirm FASHN's terms before setting `AI_TRYON_PROVIDER_TERMS_ACCEPTED=true` (setup §3a) |
+| TRY-8 | Provider input schema not verified against the live API | OPEN — FASHN request built from its API reference + mocked tests; confirm with the first real try-on (setup §3a step 6) |
 | TRY-9 | Result images on local, ephemeral disk | OPEN — persistent disk or shared private storage before scaling |
 | TRY-10 | Privacy policy does not cover AI photo processing | OPEN — legal text |
 | TRY-11 | Testimonial (`Testimonials.tsx`) praises an AI "preview in your home" feature that no longer exists | OPEN — content decision, not edited |

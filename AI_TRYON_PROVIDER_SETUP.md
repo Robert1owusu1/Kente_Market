@@ -8,9 +8,9 @@ Not PRODUCTION-READY: see §6 for the blockers.
 | | Done in the codebase | Operator must do |
 |---|---|---|
 | Customer journey, product binding, job tracking, private results, cost controls | ✅ | — |
-| Provider-independent adapter layer + a Replicate IDM-VTON adapter | ✅ | — |
-| Verify the IDM-VTON input schema against the live model | — | ✅ (§4, step 2) |
-| Obtain commercial-use terms for the model, or choose another provider | — | ✅ (§3) |
+| Provider-independent adapter layer + FASHN and Replicate IDM-VTON adapters | ✅ | — |
+| Read FASHN's Terms of Service and confirm commercial use | — | ✅ (§3a) |
+| First live FASHN try-on to confirm the documented request format | — | ✅ (§3a, step 6) |
 | Create provider account, API key, (optional) webhook secret | — | ✅ |
 | Configure environment variables | — | ✅ (§5) |
 | Run the migration on staging, then production | — | ✅ (`npm run db:migrate`) |
@@ -37,7 +37,54 @@ Checklist before activating any provider:
 - [ ] Permitted handling of customer photos; retention and deletion policy
 - [ ] Authentication method; exact request and response schema
 
-## 3. The included adapter: `replicate-idm-vton`
+## 3a. Recommended adapter: `fashn` (FASHN Try-On Max)
+
+`backend/Services/tryOn/providers/fashnTryOn.js`, built from FASHN's API
+reference (read 2026-10-17). Model `tryon-max`: it takes any product image
+with no tops/bottoms category, which suits Kente cloth and stoles.
+
+- **Requests:** `POST https://api.fashn.ai/v1/run` with `product_image` (this
+  product's own image) and `model_image` (the customer photo, re-encoded and
+  EXIF-stripped), 1k resolution, one JPEG output. Status by polling
+  `GET /v1/status/{id}`.
+- **No webhooks:** FASHN does not sign them, so none are requested or trusted.
+  Jobs complete through the customer's polling and the 2-minute sweeper.
+- **No cancel:** FASHN has no cancel endpoint; a job past its deadline ends on
+  our side. Failed predictions are not charged by FASHN.
+- **Results** are downloaded only from `https://cdn.fashn.ai` /
+  `https://media.fashn.ai`, without credentials, then re-encoded and stored
+  privately.
+- **Cost:** `AI_TRYON_GENERATION_MODE` fast / balanced / quality = 1 / 2 / 3
+  credits per image (about $0.075 / $0.15 / $0.225 on pay-as-you-go).
+  Default `fast`. Daily and concurrency caps in §5 bound the total.
+
+Activation:
+
+1. FASHN dashboard: **Billing → API → Top up API credits**, then **Developer
+   API → create key** (shown once).
+2. Read https://fashn.ai/legal/terms-of-service. Their docs describe
+   `tryon-max` as built for publishable e-commerce content and say customer
+   content is not used for training, but state no licence explicitly. If the
+   terms allow your use, production needs `AI_TRYON_PROVIDER_TERMS_ACCEPTED=true`.
+3. Render → API service → Environment:
+   ```
+   AI_TRYON_ENABLED=true
+   AI_TRYON_PROVIDER=fashn
+   AI_TRYON_API_KEY=<FASHN key>
+   AI_TRYON_PROVIDER_TERMS_ACCEPTED=true
+   AI_TRYON_GENERATION_MODE=fast
+   AI_TRYON_ALLOWED_HOSTS=<your R2 public host, e.g. media.yourdomain.com>
+   ```
+   `AI_TRYON_ALLOWED_HOSTS` lets the server pass R2-hosted product images to
+   FASHN by URL; products whose image host is not listed show "try-on
+   unavailable".
+4. Make sure `npm run db:migrate` has run on that database (`ai_tryon_jobs`).
+5. Deploy. The boot log says `AI try-on is enabled but refusing new jobs: …`
+   if anything is missing (names only, never values).
+6. Do one real try-on as yourself and check the result shows the selected
+   product; then work through §7.
+
+## 3. Alternative adapter: `replicate-idm-vton`
 
 IDM-VTON (`cuuupid/idm-vton`) on Replicate — the model the previous
 implementation already used.
@@ -94,10 +141,11 @@ No provider switch has been made in code without your approval.
 | Variable | Required | Default | Meaning |
 |---|---|---|---|
 | `AI_TRYON_ENABLED` | yes | `false` | kill switch; only literal `true` enables new jobs |
-| `AI_TRYON_PROVIDER` | yes | — | `replicate-idm-vton` (or `mock` for local dev; refused in production) |
+| `AI_TRYON_PROVIDER` | yes | — | `fashn` (recommended), `replicate-idm-vton`, or `mock` for local dev (refused in production) |
 | `AI_TRYON_API_KEY` | yes | — | provider key (`REPLICATE_API_TOKEN` still read as fallback) |
 | `AI_TRYON_PROVIDER_TERMS_ACCEPTED` | production | `false` | confirms commercial-use terms (§3) |
-| `AI_TRYON_MODEL_VERSION` | recommended | adapter's pinned id | model version to run |
+| `AI_TRYON_MODEL_VERSION` | no | adapter default | `fashn`: empty or `tryon-max`; `replicate-idm-vton`: 64-hex version id |
+| `AI_TRYON_GENERATION_MODE` | no | `fast` | `fashn` only: `fast` / `balanced` / `quality` (1 / 2 / 3 credits) |
 | `AI_TRYON_API_BASE_URL` | no | adapter default | https override (e.g. a proxy) |
 | `AI_TRYON_WEBHOOK_SECRET` | no | — | provider signing secret |
 | `AI_TRYON_PUBLIC_API_URL` | with webhook | — | https origin of this API |
@@ -114,8 +162,8 @@ Template: `backend/.env.example`. No frontend variable is needed.
 
 ## 6. Production blockers (unresolved)
 
-1. **Licence**: IDM-VTON is non-commercial. Commercial terms or another provider are required.
-2. **Schema verification**: model input names and categories not yet confirmed against the live schema.
+1. **Licence**: with `fashn`, the operator must confirm FASHN's terms (§3a step 2). IDM-VTON is non-commercial.
+2. **First live call**: the FASHN request format comes from its API reference and is covered by mocked tests; it has not yet been sent to the real API (no paid calls were made).
 3. **Real-world quality**: whether the model reproduces Kente patterns and colours acceptably is unknown until tested with real products (§7).
 4. **Result storage on Render**: the default result directory is the instance's local disk, which is ephemeral and not shared across instances. Attach a persistent disk and point `AI_TRYON_RESULT_DIR` at it, or accept that results are lost on redeploy (customers then see "expired", never a wrong image). Multiple instances would need shared private object storage (not implemented).
 5. **Privacy policy**: `/privacy` does not yet describe AI photo processing, the third-party processor, or retention. The consent text links to it.

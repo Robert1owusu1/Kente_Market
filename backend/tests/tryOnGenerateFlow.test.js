@@ -20,6 +20,7 @@
 import { test, describe, beforeEach, afterEach, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import sharp from 'sharp';
+import axios from 'axios';
 
 import pool from '../config/db.js';
 import {
@@ -34,6 +35,7 @@ import {
   sweepTryOnJobs,
 } from '../Services/tryOn/tryOnJobService.js';
 import { setProviderForTests } from '../Services/tryOn/providers/index.js';
+import fashnTryOn from '../Services/tryOn/providers/fashnTryOn.js';
 import { sanitizeImageBuffer, readLocalCatalogImage } from '../utils/tryOnImage.js';
 import { makeFakeRepo, makeFakeStore, makeScriptedProvider } from './helpers/tryOnFakes.js';
 
@@ -698,3 +700,67 @@ describe('GET /api/tryon/product/:productId eligibility', () => {
     assert.equal((await call(11)).res.body.enabled, false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// The real FASHN adapter through the real job service (only HTTP is faked)
+// ---------------------------------------------------------------------------
+describe('FASHN adapter end to end (axios mocked, no spend)', () => {
+  test('upload -> run -> poll -> CDN download -> sanitized, owner-only result', async () => {
+    install();
+    process.env.AI_TRYON_API_KEY = ['fa', 'flow', 'not', 'real'].join('-');
+    setProviderForTests(fashnTryOn);
+    mockProducts([PRODUCT_A]);
+
+    const posts = [];
+    const gets = [];
+    let fashnStatus = 'in_queue';
+    const cdnUrl = 'https://cdn.fashn.ai/pred-77-u1/output_0.jpeg';
+    mock.method(axios, 'post', async (url, body, opts) => {
+      posts.push({ url, body, opts });
+      return { data: { id: 'pred-77-u1', error: null } };
+    });
+    mock.method(axios, 'get', async (url, opts) => {
+      gets.push({ url, opts });
+      if (url === 'https://api.fashn.ai/v1/status/pred-77-u1') {
+        return { data: { id: 'pred-77-u1', status: fashnStatus, output: fashnStatus === 'completed' ? [cdnUrl] : null, error: null } };
+      }
+      if (url === cdnUrl) return { data: await resultJpeg() };
+      throw new Error(`unexpected GET ${url}`);
+    });
+
+    const { res } = await run(createTryOnJob, await submitReq());
+    assert.equal(res.statusCode, 202, JSON.stringify(res.body));
+    const jobId = res.body.job.jobId;
+
+    // Exactly one run, carrying this product's own (sanitized) image and the
+    // re-encoded photo with its EXIF stripped.
+    assert.equal(posts.length, 1);
+    assert.equal(posts[0].url, 'https://api.fashn.ai/v1/run');
+    assert.equal(posts[0].body.model_name, 'tryon-max');
+    assert.equal(posts[0].body.inputs.product_image, await sanitizedCatalogImage(PRODUCT_A.img));
+    const sentPhoto = Buffer.from(posts[0].body.inputs.model_image.split(',')[1], 'base64');
+    assert.equal((await sharp(sentPhoto).metadata()).exif, undefined, 'photo EXIF must not leave the server');
+
+    // Still in FASHN's queue: the submitted job stays in progress.
+    makeDue(jobId);
+    let r = await run(getTryOnJob, { user: { id: 101 }, params: { id: jobId } });
+    assert.equal(r.res.body.job.status, 'processing');
+
+    fashnStatus = 'completed';
+    makeDue(jobId);
+    r = await run(getTryOnJob, { user: { id: 101 }, params: { id: jobId } });
+    assert.equal(r.res.body.job.status, 'succeeded');
+    assert.ok(!JSON.stringify(r.res.body).includes('fashn.ai'), 'the provider URL must not reach the browser');
+
+    const cdnGet = gets.find((g) => g.url === cdnUrl);
+    assert.ok(cdnGet, 'result downloaded from the CDN');
+    assert.equal(cdnGet.opts.headers, undefined, 'no API key sent to the CDN');
+
+    const img = await run(getTryOnJobResult, { user: { id: 101 }, params: { id: jobId } });
+    assert.equal(img.res.statusCode, 200);
+    assert.equal((await sharp(img.res.body).metadata()).format, 'jpeg');
+    const other = await run(getTryOnJobResult, { user: { id: 202 }, params: { id: jobId } });
+    assert.equal(other.res.statusCode, 404);
+  });
+});
+
