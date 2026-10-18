@@ -1073,9 +1073,12 @@ describe('frontend contract: unavailable rates / unsupported destinations block 
   });
 
   test('the quote request sends the GHS subtotal and the destination', () => {
-    const call = checkout.match(/\/api\/checkout\/international\/shipping-options', \{[\s\S]{0,300}?\}\)/);
+    // Window widened when the request gained `items` (product ids the server
+    // resolves vendors from); the request object now ends at `\n      })`.
+    const call = checkout.match(/\/api\/checkout\/international\/shipping-options', \{[\s\S]{0,900}?\n {6}\}\)/);
     assert.ok(call, 'shipping-options request not found');
     assert.match(call[0], /countryCode: destinationCode/);
     assert.match(call[0], /subtotal,/);
+    assert.match(call[0], /items: cartItems\.map\([\s\S]*productId:/, 'the quote must send product ids so the server can check every vendor');
   });
 });

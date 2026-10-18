@@ -32,7 +32,7 @@ import type { FormErrors } from "../../types/domain";
 import { formatCedi } from '../../utils/formatCurrency';
 import InternationalAddressForm, { emptyInternationalAddress } from '../../components/Address/InternationalAddressForm';
 import type { InternationalAddress } from '../../components/Address/InternationalAddressForm';
-import { normalizeDestinationCode, isValidPhoneForDestination, hasPayableAmountChanged, DESTINATION_NAMES } from '../../utils/internationalCheckout';
+import { normalizeDestinationCode, isValidPhoneForDestination, hasPayableAmountChanged, internationalDisplayTotals, DESTINATION_NAMES } from '../../utils/internationalCheckout';
 
 interface AppliedCoupon {
   code: string;
@@ -132,7 +132,7 @@ export default function CheckoutPage() {
   const [intlAddress, setIntlAddress] = useState<InternationalAddress>(() => emptyInternationalAddress());
   const destinationCode = normalizeDestinationCode(intlAddress.countryCode) ?? 'GH';
   const isInternational = deliveryMethod === 'home' && destinationCode !== 'GH';
-  const [shippingEligibility, setShippingEligibility] = useState<{ supported: boolean; message?: string; mock?: boolean } | null>(null);
+  const [shippingEligibility, setShippingEligibility] = useState<{ supported: boolean; message?: string; mock?: boolean; chargeableShippingGHS?: number | null } | null>(null);
   // Payment-amount freeze: the first finite payable total is captured and
   // any silent change afterwards blocks payment instead of charging anew.
   const initialPayableRef = useRef<number | null>(null);
@@ -276,6 +276,15 @@ export default function CheckoutPage() {
   // A changed total blocks payment until the customer refreshes the order.
   const payableAmountChanged = hasPayableAmountChanged(initialPayableRef.current, payableTotal);
 
+  // What the summary and Pay buttons SHOW. Abroad, Ghana's flat shipping does
+  // not apply: show the quote's exact chargeable shipping and the total the
+  // server will book at Pay (the charge itself is unchanged: syncAddressTotals
+  // re-books on the server and Paystack is initialized with that figure).
+  const intlShown = internationalDisplayTotals({ subtotal, tax, discount }, shippingEligibility?.chargeableShippingGHS);
+  const shownShipping = isInternational ? intlShown.shipping : shipping;
+  const shownTotal = isInternational ? intlShown.total : total;
+  const shownPayable = isInternational ? intlShown.total : payableTotal;
+
   // Shipping eligibility for the selected destination (DB-backed carrier
   // rates + per-vendor destination checks). Fail-closed: an unsupported
   // destination, a vendor opt-out, or a lookup failure blocks payment; while
@@ -292,9 +301,23 @@ export default function CheckoutPage() {
         countryCode: destinationCode,
         subtotal,
         region: isInternational ? intlAddress.region || undefined : undefined,
+        // Product ids only: the server resolves each item's vendor itself and
+        // refuses the quote when any of them does not ship here.
+        items: cartItems.map((item) => ({
+          productId: (item as { id?: unknown; product?: unknown; productId?: unknown }).id
+            ?? (item as { product?: unknown }).product ?? (item as { productId?: unknown }).productId,
+          qty: (item as { quantity?: unknown }).quantity ?? 1,
+        })),
       })
       .then(({ data }) => {
-        if (!cancelled) setShippingEligibility({ supported: Boolean(data?.supported), mock: Boolean(data?.mock) });
+        if (!cancelled) {
+          setShippingEligibility({
+            supported: Boolean(data?.supported),
+            mock: Boolean(data?.mock),
+            message: data?.supported ? undefined : data?.message,
+            chargeableShippingGHS: typeof data?.chargeableShippingGHS === 'number' ? data.chargeableShippingGHS : null,
+          });
+        }
       })
       .catch((err) => {
         if (!cancelled) {
@@ -305,7 +328,7 @@ export default function CheckoutPage() {
     return () => {
       cancelled = true;
     };
-  }, [deliveryMethod, destinationCode, subtotal, isInternational, intlAddress.region]);
+  }, [deliveryMethod, destinationCode, subtotal, isInternational, intlAddress.region, cartItems]);
 
   // Validate total amount
   useEffect(() => {
@@ -1550,7 +1573,7 @@ export default function CheckoutPage() {
           ) : !isPaystackLoaded ? (
             'Loading Payment System...'
           ) : (
-            `Pay ${formatCedi(payableTotal)}`
+            shownPayable === null ? 'Pay' : `Pay ${formatCedi(shownPayable)}`
           )}
         </button>
 
@@ -1568,7 +1591,7 @@ export default function CheckoutPage() {
               disabled={payingWithEarnings || isProcessing || !acceptEarningsFinal}
               className="w-full py-3 rounded-lg font-semibold text-white bg-amber-600 hover:bg-amber-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
             >
-              {payingWithEarnings ? 'Paying…' : `Pay ${formatCedi(payableTotal)} with referral earnings`}
+              {payingWithEarnings ? 'Paying…' : shownPayable === null ? 'Pay with referral earnings' : `Pay ${formatCedi(shownPayable)} with referral earnings`}
             </button>
           </div>
         )}
@@ -1709,7 +1732,7 @@ export default function CheckoutPage() {
                 </div>
                 <div className="flex justify-between text-gray-600 dark:text-gray-300">
                   <span>Shipping</span>
-                  <span>{formatCedi(shipping)}</span>
+                  <span>{shownShipping === null ? 'Calculating…' : formatCedi(shownShipping)}</span>
                 </div>
                 <div className="flex justify-between text-gray-600 dark:text-gray-300">
                   <span>Tax</span>
@@ -1758,7 +1781,7 @@ export default function CheckoutPage() {
                 )}
                 <div className="flex justify-between text-xl font-bold text-gray-900 dark:text-white pt-3 border-t">
                   <span>Total</span>
-                  <span>{formatCedi(total)}</span>
+                  <span>{shownTotal === null ? 'Calculating…' : formatCedi(shownTotal)}</span>
                 </div>
               </div>
 

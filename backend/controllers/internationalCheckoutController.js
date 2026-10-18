@@ -23,7 +23,8 @@ import {
   CHARGE_CURRENCY,
   normalizeDestinationCode,
 } from "../utils/destinationValidation.js";
-import { getShippingOptions as getShippingOptionsService, checkVendorDestination, isMissingTableError } from "../Services/shippingService.js";
+import { getShippingOptions as getShippingOptionsService, getChargeableShippingGHS, checkVendorDestination, isMissingTableError } from "../Services/shippingService.js";
+import pool from "../config/db.js";
 
 /**
  * Per-country address field requirements and validation patterns.
@@ -435,9 +436,31 @@ export const getShippingOptions = async (req, res) => {
     // destination — not just the first one. A multi-vendor cart must never
     // receive options (or a green light) because vendor #1 ships there while
     // vendor #2 has opted out.
-    const vendorIds = [...new Set(
-      (items || []).map(it => it.vendorId).filter(v => v != null)
-    )];
+    // The vendors are resolved HERE from the cart's product ids: checkout
+    // sends only {productId, qty}, and a quote that trusted the browser to
+    // name the vendors showed "supported" for a vendor who does not ship to
+    // the destination, which order creation then refused at Pay. A
+    // client-sent `vendorId` on an item is still honoured as an extra check.
+    const productIds = [...new Set(
+      items.map((it) => parseInt(it?.productId ?? it?.product ?? it?.id, 10)).filter((n) => Number.isInteger(n) && n > 0)
+    )].slice(0, 100);
+    let productVendorIds = [];
+    // Ghana is domestic: order creation never checks vendor destinations for
+    // GH and charges the flat domestic rule, so the quote must not either.
+    const domestic = code === "GH";
+    if (productIds.length > 0 && !domestic) {
+      const [rows] = /** @type {[any[], any]} */ (await pool.execute(
+        `SELECT id, vendorId FROM product WHERE id IN (${productIds.map(() => "?").join(",")}) AND vendorId IS NOT NULL`,
+        productIds
+      ));
+      // Cart order, as order creation uses it (its first vendor picks the rate).
+      const vendorOf = new Map(rows.map((r) => [Number(r.id), r.vendorId]));
+      productVendorIds = productIds.map((id) => vendorOf.get(id)).filter((v) => v != null);
+    }
+    const vendorIds = domestic ? [] : [...new Set([
+      ...productVendorIds,
+      ...(items || []).map(it => it.vendorId).filter(v => v != null),
+    ].map(Number))];
 
     for (const vendorId of vendorIds) {
       let eligible = false;
@@ -478,7 +501,7 @@ export const getShippingOptions = async (req, res) => {
     // NOTE: multi-vendor rate combination (summing per-vendor legs) is NOT
     // implemented — see orderController which re-resolves the authoritative
     // GHS shipping per vendor at order creation.
-    const vendorId = vendorIds.length > 0 ? vendorIds[0] : null;
+    const vendorId = vendorIds.length > 0 ? vendorIds[0] : undefined;
 
     const result = await getShippingOptionsService({
       destinationCountry: code,
@@ -518,7 +541,26 @@ export const getShippingOptions = async (req, res) => {
       });
     }
 
-    res.json({ ...result, chargeCurrency: CHARGE_CURRENCY, mock: false });
+    // The exact GHS shipping order creation will book for this cart (same
+    // function, same vendor, same weight inputs as resolveInternationalShipping),
+    // so checkout can show the total it will charge before Pay. Display only:
+    // the order is still re-priced on the server.
+    let chargeableShippingGHS = null;
+    if (!domestic && result?.supported !== false) {
+      const ship = await getChargeableShippingGHS({
+        destinationCountry: code,
+        destinationRegion: region,
+        vendorId,
+        items: productIds.map((productId) => ({
+          productId,
+          qty: Math.max(1, parseInt(items.find((it) => parseInt(it?.productId ?? it?.product ?? it?.id, 10) === productId)?.qty ?? 1, 10) || 1),
+        })),
+        subtotal: Number(subtotal) || 0,
+      });
+      if (ship.ok) chargeableShippingGHS = ship.amountGHS;
+    }
+
+    res.json({ ...result, chargeableShippingGHS, chargeCurrency: CHARGE_CURRENCY, mock: false });
   } catch (error) {
     // The table name / driver text goes to the server log only — a customer
     // must never see SQL, host names, or credentials.

@@ -73,3 +73,25 @@ export const verifyTotalsBreakdown = (t: TotalsBreakdown): { expected: number; m
   );
   return { expected, matches: expected === round2(Number(t.total)) };
 };
+
+// What the checkout summary SHOWS for an international destination. Ghana's
+// flat shipping does not apply abroad: the server books the carrier/fallback
+// charge returned by the shipping quote as `chargeableShippingGHS` (same
+// function as order creation). Same arithmetic as shared/pricing
+// calcOrderTotals, with that shipping figure. Display only — the charge is
+// always the server-booked total. Null while the quote is unknown.
+export const internationalDisplayTotals = (
+  parts: { subtotal: number; tax: number; discount: number },
+  chargeableShippingGHS: number | null | undefined,
+): { shipping: number | null; total: number | null } => {
+  const ship = Number(chargeableShippingGHS);
+  if (chargeableShippingGHS === null || chargeableShippingGHS === undefined || !Number.isFinite(ship) || ship < 0) {
+    return { shipping: null, total: null };
+  }
+  const round2 = (n: number) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+  const discount = Math.min(Math.max(Number(parts.discount) || 0, 0), parts.subtotal);
+  return {
+    shipping: round2(ship),
+    total: round2(Math.max(parts.subtotal + parts.tax + ship - discount, 0)),
+  };
+};
