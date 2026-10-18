@@ -2,7 +2,7 @@
 // DESCRIPTION: Enhanced Admin Dashboard with real data, analytics, and settings
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { FaHome, FaBox, FaShoppingCart, FaUsers, FaChartLine, FaCog, FaStore, FaTag, FaPercent, FaUndo, FaStar, FaEnvelope, FaListUl, FaClipboardCheck, FaCoins, FaCertificate, FaBullhorn, FaInbox, FaLightbulb, FaClipboardList, FaChartPie, FaRecycle, FaMoneyCheckAlt, FaGift } from 'react-icons/fa';
+import { FaHome, FaBox, FaShoppingCart, FaUsers, FaChartLine, FaCog, FaStore, FaTag, FaPercent, FaUndo, FaStar, FaEnvelope, FaListUl, FaClipboardCheck, FaCoins, FaCertificate, FaBullhorn, FaInbox, FaLightbulb, FaClipboardList, FaChartPie, FaRecycle, FaMoneyCheckAlt, FaGift, FaTruck } from 'react-icons/fa';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, AreaChart, Area } from 'recharts';
 import ProductsPage from '../Pages/adminDashboardPages/products/ProductsPage';
 import OrdersPage from '../Pages/adminDashboardPages/Orders/OrdersPage';
@@ -25,6 +25,7 @@ import SuggestionsAdminPage from '../Pages/adminDashboardPages/Suggestions/Sugge
 import CustomRequestsAdminPage from '../Pages/adminDashboardPages/customRequests/CustomRequestsAdmin';
 import BuybackAdmin from '../Pages/adminDashboardPages/Buyback/BuybackAdmin';
 import ProductTypeInsights from '../Pages/adminDashboardPages/insights/ProductTypeInsights';
+import ShippingAdminPage from '../Pages/adminDashboardPages/Shipping/ShippingAdminPage';
 import { useGetAllOrdersQuery } from '../slices/ordersApiSlice';
 import { useGetSettingsQuery, useUpdateSettingsMutation } from '../slices/settingsApiSlice';
 import { formatCurrency } from '../utils/formatCurrency';
@@ -166,6 +167,7 @@ const AdminDashboard = () => {
     { id: 'moderation', name: 'Moderation', icon: FaClipboardCheck },
     { id: 'campaigns', name: 'Campaigns', icon: FaBullhorn },
     { id: 'commissions', name: 'Commissions', icon: FaCoins },
+    { id: 'shipping', name: 'Shipping & FX', icon: FaTruck },
     { id: 'referrals', name: 'Referrals', icon: FaGift },
     { id: 'certificates', name: 'Certificates', icon: FaCertificate },
     { id: 'customers', name: 'Customers', icon: FaUsers },
@@ -603,6 +605,8 @@ const AdminDashboard = () => {
         return <CampaignsPage />;
       case 'commissions':
         return <CommissionsPage />;
+      case 'shipping':
+        return <ShippingAdminPage />;
       case 'referrals':
         return <ReferralsAdminPage />;
       case 'certificates':

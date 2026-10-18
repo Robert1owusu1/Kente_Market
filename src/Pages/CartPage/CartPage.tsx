@@ -4,7 +4,8 @@ import { Link, useNavigate } from "react-router-dom";
 import { FaShoppingCart, FaMinus, FaPlus, FaTrash, FaArrowRight, FaStar, FaCheck } from "react-icons/fa";
 import { useCreateOrderMutation } from "../../slices/ordersApiSlice";
 import { toast } from "react-toastify";
-import { TAX_RATE, FREE_SHIPPING_THRESHOLD, STANDARD_SHIPPING_COST, calcOrderTotals } from "../../utils/pricing";
+import { TAX_RATE, calcOrderTotals } from "../../utils/pricing";
+import { useCartShippingQuote } from "../../hooks/useCartShippingQuote";
 import { resolveImageUrl } from "../../utils/imageUrl";
 import { yardOptionsFor } from "../../utils/yards";
 import { formatCedi } from '../../utils/formatCurrency';
@@ -163,10 +164,14 @@ const CartPage = () => {
 
   // Memoize calculations
   const subtotal = useMemo(() => getTotalPrice(), [getTotalPrice]);
-  const { tax: taxPrice, shipping: shippingPrice, total: totalPrice } = useMemo(
-    () => calcOrderTotals(cartItems),
-    [cartItems]
-  );
+  const estimate = useMemo(() => calcOrderTotals(cartItems), [cartItems]);
+  // Delivery is per seller (their fee or the platform default), so the exact
+  // figure comes from the server; the flat estimate shows only while it loads.
+  const quote = useCartShippingQuote(cartItems);
+  const taxPrice = estimate.tax;
+  const shippingPrice = quote.shipping ?? estimate.shipping;
+  const totalPrice = Math.round((estimate.subtotal + taxPrice + shippingPrice) * 100) / 100;
+  const singleGroup = quote.groups.length === 1 ? quote.groups[0] : null;
   const totalItems = useMemo(
     () => cartItems.reduce((sum, item) => sum + item.quantity, 0),
     [cartItems]
@@ -414,7 +419,12 @@ const CartPage = () => {
                   </div>
 
                   {/* Promo Section */}
-                  {subtotal >= FREE_SHIPPING_THRESHOLD ? (
+                  {quote.groups.length > 1 ? (
+                    <p className="mt-6 rounded-2xl border border-gray-200 p-4 text-sm text-gray-700 dark:border-gray-700 dark:text-gray-300">
+                      Your items come from {quote.groups.length} sellers. Each seller ships separately, so each parcel has its own delivery fee
+                      {quote.groups.some((g) => g.isFree) ? ' (some ship free)' : ''}.
+                    </p>
+                  ) : !singleGroup || singleGroup.freeThresholdGHS === null ? null : singleGroup.isFree ? (
                     <div className="mt-6 p-4 bg-gradient-to-br from-green-50 to-emerald-50 rounded-2xl border border-green-200">
                       <div className="flex items-center gap-2 mb-2">
                         <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
@@ -422,7 +432,7 @@ const CartPage = () => {
                         </div>
                         <span className="text-green-700 font-medium">Free shipping applied!</span>
                       </div>
-                      <p className="text-sm text-green-600">You saved {formatCedi(STANDARD_SHIPPING_COST)} on shipping</p>
+                      <p className="text-sm text-green-600">Delivery is free on this order</p>
                     </div>
                   ) : (
                     <div className="mt-6 p-4 bg-gradient-to-br from-blue-50 to-[#fdf8ef] rounded-2xl border border-blue-200">
@@ -433,12 +443,12 @@ const CartPage = () => {
                         <span className="text-blue-700 font-medium">Almost there!</span>
                       </div>
                       <p className="text-sm text-blue-600">
-                        Add {formatCedi((FREE_SHIPPING_THRESHOLD - subtotal))} more for free shipping
+                        Add {formatCedi(Math.max(singleGroup.freeThresholdGHS - singleGroup.subtotalGHS, 0))} more for free shipping
                       </p>
                       <div className="mt-2 w-full bg-gray-200 rounded-full h-2">
                         <div 
                           className="bg-gradient-to-r from-blue-500 to-[#b45309] h-2 rounded-full transition-all duration-500"
-                          style={{ width: `${Math.min((subtotal / FREE_SHIPPING_THRESHOLD) * 100, 100)}%` }}
+                          style={{ width: `${Math.min((singleGroup.subtotalGHS / Math.max(singleGroup.freeThresholdGHS, 1)) * 100, 100)}%` }}
                         ></div>
                       </div>
                     </div>

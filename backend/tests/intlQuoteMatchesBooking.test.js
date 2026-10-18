@@ -82,11 +82,12 @@ describe(`international quote agrees with order booking${dbAvailable ? '' : ' â€
     assert.match(r.body.message, /does not ship to GB/);
   });
 
-  test('Ghana stays domestic: no vendor-destination check and no international figure', async () => {
-    // Neither vendor lists GH; Ghana orders never require it.
+  test('Ghana stays domestic: no vendor-destination check', async () => {
+    // Neither vendor lists GH; Ghana orders never require it. Each seller's
+    // items (450 and 300) are over the GHS 200 free-delivery default.
     const r = await quote('GH', [{ productId: fx.shipsProduct, qty: 1 }, { productId: fx.noShipProduct, qty: 1 }], 750);
     assert.equal(r.body.supported, true, JSON.stringify(r.body));
-    assert.equal(r.body.chargeableShippingGHS, null);
+    assert.equal(r.body.chargeableShippingGHS, 0);
   });
 
   test('a mixed cart is refused when ANY vendor does not ship there', async () => {

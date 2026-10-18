@@ -1394,3 +1394,51 @@ export const removeVendorShippingDestination = async (req, res) => {
     res.status(500).json({ message: 'Failed to remove shipping destination' });
   }
 };
+
+// @desc    Seller's own delivery fees + the platform defaults they override
+// @route   GET /api/vendors/shipping/rates
+// @access  Private (vendor, manage_orders)
+export const getVendorShippingRates = async (req, res) => {
+  try {
+    const { listShippingRates, listShippingCarriers } = await import('../Services/shippingService.js');
+    const [rates, platformDefaults, carriers] = await Promise.all([
+      listShippingRates(Number(req.user.id)),
+      listShippingRates(null),
+      listShippingCarriers(),
+    ]);
+    res.json({ rates, platformDefaults, carriers });
+  } catch (error) {
+    console.error('Error fetching vendor shipping rates:', error.message);
+    res.status(500).json({ message: 'Failed to fetch delivery fees' });
+  }
+};
+
+// @desc    Set the seller's own delivery fee for one country (overrides the platform default)
+// @route   PUT /api/vendors/shipping/rates/:countryCode
+// @access  Private (vendor, manage_orders)
+export const setVendorShippingRate = async (req, res) => {
+  try {
+    const { setStandardShippingRate } = await import('../Services/shippingService.js');
+    const result = await setStandardShippingRate(Number(req.user.id), req.params.countryCode, req.body || {});
+    if (!result.ok) return res.status(400).json({ message: result.message });
+    res.json({ message: 'Delivery fee saved', rate: result.rate });
+  } catch (error) {
+    console.error('Error saving vendor shipping rate:', error.message);
+    res.status(500).json({ message: 'Failed to save delivery fee' });
+  }
+};
+
+// @desc    Remove the seller's fee for one country (the platform default applies again)
+// @route   DELETE /api/vendors/shipping/rates/:countryCode
+// @access  Private (vendor, manage_orders)
+export const removeVendorShippingRate = async (req, res) => {
+  try {
+    const { removeStandardShippingRate } = await import('../Services/shippingService.js');
+    const removed = await removeStandardShippingRate(Number(req.user.id), req.params.countryCode);
+    if (!removed) return res.status(404).json({ message: 'No delivery fee set for this country' });
+    res.json({ message: 'Delivery fee removed; the platform default applies' });
+  } catch (error) {
+    console.error('Error removing vendor shipping rate:', error.message);
+    res.status(500).json({ message: 'Failed to remove delivery fee' });
+  }
+};

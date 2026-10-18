@@ -4,6 +4,7 @@
 // calculation. Uses database-backed carrier rates and vendor destinations.
 import pool from '../config/db.js';
 import { COUNTRY_CONFIG } from '../controllers/internationalCheckoutController.js';
+import { FREE_SHIPPING_THRESHOLD, STANDARD_SHIPPING_COST } from '../../shared/pricing.js';
 
 /**
  * @typedef {Object} ShippingRateInput
@@ -235,8 +236,10 @@ export const calculateOrderWeight = async (items) => {
 };
 
 /**
- * Shared carrier-rate lookup: applicable, active rows for a lane, preferring
- * vendor overrides over platform defaults, cheapest first.
+ * Shared carrier-rate lookup: applicable, active rows for a lane. A vendor's
+ * OWN rows for the lane replace the platform defaults entirely (a seller who
+ * sets a fee for a country is charged that fee, not whichever of theirs and
+ * the platform's is cheaper); with none, the platform defaults apply.
  * @param {object} args
  * @param {string} [args.originCountry]
  * @param {string} args.destinationCountry
@@ -268,6 +271,11 @@ const queryApplicableRates = async ({ originCountry = 'GH', destinationCountry, 
      ORDER BY sr.vendorId DESC, sr.baseCost ASC`,
     [originCountry, destinationCountry, destinationRegion || null, weightKg, weightKg, effectiveDate, effectiveDate, ...vendorParams]
   );
+  if (vendorId) {
+    const own = rates.filter((/** @type {any} */ r) => r.vendorId != null && Number(r.vendorId) === Number(vendorId));
+    if (own.length > 0) return own;
+    return rates.filter((/** @type {any} */ r) => r.vendorId == null);
+  }
   return rates;
 };
 
@@ -289,7 +297,7 @@ const queryApplicableRates = async ({ originCountry = 'GH', destinationCountry, 
  * @param {Array<{productId: number, qty: number, weightKg?: number}>} [args.items]
  * @param {number} [args.subtotal] - order subtotal in GHS
  * @param {string} [args.displayCurrency] - destination display currency for fallback-table conversion
- * @returns {Promise<{ok: true, amountGHS: number, carrier: string, serviceLevel: string, isFree: boolean, staleRate: boolean}|{ok: false, status: number, code: string, message: string}>}
+ * @returns {Promise<{ok: true, amountGHS: number, carrier: string, serviceLevel: string, isFree: boolean, staleRate: boolean, freeThresholdGHS: number|null}|{ok: false, status: number, code: string, message: string}>}
  */
 export const getChargeableShippingGHS = async ({
   originCountry = 'GH',
@@ -380,6 +388,7 @@ export const getChargeableShippingGHS = async ({
         serviceLevel: 'standard',
         isFree,
         staleRate,
+        freeThresholdGHS: Math.round(thresholdConv.amountGHS * 100) / 100,
       };
     }
 
@@ -395,6 +404,7 @@ export const getChargeableShippingGHS = async ({
       serviceLevel: cheapest.serviceLevel,
       isFree,
       staleRate,
+      freeThresholdGHS: cheapest.thresholdGHS === null ? null : Math.round(cheapest.thresholdGHS * 100) / 100,
     };
   } catch (err) {
     if (isMissingTableError(err)) {
@@ -405,6 +415,73 @@ export const getChargeableShippingGHS = async ({
     }
     throw err;
   }
+};
+
+/**
+ * Shipping for a whole order: every seller ships their own parcel, so each
+ * seller group (and the platform's own products as one group) is charged its
+ * own fee, resolved by getChargeableShippingGHS (seller's rate for the
+ * country, else the platform default, else the fallback table), with that
+ * group's subtotal tested against its free-shipping threshold. The order is
+ * charged the sum. Quote and booking both call this, so they cannot differ.
+ *
+ * Ghana keeps working if the shipping tables are missing: the domestic flat
+ * rule (shared/pricing.js) is the same GHS 15 / free from GHS 200 the seeded
+ * platform row holds. International destinations stay fail-closed.
+ *
+ * @param {object} args
+ * @param {string} args.destinationCountry
+ * @param {string|null} [args.destinationRegion]
+ * @param {Array<{vendorId: number|string|null, items: Array<{productId: number, qty: number}>, subtotalGHS: number}>} args.groups
+ * @returns {Promise<{ok: true, amountGHS: number, groups: Array<{vendorId: number|null, amountGHS: number, isFree: boolean, freeThresholdGHS: number|null, subtotalGHS: number}>}|{ok: false, status: number, code: string, message: string}>}
+ */
+export const getOrderShippingGHS = async ({ destinationCountry, destinationRegion = null, groups }) => {
+  const code = String(destinationCountry || '').toUpperCase();
+  /** @type {Array<{vendorId: number|null, amountGHS: number, isFree: boolean, freeThresholdGHS: number|null, subtotalGHS: number}>} */
+  const out = [];
+  let total = 0;
+  for (const g of groups) {
+    const subtotalGHS = Math.round((Number(g.subtotalGHS) || 0) * 100) / 100;
+    const ship = await getChargeableShippingGHS({
+      destinationCountry: code,
+      destinationRegion: destinationRegion || undefined,
+      vendorId: g.vendorId ?? null,
+      items: g.items,
+      subtotal: subtotalGHS,
+    });
+    if (!ship.ok) {
+      if (code === 'GH' && ship.code === 'SHIPPING_TABLES_MISSING') {
+        const isFree = subtotalGHS >= FREE_SHIPPING_THRESHOLD;
+        const amountGHS = isFree ? 0 : STANDARD_SHIPPING_COST;
+        out.push({ vendorId: g.vendorId == null ? null : Number(g.vendorId), amountGHS, isFree, freeThresholdGHS: FREE_SHIPPING_THRESHOLD, subtotalGHS });
+        total += amountGHS;
+        continue;
+      }
+      return ship;
+    }
+    out.push({ vendorId: g.vendorId == null ? null : Number(g.vendorId), amountGHS: ship.amountGHS, isFree: ship.isFree, freeThresholdGHS: ship.freeThresholdGHS, subtotalGHS });
+    total += ship.amountGHS;
+  }
+  return { ok: true, amountGHS: Math.round(total * 100) / 100, groups: out };
+};
+
+/**
+ * Split order lines into per-seller groups for getOrderShippingGHS.
+ * @param {Array<{vendorId?: any, productId: number, qty: number, price: number}>} lines
+ */
+export const groupLinesByVendor = (lines) => {
+  /** @type {Map<string, {vendorId: number|null, items: Array<{productId: number, qty: number}>, subtotalGHS: number}>} */
+  const groups = new Map();
+  for (const l of lines) {
+    const vendorId = l.vendorId == null ? null : Number(l.vendorId);
+    const key = vendorId == null ? 'platform' : String(vendorId);
+    if (!groups.has(key)) groups.set(key, { vendorId, items: [], subtotalGHS: 0 });
+    const g = /** @type {{vendorId: number|null, items: Array<{productId: number, qty: number}>, subtotalGHS: number}} */ (groups.get(key));
+    const qty = Math.max(1, Number(l.qty) || 1);
+    g.items.push({ productId: Number(l.productId), qty });
+    g.subtotalGHS += (Number(l.price) || 0) * qty;
+  }
+  return [...groups.values()];
 };
 
 /**
@@ -776,3 +853,151 @@ async function getFallbackOptions(countryCode, subtotalGHS, currency, date = new
     warnings: Array.from(warnings),
   };
 }
+// ---------------------------------------------------------------------------
+// Fee management: the platform's default price list (vendorId NULL) and each
+// seller's own overrides (vendorId = seller). One active 'standard' rate per
+// owner per destination country; setting a new one retires the previous row
+// (kept for history) instead of editing it in place.
+// ---------------------------------------------------------------------------
+
+/** @param {any} v @param {number} min @param {number} max */
+const boundedMoney = (v, min, max) => {
+  const n = Number(v);
+  return Number.isFinite(n) && n >= min && n <= max ? Math.round(n * 100) / 100 : null;
+};
+/** @param {any} v @param {number} min @param {number} max */
+const boundedInt = (v, min, max) => {
+  const n = Number(v);
+  return Number.isInteger(n) && n >= min && n <= max ? n : null;
+};
+
+/** Active carriers, for the fee forms. */
+export const listShippingCarriers = async () => {
+  const [rows] = await pool.execute(
+    `SELECT code, name, supportedCountries FROM shipping_carriers WHERE isActive = TRUE ORDER BY name`
+  );
+  return rows.map((/** @type {any} */ r) => ({
+    code: r.code,
+    name: r.name,
+    countries: typeof r.supportedCountries === 'string' ? JSON.parse(r.supportedCountries) : (r.supportedCountries || []),
+  }));
+};
+
+/**
+ * Active standard rates of one owner (null = platform defaults).
+ * @param {number|null} vendorId
+ */
+export const listShippingRates = async (vendorId) => {
+  const [rows] = await pool.execute(
+    `SELECT sr.destinationCountry AS countryCode, sr.baseCost, sr.perKgCost, sr.freeThreshold, sr.currency,
+            sr.transitDaysMin, sr.transitDaysMax, sr.effectiveFrom, c.code AS carrierCode, c.name AS carrierName
+     FROM shipping_rates sr JOIN shipping_carriers c ON c.id = sr.carrierId
+     WHERE sr.vendorId <=> ? AND sr.originCountry = 'GH' AND sr.destinationRegion IS NULL
+       AND sr.serviceLevel = 'standard' AND sr.isActive = TRUE
+       AND (sr.effectiveTo IS NULL OR sr.effectiveTo >= CURDATE())
+     ORDER BY sr.destinationCountry, sr.baseCost`,
+    [vendorId]
+  );
+  return rows.map((/** @type {any} */ r) => ({
+    countryCode: r.countryCode,
+    baseCost: Number(r.baseCost),
+    perKgCost: Number(r.perKgCost) || 0,
+    freeThreshold: r.freeThreshold === null ? null : Number(r.freeThreshold),
+    currency: r.currency,
+    transitDaysMin: r.transitDaysMin,
+    transitDaysMax: r.transitDaysMax,
+    carrierCode: r.carrierCode,
+    carrierName: r.carrierName,
+  }));
+};
+
+/**
+ * Validate and set an owner's standard rate for one destination country.
+ * Ghana fees are in GHS; abroad, GHS or the destination's own currency.
+ * @param {number|null} vendorId - null = platform default
+ * @param {string} countryCode
+ * @param {any} input
+ * @returns {Promise<{ok: true, rate: any}|{ok: false, message: string}>}
+ */
+export const setStandardShippingRate = async (vendorId, countryCode, input = {}) => {
+  const code = String(countryCode || '').toUpperCase();
+  const country = COUNTRY_CONFIG[code];
+  if (!country) return { ok: false, message: 'Unsupported country' };
+
+  const currency = String(input.currency || (code === 'GH' ? 'GHS' : country.currency)).toUpperCase();
+  const allowedCurrencies = code === 'GH' ? ['GHS'] : ['GHS', country.currency];
+  if (!allowedCurrencies.includes(currency)) {
+    return { ok: false, message: `Currency must be ${allowedCurrencies.join(' or ')} for ${code}` };
+  }
+  const baseCost = boundedMoney(input.baseCost, 0, 100000);
+  if (baseCost === null) return { ok: false, message: 'Fee must be a number between 0 and 100000' };
+  const perKgCost = input.perKgCost === undefined || input.perKgCost === null || input.perKgCost === ''
+    ? 0 : boundedMoney(input.perKgCost, 0, 10000);
+  if (perKgCost === null) return { ok: false, message: 'Per-kg fee must be between 0 and 10000' };
+  let freeThreshold = null;
+  if (input.freeThreshold !== undefined && input.freeThreshold !== null && input.freeThreshold !== '') {
+    freeThreshold = boundedMoney(input.freeThreshold, 0, 10000000);
+    if (freeThreshold === null) return { ok: false, message: 'Free-delivery amount must be a positive number' };
+  }
+  const transitDaysMin = boundedInt(input.transitDaysMin, 0, 120);
+  const transitDaysMax = boundedInt(input.transitDaysMax, 0, 180);
+  if (transitDaysMin === null || transitDaysMax === null || transitDaysMax < transitDaysMin) {
+    return { ok: false, message: 'Delivery days must be whole numbers, with max not below min' };
+  }
+
+  const carriers = await listShippingCarriers();
+  const carrierCode = String(input.carrierCode || (code === 'GH' ? 'local_gh' : 'ems'));
+  const carrier = carriers.find((/** @type {any} */ c) => c.code === carrierCode);
+  if (!carrier || !carrier.countries.includes(code)) {
+    return { ok: false, message: `Carrier ${carrierCode} does not deliver to ${code}` };
+  }
+
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    await conn.execute(
+      `UPDATE shipping_rates SET isActive = FALSE, effectiveTo = CURDATE()
+       WHERE vendorId <=> ? AND originCountry = 'GH' AND destinationCountry = ?
+         AND destinationRegion IS NULL AND serviceLevel = 'standard' AND isActive = TRUE`,
+      [vendorId, code]
+    );
+    await conn.execute(
+      `INSERT INTO shipping_rates
+         (carrierId, vendorId, originCountry, destinationCountry, destinationRegion, serviceLevel,
+          minWeightKg, maxWeightKg, baseCost, perKgCost, freeThreshold, transitDaysMin, transitDaysMax,
+          currency, effectiveFrom, effectiveTo, isActive)
+       SELECT id, ?, 'GH', ?, NULL, 'standard', 0, 999, ?, ?, ?, ?, ?, ?, CURDATE(), NULL, TRUE
+       FROM shipping_carriers WHERE code = ?`,
+      [vendorId, code, baseCost, perKgCost, freeThreshold, transitDaysMin, transitDaysMax, currency, carrierCode]
+    );
+    await conn.commit();
+  } catch (err) {
+    await conn.rollback().catch(() => {});
+    throw err;
+  } finally {
+    conn.release();
+  }
+  return {
+    ok: true,
+    rate: { countryCode: code, baseCost, perKgCost, freeThreshold, currency, transitDaysMin, transitDaysMax, carrierCode, carrierName: carrier.name },
+  };
+};
+
+/**
+ * Remove an owner's rate for a country. A seller then falls back to the
+ * platform default; the platform then falls back to the built-in table.
+ * @param {number|null} vendorId
+ * @param {string} countryCode
+ * @returns {Promise<boolean>} whether a rate was active
+ */
+export const removeStandardShippingRate = async (vendorId, countryCode) => {
+  const code = String(countryCode || '').toUpperCase();
+  if (!COUNTRY_CONFIG[code]) return false;
+  const [result] = /** @type {[any, any]} */ (await pool.execute(
+    `UPDATE shipping_rates SET isActive = FALSE, effectiveTo = CURDATE()
+     WHERE vendorId <=> ? AND originCountry = 'GH' AND destinationCountry = ?
+       AND destinationRegion IS NULL AND serviceLevel = 'standard' AND isActive = TRUE`,
+    [vendorId, code]
+  ));
+  return result.affectedRows > 0;
+};

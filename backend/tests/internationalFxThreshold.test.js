@@ -943,20 +943,29 @@ describe('F-7: booked shippingCost and totalAmount match the quote exactly', () 
     assert.equal(Number(row.totalAmount), 130, 'subtotal 100 + tax 15 + shipping 15');
   });
 
-  test('mixed-vendor cart is charged ONCE (no double-counted thresholds)', { skip: !runOk }, async () => {
-    const q = await quote({ countryCode: 'GB', subtotal: 150 });
-    const quoteGHS = q.body.options[0].amountGHS;
+  // Owner decision 2026-10-18: sellers may set their own delivery fees, so
+  // each seller's parcel is charged (previously one charge per cart). Each
+  // seller's free-delivery threshold is tested against that seller's items.
+  test('mixed-vendor cart: each seller parcel is charged once; quote == booking', { skip: !runOk }, async () => {
+    const q = await quote({
+      countryCode: 'GB',
+      subtotal: 150,
+      items: [{ productId: state.prodA, qty: 1 }, { productId: state.prodB, qty: 1 }],
+    });
+    const perParcel = q.body.options[0].amountGHS; // GBP 12 -> 222.22 GHS
+    assert.equal(perParcel, 222.22);
+    // A (100) and B (50) are each far below GB's GBP 100 (~1851.85 GHS) threshold.
+    assert.equal(q.body.chargeableShippingGHS, 444.44, 'two parcels, each charged once');
+    assert.equal(q.body.shippingGroups.length, 2);
 
     const created = await placeOrder({ products: [state.prodA, state.prodB], address: addrGB });
     assert.equal(created.status, 201, JSON.stringify(created.body));
     const row = await orderRow(created.orderId);
 
-    assert.equal(Number(row.shippingCost), quoteGHS,
-      'one cart, one shipping charge, identical to the quote');
-    assert.notEqual(Number(row.shippingCost), quoteGHS * 2, 'shipping must not be summed per vendor');
-    // subtotal 150 -> tax 22.50 -> total 150 + 22.50 + 222.22
+    assert.equal(Number(row.shippingCost), q.body.chargeableShippingGHS, 'booking equals the quote');
+    // subtotal 150 -> tax 22.50 -> total 150 + 22.50 + 444.44
     assert.equal(Number(row.tax), 22.5);
-    assert.equal(Number(row.totalAmount), 394.72, 'exact persisted totalAmount');
+    assert.equal(Number(row.totalAmount), 616.94, 'exact persisted totalAmount');
   });
 
   test('a vendor that does not ship to GB blocks the order (server-side)', { skip: !runOk }, async () => {
@@ -1077,7 +1086,8 @@ describe('frontend contract: unavailable rates / unsupported destinations block 
     // resolves vendors from); the request object now ends at `\n      })`.
     const call = checkout.match(/\/api\/checkout\/international\/shipping-options', \{[\s\S]{0,900}?\n {6}\}\)/);
     assert.ok(call, 'shipping-options request not found');
-    assert.match(call[0], /countryCode: destinationCode/);
+    assert.match(call[0], /countryCode: quoteCountry/);
+    assert.match(checkout, /const quoteCountry = deliveryMethod === 'home' \? destinationCode : 'GH';/);
     assert.match(call[0], /subtotal,/);
     assert.match(call[0], /items: cartItems\.map\([\s\S]*productId:/, 'the quote must send product ids so the server can check every vendor');
   });

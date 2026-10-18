@@ -276,29 +276,29 @@ export default function CheckoutPage() {
   // A changed total blocks payment until the customer refreshes the order.
   const payableAmountChanged = hasPayableAmountChanged(initialPayableRef.current, payableTotal);
 
-  // What the summary and Pay buttons SHOW. Abroad, Ghana's flat shipping does
-  // not apply: show the quote's exact chargeable shipping and the total the
-  // server will book at Pay (the charge itself is unchanged: syncAddressTotals
-  // re-books on the server and Paystack is initialized with that figure).
-  const intlShown = internationalDisplayTotals({ subtotal, tax, discount }, shippingEligibility?.chargeableShippingGHS);
-  const shownShipping = isInternational ? intlShown.shipping : shipping;
-  const shownTotal = isInternational ? intlShown.total : total;
-  const shownPayable = isInternational ? intlShown.total : payableTotal;
+  // What the summary and Pay buttons SHOW: the quote's exact delivery fee
+  // (each seller's fee, or the platform default) and the total the server will
+  // book at Pay. The charge itself is unchanged: syncAddressTotals re-books on
+  // the server and Paystack is initialized with that figure. In Ghana the
+  // local estimate shows until the quote arrives; abroad nothing is guessed.
+  const quoted = internationalDisplayTotals({ subtotal, tax, discount }, shippingEligibility?.chargeableShippingGHS);
+  const shownShipping = isInternational ? quoted.shipping : (quoted.shipping ?? shipping);
+  const shownTotal = isInternational ? quoted.total : (quoted.total ?? total);
+  const shownPayable = isInternational ? quoted.total : payableTotal;
 
   // Shipping eligibility for the selected destination (DB-backed carrier
   // rates + per-vendor destination checks). Fail-closed: an unsupported
   // destination, a vendor opt-out, or a lookup failure blocks payment; while
   // the lookup is pending, international payment stays blocked too.
   useEffect(() => {
-    if (deliveryMethod !== 'home') {
-      setShippingEligibility(null);
-      return;
-    }
+    // Pickup stations are in Ghana; the quote also carries the exact per-seller
+    // delivery fee for Ghana orders, not only the international eligibility.
+    const quoteCountry = deliveryMethod === 'home' ? destinationCode : 'GH';
     let cancelled = false;
     setShippingEligibility(null);
     axios
       .post('/api/checkout/international/shipping-options', {
-        countryCode: destinationCode,
+        countryCode: quoteCountry,
         subtotal,
         region: isInternational ? intlAddress.region || undefined : undefined,
         // Product ids only: the server resolves each item's vendor itself and
@@ -1101,7 +1101,7 @@ export default function CheckoutPage() {
         {isInternational ? (
           <div>
             <InternationalAddressForm value={intlAddress} onChange={setIntlAddress} />
-            {shippingEligibility && !shippingEligibility.supported && (
+            {isInternational && shippingEligibility && !shippingEligibility.supported && (
               <p className="text-red-500 text-sm mt-3" role="alert">{shippingEligibility.message || 'Shipping is not available to this destination'}</p>
             )}
             {isInternational && shippingEligibility === null && deliveryMethod === 'home' && (
@@ -1542,7 +1542,7 @@ export default function CheckoutPage() {
             </p>
           </div>
         )}
-        {deliveryMethod === 'home' && shippingEligibility && !shippingEligibility.supported && (
+        {isInternational && shippingEligibility && !shippingEligibility.supported && (
           <div className="bg-red-50 rounded-xl p-4 border border-red-200 mb-4">
             <p className="text-sm text-red-800">
               {shippingEligibility.message || 'Shipping is not available to this destination.'}
@@ -1783,6 +1783,13 @@ export default function CheckoutPage() {
                   <span>Total</span>
                   <span>{shownTotal === null ? 'Calculating…' : formatCedi(shownTotal)}</span>
                 </div>
+                {isInternational && (
+                  // Required attribution for the automatic exchange rates
+                  // (backend/Services/exchangeRateService.js).
+                  <p className="text-right text-xs text-gray-500 dark:text-gray-400">
+                    <a href="https://www.exchangerate-api.com" target="_blank" rel="noopener noreferrer" className="underline">Rates By Exchange Rate API</a>
+                  </p>
+                )}
               </div>
 
               <div className="mt-6 pt-6 border-t">

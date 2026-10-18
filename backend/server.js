@@ -75,6 +75,7 @@ import certificateRoutes from './routes/certificateRoutes.js'; // NEW - Authenti
 import commissionRoutes from './routes/commissionRoutes.js'; // NEW - Commission engine
 import moderationRoutes from './routes/moderationRoutes.js'; // NEW - Product moderation
 import adminOpsRoutes from './routes/adminOpsRoutes.js'; // Audit log + scheduler status
+import shippingAdminRoutes from './routes/shippingAdminRoutes.js'; // Platform delivery fees + exchange rates
 import { referralRouter, adminReferralRouter } from './routes/referralRoutes.js';
 import adminPayoutRoutes from './routes/adminPayoutRoutes.js'; // Payout investigation + verify-only recovery
 import suggestionRoutes from './routes/suggestionRoutes.js';
@@ -463,6 +464,7 @@ app.use('/api/certificates', certificateRoutes);
 app.use('/api/admin/commissions', commissionRoutes);
 app.use('/api/admin/moderation', moderationRoutes);
 app.use('/api/admin/ops', adminOpsRoutes);
+app.use('/api/admin/shipping', shippingAdminRoutes);
 app.use('/api/admin/payouts', adminPayoutRoutes);
 app.use('/api/referrals', referralRouter);
 app.use('/api/admin/referrals', adminReferralRouter);

@@ -2,7 +2,7 @@
 // Full vendor dashboard with sidebar navigation (mirrors admin dashboard)
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { FaHome, FaBox, FaShoppingCart, FaChartLine, FaCog, FaStore, FaTag, FaPercent, FaStar, FaUndo, FaWallet, FaPlus, FaBoxes, FaEnvelope, FaUserCog, FaClipboardList, FaGift } from 'react-icons/fa';
+import { FaHome, FaBox, FaShoppingCart, FaChartLine, FaCog, FaStore, FaTag, FaPercent, FaStar, FaUndo, FaWallet, FaPlus, FaBoxes, FaEnvelope, FaUserCog, FaClipboardList, FaGift, FaTruck } from 'react-icons/fa';
 import { useGetMyVendorProfileQuery } from '../../slices/vendorsApiSlice';
 import Loader from '../../components/loader/Loader';
 import VendorOverview from './VendorOverview';
@@ -20,6 +20,7 @@ import VendorStaff from './VendorStaff';
 import VendorCustomRequests from './VendorCustomRequests';
 import VendorInsights from './VendorInsights';
 import VendorReferrals from './VendorReferrals';
+import VendorShipping from './VendorShipping';
 import Footer from '../../components/Footer/Footer';
 
 const menuItems = [
@@ -27,6 +28,7 @@ const menuItems = [
   { id: 'products', name: 'Products', icon: FaBox },
   { id: 'orders', name: 'Orders', icon: FaShoppingCart },
   { id: 'inventory', name: 'Inventory', icon: FaBoxes },
+  { id: 'shipping', name: 'Shipping', icon: FaTruck },
   { id: 'messages', name: 'Messages', icon: FaEnvelope },
   { id: 'staff', name: 'Team', icon: FaUserCog },
   { id: 'insights', name: 'Demand Insights', icon: FaChartLine },
@@ -96,6 +98,8 @@ const VendorDashboard = () => {
         return <VendorOrdersSection />;
       case 'inventory':
         return <VendorInventory />;
+      case 'shipping':
+        return <VendorShipping />;
       case 'messages':
         return <VendorMessages />;
       case 'staff':

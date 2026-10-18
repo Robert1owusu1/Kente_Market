@@ -16,6 +16,7 @@ import { reconcileReferralWithdrawals } from '../Services/referralPayoutService.
 import { reconcileStaleRefundClaims, reconcileUnmatchedCharges } from '../Services/paymentReconciliationService.js';
 import { runScheduledJob } from './schedulerJob.js';
 import { sweepTryOnJobs } from '../Services/tryOn/tryOnJobService.js';
+import { refreshExchangeRates, isFxAutoUpdateEnabled } from '../Services/exchangeRateService.js';
 import { frontendBaseUrl } from '../config/frontendOrigins.js';
 
 // Deactivate (not destroy) stale unverified users. Never hard-delete a user
@@ -259,6 +260,11 @@ const scheduleJobs = () => {
   // deadline, fail submits interrupted by a restart, delete expired results
   // and orphan/temp files, purge old (photo-free) job metadata. Bounded.
   run('sweepTryOnJobs', sweepTryOnJobs, 2 * 60 * 1000);
+  // Exchange rates for international shipping fees (Services/exchangeRateService.js).
+  // The source updates once a day; twice a day keeps a missed run cheap.
+  if (isFxAutoUpdateEnabled()) {
+    run('refreshExchangeRates', async () => (await refreshExchangeRates()).updated.length, 12 * HOUR);
+  }
   // Weekly vendor demand digest (Monday mornings). Settings-guarded and
   // idempotent per calendar week; not fired on boot (that would email everyone).
   setTimeout(() => runScheduledJob('sendWeeklyVendorDigest', sendWeeklyVendorDigest).catch(() => {}), 7 * DAY);

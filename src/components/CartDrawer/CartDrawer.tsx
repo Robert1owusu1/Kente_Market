@@ -3,6 +3,7 @@ import { useCart } from "../../Context/CartContext";
 import { Link } from "react-router-dom";
 import { FaTimes, FaArrowRight, FaShoppingCart } from "react-icons/fa";
 import { calcOrderTotals } from "../../utils/pricing";
+import { useCartShippingQuote } from "../../hooks/useCartShippingQuote";
 import { resolveImageUrl } from "../../utils/imageUrl";
 import { formatCedi } from '../../utils/formatCurrency';
 
@@ -13,7 +14,13 @@ const CartDrawer = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
   const [shouldRender, setShouldRender] = useState(isOpen);
   const [isVisible, setIsVisible] = useState(isOpen);
 
-  const totals = useMemo(() => calcOrderTotals(cartItems), [cartItems]);
+  const estimate = useMemo(() => calcOrderTotals(cartItems), [cartItems]);
+  // Exact per-seller delivery from the server; the flat estimate only while it loads.
+  const quote = useCartShippingQuote(cartItems, 'GH', undefined, isOpen);
+  const totals = useMemo(() => {
+    const shipping = quote.shipping ?? estimate.shipping;
+    return { ...estimate, shipping, total: Math.round((estimate.subtotal + estimate.tax + shipping) * 100) / 100 };
+  }, [estimate, quote.shipping]);
   const totalItems = useMemo(
     () => cartItems.reduce((total, item) => total + (Number(item.quantity) || 0), 0),
     [cartItems]

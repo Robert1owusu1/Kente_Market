@@ -33,6 +33,9 @@ import {
   getVendorShippingDestinations,
   addVendorShippingDestination,
   removeVendorShippingDestination,
+  getVendorShippingRates,
+  setVendorShippingRate,
+  removeVendorShippingRate,
 } from '../controllers/vendorController.js';
 import {
   getVendorOrders,
@@ -121,6 +124,13 @@ router.route('/shipping/destinations')
   .post(vendorOrStaff, requireVendorPermission('manage_orders'), addVendorShippingDestination);
 router.route('/shipping/destinations/:id')
   .delete(vendorOrStaff, requireVendorPermission('manage_orders'), removeVendorShippingDestination);
+// GET /api/vendors/shipping/rates → seller's own delivery fees + platform defaults
+// PUT/DELETE /api/vendors/shipping/rates/:countryCode → set / remove the seller's fee for a country
+router.route('/shipping/rates')
+  .get(vendorOrStaff, requireVendorPermission('manage_orders'), getVendorShippingRates);
+router.route('/shipping/rates/:countryCode')
+  .put(vendorOrStaff, requireVendorPermission('manage_orders'), setVendorShippingRate)
+  .delete(vendorOrStaff, requireVendorPermission('manage_orders'), removeVendorShippingRate);
 
 // GET /api/vendors → list all vendors (admin only)
 router.route('/').get(protect, admin, listVendors);

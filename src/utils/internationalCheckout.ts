@@ -6,6 +6,18 @@
 export const SUPPORTED_DESTINATION_CODES = ["GH", "GB", "US", "CA", "DE", "NL"] as const;
 export type DestinationCode = (typeof SUPPORTED_DESTINATION_CODES)[number];
 
+// Each destination's own currency (mirrors COUNTRY_CONFIG in
+// backend/controllers/internationalCheckoutController.js). Fees abroad may be
+// set in GHS or this currency; Ghana fees are always GHS.
+export const DESTINATION_CURRENCY: Record<DestinationCode, string> = {
+  GH: "GHS",
+  GB: "GBP",
+  US: "USD",
+  CA: "CAD",
+  DE: "EUR",
+  NL: "EUR",
+};
+
 export const DESTINATION_NAMES: Record<DestinationCode, string> = {
   GH: "Ghana",
   GB: "United Kingdom",

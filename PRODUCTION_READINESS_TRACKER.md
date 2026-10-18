@@ -92,8 +92,8 @@ is reverted (mutation check), then the fix was restored byte-for-byte.
 | L-1 | Lint errors | various | Low | Cleaned | lint 0 errors | FIXED (verified) |
 | D-1 | Commission category tier unreachable | `createEscrowAllocations` | Medium | — | — | BLOCKED (business decision) |
 | D-2 | Custom requests w/o base product → no escrow allocation | same | Medium | — | — | BLOCKED (business decision) |
-| D-3 | Hard-coded fallback shipping prices when a lane has no rate | `shippingService.js` | Medium | — | staging E12 | BLOCKED (business decision) |
-| D-4 | Migration seeds approximate FX rates | `migrateExchangeRates.js` | High for intl launch | — | prod gate | BLOCKED (operator action) |
+| D-3 | Hard-coded fallback shipping prices when a lane has no rate | `shippingService.js` | Medium | — | staging E12 | ADDRESSED (2026-10-18) — admin sets platform default fee per country (Admin → Shipping & FX), sellers may override for their products; built-in table only applies where no fee is set |
+| D-4 | Migration seeds approximate FX rates | `migrateExchangeRates.js` | High for intl launch | — | prod gate | ADDRESSED (2026-10-18) — rates fetched automatically twice a day (Services/exchangeRateService.js, ±25% sanity guard, last good rate kept); seeds only bridge until the first fetch |
 | TIDB-1 | STORED generated column via ALTER unsupported on TiDB | `migrateInternationalAddresses.js` | Medium | Column made VIRTUAL (no app code reads it; values identical; instant on MySQL) | `migrationPortability.test.js` *mut*; fresh + upgrade + up/up/down/up on disposable DB (2026-10-12) | FIXED locally — TiDB confirmation still a staging step |
 | SEC-4 | Staff auth turned deactivated-staff / inactive-store 403s into 401 (SPA "session expired") | `middleware/authMiddleware.js` | Low | Keep decided status; generic 401 only for driver errors; `next()` outside `try` | `staffAuthStatus.test.js` *mut* (2026-10-12) | FIXED |
 | SEC-3, SEC-5, SEC-6, R-6, R-7 | See `SECURITY_FINDINGS.md` §2 | | Low–Medium | — | — | DOCUMENTED |
@@ -276,3 +276,16 @@ No authentication, authorisation, payment, refund, payout, commission or tenant-
 Gates (disposable MySQL 8.4.11 `127.0.0.1:33717`, `injected env (0)`): backend **999/999** (0 skipped),
 vitest **151/151**, frontend + backend typecheck 0, lint 0 errors (11 pre-existing warnings), build OK,
 browser crawl 351 pages × 3 full runs + 2 targeted runs, 0 console errors / failed API calls.
+
+## Phase O — Delivery fees, diaspora sales, exchange rates (2026-10-18)
+
+| ID | Item | Status |
+|---|---|---|
+| SHIP-1 | Sellers could not choose countries they ship to (no UI), so every diaspora order with a seller's product was refused | FIXED — Seller dashboard → Shipping → "Countries I ship to" |
+| SHIP-2 | No admin or seller control of delivery fees | FIXED — admin platform default per country; seller override per country; audit-logged |
+| SHIP-3 | Multi-seller carts paid one shipping charge (first seller's rate) | CHANGED (owner decision) — each seller's parcel is charged its own fee; free-delivery threshold per seller |
+| SHIP-4 | Checkout showed Ghana's flat shipping for diaspora addresses (lower than charged) | FIXED (b068e98) |
+| SHIP-5 | Shipping money stays with the platform; sellers who set their own fee do not receive it | DECISION NEEDED — payout behaviour unchanged pending owner approval |
+| SHIP-6 | 15% VAT is added to export orders | DECISION NEEDED (tax adviser) — unchanged |
+| SHIP-7 | Pickup orders are charged the delivery fee (pre-existing behaviour) | DECISION NEEDED — unchanged |
+

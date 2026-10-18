@@ -23,7 +23,7 @@ import {
   CHARGE_CURRENCY,
   normalizeDestinationCode,
 } from "../utils/destinationValidation.js";
-import { getShippingOptions as getShippingOptionsService, getChargeableShippingGHS, checkVendorDestination, isMissingTableError } from "../Services/shippingService.js";
+import { getShippingOptions as getShippingOptionsService, getOrderShippingGHS, groupLinesByVendor, checkVendorDestination, isMissingTableError } from "../Services/shippingService.js";
 import pool from "../config/db.js";
 
 /**
@@ -444,19 +444,26 @@ export const getShippingOptions = async (req, res) => {
     const productIds = [...new Set(
       items.map((it) => parseInt(it?.productId ?? it?.product ?? it?.id, 10)).filter((n) => Number.isInteger(n) && n > 0)
     )].slice(0, 100);
-    let productVendorIds = [];
     // Ghana is domestic: order creation never checks vendor destinations for
-    // GH and charges the flat domestic rule, so the quote must not either.
+    // GH, so the quote must not either.
     const domestic = code === "GH";
-    if (productIds.length > 0 && !domestic) {
+    /** @type {Array<{productId: number, qty: number, price: number, vendorId: any}>} */
+    let lines = [];
+    if (productIds.length > 0) {
       const [rows] = /** @type {[any[], any]} */ (await pool.execute(
-        `SELECT id, vendorId FROM product WHERE id IN (${productIds.map(() => "?").join(",")}) AND vendorId IS NOT NULL`,
+        `SELECT id, vendorId, price FROM product WHERE id IN (${productIds.map(() => "?").join(",")})`,
         productIds
       ));
-      // Cart order, as order creation uses it (its first vendor picks the rate).
-      const vendorOf = new Map(rows.map((r) => [Number(r.id), r.vendorId]));
-      productVendorIds = productIds.map((id) => vendorOf.get(id)).filter((v) => v != null);
+      const byId = new Map(rows.map((r) => [Number(r.id), r]));
+      // Cart order, as order creation sees it; prices from the DB, never the client.
+      lines = productIds.filter((id) => byId.has(id)).map((id) => ({
+        productId: id,
+        qty: Math.max(1, parseInt(items.find((it) => parseInt(it?.productId ?? it?.product ?? it?.id, 10) === id)?.qty ?? 1, 10) || 1),
+        price: Number(byId.get(id).price) || 0,
+        vendorId: byId.get(id).vendorId ?? null,
+      }));
     }
+    const productVendorIds = domestic ? [] : lines.map((l) => l.vendorId).filter((v) => v != null);
     const vendorIds = domestic ? [] : [...new Set([
       ...productVendorIds,
       ...(items || []).map(it => it.vendorId).filter(v => v != null),
@@ -541,26 +548,26 @@ export const getShippingOptions = async (req, res) => {
       });
     }
 
-    // The exact GHS shipping order creation will book for this cart (same
-    // function, same vendor, same weight inputs as resolveInternationalShipping),
-    // so checkout can show the total it will charge before Pay. Display only:
-    // the order is still re-priced on the server.
+    // The exact GHS shipping order creation will book for this cart: the same
+    // per-seller function (resolveOrderShipping -> getOrderShippingGHS) with
+    // DB prices, so checkout and the cart can show the total that will be
+    // charged. Display only: the order is still re-priced on the server.
     let chargeableShippingGHS = null;
-    if (!domestic && result?.supported !== false) {
-      const ship = await getChargeableShippingGHS({
+    /** @type {Array<{amountGHS: number, isFree: boolean, freeThresholdGHS: number|null, subtotalGHS: number}>} */
+    let shippingGroups = [];
+    if (lines.length > 0 && result?.supported !== false) {
+      const ship = await getOrderShippingGHS({
         destinationCountry: code,
-        destinationRegion: region,
-        vendorId,
-        items: productIds.map((productId) => ({
-          productId,
-          qty: Math.max(1, parseInt(items.find((it) => parseInt(it?.productId ?? it?.product ?? it?.id, 10) === productId)?.qty ?? 1, 10) || 1),
-        })),
-        subtotal: Number(subtotal) || 0,
+        destinationRegion: domestic ? null : region,
+        groups: groupLinesByVendor(lines),
       });
-      if (ship.ok) chargeableShippingGHS = ship.amountGHS;
+      if (ship.ok) {
+        chargeableShippingGHS = ship.amountGHS;
+        shippingGroups = ship.groups.map((g) => ({ amountGHS: g.amountGHS, isFree: g.isFree, freeThresholdGHS: g.freeThresholdGHS, subtotalGHS: g.subtotalGHS }));
+      }
     }
 
-    res.json({ ...result, chargeableShippingGHS, chargeCurrency: CHARGE_CURRENCY, mock: false });
+    res.json({ ...result, chargeableShippingGHS, shippingGroups, chargeCurrency: CHARGE_CURRENCY, mock: false });
   } catch (error) {
     // The table name / driver text goes to the server log only — a customer
     // must never see SQL, host names, or credentials.
