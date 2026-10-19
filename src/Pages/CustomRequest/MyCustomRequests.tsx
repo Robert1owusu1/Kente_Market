@@ -123,6 +123,7 @@ function RequestCard({ request }: { request: CustomRequest }) {
           <div>
             <p className="text-xs text-gray-500 dark:text-gray-400">Vendor quote</p>
             <p className="text-lg font-bold text-gray-900 dark:text-white">GHS {price.toLocaleString()}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">VAT and delivery are added at checkout, once you give your address.</p>
             {request.vendorCanMeet ? (
               <p className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1"><FaCheckCircle /> Can meet your timeline</p>
             ) : (

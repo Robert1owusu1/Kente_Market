@@ -12,6 +12,22 @@ import {
   PAYMENT_CONFIRMATION_DELAYED_MESSAGE,
 } from "../../utils/paymentRef";
 import type { CustomRequest } from "../../types/domain";
+import { formatCedi } from "../../utils/formatCurrency";
+import { DESTINATION_NAMES, SUPPORTED_DESTINATION_CODES, type DestinationCode } from "../../utils/internationalCheckout";
+
+// The full price the server saved for this delivery country: the seller's
+// quote + VAT (admin rate) + delivery (per-seller fee). Paystack is opened for
+// `total` and checkout verifies the payment against the same saved figure.
+interface PricedOrder {
+  subtotal: number;
+  tax: number;
+  shipping: number;
+  total: number;
+  country: string;
+}
+
+const errorMessage = (err: unknown) =>
+  (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
 
 interface PaystackResponse {
   reference?: string;
@@ -39,7 +55,7 @@ interface Shipping {
   city: string;
   state: string;
   zipCode: string;
-  country: string;
+  countryCode: DestinationCode;
 }
 
 export default function CustomRequestCheckout() {
@@ -57,8 +73,10 @@ export default function CustomRequestCheckout() {
     city: "",
     state: "",
     zipCode: "",
-    country: "Ghana",
+    countryCode: "GH",
   });
+  const [priced, setPriced] = useState<PricedOrder | null>(null);
+  const [pricingError, setPricingError] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [paystackKey, setPaystackKey] = useState<string>("");
 
@@ -81,6 +99,26 @@ export default function CustomRequestCheckout() {
       toast.error('Payment system not configured. Please contact support.');
     }
   }, []);
+
+  // Price the order for the chosen country (and region abroad) whenever it
+  // changes. The server saves the breakdown; nothing here is calculated.
+  const requestId = (request as CustomRequest | undefined)?.id;
+  const requestStatus = (request as CustomRequest | undefined)?.status;
+  useEffect(() => {
+    if (!requestId || requestStatus !== "accepted") return;
+    let cancelled = false;
+    setPriced(null);
+    setPricingError(null);
+    const timer = setTimeout(() => {
+      axios
+        .post(`/api/custom-requests/${requestId}/price`, {
+          shippingAddress: { countryCode: shipping.countryCode, region: shipping.state || undefined },
+        })
+        .then(({ data }) => { if (!cancelled) setPriced(data as PricedOrder); })
+        .catch((err) => { if (!cancelled) setPricingError(errorMessage(err) || "Could not price delivery to this address."); });
+    }, 300);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [requestId, requestStatus, shipping.countryCode, shipping.state]);
 
   useEffect(() => {
     const loaded = hasPaystack();
@@ -133,8 +171,10 @@ export default function CustomRequestCheckout() {
     );
   }
 
-  const setField = (key: keyof Shipping) => (e: React.ChangeEvent<HTMLInputElement>) =>
+  const setField = (key: keyof Shipping) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setShipping((s) => ({ ...s, [key]: e.target.value }));
+  // Full address payload: the country code prices delivery; the name is for people.
+  const addressPayload = { ...shipping, country: DESTINATION_NAMES[shipping.countryCode] };
 
   const inputClass =
     "w-full px-4 py-3 rounded-xl border-2 border-gray-300 dark:border-gray-600 bg-transparent focus:outline-hidden focus:border-primary transition";
@@ -175,8 +215,8 @@ export default function CustomRequestCheckout() {
 
     try {
       const { data } = await axios.post(`/api/custom-requests/${req.id}/checkout`, {
-        shippingAddress: shipping,
-        billingAddress: shipping,
+        shippingAddress: addressPayload,
+        billingAddress: addressPayload,
         paymentMethod: "paystack",
         paymentReference: reference,
       });
@@ -193,8 +233,8 @@ export default function CustomRequestCheckout() {
       if (savedReference) {
         try {
           const retry = await axios.post(`/api/custom-requests/${req.id}/checkout`, {
-            shippingAddress: shipping,
-            billingAddress: shipping,
+            shippingAddress: addressPayload,
+            billingAddress: addressPayload,
             paymentMethod: "paystack",
             paymentReference: savedReference,
           });
@@ -234,12 +274,24 @@ export default function CustomRequestCheckout() {
       return;
     }
     setIsProcessing(true);
+    // Re-confirm the price with the full address right before paying: the
+    // server saves this exact breakdown and checks the payment against it.
+    let confirmed: PricedOrder;
+    try {
+      const { data } = await axios.post(`/api/custom-requests/${req.id}/price`, { shippingAddress: addressPayload });
+      confirmed = data as PricedOrder;
+      setPriced(confirmed);
+    } catch (err) {
+      toast.error(errorMessage(err) || "Could not price delivery to this address.");
+      setIsProcessing(false);
+      return;
+    }
     try {
       const popup = makePaystackPopup();
       popup.newTransaction({
         key: paystackKey,
         email: shipping.email,
-        amount: Math.round(price * 100),
+        amount: Math.round(confirmed.total * 100),
         currency: "GHS",
         ref: `CUSTOM_${req.id}_${Date.now()}_${Math.random().toString(36).substring(7)}`,
         channels: ["card", "mobile_money"],
@@ -281,9 +333,13 @@ export default function CustomRequestCheckout() {
             <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">Yards</span><span className="font-medium">{req.yards} yd</span></div>
             <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">Colours</span><span className="font-medium">{req.colours?.join(", ") || "—"}</span></div>
             <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">Thread</span><span className="font-medium">{req.dominantThread || "—"}</span></div>
+            <div className="flex justify-between pt-2 border-t border-gray-300 dark:border-gray-600"><span className="text-gray-500 dark:text-gray-400">Weaver's quote</span><span className="font-medium">{formatCedi(price)}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">Delivery</span><span className="font-medium">{priced ? (priced.shipping === 0 ? "Free" : formatCedi(priced.shipping)) : "Calculating…"}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">VAT</span><span className="font-medium">{priced ? formatCedi(priced.tax) : "Calculating…"}</span></div>
             <div className="flex justify-between pt-2 border-t border-gray-300 dark:border-gray-600 text-base font-bold text-gray-900 dark:text-white">
-              <span>Total</span><span>GHS {price.toLocaleString()}</span>
+              <span>Total</span><span>{priced ? formatCedi(priced.total) : "Calculating…"}</span>
             </div>
+            {pricingError && <p className="text-sm text-red-600 dark:text-red-400" role="alert">{pricingError}</p>}
             <p className="text-xs text-gray-400 pt-1 flex items-center gap-1">
               <FaLock /> Escrow-secured: funds reach the weaver after you confirm delivery.
             </p>
@@ -300,7 +356,9 @@ export default function CustomRequestCheckout() {
               <input placeholder="City" value={shipping.city} onChange={setField("city")} className={inputClass} />
               <input placeholder="Region / State" value={shipping.state} onChange={setField("state")} className={inputClass} />
               <input placeholder="Postal code" value={shipping.zipCode} onChange={setField("zipCode")} className={inputClass} />
-              <input placeholder="Country" value={shipping.country} onChange={setField("country")} className={inputClass} />
+              <select aria-label="Country" value={shipping.countryCode} onChange={setField("countryCode")} className={inputClass}>
+                {SUPPORTED_DESTINATION_CODES.map((c) => <option key={c} value={c}>{DESTINATION_NAMES[c]}</option>)}
+              </select>
             </div>
           </div>
 
@@ -308,11 +366,11 @@ export default function CustomRequestCheckout() {
           <div className="space-y-3">
             <button
               onClick={handlePay}
-              disabled={isProcessing}
+              disabled={isProcessing || !priced}
               className="w-full px-6 py-3 bg-gradient-to-r from-primary to-secondary text-white rounded-xl font-semibold shadow-md hover:shadow-lg transition disabled:opacity-50 flex items-center justify-center gap-2"
             >
               {isProcessing ? <FaSpinner className="animate-spin" /> : <FaCreditCard />}
-              {isProcessing ? "Processing… keep this tab open" : `Pay GHS ${price.toLocaleString()}`}
+              {isProcessing ? "Processing… keep this tab open" : priced ? `Pay ${formatCedi(priced.total)}` : "Pay"}
             </button>
             <p className="text-xs text-gray-400 text-center">Card or Mobile Money via Paystack. You'll approve the weave before it's woven.</p>
           </div>

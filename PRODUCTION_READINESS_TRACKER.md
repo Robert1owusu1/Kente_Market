@@ -300,6 +300,6 @@ browser crawl 351 pages × 3 full runs + 2 targeted runs, 0 console errors / fai
 | MONEY-4 | Referral minimum withdrawal GH₵10 in code | `settings.referral.minWithdrawal` (Admin → Referrals), seeded at 10 |
 | MONEY-5 | Vendor model filled a missing commission with 10% (and turned 0% into 10%) | Shows the stored value; the charged rate comes from the admin's commission rules |
 | MONEY-6 | `tax_rate` / `referral.minWithdrawal` could be deleted via `DELETE /api/settings/:key` | Protected; deploy preflight (`--db`) fails if they or the Ghana platform fee are missing |
-| MONEY-7 | Custom orders are booked with VAT 0 and delivery 0 (seller's quoted price only) | DECISION NEEDED — unchanged |
+| MONEY-7 | Custom orders were booked with VAT 0 and delivery 0 (seller's quoted price only) | FIXED (owner decision 2026-10-19) — `POST /api/custom-requests/:id/price` saves quote + VAT + delivery for the delivery country before payment; checkout verifies the charge against that saved total; escrow still covers the quote only (VAT and delivery stay with the platform) |
 
 Kept on purpose (configuration with a documented default, or safety caps): commission last-resort `PLATFORM_FEE_RATE` env (default 0.1; admin commission rules apply first), `ESCROW_RELEASE_DAYS`, `CUSTOM_ADVANCE_RATIO`, `FX_MAX_DAILY_CHANGE`, maximum commission/referral rate caps (50%), quantity/upload/size limits, the 0.5 kg weight assumed for products without a weight.

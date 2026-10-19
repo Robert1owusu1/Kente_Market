@@ -13,7 +13,10 @@ import { issueCertificateForOrder } from "../Services/certificateService.js";
 import PaystackService from "../Services/paystackservices.js";
 import { CHARGED_CURRENCY } from "../Services/paymentCurrency.js";
 import { newOrderNumber } from "../utils/orderNumber.js";
-import { round2 } from "../../shared/pricing.js";
+import { round2, calcTax } from "../../shared/pricing.js";
+import { getVatRate, PricingConfigError } from "../Services/pricingConfig.js";
+import { getOrderShippingGHS, checkVendorDestination } from "../Services/shippingService.js";
+import { validateDestinationCountry } from "../utils/destinationValidation.js";
 
 // Combine needed-for date + time into a contractually visible completion date.
 const completionFromRequest = (request) => {
@@ -238,6 +241,64 @@ export const cancelRequest = async (req, res) => {
   }
 };
 
+// POST /api/custom-requests/:id/price — the full price of a custom order
+//    (seller's quote + VAT at the admin rate + delivery by the per-seller fee
+//    rule) for the customer's delivery address, SAVED on the request before
+//    payment. Paystack is opened for this figure and checkout verifies the
+//    payment against the saved breakdown, so a fee or VAT change between the
+//    two steps can never strand a charge. Re-pricing is allowed until paid.
+export const priceRequest = async (req, res) => {
+  try {
+    const request = await CustomRequest.findById(parseInt(req.params.id));
+    if (!request) return res.status(404).json({ message: "Request not found" });
+    if (request.customerId !== req.user.id) return res.status(403).json({ message: "Not authorized" });
+    if (request.status !== 'accepted') {
+      return res.status(400).json({ message: `Request must be accepted before payment (currently '${request.status}')` });
+    }
+    const price = round2(parseFloat(request.vendorQuotePrice));
+    if (!price || price <= 0) return res.status(400).json({ message: "Vendor quote price is invalid" });
+
+    const address = (req.body && req.body.shippingAddress) || {};
+    const dest = validateDestinationCountry(address);
+    if (!dest.valid || !dest.countryCode) {
+      return res.status(400).json({ message: dest.message || "Delivery is not available to this country", code: dest.code });
+    }
+    const country = dest.countryCode;
+    const region = address.region || address.state || address.province || null;
+    if (country !== 'GH' && !(await checkVendorDestination(request.vendorId, country, region))) {
+      return res.status(400).json({ message: "This seller does not deliver to that country", code: "VENDOR_DOES_NOT_SHIP" });
+    }
+
+    const tax = calcTax(price, await getVatRate());
+    const ship = await getOrderShippingGHS({
+      destinationCountry: country,
+      destinationRegion: country === 'GH' ? null : region,
+      groups: [{
+        vendorId: request.vendorId,
+        items: [{ productId: Number(request.baseProductId) || 0, qty: 1 }],
+        subtotalGHS: price,
+      }],
+    });
+    if (!ship.ok) return res.status(ship.status).json({ message: ship.message, code: ship.code });
+    const total = round2(price + tax + ship.amountGHS);
+
+    const [upd] = await pool.execute(
+      `UPDATE custom_requests
+          SET pricedSubtotal = ?, pricedTax = ?, pricedShipping = ?, pricedTotal = ?, pricedCountry = ?, pricedAt = NOW()
+        WHERE id = ? AND customerId = ? AND status = 'accepted'`,
+      [price, tax, ship.amountGHS, total, country, request.id, req.user.id]
+    );
+    if (!upd.affectedRows) return res.status(409).json({ message: "This request can no longer be paid" });
+    res.json({ subtotal: price, tax, shipping: ship.amountGHS, total, country, currency: CHARGED_CURRENCY });
+  } catch (error) {
+    if (error instanceof PricingConfigError) {
+      return res.status(error.status).json({ message: error.publicMessage, code: 'PRICING_NOT_CONFIGURED' });
+    }
+    console.error("priceRequest error:", error.message);
+    res.status(500).json({ message: "Could not price this order" });
+  }
+};
+
 // POST /api/custom-requests/:id/checkout — customer pays (Paystack) and the
 //    custom order is created + escrow held.
 // FIX: Entire checkout flow is now protected by a single database transaction
@@ -252,6 +313,8 @@ export const checkoutRequest = async (req, res) => {
   // If the DB transaction later fails, the verified payment is logged for reconciliation.
   let request;
   let price;
+  /** @type {{ tax: number, shipping: number, total: number }} */
+  let priced;
   let paymentReference;
   let items;
   let completionDate;
@@ -283,6 +346,23 @@ export const checkoutRequest = async (req, res) => {
       return res.status(400).json({ message: "Vendor quote price is invalid" });
     }
 
+    // The full price (quote + VAT + delivery) saved by POST /:id/price for
+    // this delivery country is what must have been paid. Checked BEFORE the
+    // Paystack call, so nothing is verified against an unpriced request.
+    const destCountry = validateDestinationCountry(shippingAddress || {});
+    if (request.pricedTotal === null || request.pricedTotal === undefined
+      || round2(parseFloat(request.pricedSubtotal)) !== round2(price)) {
+      return res.status(400).json({ message: "Please confirm your delivery address so we can price your order.", code: "CUSTOM_ORDER_NOT_PRICED" });
+    }
+    if (!destCountry.valid || destCountry.countryCode !== request.pricedCountry) {
+      return res.status(400).json({ message: "The delivery country changed after pricing. Please confirm the address again.", code: "CUSTOM_ORDER_REPRICE" });
+    }
+    priced = {
+      tax: round2(parseFloat(request.pricedTax)),
+      shipping: round2(parseFloat(request.pricedShipping)),
+      total: round2(parseFloat(request.pricedTotal)),
+    };
+
     // SECURITY: Verify Paystack server-side that the charge succeeded, settled
     // the full quote amount in GHS, and that the reference hasn't been consumed.
     const verification = await PaystackService.verifyTransaction(paymentReference);
@@ -290,10 +370,10 @@ export const checkoutRequest = async (req, res) => {
     if (!tx || tx.status !== 'success') {
       return res.status(400).json({ message: "Payment has not been completed. Please try again." });
     }
-    const expectedKobo = Math.round(price * 100);
+    const expectedKobo = Math.round(priced.total * 100);
     const paidKobo = parseInt(tx.amount, 10);
     if (tx.currency !== CHARGED_CURRENCY || !Number.isFinite(paidKobo) || paidKobo !== expectedKobo) {
-      return res.status(400).json({ message: "Payment amount does not match the quoted price." });
+      return res.status(400).json({ message: "Payment amount does not match the order total." });
     }
 
     // Check paymentReference uniqueness (race with other checkouts handled by
@@ -369,14 +449,14 @@ export const checkoutRequest = async (req, res) => {
         request.customerId,
         orderNumber,
         JSON.stringify(items),
-        price,
+        priced.total,
         JSON.stringify(shippingAddress || {}),
         JSON.stringify(shippingAddress || {}),
         paymentMethod || "Card Payment",
         "paid",
         "processing",
-        0,
-        0,
+        priced.shipping,
+        priced.tax,
         0,
         notes,
         paymentReference,
@@ -582,7 +662,7 @@ export const checkoutRequest = async (req, res) => {
       console.error(
         `CRITICAL: Custom request checkout failed after Paystack verification. ` +
         `Payment reference=${paymentReference}, customer=${request.customerId}, ` +
-        `request=${request.id}, vendor=${request.vendorId}, amount=${price}. ` +
+        `request=${request.id}, vendor=${request.vendorId}, amount=${priced?.total ?? price} (quote ${price}). ` +
         `Order creation was rolled back. This charge requires manual reconciliation. ` +
         `Error: ${error.message}`
       );

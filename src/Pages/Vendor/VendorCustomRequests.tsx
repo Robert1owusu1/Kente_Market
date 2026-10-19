@@ -195,6 +195,7 @@ function QuoteModal({ req, onClose }: { req: CustomRequest; onClose: () => void 
 
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Your price (GHS)</label>
+          <p className="mb-1 text-xs text-gray-500 dark:text-gray-400">For the cloth only. VAT and delivery are added for the customer at checkout.</p>
           <input
             type="number"
             min="1"

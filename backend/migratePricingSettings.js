@@ -5,6 +5,10 @@
 //                                   at Ghana's 15%; order pricing reads it.
 //   settings.referral.minWithdrawal Minimum referral withdrawal in GHS (admin
 //                                   Referrals page). Seeded at the design default 10.
+//   custom_requests.priced*         The full price of a custom order (seller's
+//                                   quote + VAT + delivery) is computed and SAVED
+//                                   before payment, and the payment is checked
+//                                   against that saved figure.
 //   shipping_rates                  The seeded platform defaults were capped at
 //                                   5 kg (abroad) / 30 kg (Ghana); heavier orders
 //                                   fell through to a hard-coded fallback table
@@ -40,6 +44,23 @@ try {
     );
   }
   console.log('✅ pricing settings present (tax_rate, referral.minWithdrawal)');
+
+  for (const [col, def] of [
+    ['pricedSubtotal', 'DECIMAL(10,2) NULL'],
+    ['pricedTax', 'DECIMAL(10,2) NULL'],
+    ['pricedShipping', 'DECIMAL(10,2) NULL'],
+    ['pricedTotal', 'DECIMAL(10,2) NULL'],
+    ['pricedCountry', 'CHAR(2) NULL'],
+    ['pricedAt', 'DATETIME NULL'],
+  ]) {
+    const [[{ n }]] = await connection.execute(
+      `SELECT COUNT(*) AS n FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'custom_requests' AND COLUMN_NAME = ?`,
+      [col]
+    );
+    if (!Number(n)) await connection.execute(`ALTER TABLE custom_requests ADD COLUMN ${col} ${def}`);
+  }
+  console.log('✅ custom_requests priced* columns present (custom-order VAT + delivery)');
 
   const [res] = await connection.execute(
     `UPDATE shipping_rates

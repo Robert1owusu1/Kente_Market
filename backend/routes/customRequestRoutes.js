@@ -9,6 +9,7 @@ import {
   acceptRequest,
   cancelRequest,
   checkoutRequest,
+  priceRequest,
   listVendorRequests,
   quoteRequest,
   declineRequest,
@@ -63,6 +64,7 @@ router.route('/:id').get(protect, async (req, res, next) => {
 // Customer actions (quoted → accepted or cancelled)
 router.route('/:id/accept').post(protect, acceptRequest);
 router.route('/:id/cancel').post(protect, cancelRequest);
+router.route('/:id/price').post(protect, priceRequest);
 router.route('/:id/checkout').post(protect, checkoutRequest);
 
 // Vendor actions (pending → quoted or declined; paid → in_progress)
