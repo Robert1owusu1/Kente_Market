@@ -111,7 +111,9 @@ const ShippingFeesEditor = ({ mode, countries, rates, defaults = [], carriers, o
   const [editing, setEditing] = useState<DestinationCode | null>(null);
 
   const remove = async (code: DestinationCode) => {
-    const after = mode === "vendor" ? "The platform default will apply." : "The built-in fallback fee will apply.";
+    const after = mode === "vendor"
+      ? "The platform default will apply."
+      : "Delivery there will be unavailable, except from sellers with their own fee.";
     if (!window.confirm(`Remove the delivery fee for ${DESTINATION_NAMES[code]}? ${after}`)) return;
     try {
       await onRemove(code);
@@ -138,15 +140,15 @@ const ShippingFeesEditor = ({ mode, countries, rates, defaults = [], carriers, o
                   {own
                     ? <>{mode === "vendor" ? "Your fee: " : ""}{describeRate(own)}</>
                     : mode === "vendor"
-                      ? <>Platform default{fallback ? `: ${describeRate(fallback)}` : " (built-in)"}</>
-                      : "Not set — the built-in fallback fee applies"}
+                      ? <>Platform default{fallback ? `: ${describeRate(fallback)}` : ": not set — set your own fee to deliver here"}</>
+                      : "Not set — delivery to this country is unavailable"}
                 </p>
               </div>
               <div className="flex shrink-0 gap-2">
                 <button type="button" onClick={() => setEditing(editing === code ? null : code)} aria-expanded={editing === code} className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-gray-300 px-3 text-sm dark:border-gray-600">
                   <FaEdit aria-hidden="true" /> {own ? "Edit" : mode === "vendor" ? "Set my fee" : "Set fee"}
                 </button>
-                {own && (
+                {own && !(mode === "admin" && code === "GH") && (
                   <button type="button" onClick={() => remove(code)} aria-label={`Remove the delivery fee for ${DESTINATION_NAMES[code]}`} className="inline-flex min-h-10 items-center rounded-lg border border-red-300 px-3 text-sm text-red-700 dark:border-red-800 dark:text-red-400">
                     <FaTrash aria-hidden="true" />
                   </button>

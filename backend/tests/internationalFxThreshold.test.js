@@ -386,12 +386,14 @@ describe('F-6: schema, migration and runtime queries agree', () => {
 
   test('the quote path never falls back when the migration is missing', () => {
     const svc = read('../Services/shippingService.js');
-    // The static fallback must be reachable only from the "no rows for this
-    // lane" branch; a missing table must map to SHIPPING_TABLES_MISSING.
+    // A missing table maps to SHIPPING_TABLES_MISSING, and a lane with no fee
+    // configured is refused (SHIPPING_RATE_MISSING). There is no hard-coded
+    // fallback price table any more (owner decision 2026-10-19).
     assert.match(svc, /isMissingTableError/);
     assert.match(svc, /SHIPPING_TABLES_MISSING/);
-    const fallbackCall = svc.match(/if \(rates\.length === 0\) \{[\s\S]{0,200}?getFallbackOptions/);
-    assert.ok(fallbackCall, 'the fallback is only used when the tables exist but hold no rows');
+    assert.doesNotMatch(svc, /FALLBACK_RATES|getFallbackOptions/, 'no hard-coded fallback fee table');
+    const noRows = svc.match(/if \(rates\.length === 0\) \{[\s\S]{0,200}?SHIPPING_RATE_MISSING/);
+    assert.ok(noRows, 'a lane without a configured fee is refused, never priced from a guess');
   });
 });
 
@@ -832,11 +834,9 @@ describe('F-7: free-shipping threshold is compared in GHS everywhere', () => {
     assert.equal(bookBelow.isFree, false, 'booking must agree below the boundary');
   });
 
-  test('the static-fallback lane converts its display-currency threshold to GHS too', { skip: !runOk }, async () => {
-    // Force the "tables exist, no rows for this lane" branch — the only place
-    // the documented fallback table is allowed to answer. Its numbers are in
-    // the destination DISPLAY currency (CAD for CA) and must be converted to
-    // GHS before they are compared with the GHS subtotal.
+  test('a lane with no fee configured is refused by quote and booking alike', { skip: !runOk }, async () => {
+    // Force "tables exist, no fee for this lane". It used to be priced from a
+    // hard-coded table; now both paths refuse it with the same code.
     const [saved] = await pool.execute(`SELECT * FROM shipping_rates WHERE destinationCountry='CA'`);
     assert.ok(saved.length > 0, 'expected seeded CA rows to restore afterwards');
     const cols = Object.keys(saved[0]);
@@ -853,25 +853,14 @@ describe('F-7: free-shipping threshold is compared in GHS everywhere', () => {
       await pool.execute(`DELETE FROM shipping_rates WHERE destinationCountry='CA'`);
 
       const q = await quote({ countryCode: 'CA', subtotal: 100 });
-      assert.equal(q.status, 200, JSON.stringify(q.body));
-      const opt = q.body.options[0];
-      assert.equal(opt.carrier, 'platform_default', 'fallback lane expected');
-      assert.equal(opt.rateCurrency, 'CAD', 'the fallback table is in the display currency');
-      assert.equal(opt.amount, 20, 'display figure unchanged');
-      assert.ok(Math.abs(opt.freeThresholdGHS - 180 / 0.092) < 0.01,
-        `fallback threshold must be converted to GHS, got ${opt.freeThresholdGHS}`);
-      assert.equal(opt.isFree, false, '100 GHS must not clear a CAD threshold');
+      assert.equal(q.body.supported, false, JSON.stringify(q.body));
+      assert.equal(q.body.code, 'SHIPPING_RATE_MISSING');
+      assert.deepEqual(q.body.options, []);
 
       const b = await book({ destinationCountry: 'CA', subtotal: 100 });
-      assert.equal(b.ok, true, JSON.stringify(b));
-      assert.equal(b.isFree, opt.isFree, 'fallback quote and booking must agree');
-      assert.equal(b.amountGHS, opt.amountGHS, 'fallback amounts must agree to the pesewa');
-
-      const atThreshold = opt.freeThresholdGHS;
-      const qFree = await quote({ countryCode: 'CA', subtotal: atThreshold });
-      const bFree = await book({ destinationCountry: 'CA', subtotal: atThreshold });
-      assert.equal(qFree.body.options[0].isFree, true, 'free exactly at the converted threshold');
-      assert.equal(bFree.isFree, true, 'booking agrees at the converted threshold');
+      assert.equal(b.ok, false, JSON.stringify(b));
+      assert.equal(b.code, 'SHIPPING_RATE_MISSING');
+      assert.equal(b.status, 503);
     } finally {
       await restoreRows();
     }

@@ -3,7 +3,6 @@ import {
   round2, 
   calcSubtotal, 
   calcTax, 
-  calcShipping, 
   calcCouponDiscount, 
   calcOrderTotals 
 } from '../utils/pricing';
@@ -57,31 +56,16 @@ describe('Pricing Utilities', () => {
   });
 
   describe('calcTax', () => {
-    it('calculates 15% VAT by default', () => {
-      expect(calcTax(100)).toBe(15);
-      expect(calcTax(200)).toBe(30);
+    it('requires the VAT rate (admin setting); there is no built-in default', () => {
+      expect(() => calcTax(100, undefined as unknown as number)).toThrow(/VAT rate/);
+      expect(() => calcTax(100, NaN)).toThrow(/VAT rate/);
+      expect(calcTax(100, 0.15)).toBe(15);
+      expect(calcTax(200, 0.15)).toBe(30);
     });
 
     it('accepts custom rate', () => {
       expect(calcTax(100, 0.1)).toBe(10);
       expect(calcTax(100, 0.05)).toBe(5);
-    });
-  });
-
-  describe('calcShipping', () => {
-    it('returns free shipping above threshold', () => {
-      expect(calcShipping(250)).toBe(0);
-      expect(calcShipping(200)).toBe(0);
-    });
-
-    it('returns standard shipping below threshold', () => {
-      expect(calcShipping(100)).toBe(15);
-      expect(calcShipping(0)).toBe(15);
-    });
-
-    it('accepts custom threshold and cost', () => {
-      expect(calcShipping(50, 100, 10)).toBe(10);
-      expect(calcShipping(150, 100, 10)).toBe(0);
     });
   });
 
@@ -111,18 +95,20 @@ describe('Pricing Utilities', () => {
         { price: 50, qty: 2 },
         { price: 25, qty: 1 },
       ];
-      const totals = calcOrderTotals(items, { discount: 10 });
+      // VAT rate and delivery fee are inputs (admin setting, per-seller quote).
+      const totals = calcOrderTotals(items, { discount: 10, taxRate: 0.15, shipping: 15 });
       
       expect(totals.subtotal).toBe(125);
       expect(totals.tax).toBe(18.75);
-      expect(totals.shipping).toBe(15); // 125 < 200 threshold
+      expect(totals.shipping).toBe(15);
       expect(totals.discount).toBe(10);
       expect(totals.total).toBe(148.75); // 125 + 18.75 + 15 - 10
     });
 
-    it('adds shipping for orders under threshold', () => {
+    it('uses the delivery fee it is given (no built-in threshold)', () => {
       const items = [{ price: 50, qty: 1 }];
-      const totals = calcOrderTotals(items);
+      const totals = calcOrderTotals(items, { taxRate: 0.15, shipping: 15 });
+      expect(calcOrderTotals([{ price: 500, qty: 1 }], { taxRate: 0.15, shipping: 25 }).shipping).toBe(25);
       
       expect(totals.subtotal).toBe(50);
       expect(totals.tax).toBe(7.5);
@@ -132,7 +118,7 @@ describe('Pricing Utilities', () => {
 
     it('caps discount at subtotal', () => {
       const items = [{ price: 50, qty: 1 }];
-      const totals = calcOrderTotals(items, { discount: 100 });
+      const totals = calcOrderTotals(items, { discount: 100, taxRate: 0.15, shipping: 15 });
       
       expect(totals.discount).toBe(50);
       expect(totals.total).toBe(15 + 7.5); // shipping + tax

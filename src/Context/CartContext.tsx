@@ -1,7 +1,6 @@
 import { createContext, useContext, useReducer, useEffect, useRef, type ReactNode } from "react";
 import axios from "axios";
 import { toast } from "react-toastify";
-import { TAX_RATE, FREE_SHIPPING_THRESHOLD, STANDARD_SHIPPING_COST, calcTax, calcShipping } from "../utils/pricing";
 import { useAppSelector } from "../store";
 
 export interface CartItem {
@@ -87,9 +86,6 @@ interface CartContextValue {
   updateItemColors: (id: number | string, colors: string[]) => void;
   clearCart: () => void;
   getTotalPrice: () => number;
-  getTax: (taxRate?: number) => number;
-  getShipping: (threshold?: number, cost?: number) => number;
-  getFinalTotal: (taxRate?: number) => number;
   cartCount: number;
 }
 
@@ -350,20 +346,11 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  // Helpers (pricing rules live in shared/pricing.js so cart, cart drawer and
-  // checkout all agree)
+  // Items subtotal only. VAT (admin setting) and delivery (per seller) are
+  // priced by the server; pages show them from usePricingConfig and the
+  // shipping quote.
   const getTotalPrice = () =>
     state.cartItems.reduce((total, item) => total + item.price * item.quantity, 0);
-
-  const getTax = (taxRate = TAX_RATE) => calcTax(getTotalPrice(), taxRate);
-
-  const getShipping = (
-    threshold = FREE_SHIPPING_THRESHOLD,
-    cost = STANDARD_SHIPPING_COST
-  ) => calcShipping(getTotalPrice(), threshold, cost);
-
-  const getFinalTotal = (taxRate = TAX_RATE) =>
-    getTotalPrice() + getTax(taxRate) + getShipping();
 
   const cartCount = state.cartItems.reduce(
     (count, item) => count + (Number(item.quantity) || 0),
@@ -382,9 +369,6 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
         updateItemColors,
         clearCart,
         getTotalPrice,
-        getTax,
-        getShipping,
-        getFinalTotal,
         cartCount,
       }}
     >

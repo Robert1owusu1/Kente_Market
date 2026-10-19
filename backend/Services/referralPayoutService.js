@@ -12,6 +12,7 @@
 //        an admin. "paid" is set only from Paystack evidence — there is no
 //        manual mark-paid.
 import crypto from 'crypto';
+import { getReferralMinWithdrawal } from './pricingConfig.js';
 import pool from '../config/db.js';
 import paystackServices from './paystackservices.js';
 import { round2 } from '../../shared/pricing.js';
@@ -21,7 +22,8 @@ import { recordFinancialEvent } from './ledgerService.js';
 import { notifyAdmins } from '../utils/adminAlerts.js';
 
 export const REFERRAL_TRANSFER_PREFIX = 'kente_rtr_';
-export const MIN_REFERRAL_WITHDRAWAL = 10; // GH₵ (design §6 default)
+// The minimum withdrawal is the admin setting referral.minWithdrawal
+// (Services/pricingConfig.js), seeded at the design §6 default of GH₵10.
 const NOT_FOUND_GRACE_MINUTES = 30;
 
 /**
@@ -120,8 +122,9 @@ export const settleReferralWithdrawal = async (reference, outcome, evidence = {}
  */
 export const requestReferralWithdrawal = async ({ userId, amountMinor, requestKey }) => {
   const amount = round2(amountMinor / 100);
-  if (amount < MIN_REFERRAL_WITHDRAWAL) {
-    return { status: 400, body: { message: `Minimum withdrawal is GH₵${MIN_REFERRAL_WITHDRAWAL.toFixed(2)}` } };
+  const minWithdrawal = await getReferralMinWithdrawal();
+  if (amount < minWithdrawal) {
+    return { status: 400, body: { message: `Minimum withdrawal is GH₵${minWithdrawal.toFixed(2)}` } };
   }
   const [[user]] = await pool.execute(
     `SELECT id, is_email_verified, isActive, ambassadorSuspended, referralRecipientCode FROM users WHERE id = ?`, [userId]

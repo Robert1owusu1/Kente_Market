@@ -4,7 +4,6 @@
 // calculation. Uses database-backed carrier rates and vendor destinations.
 import pool from '../config/db.js';
 import { COUNTRY_CONFIG } from '../controllers/internationalCheckoutController.js';
-import { FREE_SHIPPING_THRESHOLD, STANDARD_SHIPPING_COST } from '../../shared/pricing.js';
 
 /**
  * @typedef {Object} ShippingRateInput
@@ -33,26 +32,21 @@ import { FREE_SHIPPING_THRESHOLD, STANDARD_SHIPPING_COST } from '../../shared/pr
 /** Rate rows older than this are a pricing-drift risk (see staleness handling). */
 const STALE_RATE_DAYS = 90;
 
-/**
- * Static fallback shipping table used when the lane has NO `shipping_rates`
- * rows (tables themselves must exist — a missing migration never falls back).
- * Values are denominated in the DESTINATION DISPLAY currency (GHS for GH,
- * GBP for GB, USD for US, ...) and are converted to GHS with toGHS() before
- * any comparison. Documentation-only estimates: no live carrier or FX feed.
- * @type {Record<string, {standard: number, freeThreshold: number, transitDays: string}>}
- */
-const FALLBACK_RATES = {
-  GH: { standard: 15, freeThreshold: 200, transitDays: '2-5' },
-  GB: { standard: 12, freeThreshold: 100, transitDays: '5-10' },
-  US: { standard: 18, freeThreshold: 150, transitDays: '7-14' },
-  CA: { standard: 20, freeThreshold: 180, transitDays: '7-14' },
-  DE: { standard: 15, freeThreshold: 120, transitDays: '5-10' },
-  NL: { standard: 14, freeThreshold: 110, transitDays: '5-10' },
-};
-
 /** Customer-facing messages: never carry SQL/driver text (req: no internal leaks). */
 const MSG_TABLES_MISSING = 'International shipping is temporarily unavailable. Please try again later.';
 const MSG_FX_UNAVAILABLE = 'Shipping rates are temporarily unavailable for this currency';
+const MSG_NO_RATE = 'Delivery to this country is not available right now.';
+
+/**
+ * No fee is configured for this lane (no seller fee, no platform default).
+ * Never priced from a guess: the operator sets the platform default in
+ * Admin -> Shipping & FX.
+ * @param {string} code
+ * @param {number|string|null} vendorId
+ */
+const logNoRate = (code, vendorId) => {
+  console.warn(`[shipping] no delivery fee configured for ${code}${vendorId ? ` (seller ${vendorId})` : ''}: set the platform default in Admin -> Shipping & FX`);
+};
 
 /**
  * A migration that was never run must be told apart from "no rate for this
@@ -296,7 +290,6 @@ const queryApplicableRates = async ({ originCountry = 'GH', destinationCountry, 
  * @param {number|string|null} [args.vendorId]
  * @param {Array<{productId: number, qty: number, weightKg?: number}>} [args.items]
  * @param {number} [args.subtotal] - order subtotal in GHS
- * @param {string} [args.displayCurrency] - destination display currency for fallback-table conversion
  * @returns {Promise<{ok: true, amountGHS: number, carrier: string, serviceLevel: string, isFree: boolean, staleRate: boolean, freeThresholdGHS: number|null}|{ok: false, status: number, code: string, message: string}>}
  */
 export const getChargeableShippingGHS = async ({
@@ -306,13 +299,11 @@ export const getChargeableShippingGHS = async ({
   vendorId = null,
   items = [],
   subtotal = 0,
-  displayCurrency,
 }) => {
   const code = String(destinationCountry || "").toUpperCase();
   if (!COUNTRY_CONFIG[code]) {
     return { ok: false, status: 400, code: 'UNSUPPORTED_DESTINATION', message: 'Shipping is not available to this destination' };
   }
-  const destDisplay = displayCurrency || COUNTRY_CONFIG[code].currency;
 
   try {
     const weightKg = await calculateOrderWeight(items);
@@ -370,26 +361,8 @@ export const getChargeableShippingGHS = async ({
     }
 
     if (legs.length === 0) {
-      // No DB rate rows for this lane: static fallback table. The numbers are
-      // denominated in the destination DISPLAY currency (the same table the
-      // quote path uses) and are converted to GHS with toGHS() before any
-      // comparison — never compared against the GHS subtotal raw.
-      // Documented estimates, server-computed — never client-supplied.
-      const fallback = FALLBACK_RATES[code] || FALLBACK_RATES.GH;
-      const amountConv = await toGHS(fallback.standard, destDisplay, today);
-      const thresholdConv = await toGHS(fallback.freeThreshold, destDisplay, today);
-      if (amountConv === null || thresholdConv === null) return fxUnavailable(MSG_FX_UNAVAILABLE);
-      staleRate = amountConv.stale || thresholdConv.stale;
-      const isFree = Number(subtotal) >= thresholdConv.amountGHS;
-      return {
-        ok: true,
-        amountGHS: isFree ? 0 : Math.round(amountConv.amountGHS * 100) / 100,
-        carrier: 'platform_default',
-        serviceLevel: 'standard',
-        isFree,
-        staleRate,
-        freeThresholdGHS: Math.round(thresholdConv.amountGHS * 100) / 100,
-      };
+      logNoRate(code, vendorId);
+      return { ok: false, status: 503, code: 'SHIPPING_RATE_MISSING', message: MSG_NO_RATE };
     }
 
     // Charge the cheapest standard leg when one exists, else cheapest overall.
@@ -421,13 +394,12 @@ export const getChargeableShippingGHS = async ({
  * Shipping for a whole order: every seller ships their own parcel, so each
  * seller group (and the platform's own products as one group) is charged its
  * own fee, resolved by getChargeableShippingGHS (seller's rate for the
- * country, else the platform default, else the fallback table), with that
+ * country, else the platform default; with neither the lane is unavailable), with that
  * group's subtotal tested against its free-shipping threshold. The order is
  * charged the sum. Quote and booking both call this, so they cannot differ.
  *
- * Ghana keeps working if the shipping tables are missing: the domestic flat
- * rule (shared/pricing.js) is the same GHS 15 / free from GHS 200 the seeded
- * platform row holds. International destinations stay fail-closed.
+ * Fail-closed everywhere, Ghana included: a missing table, FX rate or fee
+ * refuses the order instead of pricing it from a hard-coded figure.
  *
  * @param {object} args
  * @param {string} args.destinationCountry
@@ -449,16 +421,7 @@ export const getOrderShippingGHS = async ({ destinationCountry, destinationRegio
       items: g.items,
       subtotal: subtotalGHS,
     });
-    if (!ship.ok) {
-      if (code === 'GH' && ship.code === 'SHIPPING_TABLES_MISSING') {
-        const isFree = subtotalGHS >= FREE_SHIPPING_THRESHOLD;
-        const amountGHS = isFree ? 0 : STANDARD_SHIPPING_COST;
-        out.push({ vendorId: g.vendorId == null ? null : Number(g.vendorId), amountGHS, isFree, freeThresholdGHS: FREE_SHIPPING_THRESHOLD, subtotalGHS });
-        total += amountGHS;
-        continue;
-      }
-      return ship;
-    }
+    if (!ship.ok) return ship;
     out.push({ vendorId: g.vendorId == null ? null : Number(g.vendorId), amountGHS: ship.amountGHS, isFree: ship.isFree, freeThresholdGHS: ship.freeThresholdGHS, subtotalGHS });
     total += ship.amountGHS;
   }
@@ -592,10 +555,11 @@ export const getShippingOptions = async (input) => {
       originCountry, destinationCountry, destinationRegion, vendorId, weightKg, effectiveDate,
     });
 
-    // Tables exist but this lane has no rows → documented static fallback
-    // (converted to GHS below). A MISSING table never reaches this branch.
+    // Tables exist but no fee is configured for this lane: not available,
+    // never a guessed price (the booking path refuses the same order).
     if (rates.length === 0) {
-      return await getFallbackOptions(destinationCountry, subtotalGHS, currency, today);
+      logNoRate(destinationCountry, vendorId ?? null);
+      return { supported: false, code: 'SHIPPING_RATE_MISSING', message: MSG_NO_RATE, countryCode: destinationCountry, currency, options: [] };
     }
 
     const warnings = new Set();
@@ -801,58 +765,6 @@ export const removeVendorShippingDestination = async (vendorId, destinationId) =
   return result.affectedRows > 0;
 };
 
-/**
- * Fallback shipping options from the static table — used only when the
- * shipping tables EXIST but this lane has no `shipping_rates` rows. A missing
- * migration never reaches this function (it returns 503 instead).
- *
- * The table's numbers are denominated in the destination DISPLAY currency;
- * both the amount and the free-shipping threshold are converted to GHS with
- * toGHS() — the same conversion and the same comparison the booking path uses,
- * so quote and booking can never disagree about free shipping.
- *
- * @param {string} countryCode
- * @param {number} subtotalGHS - cart subtotal in GHS (charge currency)
- * @param {string} currency - destination display currency
- * @param {Date} [date]
- * @returns {Promise<{supported: boolean, message?: string, code?: string, status?: number, countryCode: string, currency: string, options: any[], fxUnavailable?: boolean, warnings?: string[]}>}
- */
-async function getFallbackOptions(countryCode, subtotalGHS, currency, date = new Date()) {
-  const rate = FALLBACK_RATES[countryCode] || FALLBACK_RATES.GH;
-  const displayCurrency = COUNTRY_CONFIG[countryCode]?.currency || currency;
-  const warnings = new Set();
-
-  const amountConv = await toGHS(rate.standard, displayCurrency, date);
-  const thresholdConv = await toGHS(rate.freeThreshold, displayCurrency, date);
-  if (amountConv === null || thresholdConv === null) {
-    return fxUnavailableResult(countryCode, currency);
-  }
-  if (amountConv.stale || thresholdConv.stale) warnings.add('STALE_EXCHANGE_RATE');
-
-  const isFree = subtotalGHS >= thresholdConv.amountGHS;
-  const [min, max] = rate.transitDays.split('-').map(Number);
-
-  return {
-    supported: true,
-    countryCode,
-    currency,
-    options: [{
-      carrier: 'platform_default',
-      carrierName: 'Standard Shipping',
-      serviceLevel: 'standard',
-      amount: isFree ? 0 : rate.standard,
-      amountGHS: isFree ? 0 : Math.round(amountConv.amountGHS * 100) / 100,
-      currency,
-      rateCurrency: displayCurrency,
-      transitDaysMin: min,
-      transitDaysMax: max,
-      freeThreshold: rate.freeThreshold,
-      freeThresholdGHS: thresholdConv.amountGHS,
-      isFree,
-    }],
-    warnings: Array.from(warnings),
-  };
-}
 // ---------------------------------------------------------------------------
 // Fee management: the platform's default price list (vendorId NULL) and each
 // seller's own overrides (vendorId = seller). One active 'standard' rate per
@@ -985,7 +897,7 @@ export const setStandardShippingRate = async (vendorId, countryCode, input = {})
 
 /**
  * Remove an owner's rate for a country. A seller then falls back to the
- * platform default; the platform then falls back to the built-in table.
+ * platform default. Without a platform default the country is unavailable.
  * @param {number|null} vendorId
  * @param {string} countryCode
  * @returns {Promise<boolean>} whether a rate was active

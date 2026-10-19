@@ -10,9 +10,10 @@
 // pick up the same values automatically, so the price shown == price charged.
 
 // --- Order pricing rules ---
-export const TAX_RATE = 0.15; // 15% VAT (Ghana standard rate)
-export const FREE_SHIPPING_THRESHOLD = 200; // subtotal >= this ships free
-export const STANDARD_SHIPPING_COST = 15;
+// No money rule is hard-coded here: the VAT rate is the admin setting
+// `tax_rate` (backend/Services/pricingConfig.js; GET /api/settings/public/pricing
+// for the storefront), and delivery fees are per seller and country
+// (backend/Services/shippingService.js#getOrderShippingGHS). Callers pass both in.
 
 // --- Marketplace commission ---
 export const DEFAULT_PLATFORM_FEE_RATE = 0.1; // 10% fallback commission
@@ -38,18 +39,16 @@ export const calcSubtotal = (items) =>
   );
 
 /**
- * VAT on the subtotal.
+ * VAT on the subtotal. `rate` is a fraction (0.15 = 15%) from the admin
+ * setting; there is deliberately no default.
  */
-export const calcTax = (subtotal, rate = TAX_RATE) => round2(subtotal * rate);
-
-/**
- * Shipping cost: FREE above the threshold, otherwise the flat cost.
- */
-export const calcShipping = (
-  subtotal,
-  threshold = FREE_SHIPPING_THRESHOLD,
-  cost = STANDARD_SHIPPING_COST
-) => (subtotal >= threshold ? 0 : cost);
+export const calcTax = (subtotal, rate) => {
+  const r = Number(rate);
+  if (rate === null || rate === undefined || !Number.isFinite(r) || r < 0 || r > 1) {
+    throw new Error('calcTax: a VAT rate (fraction 0..1) is required');
+  }
+  return round2(subtotal * r);
+};
 
 /**
  * Server-side coupon discount amount (never trust the client's discount).
@@ -72,14 +71,16 @@ export const calcCouponDiscount = (subtotal, discountType, discountValue) => {
 };
 
 /**
- * Full order totals. `discount` is a positive amount to subtract from the
- * total (usually from calcCouponDiscount). The subtotal is always recomputed
- * from the items so a tampered client price can never leak into the total.
+ * Full order totals. `taxRate` is the VAT fraction (admin setting);
+ * `shipping` is the delivery fee already resolved for this cart (per seller,
+ * server-side); `discount` is a positive amount to subtract (usually from
+ * calcCouponDiscount). The subtotal is always recomputed from the items so a
+ * tampered client price can never leak into the total.
  */
-export const calcOrderTotals = (items, { discount = 0 } = {}) => {
+export const calcOrderTotals = (items, { discount = 0, taxRate, shipping = 0 } = {}) => {
   const subtotal = calcSubtotal(items);
-  const tax = calcTax(subtotal);
-  const shipping = calcShipping(subtotal);
+  const tax = calcTax(subtotal, taxRate);
+  shipping = round2(Math.max(Number(shipping) || 0, 0));
   const appliedDiscount = round2(Math.min(Math.max(Number(discount) || 0, 0), subtotal));
   const total = round2(Math.max(subtotal + tax + shipping - appliedDiscount, 0));
   return { subtotal, tax, shipping, discount: appliedDiscount, total };

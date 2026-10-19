@@ -11,7 +11,8 @@ import isValidId from "../utils/isValidId.js";
 import { computeTopProductTypes } from "../utils/marketInsights.js";
 import paystackServices from "../Services/paystackservices.js";
 import { computeExpectedCompletion } from "../utils/computeExpectedCompletion.js";
-import { round2, calcSubtotal, calcTax, calcShipping, calcCouponDiscount, calcOrderTotals } from "../../shared/pricing.js";
+import { round2, calcSubtotal, calcTax, calcCouponDiscount, calcOrderTotals } from "../../shared/pricing.js";
+import { getVatRate, PricingConfigError } from "../Services/pricingConfig.js";
 import {
   createEscrowAllocations,
   reallocateOrderEscrow,
@@ -507,7 +508,8 @@ export const addOrderItems = async (req, res) => {
     // fallback table; abroad every vendor must also serve the destination).
     // Checkout shows the same figure from the shipping quote, and
     // verify-paystack checks paidKobo against the totalAmount booked here.
-    let { subtotal, tax } = calcOrderTotals(items);
+    // VAT rate is the admin setting (settings.tax_rate); fail-closed if unset.
+    let { subtotal, tax } = calcOrderTotals(items, { taxRate: await getVatRate() });
     let shipping = 0;
     {
       const intl = await resolveOrderShipping(destCountryCode, req.body.shippingAddress, items);
@@ -747,6 +749,9 @@ export const addOrderItems = async (req, res) => {
     const duplicateReference =
       error?.code === 'ER_DUP_ENTRY' &&
       String(error?.message || '').includes('paymentReference');
+    if (error instanceof PricingConfigError) {
+      return res.status(error.status).json({ message: error.publicMessage, code: 'PRICING_NOT_CONFIGURED' });
+    }
     res.status(duplicateReference ? 400 : 500).json({
       message: duplicateReference
         ? 'This payment reference has already been used'
@@ -1000,7 +1005,7 @@ export const updateOrder = async (req, res) => {
         }
         const syncedShipping = synced.shippingGHS;
         const syncDiscount = Number(existingOrder.discount ?? 0);
-        const syncTax = Number(existingOrder.tax ?? calcTax(syncSubtotal));
+        const syncTax = Number(existingOrder.tax ?? calcTax(syncSubtotal, await getVatRate()));
         const syncApplied = round2(Math.min(Math.max(syncDiscount, 0), syncSubtotal));
         body.shippingCost = syncedShipping;
         body.totalAmount = Math.max(0, round2(syncSubtotal + syncTax + syncedShipping - syncApplied));
@@ -1089,8 +1094,17 @@ export const updateOrder = async (req, res) => {
       // Prefer the address-synced shipping when this same PUT also moved the
       // destination (body.shippingCost set above); otherwise the stored order
       // figure, exactly as before.
-      const shipping = Number(body.shippingCost ?? existingOrder.shippingCost ?? calcShipping(subtotal));
-      const tax = Number(existingOrder.tax ?? calcTax(subtotal));
+      // The booked shipping and VAT; a legacy row without them is re-priced
+      // from the current settings, never from a hard-coded figure.
+      let shipping = Number(body.shippingCost ?? existingOrder.shippingCost);
+      if (!Number.isFinite(shipping)) {
+        const addr = body.shippingAddress || (typeof existingOrder.shippingAddress === "string" ? JSON.parse(String(existingOrder.shippingAddress || "{}")) : existingOrder.shippingAddress) || {};
+        const dest = validateDestinationCountry(addr);
+        const resolved = await resolveOrderShipping(dest.valid && dest.countryCode ? dest.countryCode : "GH", addr, orderLines);
+        if (resolved.error) return res.status(resolved.error.status).json({ message: resolved.error.message, code: resolved.error.code });
+        shipping = resolved.shippingGHS;
+      }
+      const tax = Number(existingOrder.tax ?? calcTax(subtotal, await getVatRate()));
       // C2: `discount` is now capped at `subtotal` inside calcCouponDiscount,
       // but shipping and tax are read from the stored order rather than
       // recomputed here, so the floor is enforced rather than assumed. A

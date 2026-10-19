@@ -4,7 +4,8 @@ import { Link, useNavigate } from "react-router-dom";
 import { FaShoppingCart, FaMinus, FaPlus, FaTrash, FaArrowRight, FaStar, FaCheck } from "react-icons/fa";
 import { useCreateOrderMutation } from "../../slices/ordersApiSlice";
 import { toast } from "react-toastify";
-import { TAX_RATE, calcOrderTotals } from "../../utils/pricing";
+import { calcTax, round2 } from "../../utils/pricing";
+import { useVatRate } from "../../slices/pricingApiSlice";
 import { useCartShippingQuote } from "../../hooks/useCartShippingQuote";
 import { resolveImageUrl } from "../../utils/imageUrl";
 import { yardOptionsFor } from "../../utils/yards";
@@ -164,13 +165,13 @@ const CartPage = () => {
 
   // Memoize calculations
   const subtotal = useMemo(() => getTotalPrice(), [getTotalPrice]);
-  const estimate = useMemo(() => calcOrderTotals(cartItems), [cartItems]);
-  // Delivery is per seller (their fee or the platform default), so the exact
-  // figure comes from the server; the flat estimate shows only while it loads.
+  // VAT is the admin's rate and delivery is per seller (their fee or the
+  // platform default), both from the server; nothing is guessed while they load.
+  const vatRate = useVatRate();
   const quote = useCartShippingQuote(cartItems);
-  const taxPrice = estimate.tax;
-  const shippingPrice = quote.shipping ?? estimate.shipping;
-  const totalPrice = Math.round((estimate.subtotal + taxPrice + shippingPrice) * 100) / 100;
+  const taxPrice = vatRate === null ? null : calcTax(subtotal, vatRate);
+  const shippingPrice = quote.shipping;
+  const totalPrice = taxPrice === null || shippingPrice === null ? null : round2(subtotal + taxPrice + shippingPrice);
   const singleGroup = quote.groups.length === 1 ? quote.groups[0] : null;
   const totalItems = useMemo(
     () => cartItems.reduce((sum, item) => sum + item.quantity, 0),
@@ -246,10 +247,8 @@ const CartPage = () => {
         size: item.yards ?? item.size ?? null,
         colors: item.colors || []
       })),
-      totalAmount: totalPrice,
-      shippingCost: shippingPrice,
-      tax: taxPrice,
-      discount: 0,
+      // No totals are sent: the server prices the order (VAT setting,
+      // per-seller delivery) and never trusts client figures.
       shippingAddress: {}, // Will be collected in checkout
       billingAddress: {},  // Will be collected in checkout
       paymentMethod: 'pending',
@@ -360,7 +359,9 @@ const CartPage = () => {
                     {/* Shipping */}
                     <div className="flex justify-between text-gray-600 dark:text-gray-300">
                       <span>Shipping</span>
-                      {shippingPrice === 0 ? (
+                      {shippingPrice === null ? (
+                        <span className="font-semibold">Calculating…</span>
+                      ) : shippingPrice === 0 ? (
                         <span className="text-green-600 font-semibold">Free</span>
                       ) : (
                         <span className="font-semibold">{formatCedi(shippingPrice)}</span>
@@ -369,8 +370,8 @@ const CartPage = () => {
                     
                     {/* Tax */}
                     <div className="flex justify-between text-gray-600 dark:text-gray-300">
-                      <span>Tax (VAT {(TAX_RATE * 100).toFixed(1)}%)</span>
-                      <span className="font-semibold">{formatCedi(taxPrice)}</span>
+                      <span>Tax{vatRate !== null ? ` (VAT ${Number((vatRate * 100).toFixed(2))}%)` : ''}</span>
+                      <span className="font-semibold">{taxPrice === null ? 'Calculating…' : formatCedi(taxPrice)}</span>
                     </div>
 
                     {/* No "Shipping Discount -X" row here: Shipping already
@@ -383,7 +384,7 @@ const CartPage = () => {
                     {/* Total */}
                     <div className="flex justify-between text-2xl font-bold text-gray-800 dark:text-white">
                       <span>Total</span>
-                      <span className="text-blue-600 dark:text-blue-400">{formatCedi(totalPrice)}</span>
+                      <span className="text-blue-600 dark:text-blue-400">{totalPrice === null ? 'Calculating…' : formatCedi(totalPrice)}</span>
                     </div>
                   </div>
 

@@ -20,19 +20,11 @@ export interface EscrowFees {
   payoutAmount: number;
 }
 
-export const TAX_RATE: number;
-export const FREE_SHIPPING_THRESHOLD: number;
-export const STANDARD_SHIPPING_COST: number;
 export const DEFAULT_PLATFORM_FEE_RATE: number;
 
 export function round2(n: number | string): number;
 export function calcSubtotal(items: OrderPricingListItem[] | null | undefined): number;
-export function calcTax(subtotal: number, rate?: number): number;
-export function calcShipping(
-  subtotal: number,
-  threshold?: number,
-  cost?: number
-): number;
+export function calcTax(subtotal: number, rate: number): number;
 export function calcCouponDiscount(
   subtotal: number,
   discountType: string,
@@ -40,7 +32,7 @@ export function calcCouponDiscount(
 ): number;
 export function calcOrderTotals(
   items: OrderPricingListItem[] | null | undefined,
-  options?: { discount?: number }
+  options: { discount?: number; taxRate: number; shipping?: number }
 ): OrderTotals;
 export function calcEscrowFees(
   amount: number | string,

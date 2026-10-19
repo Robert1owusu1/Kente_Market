@@ -54,6 +54,7 @@ export interface ReferralSettings {
   enabled: boolean;
   standardRate: number | null;
   windowDays: number;
+  minWithdrawal: number;
   platformRate?: number;
   windowChoices?: number[];
 }
@@ -134,7 +135,7 @@ export const referralsApiSlice = apiSlice.injectEndpoints({
       providesTags: ['Referral'],
     }),
     updateReferralSettings: builder.mutation<{ message: string; settings: ReferralSettings },
-      { enabled?: boolean; standardRate?: number | string | null; windowDays?: number }>({
+      { enabled?: boolean; standardRate?: number | string | null; windowDays?: number; minWithdrawal?: number | string }>({
       query: (body) => ({ url: `${ADMIN_REFERRALS_URL}/settings`, method: 'PUT', body }),
       invalidatesTags: ['Referral'],
     }),

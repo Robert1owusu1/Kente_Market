@@ -8,10 +8,15 @@ import {
   getSettings,
   getSetting,
   updateSettings,
-  deleteSetting
+  deleteSetting,
+  getPublicPricing
 } from '../controllers/settingController.js';
 
 const router = express.Router();
+
+// Public: the VAT rate the storefront uses for price estimates. Registered
+// before '/:key' so it is not swallowed by the admin-only lookup.
+router.get('/public/pricing', getPublicPricing);
 
 /**
  * @route   GET /api/settings

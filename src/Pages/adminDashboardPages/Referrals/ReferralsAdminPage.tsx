@@ -39,17 +39,19 @@ const SettingsCard = () => {
   const [save, { isLoading: saving }] = useUpdateReferralSettingsMutation();
   const [rate, setRate] = useState('');
   const [windowDays, setWindowDays] = useState(30);
+  const [minWithdrawal, setMinWithdrawal] = useState('');
   useEffect(() => {
     if (data) {
       setRate(data.standardRate === null ? '' : String(data.standardRate));
       setWindowDays(data.windowDays);
+      setMinWithdrawal(String(data.minWithdrawal));
     }
   }, [data]);
   if (isLoading || !data) return <FaSpinner className="animate-spin" />;
 
   const submit = async (enabled?: boolean) => {
     try {
-      await save({ standardRate: rate === '' ? null : rate, windowDays, ...(enabled !== undefined ? { enabled } : {}) }).unwrap();
+      await save({ standardRate: rate === '' ? null : rate, windowDays, ...(minWithdrawal !== '' ? { minWithdrawal } : {}), ...(enabled !== undefined ? { enabled } : {}) }).unwrap();
       toast.success('Referral settings saved');
     } catch (e) {
       toast.error(errMsg(e));
@@ -75,6 +77,9 @@ const SettingsCard = () => {
             <option value={30}>30 days</option>
             <option value={365}>1 year</option>
           </select>
+        </label>
+        <label className="text-sm text-gray-700 dark:text-gray-300">Minimum withdrawal (GH₵)
+          <input aria-label="Minimum withdrawal" className={`${inputCls} block w-32`} type="number" step="0.01" min="0" value={minWithdrawal} onChange={(e) => setMinWithdrawal(e.target.value)} />
         </label>
         <button disabled={saving} onClick={() => submit()} className="px-4 py-2 rounded-lg bg-gray-900 dark:bg-gray-700 text-white text-sm">Save</button>
         <button disabled={saving} onClick={() => submit(!data.enabled)} className="px-4 py-2 rounded-lg bg-primary text-white text-sm">

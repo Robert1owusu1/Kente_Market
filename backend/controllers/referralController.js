@@ -5,6 +5,7 @@
 //   Admin: settings, ambassador tiers/rates/suspension, commission review,
 //   withdrawal verification (Paystack evidence only — no manual mark-paid).
 import pool from '../config/db.js';
+import { getReferralMinWithdrawal, clearPricingConfigCache } from '../Services/pricingConfig.js';
 import paystackServices from '../Services/paystackservices.js';
 import { auditFromRequest } from '../utils/auditLog.js';
 import { cookieSameSite, cookieSecure } from '../config/cookieConfig.js';
@@ -17,7 +18,7 @@ import {
   getReferralSettings, getReferralWallet, reviewReferralCommission,
 } from '../Services/referralService.js';
 import {
-  requestReferralWithdrawal, payOrderWithReferralCredit, reconcileReferralWithdrawals, MIN_REFERRAL_WITHDRAWAL,
+  requestReferralWithdrawal, payOrderWithReferralCredit, reconcileReferralWithdrawals,
 } from '../Services/referralPayoutService.js';
 import { frontendBaseUrl } from '../config/frontendOrigins.js';
 
@@ -91,7 +92,7 @@ export const getMyReferrals = async (req, res) => {
       suspended: Boolean(me.ambassadorSuspended),
       referredCount: Number(referred),
       wallet: await getReferralWallet(userId),
-      minWithdrawal: MIN_REFERRAL_WITHDRAWAL,
+      minWithdrawal: await getReferralMinWithdrawal(),
       payoutAccount: me.referralRecipientLabel || null,
       // Buyer identity is masked: an ambassador sees that a purchase happened, not who.
       commissions: commissions.map((c) => ({
@@ -174,17 +175,17 @@ export const payOrderWithEarnings = async (req, res) => {
 // @route GET /api/admin/referrals/settings
 export const adminGetReferralSettings = async (req, res) => {
   try {
-    res.json({ ...(await getReferralSettings()), platformRate: await platformCeiling(), windowChoices: WINDOW_CHOICES });
+    res.json({ ...(await getReferralSettings()), minWithdrawal: await getReferralMinWithdrawal(), platformRate: await platformCeiling(), windowChoices: WINDOW_CHOICES });
   } catch {
     res.status(500).json({ message: 'Failed to load referral settings' });
   }
 };
 
-// @route PUT /api/admin/referrals/settings   { enabled?, standardRate?, windowDays? }
+// @route PUT /api/admin/referrals/settings   { enabled?, standardRate?, windowDays?, minWithdrawal? }
 export const adminUpdateReferralSettings = async (req, res) => {
   try {
     const before = await getReferralSettings();
-    const { enabled, standardRate, windowDays } = req.body || {};
+    const { enabled, standardRate, windowDays, minWithdrawal } = req.body || {};
     /** @type {Array<[string, string]>} */
     const writes = [];
     const ceiling = await platformCeiling();
@@ -197,6 +198,13 @@ export const adminUpdateReferralSettings = async (req, res) => {
         if (r > ceiling) return res.status(400).json({ message: `Referral rate cannot exceed the platform commission (${(ceiling * 100).toFixed(2)}%)` });
         writes.push(['referral.standardRate', String(r)]);
       }
+    }
+    if (minWithdrawal !== undefined) {
+      const m = Number(minWithdrawal);
+      if (minWithdrawal === null || minWithdrawal === '' || !Number.isFinite(m) || m < 0 || m > 100000) {
+        return res.status(400).json({ message: 'Minimum withdrawal must be an amount in GH₵ between 0 and 100000' });
+      }
+      writes.push(['referral.minWithdrawal', String(Math.round(m * 100) / 100)]);
     }
     if (windowDays !== undefined) {
       if (!WINDOW_CHOICES.includes(Number(windowDays))) return res.status(400).json({ message: 'windowDays must be 30 or 365' });
@@ -216,7 +224,8 @@ export const adminUpdateReferralSettings = async (req, res) => {
          ON DUPLICATE KEY UPDATE settingValue = VALUES(settingValue)`, [k, v]
       );
     }
-    const after = await getReferralSettings();
+    clearPricingConfigCache();
+    const after = { ...(await getReferralSettings()), minWithdrawal: await getReferralMinWithdrawal() };
     await auditFromRequest(req, { action: 'referral.settings.update', entityType: 'setting', entityId: 'referral', before, after });
     res.json({ message: 'Referral settings updated', settings: after });
   } catch (error) {

@@ -29,7 +29,12 @@ class Vendor {
     this.momoNumber = data.momoNumber;
     this.recipientCode = data.recipientCode;
     this.recipientType = data.recipientType;
-    this.platformFeeRate = parseFloat(data.platformFeeRate) || 0.1;
+    // No invented default (the old `|| 0.1` also turned a deliberate 0% into
+    // 10%). The rate actually charged comes from the admin's commission rules
+    // (Services/commissionService.js#resolveCommissionRate).
+    this.platformFeeRate = data.platformFeeRate === null || data.platformFeeRate === undefined || data.platformFeeRate === ''
+      ? null
+      : Number(data.platformFeeRate);
     this.status = data.status;
     this.created_at = data.created_at;
     this.updated_at = data.updated_at;

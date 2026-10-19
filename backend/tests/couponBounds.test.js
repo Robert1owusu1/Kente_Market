@@ -112,7 +112,7 @@ describe('C2: calcCouponDiscount can never exceed the subtotal', () => {
 describe('C2: order totals stay non-negative under any discount', () => {
   test('a discount larger than the cart floors the total at 0', () => {
     const items = [{ price: 10, quantity: 2 }]; // subtotal 20
-    const totals = calcOrderTotals(items, { discount: 9999 });
+    const totals = calcOrderTotals(items, { discount: 9999, taxRate: 0.15, shipping: 15 });
     assert.equal(totals.discount, 20, 'applied discount is clamped to the subtotal');
     assert.ok(totals.total >= 0, `total went negative: ${totals.total}`);
     assert.equal(totals.total, round2(totals.tax + totals.shipping), 'tax+shipping survives, goods are free');
@@ -120,7 +120,7 @@ describe('C2: order totals stay non-negative under any discount', () => {
 
   test('zero-discount totals are unchanged by the cap', () => {
     const items = [{ price: 25, quantity: 4 }];
-    const baseline = calcOrderTotals(items, { discount: 0 });
+    const baseline = calcOrderTotals(items, { discount: 0, taxRate: 0.15, shipping: 15 });
     assert.equal(baseline.total, 100 + baseline.tax + baseline.shipping);
   });
 });

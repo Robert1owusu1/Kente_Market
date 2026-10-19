@@ -35,9 +35,7 @@ const COLORS = ['#92400e', '#10b981', '#f59e0b', '#ef4444', '#b45309'];
 interface SettingsBag {
   siteName?: string;
   email?: string;
-  currency?: string;
-  taxRate?: number;
-  shippingCost?: number;
+  taxRate?: number | null;
   notifications?: boolean;
   emailNotifications?: boolean;
   orderAlerts?: boolean;
@@ -55,12 +53,16 @@ const AdminDashboard = () => {
     return requested && /^[A-Za-z]+$/.test(requested) ? requested : 'dashboard';
   });
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [settings, setSettings] = useState({
-    siteName: 'Bonwire Kente',
-    email: 'admin@brandinghouse.com',
-    currency: 'GHS',
-    taxRate: 10,
-    shippingCost: 5.00,
+  // Shows only what the server stores: no invented defaults for money
+  // settings (VAT is null until loaded). Delivery fees live in Shipping & FX;
+  // the charge currency is fixed (GHS).
+  const [settings, setSettings] = useState<{
+    siteName: string; email: string; taxRate: number | null; notifications: boolean;
+    emailNotifications: boolean; orderAlerts: boolean; lowStockAlert: number; theme: string;
+  }>({
+    siteName: '',
+    email: '',
+    taxRate: null,
     notifications: true,
     emailNotifications: true,
     orderAlerts: true,
@@ -83,11 +85,9 @@ const AdminDashboard = () => {
     if (apiSettings) {
       const s = apiSettings as unknown as SettingsBag;
       setSettings({
-        siteName: s.siteName || 'Bonwire Kente',
-        email: s.email || 'admin@brandinghouse.com',
-        currency: s.currency || 'GHS',
-        taxRate: s.taxRate !== undefined ? s.taxRate : 10,
-        shippingCost: s.shippingCost !== undefined ? s.shippingCost : 5.00,
+        siteName: s.siteName || '',
+        email: s.email || '',
+        taxRate: typeof s.taxRate === 'number' && Number.isFinite(s.taxRate) ? s.taxRate : null,
         notifications: s.notifications !== undefined ? s.notifications : true,
         emailNotifications: s.emailNotifications !== undefined ? s.emailNotifications : true,
         orderAlerts: s.orderAlerts !== undefined ? s.orderAlerts : true,
@@ -188,11 +188,13 @@ const AdminDashboard = () => {
 
   const handleSaveSettings = async () => {
     try {
-      await updateSettingsMutation(settings).unwrap();
+      // VAT is sent only when filled in; an empty field never overwrites it.
+      const { taxRate, ...rest } = settings;
+      await updateSettingsMutation(taxRate === null ? rest : settings).unwrap();
       alert('Settings saved successfully!');
     } catch (error) {
       console.error('Failed to save settings:', error);
-      alert('Failed to save settings. Please try again.');
+      alert((error as { data?: { message?: string } })?.data?.message || 'Failed to save settings. Please try again.');
     }
   };
 
@@ -363,51 +365,37 @@ const AdminDashboard = () => {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Currency
-              </label>
-              <select
-                value={settings.currency}
-                onChange={(e) => setSettings({...settings, currency: e.target.value})}
-                className="w-full px-4 py-2 border rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
-              >
-                <option value="USD">USD - US Dollar</option>
-                <option value="EUR">EUR - Euro</option>
-                <option value="GBP">GBP - British Pound</option>
-                <option value="GHS">GHS - Ghana Cedi</option>
-              </select>
+              <p className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Charge currency</p>
+              <p className="px-4 py-2 text-gray-800 dark:text-white">GHS — Ghana cedi (all orders are charged in cedis)</p>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Tax Rate (%)
+              <label htmlFor="settings-vat" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                VAT rate (%)
               </label>
               <input
+                id="settings-vat"
                 type="number"
-                value={settings.taxRate}
-                onChange={(e) => setSettings({...settings, taxRate: parseFloat(e.target.value)})}
+                min="0"
+                max="50"
+                step="0.01"
+                value={settings.taxRate ?? ''}
+                onChange={(e) => setSettings({...settings, taxRate: e.target.value === '' ? null : parseFloat(e.target.value)})}
+                aria-describedby="settings-vat-help"
                 className="w-full px-4 py-2 border rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
               />
+              <p id="settings-vat-help" className="mt-1 text-xs text-gray-500 dark:text-gray-400">Applied to every new order. Orders already placed keep the VAT they were booked with.</p>
             </div>
           </div>
         </div>
       </div>
 
       <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-md">
-        <h3 className="text-xl font-semibold mb-4 text-gray-800 dark:text-white">Shipping Settings</h3>
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Default Shipping Cost
-            </label>
-            <input
-              type="number"
-              step="0.01"
-              value={settings.shippingCost}
-              onChange={(e) => setSettings({...settings, shippingCost: parseFloat(e.target.value)})}
-              className="w-full px-4 py-2 border rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
-            />
-          </div>
-        </div>
+        <h3 className="text-xl font-semibold mb-2 text-gray-800 dark:text-white">Delivery fees</h3>
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          Set per country in{' '}
+          <button type="button" onClick={() => setActiveSection('shipping')} className="font-medium text-amber-800 underline dark:text-amber-300">Shipping &amp; FX</button>.
+          Sellers may set their own fee, which replaces yours for their products.
+        </p>
       </div>
 
       <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-md">

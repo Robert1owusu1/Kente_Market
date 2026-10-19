@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useCart } from "../../Context/CartContext";
 import { Link } from "react-router-dom";
 import { FaTimes, FaArrowRight, FaShoppingCart } from "react-icons/fa";
-import { calcOrderTotals } from "../../utils/pricing";
+import { calcSubtotal, calcTax, round2 } from "../../utils/pricing";
+import { useVatRate } from "../../slices/pricingApiSlice";
 import { useCartShippingQuote } from "../../hooks/useCartShippingQuote";
 import { resolveImageUrl } from "../../utils/imageUrl";
 import { formatCedi } from '../../utils/formatCurrency';
@@ -14,13 +15,16 @@ const CartDrawer = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
   const [shouldRender, setShouldRender] = useState(isOpen);
   const [isVisible, setIsVisible] = useState(isOpen);
 
-  const estimate = useMemo(() => calcOrderTotals(cartItems), [cartItems]);
-  // Exact per-seller delivery from the server; the flat estimate only while it loads.
+  // VAT (admin setting) and per-seller delivery come from the server; null
+  // while loading, shown as "Calculating…" rather than a guessed figure.
+  const vatRate = useVatRate();
   const quote = useCartShippingQuote(cartItems, 'GH', undefined, isOpen);
   const totals = useMemo(() => {
-    const shipping = quote.shipping ?? estimate.shipping;
-    return { ...estimate, shipping, total: Math.round((estimate.subtotal + estimate.tax + shipping) * 100) / 100 };
-  }, [estimate, quote.shipping]);
+    const subtotal = calcSubtotal(cartItems);
+    const tax = vatRate === null ? null : calcTax(subtotal, vatRate);
+    const shipping = quote.shipping;
+    return { subtotal, tax, shipping, total: tax === null || shipping === null ? null : round2(subtotal + tax + shipping) };
+  }, [cartItems, vatRate, quote.shipping]);
   const totalItems = useMemo(
     () => cartItems.reduce((total, item) => total + (Number(item.quantity) || 0), 0),
     [cartItems]
@@ -228,17 +232,17 @@ const CartDrawer = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
                 </div>
                 <div className="flex justify-between">
                   <span>Shipping</span>
-                  <span>{totals.shipping === 0 ? "Free" : `${formatCedi(totals.shipping)}`}</span>
+                  <span>{totals.shipping === null ? "Calculating…" : totals.shipping === 0 ? "Free" : formatCedi(totals.shipping)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Tax</span>
-                  <span>{formatCedi(totals.tax)}</span>
+                  <span>{totals.tax === null ? "Calculating…" : formatCedi(totals.tax)}</span>
                 </div>
               </div>
 
               <div className="mt-3 flex items-center justify-between text-lg font-semibold text-gray-900 dark:text-white">
                 <span>Total</span>
-                <span>{formatCedi(totals.total)}</span>
+                <span>{totals.total === null ? "Calculating…" : formatCedi(totals.total)}</span>
               </div>
 
               <Link

@@ -289,3 +289,17 @@ browser crawl 351 pages × 3 full runs + 2 targeted runs, 0 console errors / fai
 | SHIP-6 | 15% VAT is added to export orders | DECIDED 2026-10-19 (owner): keep as is (no code change) |
 | SHIP-7 | Pickup orders are charged the delivery fee | DECIDED 2026-10-19 (owner): pickup stays charged as part of the delivery fee (no code change) |
 
+
+## Phase P — No hard-coded money values (2026-10-19)
+
+| ID | Was hard-coded | Now |
+|---|---|---|
+| MONEY-1 | VAT 15% in `shared/pricing.js`; the admin Settings "Tax rate" field was stored but ignored | `settings.tax_rate` (Admin → Settings, percent 0–50) is what every order uses (`Services/pricingConfig.js`); storefront reads `GET /api/settings/public/pricing`. Seeded at 15 by `migratePricingSettings.js`. Missing/invalid → checkout refuses (503), never a guessed rate |
+| MONEY-2 | Ghana delivery GH₵15 / free from GH₵200 in code; built-in international fee table | Removed. Fees come only from Admin → Shipping & FX (platform default) and seller overrides. A country with no fee is unavailable; the Ghana default cannot be removed. Seeded platform rows now cover all weights (no price changed) |
+| MONEY-3 | Admin Settings "Default Shipping Cost" (unused) and a currency dropdown (USD/EUR/GBP, unused) with fake defaults (tax 10%, shipping 5.00) | Removed; the form shows stored values only; delivery links to Shipping & FX; currency shown as fixed GHS |
+| MONEY-4 | Referral minimum withdrawal GH₵10 in code | `settings.referral.minWithdrawal` (Admin → Referrals), seeded at 10 |
+| MONEY-5 | Vendor model filled a missing commission with 10% (and turned 0% into 10%) | Shows the stored value; the charged rate comes from the admin's commission rules |
+| MONEY-6 | `tax_rate` / `referral.minWithdrawal` could be deleted via `DELETE /api/settings/:key` | Protected; deploy preflight (`--db`) fails if they or the Ghana platform fee are missing |
+| MONEY-7 | Custom orders are booked with VAT 0 and delivery 0 (seller's quoted price only) | DECISION NEEDED — unchanged |
+
+Kept on purpose (configuration with a documented default, or safety caps): commission last-resort `PLATFORM_FEE_RATE` env (default 0.1; admin commission rules apply first), `ESCROW_RELEASE_DAYS`, `CUSTOM_ADVANCE_RATIO`, `FX_MAX_DAILY_CHANGE`, maximum commission/referral rate caps (50%), quantity/upload/size limits, the 0.5 kg weight assumed for products without a weight.

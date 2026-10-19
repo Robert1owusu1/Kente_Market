@@ -161,6 +161,19 @@ if (args.get('db')) {
       );
       if (redundant.length) warn('redundant indexes from older migrations present (MIG-3, harmless)', redundant.map((r) => r.i).join(', '));
       if (have.has('settings')) {
+        // Money settings that used to be hard-coded (Services/pricingConfig.js):
+        // without them checkout / referral withdrawals refuse to run.
+        const [money] = await conn.query(`SELECT settingKey AS k, settingValue AS v FROM settings WHERE settingKey IN ('tax_rate', 'referral.minWithdrawal')`);
+        const got = new Map(money.map((r) => [r.k, r.v]));
+        const vat = Number(got.get('tax_rate'));
+        got.has('tax_rate') && Number.isFinite(vat) && vat >= 0 && vat <= 50
+          ? pass('VAT rate setting', `${vat}%`)
+          : fail('settings.tax_rate missing or invalid — run db:migrate or set it in Admin -> Settings', 'checkout refuses orders without it');
+        got.has('referral.minWithdrawal')
+          ? pass('referral minimum withdrawal setting', `GH₵${got.get('referral.minWithdrawal')}`)
+          : fail('settings.referral.minWithdrawal missing — run db:migrate');
+        const [[gh]] = await conn.query(`SELECT COUNT(*) AS n FROM shipping_rates WHERE vendorId IS NULL AND destinationCountry = 'GH' AND isActive = TRUE`);
+        Number(gh.n) > 0 ? pass('Ghana platform delivery fee set') : fail('no Ghana platform delivery fee — set it in Admin -> Shipping & FX', 'Ghana checkout refuses orders without it');
         const [rows] = await conn.query(`SELECT settingValue AS v FROM settings WHERE settingKey = 'referral.enabled'`);
         if (rows[0]?.v === 'true') warn('referral programme is ENABLED in this database');
       }

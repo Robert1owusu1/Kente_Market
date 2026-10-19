@@ -16,7 +16,8 @@ import {
 import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { useCart } from '../../Context/CartContext';
-import { calcOrderTotals } from '../../utils/pricing';
+import { calcSubtotal, calcTax, round2 } from '../../utils/pricing';
+import { useVatRate } from '../../slices/pricingApiSlice';
 import { resolvePayableTotal } from '../../utils/payments';
 import { sanitizeInput } from '../../utils/sanitize';
 import {
@@ -221,9 +222,12 @@ export default function CheckoutPage() {
   }, [cartItems, navigate]);
 
  // Memoized calculations for performance
+  const vatRate = useVatRate();
   const orderTotals = useMemo(() => {
-    // Use the shared pricing helper so checkout totals always match what the
-    // cart page persisted when it created the order (VAT from shared/pricing.js, GH₵15 ship).
+    // Local estimate only (the server prices the order): items subtotal, VAT
+    // at the admin's rate (NaN until it loads, never a guessed rate) and the
+    // coupon discount. Delivery comes from the shipping quote below.
+    const itemsSubtotal = calcSubtotal(cartItems);
     let appliedDiscountValue = 0;
     if (appliedCoupon && Number.isFinite(appliedCoupon.amount)) {
       // The server caps coupons (admin coupons at the platform commission,
@@ -232,20 +236,22 @@ export default function CheckoutPage() {
     } else if (appliedCoupon) {
       const discountValue = Number(appliedCoupon.discountValue) || 0;
       if (appliedCoupon.discountType === 'percentage') {
-        appliedDiscountValue = (calcOrderTotals(cartItems).subtotal * discountValue / 100);
+        appliedDiscountValue = (itemsSubtotal * discountValue / 100);
       } else {
-        appliedDiscountValue = Math.min(discountValue, calcOrderTotals(cartItems).subtotal);
+        appliedDiscountValue = Math.min(discountValue, itemsSubtotal);
       }
     }
-    const { subtotal, shipping, tax, discount, total } = calcOrderTotals(cartItems, {
-      discount: appliedDiscountValue,
-    });
-    const amountInPesewas = Math.round(total * 100);
+    const subtotal = itemsSubtotal;
+    const tax = vatRate === null ? NaN : calcTax(subtotal, vatRate);
+    const discount = round2(Math.min(Math.max(appliedDiscountValue, 0), subtotal));
+    return { subtotal, tax, discount };
+  }, [cartItems, appliedCoupon, vatRate]);
 
-    return { subtotal, shipping, tax, discount, total, amountInPesewas };
-  }, [cartItems, appliedCoupon]);
-
-  const { subtotal, shipping, tax, discount, total } = orderTotals;
+  const { subtotal, tax, discount } = orderTotals;
+  // Shown/estimated delivery and total: the server's quote for this cart
+  // (per-seller fee, any destination). Null until known.
+  const quoted = internationalDisplayTotals({ subtotal, tax, discount }, shippingEligibility?.chargeableShippingGHS);
+  const total = quoted.total ?? NaN;
 
  // Charge the SERVER's total, not localStorage cart prices. The pre-created
   // order already carries the API's own tax/shipping/discount math, so its
@@ -281,9 +287,8 @@ export default function CheckoutPage() {
   // book at Pay. The charge itself is unchanged: syncAddressTotals re-books on
   // the server and Paystack is initialized with that figure. In Ghana the
   // local estimate shows until the quote arrives; abroad nothing is guessed.
-  const quoted = internationalDisplayTotals({ subtotal, tax, discount }, shippingEligibility?.chargeableShippingGHS);
-  const shownShipping = isInternational ? quoted.shipping : (quoted.shipping ?? shipping);
-  const shownTotal = isInternational ? quoted.total : (quoted.total ?? total);
+  const shownShipping = quoted.shipping;
+  const shownTotal = quoted.total;
   const shownPayable = isInternational ? quoted.total : payableTotal;
 
   // Shipping eligibility for the selected destination (DB-backed carrier
@@ -1736,7 +1741,7 @@ export default function CheckoutPage() {
                 </div>
                 <div className="flex justify-between text-gray-600 dark:text-gray-300">
                   <span>Tax</span>
-                  <span>{formatCedi(tax)}</span>
+                  <span>{Number.isFinite(tax) ? formatCedi(tax) : 'Calculating…'}</span>
                 </div>
 
                 {/* Coupon Code Input */}

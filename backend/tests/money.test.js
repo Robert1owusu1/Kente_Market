@@ -11,22 +11,23 @@ import {
   calcOrderTotals,
   calcEscrowFees,
   calcCouponDiscount,
-  TAX_RATE,
-  FREE_SHIPPING_THRESHOLD,
-  STANDARD_SHIPPING_COST,
   DEFAULT_PLATFORM_FEE_RATE,
 } from '../../shared/pricing.js';
+import * as pricing from '../../shared/pricing.js';
 import { PLATFORM_FEE_RATE, ESCROW_RELEASE_DAYS } from '../config/businessConfig.js';
 
 // Cart item helper: { price, quantity } — the same shape the frontend cart uses.
 const item = (price, quantity = 1) => ({ price, quantity });
 
 describe('Business pricing rules (single source of truth in shared/pricing.js)', () => {
-  test('tax rate, shipping threshold and cost match production config', () => {
-    assert.equal(TAX_RATE, 0.15); // 15% VAT
-    assert.equal(FREE_SHIPPING_THRESHOLD, 200); // free shipping >= GH¢200
-    assert.equal(STANDARD_SHIPPING_COST, 15);
-    assert.equal(DEFAULT_PLATFORM_FEE_RATE, 0.1); // 10% platform commission
+  test('no VAT or delivery figure is hard-coded; both are inputs', () => {
+    // VAT = settings.tax_rate (Services/pricingConfig.js); delivery = per-seller
+    // fees (Services/shippingService.js). The old constants must not return.
+    for (const gone of ['TAX_RATE', 'FREE_SHIPPING_THRESHOLD', 'STANDARD_SHIPPING_COST', 'calcShipping']) {
+      assert.equal(gone in pricing, false, `${gone} is back in shared/pricing.js`);
+    }
+    assert.throws(() => calcOrderTotals([item(10)], {}), /VAT rate/);
+    assert.equal(DEFAULT_PLATFORM_FEE_RATE, 0.1); // last-resort commission (admin rules come first)
   });
 });
 
@@ -44,34 +45,37 @@ describe('round2 (2-dp money rounding, GHS)', () => {
   });
 });
 
-describe('calcOrderTotals (15% VAT, GH¢15 shipping, free over GH¢200)', () => {
-  test('subtotal below threshold -> GH¢15 shipping + 15% tax', () => {
+// VAT and delivery are passed in (here: a 15% setting and the seeded Ghana
+// default, GH¢15 / free from GH¢200, as the shipping quote resolves it).
+const VAT = 0.15;
+describe('calcOrderTotals (VAT rate and delivery fee as inputs)', () => {
+  test('VAT on the subtotal plus the given delivery fee', () => {
     const { subtotal, shipping, tax, total } = calcOrderTotals([
       item(80, 1),
       item(90, 1),
-    ]);
+    ], { taxRate: VAT, shipping: 15 });
     assert.equal(subtotal, 170);
     assert.equal(shipping, 15);
     assert.equal(tax, 25.5); // 170 * 0.15
     assert.equal(total, 210.5); // 170 + 15 + 25.5
   });
 
-  test('subtotal over threshold -> free shipping', () => {
-    const { subtotal, shipping, tax, total } = calcOrderTotals([item(120, 2)]);
+  test('a free delivery (fee 0) adds nothing', () => {
+    const { subtotal, shipping, tax, total } = calcOrderTotals([item(120, 2)], { taxRate: VAT, shipping: 0 });
     assert.equal(subtotal, 240);
     assert.equal(shipping, 0);
     assert.equal(tax, 36); // 240 * 0.15
     assert.equal(total, 276);
   });
 
-  test('exactly GH¢200 is free-shipped (>= boundary)', () => {
-    const { shipping, total } = calcOrderTotals([item(200, 1)]);
-    assert.equal(shipping, 0);
-    assert.equal(total, 230); // 200 + 30 VAT, no shipping
+  test('a different VAT setting changes the tax, nothing else', () => {
+    const { tax, total } = calcOrderTotals([item(200, 1)], { taxRate: 0.125, shipping: 0 });
+    assert.equal(tax, 25);
+    assert.equal(total, 225);
   });
 
   test('multi-line subtotal sums quantity x price', () => {
-    const { subtotal } = calcOrderTotals([item(19.99, 3)]);
+    const { subtotal } = calcOrderTotals([item(19.99, 3)], { taxRate: VAT });
     assert.equal(subtotal, 59.97);
   });
 
@@ -80,7 +84,7 @@ describe('calcOrderTotals (15% VAT, GH¢15 shipping, free over GH¢200)', () => 
     // server replaces client prices with DB prices before calling this, so the
     // price shown equals the price charged.
     const serverItems = [{ price: 25.0, quantity: 2 }];
-    const totals = calcOrderTotals(serverItems);
+    const totals = calcOrderTotals(serverItems, { taxRate: VAT });
     assert.equal(totals.subtotal, 50.0); // 25 * 2, never a client-picked number
     assert.equal(totals.discount, 0);
   });
@@ -107,7 +111,7 @@ describe('calcCouponDiscount (server-side, never trusted from the client)', () =
   test('order totals subtract the coupon discount', () => {
     const { subtotal, tax, shipping, discount, total } = calcOrderTotals(
       [item(100, 1)],
-      { discount: 10 }
+      { discount: 10, taxRate: VAT, shipping: 15 }
     );
     assert.equal(subtotal, 100);
     assert.equal(tax, 15); // 100 * 0.15
