@@ -1,8 +1,8 @@
 // components/Shipping/ShippingFeesEditor.tsx
 // One delivery fee per country, used by the admin (platform defaults) and by
 // sellers (their own fees, which replace the platform default for their
-// products). The server validates and stores everything; this form only
-// collects it. Each seller's parcel is charged separately at checkout.
+// products), and by the admin editing a seller's fees ("seller" mode). The
+// server validates and stores everything; this form only collects it. Each seller's parcel is charged separately at checkout.
 import React, { useState, type FormEvent } from "react";
 import { FaEdit, FaTrash, FaTruck } from "react-icons/fa";
 import { toast } from "react-toastify";
@@ -13,10 +13,11 @@ import { describeRate } from "../../utils/shippingFees";
 const errorMessage = (err: unknown) => (err as { data?: { message?: string } })?.data?.message;
 
 interface Props {
-  mode: "admin" | "vendor";
+  /** admin: platform defaults; vendor: the seller's own; seller: admin editing a seller's. */
+  mode: "admin" | "vendor" | "seller";
   countries: DestinationCode[];
   rates: ShippingRate[];
-  /** Vendor view: the platform default each country falls back to. */
+  /** Vendor and seller views: the platform default each country falls back to. */
   defaults?: ShippingRate[];
   carriers: ShippingCarrier[];
   onSave: (input: ShippingRateInput) => Promise<unknown>;
@@ -111,9 +112,9 @@ const ShippingFeesEditor = ({ mode, countries, rates, defaults = [], carriers, o
   const [editing, setEditing] = useState<DestinationCode | null>(null);
 
   const remove = async (code: DestinationCode) => {
-    const after = mode === "vendor"
-      ? "The platform default will apply."
-      : "Delivery there will be unavailable, except from sellers with their own fee.";
+    const after = mode === "admin"
+      ? "Delivery there will be unavailable, except from sellers with their own fee."
+      : "The platform default will apply.";
     if (!window.confirm(`Remove the delivery fee for ${DESTINATION_NAMES[code]}? ${after}`)) return;
     try {
       await onRemove(code);
@@ -128,6 +129,7 @@ const ShippingFeesEditor = ({ mode, countries, rates, defaults = [], carriers, o
       {countries.map((code) => {
         const own = rates.find((r) => r.countryCode === code);
         const fallback = defaults.find((r) => r.countryCode === code);
+        const ownLabel = mode === "vendor" ? "Your fee: " : mode === "seller" ? "Seller's fee: " : "";
         return (
           <li key={code} className="py-3">
             <div className="flex flex-wrap items-start justify-between gap-2">
@@ -138,15 +140,15 @@ const ShippingFeesEditor = ({ mode, countries, rates, defaults = [], carriers, o
                 </p>
                 <p className="mt-0.5 text-sm text-gray-600 dark:text-gray-300">
                   {own
-                    ? <>{mode === "vendor" ? "Your fee: " : ""}{describeRate(own)}</>
-                    : mode === "vendor"
-                      ? <>Platform default{fallback ? `: ${describeRate(fallback)}` : ": not set — set your own fee to deliver here"}</>
+                    ? <>{ownLabel}{describeRate(own)}</>
+                    : mode !== "admin"
+                      ? <>Platform default{fallback ? `: ${describeRate(fallback)}` : `: not set — ${mode === "vendor" ? "set your own fee" : "set a fee for this seller"} to deliver here`}</>
                       : "Not set — delivery to this country is unavailable"}
                 </p>
               </div>
               <div className="flex shrink-0 gap-2">
                 <button type="button" onClick={() => setEditing(editing === code ? null : code)} aria-expanded={editing === code} className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-gray-300 px-3 text-sm dark:border-gray-600">
-                  <FaEdit aria-hidden="true" /> {own ? "Edit" : mode === "vendor" ? "Set my fee" : "Set fee"}
+                  <FaEdit aria-hidden="true" /> {own ? "Edit" : mode === "vendor" ? "Set my fee" : mode === "seller" ? "Set seller fee" : "Set fee"}
                 </button>
                 {own && !(mode === "admin" && code === "GH") && (
                   <button type="button" onClick={() => remove(code)} aria-label={`Remove the delivery fee for ${DESTINATION_NAMES[code]}`} className="inline-flex min-h-10 items-center rounded-lg border border-red-300 px-3 text-sm text-red-700 dark:border-red-800 dark:text-red-400">

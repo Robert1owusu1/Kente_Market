@@ -824,6 +824,57 @@ export const listShippingRates = async (vendorId) => {
 };
 
 /**
+ * Every seller with their own delivery fees (admin view), plus sellers with
+ * none so the admin can set one. Fees are keyed by the seller's user id, the
+ * same id shipping_rates.vendorId holds.
+ * @returns {Promise<Array<{vendorId: number, businessName: string, status: string, rates: any[]}>>}
+ */
+export const listSellerShippingRates = async () => {
+  const [vendors] = /** @type {[any[], any]} */ (await pool.execute(
+    `SELECT userId AS vendorId, businessName, status FROM vendors
+     ORDER BY status = 'approved' DESC, businessName`
+  ));
+  const [rows] = /** @type {[any[], any]} */ (await pool.execute(
+    `SELECT sr.vendorId, sr.destinationCountry AS countryCode, sr.baseCost, sr.perKgCost, sr.freeThreshold, sr.currency,
+            sr.transitDaysMin, sr.transitDaysMax, c.code AS carrierCode, c.name AS carrierName
+     FROM shipping_rates sr JOIN shipping_carriers c ON c.id = sr.carrierId
+     WHERE sr.vendorId IS NOT NULL AND sr.originCountry = 'GH' AND sr.destinationRegion IS NULL
+       AND sr.serviceLevel = 'standard' AND sr.isActive = TRUE
+       AND (sr.effectiveTo IS NULL OR sr.effectiveTo >= CURDATE())
+     ORDER BY sr.destinationCountry, sr.baseCost`
+  ));
+  /** @type {Map<number, any[]>} */
+  const byVendor = new Map();
+  for (const r of rows) {
+    const list = byVendor.get(Number(r.vendorId)) || [];
+    list.push({
+      countryCode: r.countryCode,
+      baseCost: Number(r.baseCost),
+      perKgCost: Number(r.perKgCost) || 0,
+      freeThreshold: r.freeThreshold === null ? null : Number(r.freeThreshold),
+      currency: r.currency,
+      transitDaysMin: r.transitDaysMin,
+      transitDaysMax: r.transitDaysMax,
+      carrierCode: r.carrierCode,
+      carrierName: r.carrierName,
+    });
+    byVendor.set(Number(r.vendorId), list);
+  }
+  return vendors.map((v) => ({
+    vendorId: Number(v.vendorId),
+    businessName: v.businessName || `Seller #${v.vendorId}`,
+    status: v.status,
+    rates: byVendor.get(Number(v.vendorId)) || [],
+  }));
+};
+
+/** Whether this user id is a seller (any status). @param {number} vendorId */
+export const sellerExists = async (vendorId) => {
+  const [rows] = /** @type {[any[], any]} */ (await pool.execute('SELECT 1 FROM vendors WHERE userId = ? LIMIT 1', [vendorId]));
+  return rows.length > 0;
+};
+
+/**
  * Validate and set an owner's standard rate for one destination country.
  * Ghana fees are in GHS; abroad, GHS or the destination's own currency.
  * @param {number|null} vendorId - null = platform default

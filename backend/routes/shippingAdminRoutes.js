@@ -5,8 +5,12 @@
 //   DELETE /api/admin/shipping/rates/:countryCode  — remove it (country becomes unavailable; never GH)
 //   GET    /api/admin/shipping/exchange-rates      — current rate per currency, source, age
 //   POST   /api/admin/shipping/exchange-rates/refresh — fetch today's rates now
+//   GET    /api/admin/shipping/sellers                — every seller and their own fees
+//   PUT    /api/admin/shipping/sellers/:vendorId/rates/:countryCode — set a seller's fee
+//   DELETE /api/admin/shipping/sellers/:vendorId/rates/:countryCode — remove it (platform default applies)
 // Sellers' own fees override the platform default for their products
-// (routes/vendorRoutes.js /shipping/rates). Every change is audit-logged.
+// (routes/vendorRoutes.js /shipping/rates); the admin can see and change
+// them here. Every change is audit-logged.
 import express from 'express';
 import { protect, admin } from '../middleware/authMiddleware.js';
 import {
@@ -14,6 +18,8 @@ import {
   listShippingCarriers,
   setStandardShippingRate,
   removeStandardShippingRate,
+  listSellerShippingRates,
+  sellerExists,
 } from '../Services/shippingService.js';
 import { getExchangeRateStatus, refreshExchangeRates } from '../Services/exchangeRateService.js';
 import { auditFromRequest } from '../utils/auditLog.js';
@@ -59,6 +65,56 @@ router.delete('/rates/:countryCode', async (req, res) => {
     res.json({ message: 'Platform delivery fee removed; this country is unavailable except for sellers with their own fee' });
   } catch (error) {
     console.error('admin remove shipping rate:', error.message);
+    res.status(500).json({ message: 'Failed to remove delivery fee' });
+  }
+});
+
+// :vendorId is the seller's user id (shipping_rates.vendorId).
+const sellerId = (req) => {
+  const id = Number(req.params.vendorId);
+  return Number.isSafeInteger(id) && id > 0 ? id : null;
+};
+
+router.get('/sellers', async (_req, res) => {
+  try {
+    const [sellers, platformDefaults, carriers] = await Promise.all([
+      listSellerShippingRates(), listShippingRates(null), listShippingCarriers(),
+    ]);
+    res.json({ sellers, platformDefaults, carriers });
+  } catch (error) {
+    console.error('admin seller shipping rates:', error.message);
+    res.status(500).json({ message: "Failed to load sellers' delivery fees" });
+  }
+});
+
+router.put('/sellers/:vendorId/rates/:countryCode', async (req, res) => {
+  try {
+    const vendorId = sellerId(req);
+    if (!vendorId || !(await sellerExists(vendorId))) return res.status(404).json({ message: 'Seller not found' });
+    const code = String(req.params.countryCode || '').toUpperCase();
+    const before = (await listShippingRates(vendorId)).find((r) => r.countryCode === code) || null;
+    const result = await setStandardShippingRate(vendorId, code, req.body || {});
+    if (!result.ok) return res.status(400).json({ message: result.message });
+    await auditFromRequest(req, { action: 'seller_shipping_rate.set', entityType: 'shipping_rate', entityId: `${vendorId}:${code}`, before, after: result.rate });
+    res.json({ message: "Seller's delivery fee saved", rate: result.rate });
+  } catch (error) {
+    console.error('admin set seller shipping rate:', error.message);
+    res.status(500).json({ message: 'Failed to save delivery fee' });
+  }
+});
+
+router.delete('/sellers/:vendorId/rates/:countryCode', async (req, res) => {
+  try {
+    const vendorId = sellerId(req);
+    if (!vendorId || !(await sellerExists(vendorId))) return res.status(404).json({ message: 'Seller not found' });
+    const code = String(req.params.countryCode || '').toUpperCase();
+    const before = (await listShippingRates(vendorId)).find((r) => r.countryCode === code) || null;
+    const removed = await removeStandardShippingRate(vendorId, code);
+    if (!removed) return res.status(404).json({ message: 'This seller has no fee of their own for this country' });
+    await auditFromRequest(req, { action: 'seller_shipping_rate.remove', entityType: 'shipping_rate', entityId: `${vendorId}:${code}`, before, after: null });
+    res.json({ message: "Seller's fee removed; the platform default applies" });
+  } catch (error) {
+    console.error('admin remove seller shipping rate:', error.message);
     res.status(500).json({ message: 'Failed to remove delivery fee' });
   }
 });

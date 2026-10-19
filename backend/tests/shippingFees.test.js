@@ -10,7 +10,9 @@
 //     free-delivery threshold applies to that seller's items only;
 //   - the quote shown at checkout equals the shipping the order books;
 //   - the admin's platform default applies to sellers with no fee of their own;
-//   - invalid fees are refused with a reason; one seller cannot touch another's.
+//   - invalid fees are refused with a reason; one seller cannot touch another's;
+//   - the admin sees every seller's fees and can change or remove them
+//     (routes/shippingAdminRoutes.js /sellers), and only an admin can.
 //
 // The PLATFORM default is only changed for DE (no other suite prices DE) and
 // is restored afterwards; Ghana is exercised through seller fees only, so the
@@ -36,6 +38,15 @@ const svc = await import('../Services/shippingService.js');
 const { getShippingOptions } = await import('../controllers/internationalCheckoutController.js');
 const { addOrderItems } = await import('../controllers/orderController.js');
 const { setVendorShippingRate, removeVendorShippingRate, getVendorShippingRates } = await import('../controllers/vendorController.js');
+const adminShippingRouter = (await import('../routes/shippingAdminRoutes.js')).default;
+
+// The admin router's handler for METHOD path (auth is router-level middleware,
+// exercised separately below over HTTP).
+const adminRoute = (method, path) => {
+  const layer = adminShippingRouter.stack.find((l) => l.route?.path === path && l.route.methods[method]);
+  return layer.route.stack[layer.route.stack.length - 1].handle;
+};
+const adminReq = (params = {}, body = {}) => ({ user: { id: 1, role: 'admin', email: 'admin@test.local' }, params, body, headers: {}, ip: '127.0.0.1', get: () => undefined });
 
 const TS = `${Date.now()}${Math.floor(Math.random() * 1e4)}`;
 const fx = { orders: [] };
@@ -186,6 +197,66 @@ describe(`delivery fees set by admin and sellers${dbAvailable ? '' : ' — SKIPP
     assert.ok(!r.body.rates.some((x) => x.countryCode === 'DE'), "seller B's DE fee must not appear for seller A");
     assert.ok(r.body.platformDefaults.some((x) => x.countryCode === 'GH'));
     assert.ok(r.body.carriers.length > 0);
+  });
+
+  test("the admin sees every seller's fees and can change or remove them", async () => {
+    const list = await call(adminRoute('get', '/sellers'), adminReq());
+    assert.equal(list.code, 200);
+    const a = list.body.sellers.find((x) => x.vendorId === fx.sellerA);
+    assert.ok(a, 'seller A listed even before they have a fee');
+    assert.ok(list.body.platformDefaults.some((x) => x.countryCode === 'GH'));
+
+    const set = await call(adminRoute('put', '/sellers/:vendorId/rates/:countryCode'),
+      adminReq({ vendorId: String(fx.sellerA), countryCode: 'gh' }, { baseCost: 9, transitDaysMin: 1, transitDaysMax: 3 }));
+    assert.equal(set.code, 200, JSON.stringify(set.body));
+    assert.equal((await svc.listShippingRates(fx.sellerA)).find((r) => r.countryCode === 'GH').baseCost, 9);
+    // The seller's checkout uses the fee the admin set.
+    const q = await quote('GH', [{ productId: fx.a120, qty: 1 }]);
+    assert.equal(q.body.chargeableShippingGHS, 9);
+    const after = await call(adminRoute('get', '/sellers'), adminReq());
+    assert.deepEqual(after.body.sellers.find((x) => x.vendorId === fx.sellerA).rates.map((r) => r.countryCode), ['GH']);
+    const [[audit]] = await pool.execute(
+      `SELECT COUNT(*) AS n FROM admin_audit_log WHERE action = 'seller_shipping_rate.set' AND entityId = ?`, [`${fx.sellerA}:GH`]);
+    assert.ok(Number(audit.n) >= 1, 'audit-logged');
+
+    const bad = await call(adminRoute('put', '/sellers/:vendorId/rates/:countryCode'),
+      adminReq({ vendorId: String(fx.sellerA), countryCode: 'GH' }, { baseCost: -5, transitDaysMin: 1, transitDaysMax: 3 }));
+    assert.equal(bad.code, 400);
+    for (const vendorId of [String(fx.buyer), '0', 'abc']) {
+      const r = await call(adminRoute('put', '/sellers/:vendorId/rates/:countryCode'),
+        adminReq({ vendorId, countryCode: 'GH' }, { baseCost: 9, transitDaysMin: 1, transitDaysMax: 3 }));
+      assert.equal(r.code, 404, `vendorId=${vendorId} is not a seller`);
+    }
+
+    const del = await call(adminRoute('delete', '/sellers/:vendorId/rates/:countryCode'), adminReq({ vendorId: String(fx.sellerA), countryCode: 'GH' }));
+    assert.equal(del.code, 200);
+    assert.deepEqual(await svc.listShippingRates(fx.sellerA), []);
+    const again = await call(adminRoute('delete', '/sellers/:vendorId/rates/:countryCode'), adminReq({ vendorId: String(fx.sellerA), countryCode: 'GH' }));
+    assert.equal(again.code, 404);
+    const back = await quote('GH', [{ productId: fx.a120, qty: 1 }]);
+    assert.equal(back.body.chargeableShippingGHS, 15, 'platform default applies again');
+  });
+
+  test("only an admin reaches the sellers' fee routes", async () => {
+    const express = (await import('express')).default;
+    const app = express();
+    app.use(express.json());
+    app.use((await import('cookie-parser')).default());
+    app.use('/api/admin/shipping', adminShippingRouter);
+    app.use((await import('../middleware/errorMiddleware.js')).errorHandeler);
+    const server = app.listen(0);
+    try {
+      const base = `http://127.0.0.1:${server.address().port}/api/admin/shipping`;
+      const get = await fetch(`${base}/sellers`);
+      assert.equal(get.status, 401);
+      const put = await fetch(`${base}/sellers/${fx.sellerA}/rates/GH`, {
+        method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ baseCost: 0, transitDaysMin: 1, transitDaysMax: 2 }),
+      });
+      assert.equal(put.status, 401);
+      assert.deepEqual(await svc.listShippingRates(fx.sellerA), []);
+    } finally {
+      server.close();
+    }
   });
 
   test('invalid fees are refused with a reason and change nothing', async () => {

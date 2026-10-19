@@ -41,6 +41,13 @@ export interface ExchangeRateStatus {
   ageDays: number | null;
 }
 
+export interface SellerShippingRates {
+  vendorId: number;
+  businessName: string;
+  status: string;
+  rates: ShippingRate[];
+}
+
 export interface ShippingQuote {
   supported: boolean;
   message?: string;
@@ -90,6 +97,18 @@ export const shippingFeesApiSlice = apiSlice.injectEndpoints({
       query: (countryCode) => ({ url: `${ADMIN}/rates/${encodeURIComponent(countryCode)}`, method: "DELETE" }),
       invalidatesTags: ["ShippingRates"],
     }),
+    getSellerShippingRates: builder.query<{ sellers: SellerShippingRates[]; platformDefaults: ShippingRate[]; carriers: ShippingCarrier[] }, void>({
+      query: () => `${ADMIN}/sellers`,
+      providesTags: ["ShippingRates"],
+    }),
+    setSellerShippingRate: builder.mutation<{ rate: ShippingRate }, ShippingRateInput & { vendorId: number }>({
+      query: ({ vendorId, countryCode, ...body }) => ({ url: `${ADMIN}/sellers/${vendorId}/rates/${encodeURIComponent(countryCode)}`, method: "PUT", body }),
+      invalidatesTags: ["ShippingRates"],
+    }),
+    removeSellerShippingRate: builder.mutation<{ message?: string }, { vendorId: number; countryCode: string }>({
+      query: ({ vendorId, countryCode }) => ({ url: `${ADMIN}/sellers/${vendorId}/rates/${encodeURIComponent(countryCode)}`, method: "DELETE" }),
+      invalidatesTags: ["ShippingRates"],
+    }),
     getExchangeRates: builder.query<{ rates: ExchangeRateStatus[] }, void>({
       query: () => `${ADMIN}/exchange-rates`,
       providesTags: ["ExchangeRates"],
@@ -109,6 +128,9 @@ export const {
   useGetAdminShippingRatesQuery,
   useSetAdminShippingRateMutation,
   useRemoveAdminShippingRateMutation,
+  useGetSellerShippingRatesQuery,
+  useSetSellerShippingRateMutation,
+  useRemoveSellerShippingRateMutation,
   useGetExchangeRatesQuery,
   useRefreshExchangeRatesMutation,
 } = shippingFeesApiSlice;
