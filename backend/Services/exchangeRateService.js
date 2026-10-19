@@ -13,7 +13,13 @@
 //   - Only an https source answering `result: "success"` with base GHS and a
 //     finite positive rate per currency is accepted.
 //   - A rate that moved more than FX_MAX_DAILY_CHANGE (default 25%) from the
-//     last stored rate is rejected and logged; the previous row stays in force.
+//     last AUTOMATIC rate (within BASELINE_MAX_AGE_DAYS) is rejected and
+//     logged; the previous row stays in force. With no recent automatic rate
+//     — first run after the migration seeded rough estimates, or a long
+//     outage — the baseline is the newest stored row and the looser
+//     FIRST_FETCH_MAX_CHANGE applies. Measuring against the seed with the
+//     daily limit would refuse a correct rate forever whenever the estimate
+//     was more than 25% out.
 //   - Any failure keeps the last stored rates (lookups use the newest row on
 //     or before today), and shipping lookups already warn on stale rows.
 //   - Never runs when NODE_ENV=test or FX_AUTO_UPDATE=false.
@@ -28,21 +34,27 @@ const maxChange = () => {
   return Number.isFinite(n) && n > 0 && n < 1 ? n : 0.25;
 };
 
+// Only a recent automatic rate is a trustworthy day-to-day baseline.
+const BASELINE_MAX_AGE_DAYS = 7;
+// Against an estimate or a stale rate: still refuse an obviously broken answer.
+const FIRST_FETCH_MAX_CHANGE = 0.6;
+
 export const isFxAutoUpdateEnabled = () =>
   process.env.FX_AUTO_UPDATE !== 'false' && process.env.NODE_ENV !== 'test';
 
 /**
- * Latest stored GHS->target rate on or before `day` (any source), or null.
+ * Latest stored GHS->target rate on or before `day`, or null.
  * @param {string} target
  * @param {string} day - YYYY-MM-DD
+ * @param {string} [source] - only rows from this source (default: any)
  * @returns {Promise<{rate: number, effectiveDate: string, source: string}|null>}
  */
-const latestStored = async (target, day) => {
+const latestStored = async (target, day, source) => {
   const [rows] = /** @type {[any[], any]} */ (await pool.execute(
     `SELECT rate, effectiveDate, source FROM exchange_rates
-     WHERE baseCurrency = 'GHS' AND targetCurrency = ? AND effectiveDate <= ?
+     WHERE baseCurrency = 'GHS' AND targetCurrency = ? AND effectiveDate <= ?${source ? ' AND source = ?' : ''}
      ORDER BY effectiveDate DESC LIMIT 1`,
-    [target, day]
+    source ? [target, day, source] : [target, day]
   ));
   if (!rows[0]) return null;
   const rate = Number(rows[0].rate);
@@ -54,6 +66,9 @@ const latestStored = async (target, day) => {
     : String(d).slice(0, 10);
   return Number.isFinite(rate) && rate > 0 ? { rate, effectiveDate, source: rows[0].source } : null;
 };
+
+/** @param {string} from @param {string} to - YYYY-MM-DD */
+const daysBetween = (from, to) => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400000);
 
 /**
  * Fetch today's GHS rates and store them.
@@ -86,9 +101,12 @@ export const refreshExchangeRates = async ({ fetchImpl = fetch, force = false, d
       rejected.push({ currency: target, reason: 'missing or invalid in source' });
       continue;
     }
-    const prev = await latestStored(target, today);
-    if (prev && Math.abs(rate / prev.rate - 1) > maxChange()) {
-      rejected.push({ currency: target, reason: `moved ${(Math.abs(rate / prev.rate - 1) * 100).toFixed(1)}% from ${prev.rate} (limit ${maxChange() * 100}%)` });
+    const auto = await latestStored(target, today, FX_SOURCE);
+    const recentAuto = auto && daysBetween(auto.effectiveDate, today) <= BASELINE_MAX_AGE_DAYS ? auto : null;
+    const prev = recentAuto || await latestStored(target, today);
+    const limit = recentAuto ? maxChange() : FIRST_FETCH_MAX_CHANGE;
+    if (prev && Math.abs(rate / prev.rate - 1) > limit) {
+      rejected.push({ currency: target, reason: `moved ${(Math.abs(rate / prev.rate - 1) * 100).toFixed(1)}% from ${prev.rate} (limit ${Math.round(limit * 100)}%)` });
       continue;
     }
     await pool.execute(

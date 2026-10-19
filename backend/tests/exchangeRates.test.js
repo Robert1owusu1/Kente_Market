@@ -99,6 +99,39 @@ describe(`automatic exchange rates${dbAvailable ? '' : ' — SKIPPED: no databas
     assert.equal(await getExchangeRate('GHS', 'USD', DAY), 0.0662, 'others updated');
   });
 
+  test('a rough seeded estimate does not block the first real rate; a broken answer still does', async () => {
+    // A month later: the 2099-06-15 automatic rates are too old to be the
+    // daily baseline, so today's estimate is, with the looser first-fetch limit.
+    const LATER = new Date('2099-07-15T12:00:00Z');
+    const later = '2099-07-15';
+    try {
+      for (const [c, rate] of [['GBP', 0.05], ['USD', 0.068], ['CAD', 0.092], ['EUR', 0.06]]) {
+        await pool.execute(
+          `INSERT INTO exchange_rates (baseCurrency, targetCurrency, rate, source, effectiveDate) VALUES ('GHS', ?, ?, 'manual', ?)`,
+          [c, rate, later],
+        );
+      }
+      // USD and CAD ~30% off the estimate (the live symptom); GBP 3x (broken).
+      const r = await refreshExchangeRates({
+        force: true, date: LATER,
+        fetchImpl: fakeSource({ result: 'success', base_code: 'GHS', rates: { GBP: 0.15, USD: 0.0862, CAD: 0.12, EUR: 0.061 } }),
+      });
+      assert.deepEqual(r.updated, ['USD', 'CAD', 'EUR']);
+      assert.deepEqual(r.rejected.map((x) => x.currency), ['GBP']);
+      assert.equal(await getExchangeRate('GHS', 'USD', LATER), 0.0862);
+      assert.equal(await getExchangeRate('GHS', 'GBP', LATER), 0.05, 'estimate kept over a broken answer');
+      // Once an automatic rate exists, the daily limit applies again.
+      const next = await refreshExchangeRates({
+        force: true, date: LATER,
+        fetchImpl: fakeSource({ result: 'success', base_code: 'GHS', rates: { GBP: 0.05, USD: 0.12, CAD: 0.12, EUR: 0.061 } }),
+      });
+      assert.deepEqual(next.rejected.map((x) => x.currency), ['USD']);
+      assert.match(next.rejected[0].reason, /limit 25%/);
+    } finally {
+      await pool.execute(`DELETE FROM exchange_rates WHERE baseCurrency = 'GHS' AND effectiveDate = ?`, [later]);
+    }
+  });
+
   test('malformed or failed answers change nothing', async () => {
     const before = await getExchangeRate('GHS', 'USD', DAY);
     for (const body of [
