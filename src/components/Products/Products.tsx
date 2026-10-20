@@ -9,7 +9,6 @@ import { useTryOnEnabled } from "../../slices/tryOnApiSlice";
 import { ProductGridSkeleton } from "../loader/Skeleton";
 import ProductCard from "../ProductCard/ProductCard";
 import { toCartItem } from "../../utils/cartItem";
-import { yardOptionsFor } from "../../utils/yards";
 import type { Product } from "../../types/domain";
 
 interface TrendProduct extends Product {
@@ -49,7 +48,7 @@ const TrendingProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void 
     // Kente is pre-designed: no colour/size choice — yardage only (even numbers).
     // Shared cart shape (utils/cartItem): this handler used to write `image`
     // but not `img`, so lines added here showed no thumbnail in the cart.
-    const cartItem = toCartItem(product as unknown as Product, yardOptionsFor(product)[0], 1);
+    const cartItem = toCartItem(product as unknown as Product, 1);
     addToCart(cartItem);
     
     if (handleOrderPopup) {

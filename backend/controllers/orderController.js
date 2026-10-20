@@ -366,8 +366,6 @@ export const addOrderItems = async (req, res) => {
         productId,
         quantity: quantity > 0 ? quantity : 1,
         image: item.image || null,
-        selectedColor: item.selectedColor || item.color || null,
-        selectedSize: item.selectedSize || item.size || null,
         name: typeof item.name === "string" ? item.name.slice(0, 200) : null,
         // Filled in later: madeToOrder/stock from the product row (below),
         // reserved by reserveStockForItems (defaults to 0 when not reserved).
@@ -395,7 +393,7 @@ export const addOrderItems = async (req, res) => {
     const productIds = [...new Set(requested.map((r) => r.productId))];
     const placeholders = productIds.map(() => "?").join(", ");
     const [products] = await pool.execute(
-      `SELECT id, title, price, img, vendorId, isCustomizable, productionTime, stock, madeToOrder, approvalStatus FROM product WHERE id IN (${placeholders})`,
+      `SELECT id, title, price, img, vendorId, isCustomizable, productionTime, stock, madeToOrder, approvalStatus, yards FROM product WHERE id IN (${placeholders})`,
       productIds
     );
     const productMap = new Map((/** @type {Array<any>} */ (products)).map((p) => [p.id, p]));
@@ -491,8 +489,13 @@ export const addOrderItems = async (req, res) => {
         qty: r.quantity,
         price: round2(parseFloat(p.price) || 0),
         image: safeOrderImage(r.image) || p.img,
-        selectedColor: r.selectedColor,
-        selectedSize: r.selectedSize,
+        // Kente is sold as the seller's packaged piece (e.g. 6 yards for one
+        // price): the buyer picks only the quantity. The piece length comes
+        // from the product row; buyer-sent colour/size/yard values are not
+        // product choices and are not recorded.
+        selectedColor: null,
+        selectedSize: null,
+        yards: p.yards != null && Number(p.yards) > 0 ? Number(p.yards) : null,
         vendorId: p.vendorId || null,
         // Customisation metadata: used to compute weaving progress ("days left")
         // for custom orders. The vendor sets productionTime (in days) on the product.

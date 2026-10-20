@@ -179,7 +179,11 @@ interface ProductFormState {
   originalPrice: string;
   category: string;
   color: string;
-  sizes: string;
+  description: string;
+  /** Length of one packaged piece, in yards (commonly 6). */
+  yards: string;
+  /** Pieces ready to sell. */
+  stock: string;
   colors: string;
   threadTypes: string;
   dominantThread: string;
@@ -209,7 +213,9 @@ const ProductFormModal = ({ product, onClose, onSubmit, isLoading }: ProductForm
     originalPrice: (product?.originalPrice || '') as string,
     category: (product?.category || '') as string,
     color: (product?.color || '') as string,
-    sizes: product?.sizes ? (Array.isArray(product.sizes) ? product.sizes.join(', ') : product.sizes) : '',
+    description: (product?.description || '') as string,
+    yards: product?.yards != null && Number(product.yards) > 0 ? String(Number(product.yards)) : '6',
+    stock: product?.stock != null ? String(product.stock) : '',
     colors: product?.colors ? (Array.isArray(product.colors) ? product.colors.join(', ') : product.colors) : '',
     threadTypes: product?.threadTypes ? (Array.isArray(product.threadTypes) ? product.threadTypes.join(', ') : product.threadTypes) : '',
     dominantThread: (product?.dominantThread as string) || '',
@@ -259,10 +265,22 @@ const ProductFormModal = ({ product, onClose, onSubmit, isLoading }: ProductForm
       return;
     }
 
-    // Prepare data
-    const parsedYards = formData.sizes ? formData.sizes.split(',').map(s => s.trim()).filter(Boolean) : [];
-    if (parsedYards.some((yd) => Number(yd) <= 0 || Number(yd) % 2 !== 0)) {
-      toast.error('Available yards must be even numbers (e.g. 2, 4, 6, 8, 10, 12)');
+    // Kente is sold as a packaged piece (e.g. 6 yards for one price); the
+    // buyer picks only how many.
+    const pieceYards = Number(formData.yards);
+    if (!Number.isFinite(pieceYards) || pieceYards <= 0 || pieceYards > 100) {
+      toast.error('Enter the length of one piece in yards (e.g. 6)');
+      return;
+    }
+    const stock = Number(formData.stock);
+    if (formData.stock.trim() === '' || !Number.isInteger(stock) || stock < 0) {
+      toast.error('Enter how many pieces are in stock (0 or more)');
+      return;
+    }
+    const colors = formData.colors.split(',').map(c => c.trim()).filter(Boolean);
+    const threadTypes = formData.threadTypes.split(',').map(t => t.trim()).filter(Boolean);
+    if (!formData.description.trim() || colors.length === 0 || threadTypes.length === 0) {
+      toast.error('Add a description, the dominant colours and the thread types');
       return;
     }
     const submitData = {
@@ -273,10 +291,12 @@ const ProductFormModal = ({ product, onClose, onSubmit, isLoading }: ProductForm
       rating: formData.rating ? parseFloat(formData.rating) : null,
       reviews: parseInt(formData.reviews) || 0,
       productionTime: formData.productionTime ? parseInt(formData.productionTime) : null,
-      sizes: parsedYards,
-      yards: parsedYards[0] || null,
-      colors: formData.colors ? formData.colors.split(',').map(c => c.trim()).filter(Boolean) : [],
-      threadTypes: formData.threadTypes ? formData.threadTypes.split(',').map(t => t.trim()).filter(Boolean) : [],
+      description: formData.description.trim(),
+      sizes: [],
+      yards: pieceYards,
+      stock,
+      colors,
+      threadTypes,
       dominantThread: formData.dominantThread.trim() || null,
       vendorId: formData.vendorId ? parseInt(formData.vendorId, 10) : null,
     };
@@ -335,7 +355,7 @@ const ProductFormModal = ({ product, onClose, onSubmit, isLoading }: ProductForm
                   onChange={handleChange}
                   required
                   className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-[#92400e]"
-                  placeholder="e.g., Custom Printed T-Shirt"
+                  placeholder="e.g., Sika Futuro Kente"
                 />
               </div>
 
@@ -373,7 +393,7 @@ const ProductFormModal = ({ product, onClose, onSubmit, isLoading }: ProductForm
 
               <div>
                 <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
-                  Price ($) *
+                  Price per Piece (GH₵) *
                 </label>
                 <input
                   type="number"
@@ -390,7 +410,7 @@ const ProductFormModal = ({ product, onClose, onSubmit, isLoading }: ProductForm
 
               <div>
                 <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
-                  Original Price ($)
+                  Original Price (GH₵)
                 </label>
                 <input
                   type="number"
@@ -451,7 +471,7 @@ const ProductFormModal = ({ product, onClose, onSubmit, isLoading }: ProductForm
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
-                  Available Colors (comma-separated)
+                  Dominant Colours * (comma-separated)
                 </label>
                 <input
                   type="text"
@@ -464,22 +484,58 @@ const ProductFormModal = ({ product, onClose, onSubmit, isLoading }: ProductForm
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
-                  Available Yards (comma-separated, even numbers)
+                <label htmlFor="pf-yards" className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
+                  Length of One Piece (yards) *
                 </label>
                 <input
-                  type="text"
-                  name="sizes"
-                  value={formData.sizes}
+                  id="pf-yards"
+                  type="number"
+                  min="0.5"
+                  max="100"
+                  step="0.5"
+                  name="yards"
+                  value={formData.yards}
                   onChange={handleChange}
                   className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-[#92400e]"
-                  placeholder="2, 4, 6, 8, 10, 12"
+                  placeholder="6"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="pf-stock" className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
+                  Pieces in Stock *
+                </label>
+                <input
+                  id="pf-stock"
+                  type="number"
+                  min="0"
+                  step="1"
+                  name="stock"
+                  value={formData.stock}
+                  onChange={handleChange}
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-[#92400e]"
+                  placeholder="e.g. 10"
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label htmlFor="pf-description" className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
+                  Description *
+                </label>
+                <textarea
+                  id="pf-description"
+                  name="description"
+                  rows={3}
+                  value={formData.description}
+                  onChange={handleChange}
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-[#92400e]"
+                  placeholder="The design, its meaning, how it is woven and how it can be worn"
                 />
               </div>
 
               <div>
                 <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
-                  Thread Types (comma-separated)
+                  Thread Types * (comma-separated)
                 </label>
                 <input
                   type="text"

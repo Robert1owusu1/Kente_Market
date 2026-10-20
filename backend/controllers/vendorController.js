@@ -7,7 +7,7 @@ import { getWallet } from '../Services/walletService.js';
 import { getAvailableAllocationsForVendor, payoutAllocation } from '../Services/escrowService.js';
 import { PLATFORM_FEE_RATE } from '../config/businessConfig.js';
 import { resolveCommissionRate } from '../Services/commissionService.js';
-import { hasInvalidYards, INVALID_YARDS_MESSAGE } from '../utils/yards.js';
+import { hasInvalidYards, INVALID_YARDS_MESSAGE, pieceLengthError, kenteDetailsError } from '../utils/yards.js';
 import { toNonNegativeInt } from '../utils/nonNegativeInt.js';
 import { clearCache } from '../middleware/cacheMiddleware.js';
 
@@ -332,6 +332,8 @@ export const createVendorProduct = async (req, res) => {
     if (hasInvalidYards(sizes)) {
       return res.status(400).json({ message: INVALID_YARDS_MESSAGE });
     }
+    const detailsProblem = pieceLengthError(yards) || kenteDetailsError(req.body);
+    if (detailsProblem) return res.status(400).json({ message: detailsProblem });
 
     // Vendor-created products enter the moderation queue (pending) unless the
     // platform admin is creating/inviting on behalf of the vendor.
@@ -423,6 +425,8 @@ export const updateVendorProduct = async (req, res) => {
     if (hasInvalidYards(req.body.sizes)) {
       return res.status(400).json({ message: INVALID_YARDS_MESSAGE });
     }
+    const detailsProblem = pieceLengthError(req.body.yards) || kenteDetailsError(req.body, { partial: true });
+    if (detailsProblem) return res.status(400).json({ message: detailsProblem });
 
     const allowedFields = [
       'title', 'img', 'price', 'originalPrice', 'category', 'tag', 'description',

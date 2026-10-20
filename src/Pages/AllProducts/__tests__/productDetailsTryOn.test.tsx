@@ -5,7 +5,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import '@testing-library/jest-dom/vitest';
 
-const product = { id: 11, title: 'Adinkra Royal Stole', price: 450, img: '/uploads/products/a.jpg', vendorId: 1, yardsAvailable: ['4', '6'], in_stock: 5 };
+const product = { id: 11, title: 'Adinkra Royal Stole', price: 450, img: '/uploads/products/a.jpg', vendorId: 1, yards: 6, yardsAvailable: ['4', '6'], in_stock: 5 };
 const getProductEligibility = vi.fn();
 
 vi.mock('../../../ai-tryon/api/tryOnService', () => ({
@@ -54,14 +54,22 @@ describe('product page Try It On', () => {
     expect(screen.getByText(/see an AI preview of this exact piece on you/)).toBeInTheDocument();
   });
 
-  it('starts a try-on for this product, carrying the chosen yards', async () => {
+  it('starts a try-on for this product', async () => {
     getProductEligibility.mockResolvedValue({ productId: 11, enabled: true, eligible: true, reason: null });
     renderPage();
     const btn = await screen.findByRole('button', { name: 'Try It On' });
     expect(getProductEligibility).toHaveBeenCalledWith(11);
-    fireEvent.click(screen.getByRole('button', { name: '6 yards' }));
     fireEvent.click(btn);
-    expect(screen.getByTestId('where')).toHaveTextContent('/ai-tryon?product=11&yards=6');
+    expect(screen.getByTestId('where')).toHaveTextContent('/ai-tryon?product=11');
+  });
+
+  it('sells a packaged piece: price per piece with its length, quantity only, no yard choice', async () => {
+    getProductEligibility.mockResolvedValue({ productId: 11, enabled: true, eligible: true, reason: null });
+    renderPage();
+    expect(await screen.findByText('per piece (6 yards)')).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: /Yards/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '4 yards' })).not.toBeInTheDocument();
+    expect(screen.getByText('Quantity (pieces):')).toBeInTheDocument();
   });
 
   it('is disabled with the reason for an unsupported product', async () => {

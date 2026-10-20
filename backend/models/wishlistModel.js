@@ -66,7 +66,7 @@ class Wishlist {
       const [rows] = await connection.execute(
         `SELECT w.id, w.userId, w.productId, w.created_at,
                 w.lastAlertedPrice, w.lastPriceDropNotifiedAt,
-                p.title, p.img, p.price, p.originalPrice, p.rating, p.reviews, p.category
+                p.title, p.img, p.price, p.originalPrice, p.rating, p.reviews, p.category, p.yards
          FROM wishlist w
          LEFT JOIN product p ON p.id = w.productId
          LEFT JOIN vendors v ON v.userId = p.vendorId

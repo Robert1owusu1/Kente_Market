@@ -6,7 +6,7 @@ import { useCart } from '../../Context/CartContext';
 import { useGetMyWishlistQuery, useRemoveFromWishlistMutation } from '../../slices/wishlistApiSlice';
 import { ProductGridSkeleton } from '../../components/loader/Skeleton';
 import { resolveImageUrl } from '../../utils/imageUrl';
-import { yardOptionsFor } from '../../utils/yards';
+import { pieceYards } from '../../utils/yards';
 import { formatCedi } from '../../utils/formatCurrency';
 
 interface WishlistView {
@@ -21,6 +21,8 @@ interface WishlistView {
   colorsAvailable?: string[] | null;
   colors?: string[] | null;
   sizes?: string[] | null;
+  /** Piece length in yards, as the seller set it. */
+  yards?: number | string | null;
   fabricType?: string;
   material?: string;
   productionTime?: string;
@@ -45,8 +47,7 @@ const WishlistPage = () => {
   const wishlistError = error as { data?: { message?: string }; message?: string; error?: string } | undefined;
 
   const handleAddToCart = (product: WishlistView) => {
-    // Kente is pre-designed: yardage only — no colour/size choice.
-    const yardsOptions = yardOptionsFor(product);
+    // Kente is sold as the seller's packaged piece: quantity is the only choice.
 
     const cartItem = {
       id: product.productId || product.id!,
@@ -55,8 +56,7 @@ const WishlistPage = () => {
       basePrice: Number(product.price) || 0,
       image: product.img,
       img: product.img,
-      yards: yardsOptions[0],
-      yardsAvailable: yardsOptions,
+      yards: pieceYards(product),
       threadTypes: product.threadTypes as string[] | undefined,
       dominantThread: product.dominantThread as string | undefined,
       fabricType: product.fabricType || product.material || 'Cotton',

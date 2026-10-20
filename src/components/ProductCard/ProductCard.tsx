@@ -23,6 +23,7 @@ import { FaHeart, FaRegHeart, FaShoppingCart, FaStar, FaStore, FaCheckCircle, Fa
 import { resolveImageUrl } from "../../utils/imageUrl";
 import { formatCedi } from "../../utils/formatCurrency";
 import { stockOnHand, saleInfo, type ProductCardData } from "../../utils/productDisplay";
+import { pieceLengthLabel } from "../../utils/yards";
 
 
 const FALLBACK_IMG =
@@ -65,6 +66,8 @@ const ProductCard = ({
   const rating = Number(product.rating) || 0;
   const reviews = Number(product.reviews) || 0;
   const showTryOn = tryOnAvailable && !soldOut;
+  // Kente is sold as the seller's packaged piece; the length tells the buyer what one price buys.
+  const pieceLength = pieceLengthLabel(product as { yards?: unknown });
 
   const cardRef = useRef<HTMLElement>(null);
   const [actionsOpen, setActionsOpen] = useState(false);
@@ -201,6 +204,9 @@ const ProductCard = ({
               <span className="sr-only">Original price </span>
               {formatCedi(sale.original)}
             </span>
+          )}
+          {pieceLength && (
+            <span className="w-full text-xs text-gray-600 dark:text-gray-300">per piece · {pieceLength}</span>
           )}
         </p>
 

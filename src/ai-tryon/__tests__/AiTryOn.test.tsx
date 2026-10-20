@@ -7,9 +7,9 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import '@testing-library/jest-dom/vitest';
 
 const PRODUCTS: Record<number, Record<string, unknown>> = {
-  11: { id: 11, title: 'Adinkra Royal Stole', price: 450, img: '/uploads/products/a.jpg', vendorId: 1, yardsAvailable: ['2', '4'], in_stock: 5 },
-  12: { id: 12, title: 'Sika Futuro Wrap', price: 900, img: '/uploads/products/b.jpg', vendorId: 2, yardsAvailable: ['6'], in_stock: 5 },
-  13: { id: 13, title: 'Sold Out Stole', price: 300, img: '/uploads/products/c.jpg', vendorId: 1, yardsAvailable: ['2'], in_stock: 0 },
+  11: { id: 11, title: 'Adinkra Royal Stole', price: 450, img: '/uploads/products/a.jpg', vendorId: 1, yards: 6, in_stock: 5 },
+  12: { id: 12, title: 'Sika Futuro Wrap', price: 900, img: '/uploads/products/b.jpg', vendorId: 2, yards: 12, in_stock: 2 },
+  13: { id: 13, title: 'Sold Out Stole', price: 300, img: '/uploads/products/c.jpg', vendorId: 1, yards: 6, in_stock: 0 },
 };
 
 const createJob = vi.fn();
@@ -32,12 +32,21 @@ vi.mock('../api/tryOnService', async () => {
     },
   };
 });
+const listArgs = vi.fn();
 vi.mock('../../slices/productsApiSlice', () => ({
   useGetProductsDetailsQuery: (id: number) => ({
     data: PRODUCTS[id],
     isLoading: false,
     error: PRODUCTS[id] ? undefined : { status: 404 },
   }),
+  useGetProductsQuery: (args: unknown, opts: { skip?: boolean }) => {
+    listArgs(args, opts);
+    return opts?.skip ? { data: undefined, isLoading: false, isError: false } : { data: Object.values(PRODUCTS), isLoading: false, isError: false }; // the API's real shape: a plain array
+  },
+}));
+const tryOnStatus = { enabled: true };
+vi.mock('../../slices/tryOnApiSlice', () => ({
+  useGetTryOnStatusQuery: () => ({ data: { enabled: tryOnStatus.enabled }, isLoading: false }),
 }));
 vi.mock('../../Context/CartContext', () => ({ useCart: () => ({ addToCart }) }));
 // Photo capture is covered by its own suites; here it just yields a photo.
@@ -83,7 +92,8 @@ const pickPhotoAndConsent = async () => {
 };
 
 beforeEach(() => {
-  for (const f of [createJob, waitForJob, getResultObjectUrl, getProductEligibility, addToCart]) f.mockReset();
+  for (const f of [createJob, waitForJob, getResultObjectUrl, getProductEligibility, addToCart, listArgs]) f.mockReset();
+  tryOnStatus.enabled = true;
   getProductEligibility.mockImplementation(async (id: number) => eligible(id));
   (URL as unknown as { revokeObjectURL: unknown }).revokeObjectURL = vi.fn();
 });
@@ -133,17 +143,35 @@ describe('AI try-on is bound to the selected product', () => {
     expect(createJob.mock.calls.map((c) => c[1])).toEqual([12]);
   });
 
-  it('without a product, nothing is generated and the customer is sent to the catalog', () => {
+  it('without a product, the customer picks one to try on right here (nothing is generated)', () => {
     renderAt('/ai-tryon');
-    expect(screen.getByText('Start from a product you love')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Browse Kente/ })).toHaveAttribute('href', '/products');
+    expect(screen.getByText('Choose a piece to try on')).toBeInTheDocument();
+    const links = screen.getAllByRole('link', { name: /Try this on/ });
+    expect(links.map((l) => l.getAttribute('href'))).toEqual(['/ai-tryon?product=11', '/ai-tryon?product=12']);
+    expect(screen.queryByText(/Sold Out Stole/)).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /See all Kente/ })).toHaveAttribute('href', '/products');
     expect(screen.queryByText('pick photo')).not.toBeInTheDocument();
     expect(getProductEligibility).not.toHaveBeenCalled();
   });
 
+  it('picking a piece opens the try-on for exactly that product', async () => {
+    renderAt('/ai-tryon');
+    fireEvent.click(screen.getByRole('link', { name: /Sika Futuro Wrap/ }));
+    expect(await screen.findByText("You're trying on")).toBeInTheDocument();
+    expect(getProductEligibility).toHaveBeenCalledWith(12);
+  });
+
+  it('with try-on switched off, the menu page says so instead of offering pieces', () => {
+    tryOnStatus.enabled = false;
+    renderAt('/ai-tryon');
+    expect(screen.getByText(/AI try-on is offline/)).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Try this on/ })).not.toBeInTheDocument();
+    expect(listArgs.mock.calls.every(([, opts]) => opts?.skip === true)).toBe(true);
+  });
+
   it.each(['abc', '0', '-4', '1.5'])('an invalid product id (%s) never starts a session', (bad) => {
     renderAt(`/ai-tryon?product=${bad}`);
-    expect(screen.getByText('Start from a product you love')).toBeInTheDocument();
+    expect(screen.getByText('Choose a piece to try on')).toBeInTheDocument();
     expect(getProductEligibility).not.toHaveBeenCalled();
   });
 });
@@ -246,22 +274,44 @@ describe('result screen sells the same product', () => {
     expect(screen.getByRole('link', { name: /View Product/ })).toHaveAttribute('href', '/product/11');
   });
 
-  it('Add to Cart adds the tried-on product with the yards chosen on its page', async () => {
-    await tryOn('/ai-tryon?product=11&yards=4', 11, 'Adinkra Royal Stole');
+  it('Add to Cart adds one packaged piece of the tried-on product', async () => {
+    await tryOn('/ai-tryon?product=11', 11, 'Adinkra Royal Stole');
+    expect(screen.getByText(/per piece \(6 yards\)/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Add to Cart/ }));
     expect(addToCart).toHaveBeenCalledTimes(1);
-    expect(addToCart.mock.calls[0][0]).toMatchObject({ id: 11, title: 'Adinkra Royal Stole', price: 450, vendorId: 1, yards: '4', quantity: 1 });
+    expect(addToCart.mock.calls[0][0]).toMatchObject({ id: 11, title: 'Adinkra Royal Stole', price: 450, vendorId: 1, yards: 6, quantity: 1 });
   });
 
-  it('without valid yards it asks the customer to choose options on the product page', async () => {
-    await tryOn('/ai-tryon?product=11&yards=7', 11, 'Adinkra Royal Stole');
-    expect(screen.queryByRole('button', { name: /Add to Cart/ })).not.toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Choose Options/ })).toHaveAttribute('href', '/product/11');
+  it('the buyer chooses only how many pieces, up to the stock — never a yardage', async () => {
+    await tryOn('/ai-tryon?product=12', 12, 'Sika Futuro Wrap');
+    expect(screen.queryByRole('button', { name: /yards$/ })).not.toBeInTheDocument();
+    const more = screen.getByRole('button', { name: 'Increase quantity' });
+    fireEvent.click(more);
+    expect(more).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: /Add to Cart/ }));
+    expect(addToCart.mock.calls[0][0]).toMatchObject({ id: 12, yards: 12, quantity: 2 });
+    expect(screen.getByRole('link', { name: /Added — go to cart/ })).toHaveAttribute('href', '/cart');
+  });
+
+  it('Buy Now adds the piece once and goes to the cart', async () => {
+    await tryOn('/ai-tryon?product=12', 12, 'Sika Futuro Wrap');
+    fireEvent.click(screen.getByRole('button', { name: /Buy Now/ }));
+    expect(addToCart).toHaveBeenCalledTimes(1);
+    expect(addToCart.mock.calls[0][0]).toMatchObject({ id: 12, yards: 12, quantity: 1 });
+    expect(screen.getByTestId('where')).toHaveTextContent('/cart');
+  });
+
+  it('Buy Now after Add to Cart does not add the piece twice', async () => {
+    await tryOn('/ai-tryon?product=11', 11, 'Adinkra Royal Stole');
+    fireEvent.click(screen.getByRole('button', { name: /Add to Cart/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Buy Now/ }));
+    expect(addToCart).toHaveBeenCalledTimes(1);
   });
 
   it('a sold-out product cannot be added from the result', async () => {
     await tryOn('/ai-tryon?product=13&yards=2', 13, 'Sold Out Stole');
     expect(screen.queryByRole('button', { name: /Add to Cart/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Buy Now/ })).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Sold out/ })).toHaveAttribute('href', '/product/13');
   });
 

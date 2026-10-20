@@ -3,7 +3,7 @@ import asyncHandler from "../middleware/asyncHandler.js";
 import Product from "../models/productModel.js";
 import pool from "../config/db.js";
 import { clearCache } from "../middleware/cacheMiddleware.js";
-import { hasInvalidYards, INVALID_YARDS_MESSAGE } from "../utils/yards.js";
+import { hasInvalidYards, INVALID_YARDS_MESSAGE, pieceLengthError } from "../utils/yards.js";
 
 // Public storefront visibility (P0-1): anonymous shoppers and vendors only ever
 // see admin-approved products. An authenticated admin may pass
@@ -214,6 +214,10 @@ const createProduct = asyncHandler(async (req, res) => {
       res.status(400);
       throw new Error(INVALID_YARDS_MESSAGE);
     }
+    if (pieceLengthError(req.body.yards)) {
+      res.status(400);
+      throw new Error(pieceLengthError(req.body.yards));
+    }
     const product = await Product.create(req.body);
 
     clearCache('products');
@@ -252,6 +256,10 @@ const updateProduct = asyncHandler(async (req, res) => {
     if (hasInvalidYards(req.body.sizes)) {
       res.status(400);
       throw new Error(INVALID_YARDS_MESSAGE);
+    }
+    if (pieceLengthError(req.body.yards)) {
+      res.status(400);
+      throw new Error(pieceLengthError(req.body.yards));
     }
 
     const updatedProduct = await Product.update(req.params.id, req.body);

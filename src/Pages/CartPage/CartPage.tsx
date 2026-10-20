@@ -8,7 +8,7 @@ import { calcTax, round2 } from "../../utils/pricing";
 import { useVatRate } from "../../slices/pricingApiSlice";
 import { useCartShippingQuote } from "../../hooks/useCartShippingQuote";
 import { resolveImageUrl } from "../../utils/imageUrl";
-import { yardOptionsFor } from "../../utils/yards";
+import { pieceLengthLabel } from "../../utils/yards";
 import { formatCedi } from '../../utils/formatCurrency';
 
 // The cart reducer persists a legacy `size` field (set alongside `selectedSize`)
@@ -19,12 +19,11 @@ interface CartItemProps {
   item: CartLine;
   onRemove: (item: CartLine) => void;
   onUpdateQuantity: (id: number | string, quantity: number) => void;
-  onUpdateYards: (id: number | string, yards: number | string) => void;
   isRemoving: boolean;
 }
 
 // Memoized Cart Item Component
-const CartItem = React.memo(({ item, onRemove, onUpdateQuantity, onUpdateYards, isRemoving }: CartItemProps) => {
+const CartItem = React.memo(({ item, onRemove, onUpdateQuantity, isRemoving }: CartItemProps) => {
   return (
     <div
       className={`group rounded-3xl border border-gray-200/80 bg-white/90 p-4 shadow-lg backdrop-blur-xl transition-all duration-300 hover:shadow-xl dark:border-gray-700 dark:bg-gray-800/90 sm:p-6 ${
@@ -71,33 +70,9 @@ const CartItem = React.memo(({ item, onRemove, onUpdateQuantity, onUpdateYards, 
               </p>
             </div>
 
-            {/* Yards selection — even numbers only (2, 4, 6, 8, 10, 12, …).
-                Kente is pre-designed: buyers never choose a colour or a size. */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-600 dark:text-gray-300">Yards</label>
-              <div className="flex flex-wrap gap-2" role="group" aria-label="Yards selection">
-                {yardOptionsFor(item).map((yd) => (
-                  <button
-                    key={`${item.id}-yards-${yd}`}
-                    onClick={() => onUpdateYards(item.id, String(yd))}
-                    className={`h-10 min-w-10 rounded-xl border-2 px-3 text-sm font-medium transition-all duration-300 sm:h-12 sm:min-w-12 ${
-                      (item.yards ?? item.size) === String(yd)
-                        ? 'border-blue-500 bg-blue-500 text-white shadow-lg'
-                        : 'border-gray-200 dark:border-gray-600 hover:border-blue-300 dark:hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-gray-700'
-                    }`}
-                    aria-label={`${yd} yards`}
-                    aria-pressed={(item.yards ?? item.size) === String(yd)}
-                  >
-                    {yd}
-                  </button>
-                ))}
-              </div>
-              {!(item.yards ?? item.size) && (
-                <p className="text-xs text-amber-600 font-medium" role="alert">
-                  Please select your yards
-                </p>
-              )}
-            </div>
+            {pieceLengthLabel(item) && (
+              <p className="text-sm text-gray-600 dark:text-gray-300">{pieceLengthLabel(item)} per piece</p>
+            )}
           </div>
         </div>
 
@@ -152,7 +127,6 @@ const CartPage = () => {
     cartItems,
     removeItem,
     updateItemQuantity,
-    updateItemYards,
     getTotalPrice,
   } = useCart();
 
@@ -225,15 +199,9 @@ const CartPage = () => {
       return;
     }
 
-    // Validation - yardage is the only variant, and every line must have it
-    // (the yard ladder always renders, so there's always something to pick).
+    // Kente is sold as the seller's packaged piece: quantity is the only
+    // choice, so there is nothing else to complete before checkout.
     const orderItems = cartItems as CartLine[];
-    const hasIncompleteItems = orderItems.some(item => !(item.yards ?? item.size));
-
-    if (hasIncompleteItems) {
-      toast.error("Please select yards for all items before proceeding!");
-      return;
-    }
 
     // Prepare order data matching backend structure exactly
     const orderData = {
@@ -243,9 +211,6 @@ const CartPage = () => {
         image: item.img,
         price: item.price,
         product: item.id,
-        yards: item.yards ?? item.size ?? null,
-        size: item.yards ?? item.size ?? null,
-        colors: item.colors || []
       })),
       // No totals are sent: the server prices the order (VAT setting,
       // per-seller delivery) and never trusts client figures.
@@ -332,7 +297,6 @@ const CartPage = () => {
                   item={item}
                   onRemove={openRemoveModal}
                   onUpdateQuantity={updateItemQuantity}
-                  onUpdateYards={updateItemYards}
                   isRemoving={removingItems.has(item.id)}
                 />
               ))}
@@ -493,7 +457,7 @@ const CartPage = () => {
                   <div className="text-left">
                     <h4 className="line-clamp-2 font-semibold text-gray-800 dark:text-white">{itemToRemove.title}</h4>
                     <p className="text-sm text-gray-500 dark:text-gray-400">
-                      Yards: {itemToRemove.yards ?? itemToRemove.size ?? 'Not selected'} | Qty: {itemToRemove.quantity}
+                      {pieceLengthLabel(itemToRemove) ? `${pieceLengthLabel(itemToRemove)} per piece | ` : ""}Qty: {itemToRemove.quantity}
                     </p>
                     <p className="text-lg font-bold text-primary">
                       {formatCedi((Number(itemToRemove.price) * itemToRemove.quantity))}

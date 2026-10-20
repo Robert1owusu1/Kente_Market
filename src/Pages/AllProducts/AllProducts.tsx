@@ -10,7 +10,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { ProductGridSkeleton } from '../../components/loader/Skeleton';
 import ProductCard from '../../components/ProductCard/ProductCard';
 import { toCartItem } from '../../utils/cartItem';
-import { yardOptionsFor, evenYardsFrom } from '../../utils/yards';
+import { pieceYards } from '../../utils/yards';
 import Seo from '../../components/Seo/Seo';
 import type { Product } from '../../types/domain';
 
@@ -100,10 +100,9 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
 
   const getUniqueSizes = () => {
     if (!products || products.length === 0) return [];
-    const sizes = products.flatMap(p => p.sizes || []).filter(Boolean);
-    // The sidebar groups these under "Yards" — keep only even yardage so
-    // legacy clothing sizes ("S", "M", "L") never appear as yard values.
-    return evenYardsFrom(sizes);
+    // Piece lengths sellers package their Kente in (e.g. 6, 12 yards).
+    const lengths = products.map(p => pieceYards(p)).filter((n): n is number => n !== null);
+    return [...new Set(lengths)].sort((a, b) => a - b).map(String);
   };
 
   const getUniquePrintTypes = () => {
@@ -133,7 +132,7 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
     // listing adds the first offered length; the product page lets buyers pick.
     // Same cart shape as the product page (utils/cartItem) — no invented
     // material / print / production-time values.
-    const cartItem = toCartItem(product, yardOptionsFor(product)[0], 1);
+    const cartItem = toCartItem(product, 1);
     addToCart(cartItem);
     
     if (handleOrderPopup) {
@@ -166,8 +165,8 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
 
     if (selectedSizes.length > 0) {
       filtered = filtered.filter(product => {
-        const productSizes = product.sizes || [];
-        return productSizes.length === 0 || productSizes.some(size => selectedSizes.includes(size));
+        const length = pieceYards(product);
+        return length !== null && selectedSizes.includes(String(length));
       });
     }
 
@@ -518,7 +517,7 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
 
             {allSizes.length > 0 && (
               <div className="mt-6">
-                <h3 className="font-semibold text-gray-800 dark:text-white mb-3">Yards</h3>
+                <h3 className="font-semibold text-gray-800 dark:text-white mb-3">Piece length</h3>
                 <div className="flex flex-wrap gap-2">
                   {allSizes.map(size => (
                     <button

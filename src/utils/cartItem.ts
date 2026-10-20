@@ -4,16 +4,18 @@
 // adds the identical item.
 import type { CartPayload } from "../Context/CartContext";
 import type { Product } from "../types/domain";
-import { yardOptionsFor } from "./yards";
+import { pieceYards } from "./yards";
 
-export const toCartItem = (product: Product, yards: string, quantity: number): CartPayload => ({
+export const toCartItem = (product: Product, quantity: number): CartPayload => ({
   ...product,
-  // Strip variant choices: the buyer's only decision is the yardage.
+  // Kente is sold as the seller's packaged piece: the buyer's only decision
+  // is how many. No colour, size or length is chosen; `yards` is the piece
+  // length the seller set, carried for display.
   colors: [],
   colorsAvailable: [],
   sizes: [],
-  yards,
-  yardsAvailable: yardOptionsFor(product),
+  yards: pieceYards(product),
+  yardsAvailable: [],
   threadTypes: product.threadTypes,
   dominantThread: product.dominantThread,
   quantity,

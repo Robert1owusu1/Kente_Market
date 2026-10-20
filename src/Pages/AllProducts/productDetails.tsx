@@ -10,7 +10,7 @@ import Seo from "../../components/Seo/Seo";
 import { useSelector } from "react-redux";
 import type { RootState } from "../../store";
 import AskModal from "../../components/Messages/AskModal";
-import { yardOptionsFor } from "../../utils/yards";
+import { pieceLengthLabel } from "../../utils/yards";
 import { toCartItem } from "../../utils/cartItem";
 import tryOnService, { type TryOnEligibility } from "../../ai-tryon/api/tryOnService";
 import { useWishlistToggle } from "../../hooks/useWishlistToggle";
@@ -26,9 +26,9 @@ const ProductDetails = () => {
   const apiError = error as { data?: { message?: string }; error?: string } | undefined;
 
  // Local states (sync with product once it loads)
-  // Kente is pre-designed: buyers pick YARDS ONLY — never a colour or size
-  // (colour choices belong to the customize flow, gated by the vendor).
-  const [selectedYards, setSelectedYards] = useState("");
+  // Kente is sold as the seller's packaged piece (e.g. 6 yards for one
+  // price): buyers choose only how many. Another length or colours is a
+  // custom request (the customize flow, offered when the seller allows it).
   const [quantity, setQuantity] = useState(1);
   const [showAsk, setShowAsk] = useState(false);
   // AI try-on eligibility is decided by the server for THIS product; null
@@ -52,7 +52,6 @@ const ProductDetails = () => {
 
   useEffect(() => {
     if (product) {
-      setSelectedYards(yardOptionsFor(product)[0]);
       setQuantity(1);
     }
   }, [product]);
@@ -77,12 +76,12 @@ const ProductDetails = () => {
     );
 
   const handleAddToCart = () => {
-    addToCart(toCartItem(product, selectedYards, quantity));
+    addToCart(toCartItem(product, quantity));
     // Optionally navigate to cart or open drawer
   };
 
   const colors = product.colors || product.colorsAvailable || [];
-  const yardsOptions = yardOptionsFor(product);
+  const pieceLength = pieceLengthLabel(product);
 
   // Honest stock signal: 0 => sold out, low threshold => "almost gone".
   const stockRaw = product.in_stock ?? product.stock;
@@ -197,7 +196,12 @@ const ProductDetails = () => {
             {product.description || "No description available."}
           </p>
           <div className="flex flex-wrap items-center gap-3 mb-6">
-            <p className="text-2xl font-semibold text-gray-900 dark:text-white">GH₵{product.price}</p>
+            <p className="text-2xl font-semibold text-gray-900 dark:text-white">
+              GH₵{product.price}
+              <span className="ml-2 text-sm font-normal text-gray-600 dark:text-gray-300">
+                per piece{pieceLength ? ` (${pieceLength})` : ""}
+              </span>
+            </p>
             {isOutOfStock ? (
               <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-900/20 rounded-full px-3 py-1">
                 <FaExclamationTriangle /> Sold out
@@ -226,31 +230,6 @@ const ProductDetails = () => {
             </div>
           )}
 
-          {/* Yards selector */}
-          {yardsOptions.length > 0 && (
-            <div className="mb-4">
-              <label className="block text-sm font-medium mb-2">Yards:</label>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Kente is measured in yards (even numbers).</p>
-              <div className="flex flex-wrap gap-2" role="group" aria-label="Yards selection">
-                {yardsOptions.map((yd, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => setSelectedYards(String(yd))}
-                    className={`px-4 py-2 rounded-lg border-2 transition-all duration-200 ${
-                      selectedYards === String(yd)
-                        ? "border-gray-900 bg-gray-900 text-white dark:border-primary dark:bg-primary dark:text-gray-900"
-                        : "border-gray-300 dark:border-gray-600 text-gray-800 dark:text-white hover:border-primary"
-                    }`}
-                    aria-label={`${yd} yards`}
-                    aria-pressed={selectedYards === String(yd)}
-                  >
-                    {yd}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
           {/* Thread composition */}
           {((product.threadTypes && product.threadTypes.length > 0) || product.dominantThread) && (
             <div className="mb-6">
@@ -266,7 +245,7 @@ const ProductDetails = () => {
 
           {/* Quantity selector */}
           <div className="mb-6">
-            <label className="block text-sm font-medium mb-2">Quantity:</label>
+            <label className="block text-sm font-medium mb-2">Quantity (pieces):</label>
             <div className="flex items-center bg-gray-100 dark:bg-gray-700 rounded-lg w-fit">
               <button
                 onClick={() => setQuantity(Math.max(1, quantity - 1))}
@@ -313,7 +292,7 @@ const ProductDetails = () => {
               <button
                 onClick={() =>
                   navigate(
-                    `/ai-tryon?product=${product.id}${selectedYards ? `&yards=${encodeURIComponent(selectedYards)}` : ""}`,
+                    `/ai-tryon?product=${product.id}`,
                   )
                 }
                 disabled={!tryOn.eligible}
@@ -365,7 +344,7 @@ const ProductDetails = () => {
               className="w-full mt-3 px-6 py-3 border-2 border-amber-700 text-amber-800 dark:border-primary dark:text-amber-300 rounded-xl font-semibold hover:bg-amber-50 dark:hover:bg-gray-800 transition flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <FaMagic />
-              Customize This Kente (Choose Colours, Thread & Yards)
+              Need another length or colours? Request a custom piece
             </button>
           )}
         </div>

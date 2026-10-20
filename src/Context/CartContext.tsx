@@ -71,7 +71,6 @@ type CartAction =
   | { type: "REMOVE_FROM_CART"; payload: { id: number | string } }
   | { type: "UPDATE_ITEM_QUANTITY"; payload: { id: number | string; quantity: number } }
   | { type: "UPDATE_ITEM_SIZE"; payload: { id: number | string; size: string } }
-  | { type: "UPDATE_ITEM_YARDS"; payload: { id: number | string; yards: number | string } }
   | { type: "UPDATE_ITEM_COLORS"; payload: { id: number | string; colors: string[] } }
   | { type: "CLEAR_CART" }
   | { type: "LOAD_FROM_SERVER"; payload: CartItem[] };
@@ -82,7 +81,6 @@ interface CartContextValue {
   removeItem: (id: number | string) => void;
   updateItemQuantity: (id: number | string, quantity: number) => void;
   updateItemSize: (id: number | string, size: string) => void;
-  updateItemYards: (id: number | string, yards: number | string) => void;
   updateItemColors: (id: number | string, colors: string[]) => void;
   clearCart: () => void;
   getTotalPrice: () => number;
@@ -113,30 +111,11 @@ const cartReducer = (state: CartState, action: CartAction): CartState => {
   switch (action.type) {
     case "ADD_TO_CART": {
       const newItem = action.payload;
-      const selectedYards =
-        newItem.yards ??
-        newItem.selectedSize ??
-        newItem.yardsAvailable?.[0] ??
-        newItem.sizes?.[0] ??
-        null;
-      // `selectedSize` is stored as a string (or null) so sizes and yardage
-      // render/type identically wherever they are read.
-      const selectedSize =
-        newItem.selectedSize || (selectedYards === null ? null : String(selectedYards));
-
-      // Dedupe keys must be symmetric with what's STORED: kente payloads no
-      // longer send `selectedColor` (pre-designed cloth — yardage only), so an
-      // incoming `undefined` has to match the `null` a stored line carries, or
-      // every re-add spawns a duplicate row. "default" is a legacy placeholder
-      // color from old card payloads — never treat it as a real variant.
-      const normColor = (v?: string | null) => (v && v !== "default" ? v : null);
-      const existingIndex = state.cartItems.findIndex(
-        (item) =>
-          item.id === newItem.id &&
-          normColor(item.selectedColor) === normColor(newItem.selectedColor) &&
-          String(item.yards ?? item.selectedSize ?? "") ===
-            String(selectedYards ?? "")
-      );
+      // Kente is sold as the seller's packaged piece: one product is one
+      // line, whatever older payloads say about colour or yardage. `yards` is
+      // the piece length (display only), never a buyer choice.
+      const pieceYards = newItem.yards ?? null;
+      const existingIndex = state.cartItems.findIndex((item) => String(item.id) === String(newItem.id));
 
       if (existingIndex !== -1) {
         return {
@@ -158,8 +137,8 @@ const cartReducer = (state: CartState, action: CartAction): CartState => {
             quantity: newItem.quantity || 1,
             price: Number(newItem.price) || 0,
             basePrice: Number(newItem.basePrice) || Number(newItem.price) || 0,
-            selectedColor: newItem.selectedColor || newItem.colorsAvailable?.[0] || null,
-            selectedSize,
+            selectedColor: null,
+            selectedSize: null,
             // Selected colors (what checkout validates and the order carries).
             // Some card add-to-cart payloads only include colorsAvailable —
             // derive the selection from the auto-picked color so checkout is
@@ -170,8 +149,8 @@ const cartReducer = (state: CartState, action: CartAction): CartState => {
                 : newItem.colorsAvailable?.length && (newItem.selectedColor || newItem.colorsAvailable[0])
                   ? [newItem.selectedColor || newItem.colorsAvailable[0]]
                   : [],
-            yards: selectedYards,
-            yardsAvailable: newItem.yardsAvailable || newItem.sizes || [],
+            yards: pieceYards,
+            yardsAvailable: [],
             colorsAvailable: newItem.colorsAvailable || [],
             sizes: newItem.sizes || [],
             threadTypes: newItem.threadTypes || [],
@@ -210,16 +189,6 @@ const cartReducer = (state: CartState, action: CartAction): CartState => {
         cartItems: state.cartItems.map((item) =>
           item.id === action.payload.id
             ? { ...item, size: action.payload.size, selectedSize: action.payload.size, yards: action.payload.size }
-            : item
-        ),
-      };
-
-    case "UPDATE_ITEM_YARDS":
-      return {
-        ...state,
-        cartItems: state.cartItems.map((item) =>
-          item.id === action.payload.id
-            ? { ...item, yards: action.payload.yards, selectedSize: String(action.payload.yards) }
             : item
         ),
       };
@@ -330,10 +299,6 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
     dispatch({ type: "UPDATE_ITEM_SIZE", payload: { id, size } });
   };
 
-  const updateItemYards = (id: number | string, yards: number | string) => {
-    dispatch({ type: "UPDATE_ITEM_YARDS", payload: { id, yards } });
-  };
-
   const updateItemColors = (id: number | string, colors: string[]) => {
     dispatch({ type: "UPDATE_ITEM_COLORS", payload: { id, colors } });
   };
@@ -365,7 +330,6 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
         removeItem,
         updateItemQuantity,
         updateItemSize,
-        updateItemYards,
         updateItemColors,
         clearCart,
         getTotalPrice,

@@ -40,8 +40,12 @@ export const remapServerLine = (item: CartItem): CartItem => {
 
 export const migrateCartItem = (item: CartItem): CartItem => {
   let next = remapServerLine(item);
-  if (next.yards === undefined && (next.selectedSize || next.size)) {
-    next = { ...next, yards: next.selectedSize || next.size };
+  // Lines saved before Kente was sold as a packaged piece carry the yardage
+  // the BUYER picked (in selectedSize/size). That is not the piece length the
+  // seller set, so drop it rather than show it as one; the price was always
+  // per product, so nothing the buyer pays changes.
+  if (next.selectedSize || next.size) {
+    next = { ...next, yards: null, selectedSize: null, size: null, yardsAvailable: [] } as typeof next;
   }
   return normalizeColors(next);
 };

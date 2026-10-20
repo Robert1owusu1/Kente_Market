@@ -1,10 +1,10 @@
 import React, { useState } from "react";
-import { FaDownload, FaSlidersH, FaShoppingCart, FaRedo, FaExternalLinkAlt, FaInfoCircle } from "react-icons/fa";
-import { Link } from "react-router-dom";
+import { FaDownload, FaSlidersH, FaShoppingCart, FaRedo, FaExternalLinkAlt, FaInfoCircle, FaBolt, FaLock, FaCheck, FaHandSparkles } from "react-icons/fa";
+import { Link, useNavigate } from "react-router-dom";
 import { useCart } from "../Context/CartContext";
 import { toCartItem } from "../utils/cartItem";
 import { resolveImageUrl } from "../utils/imageUrl";
-import { yardOptionsFor } from "../utils/yards";
+import { pieceLengthLabel } from "../utils/yards";
 import type { Product } from "../types/domain";
 import "./AiTryOnStyles.css";
 
@@ -13,24 +13,27 @@ interface TryOnPreviewProps {
   resultImage: string;
   /** The product that was tried on — every action below refers to it. */
   product: Product;
-  /** Yardage the customer picked on the product page, if any. */
-  yards: string | null;
   onTryAgain: () => void;
 }
 
-const TryOnPreview = ({ originalImage, resultImage, product, yards, onTryAgain }: TryOnPreviewProps) => {
+const TryOnPreview = ({ originalImage, resultImage, product, onTryAgain }: TryOnPreviewProps) => {
   const { addToCart } = useCart();
+  const navigate = useNavigate();
   const [compareMode, setCompareMode] = useState(false);
   const [sliderPos, setSliderPos] = useState(50);
   const [added, setAdded] = useState(false);
 
   const productUrl = `/product/${product.id}`;
-  // Only add straight to the cart when the yardage chosen on the product page
-  // is one this product actually offers; otherwise send the customer back to
-  // choose it there.
-  const validYards = yards && yardOptionsFor(product).includes(yards) ? yards : null;
+  // Kente is sold as the seller's packaged piece: the customer chooses only
+  // how many, right here, without going back to the product page.
+  const pieceLength = pieceLengthLabel(product);
   const stockRaw = product.in_stock ?? product.stock;
-  const isOutOfStock = stockRaw !== undefined && stockRaw !== null && (Number(stockRaw) || 0) <= 0;
+  const stockLevel = stockRaw === undefined || stockRaw === null ? null : Number(stockRaw) || 0;
+  const isOutOfStock = stockLevel !== null && stockLevel <= 0;
+  const isLowStock = stockLevel !== null && stockLevel > 0 && stockLevel <= 5;
+  const maxQty = stockLevel === null ? 99 : Math.max(1, Math.min(99, stockLevel));
+  const [quantity, setQuantity] = useState(1);
+  const canBuy = !isOutOfStock;
 
   const handleSliderMove = (e: React.MouseEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -46,9 +49,15 @@ const TryOnPreview = ({ originalImage, resultImage, product, yards, onTryAgain }
   };
 
   const handleAddToCart = () => {
-    if (!validYards) return;
-    addToCart(toCartItem(product, validYards, 1));
+    if (!canBuy) return;
+    addToCart(toCartItem(product, quantity));
     setAdded(true);
+  };
+
+  const handleBuyNow = () => {
+    if (!canBuy) return;
+    if (!added) addToCart(toCartItem(product, quantity));
+    navigate("/cart");
   };
 
   return (
@@ -97,17 +106,85 @@ const TryOnPreview = ({ originalImage, resultImage, product, yards, onTryAgain }
           </div>
         </div>
 
-        {/* The real product */}
+        {/* The real product, and buying it */}
         <div className="md:col-span-2">
-          <p className="text-xs font-semibold uppercase tracking-wide text-primary mb-2">The actual product</p>
-          <img
-            src={resolveImageUrl(product.img)}
-            alt={product.title}
-            className="w-full rounded-xl object-cover max-h-72"
-          />
-          <h4 className="mt-3 font-semibold text-gray-800 dark:text-white">{product.title}</h4>
-          <p className="text-primary font-semibold text-lg">GH₵{product.price}</p>
-          {validYards && <p className="text-sm text-gray-500 dark:text-gray-400">{validYards} yards</p>}
+          <p className="text-lg font-bold text-gray-900 dark:text-white">Love how it looks? Make it yours.</p>
+          <div className="mt-3 flex gap-3">
+            <img
+              src={resolveImageUrl(product.img)}
+              alt={product.title}
+              className="h-24 w-24 flex-shrink-0 rounded-xl object-cover"
+            />
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-wide text-primary">The actual product</p>
+              <h4 className="font-semibold text-gray-800 dark:text-white">{product.title}</h4>
+              <p className="text-primary font-semibold text-lg">
+                GH₵{product.price}
+                <span className="ml-1 text-sm font-normal text-gray-600 dark:text-gray-300">per piece{pieceLength ? ` (${pieceLength})` : ""}</span>
+              </p>
+            </div>
+          </div>
+
+          {!isOutOfStock && (
+            <div className="mt-4">
+              <p id="tryon-qty-label" className="text-sm font-medium text-gray-800 dark:text-gray-100">Quantity (pieces)</p>
+              <div className="mt-2 flex w-fit items-center rounded-lg bg-gray-100 dark:bg-gray-700" role="group" aria-labelledby="tryon-qty-label">
+                <button
+                  type="button"
+                  onClick={() => { setQuantity((q) => Math.max(1, q - 1)); setAdded(false); }}
+                  disabled={quantity <= 1}
+                  aria-label="Decrease quantity"
+                  className="min-h-10 min-w-10 rounded-l-lg text-lg disabled:opacity-40"
+                >
+                  −
+                </button>
+                <span className="w-10 text-center font-bold" aria-live="polite">{quantity}</span>
+                <button
+                  type="button"
+                  onClick={() => { setQuantity((q) => Math.min(maxQty, q + 1)); setAdded(false); }}
+                  disabled={quantity >= maxQty}
+                  aria-label="Increase quantity"
+                  className="min-h-10 min-w-10 rounded-r-lg text-lg disabled:opacity-40"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+          )}
+
+          {isLowStock && (
+            <p className="mt-3 text-sm font-medium text-amber-800 dark:text-amber-300">Only {stockLevel} left in stock.</p>
+          )}
+
+          {isOutOfStock ? (
+            <Link to={productUrl} className="aitryon-btn-secondary mt-4 inline-flex w-full justify-center">Sold out — view product</Link>
+          ) : (
+            <div className="mt-4 flex flex-col gap-2">
+              <button type="button" onClick={handleBuyNow} disabled={!canBuy} className="aitryon-btn-primary w-full justify-center">
+                <FaBolt className="mr-2" aria-hidden="true" /> Buy Now
+              </button>
+              {added ? (
+                <Link to="/cart" className="aitryon-btn-secondary inline-flex w-full justify-center">
+                  <FaCheck className="mr-2" aria-hidden="true" /> Added — go to cart
+                </Link>
+              ) : (
+                <button type="button" onClick={handleAddToCart} disabled={!canBuy} className="aitryon-btn-secondary w-full justify-center">
+                  <FaShoppingCart className="mr-2" aria-hidden="true" /> Add to Cart
+                </button>
+              )}
+            </div>
+          )}
+
+          <ul className="mt-4 space-y-1.5 text-sm text-gray-600 dark:text-gray-300">
+            <li className="flex items-start gap-2">
+              <FaHandSparkles className="mt-0.5 flex-shrink-0 text-primary" aria-hidden="true" />
+              {product.vendorBusinessName ? `Authentic Kente sold by ${product.vendorBusinessName}` : "Authentic Kente from Ghana"}
+            </li>
+            <li className="flex items-start gap-2">
+              <FaLock className="mt-0.5 flex-shrink-0 text-primary" aria-hidden="true" />
+              Secure payment with Paystack
+            </li>
+          </ul>
         </div>
       </div>
 
@@ -115,23 +192,6 @@ const TryOnPreview = ({ originalImage, resultImage, product, yards, onTryAgain }
         <Link to={productUrl} className="aitryon-btn-secondary inline-flex">
           <FaExternalLinkAlt className="mr-2" /> View Product
         </Link>
-        {isOutOfStock ? (
-          <Link to={productUrl} className="aitryon-btn-secondary inline-flex">Sold out — view product</Link>
-        ) : validYards ? (
-          added ? (
-            <Link to="/cart" className="aitryon-btn-primary inline-flex bg-green-600 hover:bg-green-700">
-              <FaShoppingCart className="mr-2" /> Added — go to cart
-            </Link>
-          ) : (
-            <button onClick={handleAddToCart} className="aitryon-btn-primary bg-green-600 hover:bg-green-700">
-              <FaShoppingCart className="mr-2" /> Add to Cart
-            </button>
-          )
-        ) : (
-          <Link to={productUrl} className="aitryon-btn-primary inline-flex bg-green-600 hover:bg-green-700">
-            <FaShoppingCart className="mr-2" /> Choose Options
-          </Link>
-        )}
         <button onClick={onTryAgain} className="aitryon-btn-secondary">
           <FaRedo className="mr-2" /> Try Again
         </button>

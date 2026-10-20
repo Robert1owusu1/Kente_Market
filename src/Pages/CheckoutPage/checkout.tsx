@@ -688,12 +688,8 @@ export default function CheckoutPage() {
           price: (item as { price?: unknown }).price,
           product: (item as { id?: unknown; product?: unknown; productId?: unknown }).id
             ?? (item as { product?: unknown }).product ?? (item as { productId?: unknown }).productId,
-          // Same variant fields the cart page sends (CartPage.tsx): without
-          // them an order created on this direct-navigation path reached the
-          // vendor with no yardage.
-          yards: (item as { yards?: unknown; size?: unknown }).yards ?? (item as { size?: unknown }).size ?? null,
-          size: (item as { yards?: unknown; size?: unknown }).yards ?? (item as { size?: unknown }).size ?? null,
-          colors: (item as { colors?: unknown }).colors ?? [],
+          // No variant fields: Kente is sold as the seller's packaged piece
+          // and the server records its length from the product.
         })),
       } as unknown as Record<string, unknown>).unwrap() as unknown as {
         order?: { id?: unknown; totalAmount?: unknown }; id?: unknown; totalAmount?: unknown;

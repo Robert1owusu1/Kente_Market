@@ -10,7 +10,8 @@ import tryOnService, {
   type TryOnEligibility,
   type TryOnJob,
 } from "./api/tryOnService";
-import { useGetProductsDetailsQuery } from "../slices/productsApiSlice";
+import { useGetProductsDetailsQuery, useGetProductsQuery } from "../slices/productsApiSlice";
+import { useGetTryOnStatusQuery } from "../slices/tryOnApiSlice";
 import { resolveImageUrl } from "../utils/imageUrl";
 import type { Product } from "../types/domain";
 import "./AiTryOnStyles.css";
@@ -19,9 +20,9 @@ import "./AiTryOnStyles.css";
  * AI Virtual Try-On, always for ONE catalog product.
  *
  * The product comes from the URL (`/ai-tryon?product=<id>`, set by the
- * product page's "Try It On" button) and never changes for the life of the
- * session: there is no garment picker, no sample gallery and no fallback
- * catalog. The browser sends only the customer's photo and that id; the
+ * product page's "Try It On" button, a product card, or the picker shown when
+ * the page is opened from the menu with no product) and never changes for the
+ * life of the session: the AI never picks or substitutes the garment. The browser sends only the customer's photo and that id; the
  * server resolves the product's own image, runs the job, binds the result to
  * the product and serves the image privately to this customer.
  */
@@ -34,7 +35,6 @@ const parseProductId = (raw: string | null): number | null => {
 const AiTryOn = () => {
   const [searchParams] = useSearchParams();
   const productId = parseProductId(searchParams.get("product"));
-  const yards = searchParams.get("yards");
 
   return (
     <div className="aitryon-page py-12">
@@ -56,29 +56,90 @@ const AiTryOn = () => {
           <ChooseProductFirst />
         ) : (
           // keyed so a different product starts a completely fresh session
-          <ProductTryOn key={productId} productId={productId} yards={yards} />
+          <ProductTryOn key={productId} productId={productId} />
         )}
       </div>
     </div>
   );
 };
 
-/** Landing state for the nav/footer links: try-on starts from a product. */
-const ChooseProductFirst = () => (
-  <div className="max-w-xl mx-auto bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 text-center">
-    <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-3">
-      Start from a product you love
-    </h2>
-    <ol className="text-left text-gray-600 dark:text-gray-300 space-y-2 mb-6 list-decimal list-inside">
-      <li>Browse the marketplace and open a Kente piece.</li>
-      <li>Tap <strong>Try It On</strong> on its page.</li>
-      <li>Upload a photo and see that piece on you.</li>
-    </ol>
-    <Link to="/products" className="aitryon-btn-primary inline-flex">
-      Browse Kente →
-    </Link>
-  </div>
-);
+const PICKER_SIZE = 12;
+
+const inStock = (p: Product) => {
+  const raw = p.in_stock ?? p.stock;
+  return raw === undefined || raw === null || (Number(raw) || 0) > 0;
+};
+
+/**
+ * Landing state for the menu links: pick the piece to try on right here.
+ * Each choice opens this page for that product; the server still decides
+ * whether that product can be tried on.
+ */
+const ChooseProductFirst = () => {
+  const { data: status, isLoading: statusLoading } = useGetTryOnStatusQuery();
+  const enabled = Boolean(status?.enabled);
+  const { data, isLoading, isError } = useGetProductsQuery({ limit: PICKER_SIZE * 2 }, { skip: !enabled });
+  // The list endpoint answers with a plain array (or { products } when a
+  // count is requested).
+  const list: Product[] = Array.isArray(data) ? data : data?.products || data?.docs || [];
+  const products = list.filter(inStock).slice(0, PICKER_SIZE);
+
+  if (statusLoading || (enabled && isLoading)) {
+    return (
+      <div className="flex justify-center py-16" role="status" aria-label="Loading">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-4 border-b-4 border-primary" />
+      </div>
+    );
+  }
+  if (!enabled) {
+    return <Notice message="AI try-on is offline right now. You can still browse and buy every piece in the marketplace." />;
+  }
+
+  return (
+    <div className="max-w-5xl mx-auto">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6">
+        <h2 className="text-xl font-semibold text-gray-800 dark:text-white">Choose a piece to try on</h2>
+        <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+          Pick a Kente piece, add a photo of yourself, and see it on you in about a minute.
+        </p>
+        {isError || products.length === 0 ? (
+          <p className="mt-6 text-gray-600 dark:text-gray-300">
+            We couldn't load pieces to try on right now.{" "}
+            <Link to="/products" className="text-primary underline">Browse the marketplace</Link> and tap <strong>Try on</strong> on any piece.
+          </p>
+        ) : (
+          <ul className="mt-5 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+            {products.map((p) => (
+              <li key={p.id}>
+                <Link
+                  to={`/ai-tryon?product=${encodeURIComponent(String(p.id))}`}
+                  className="group block rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden hover:border-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+                >
+                  <img
+                    src={resolveImageUrl(p.img)}
+                    alt=""
+                    loading="lazy"
+                    className="aspect-square w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                  />
+                  <span className="block p-3">
+                    <span className="block text-sm font-medium text-gray-800 dark:text-white line-clamp-2">{p.title || p.name}</span>
+                    <span className="block text-sm text-primary font-semibold">GH₵{p.price}</span>
+                    <span className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-primary">
+                      <FaMagic aria-hidden="true" /> Try this on
+                    </span>
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+        <p className="mt-6 text-center">
+          <Link to="/products" className="aitryon-btn-secondary inline-flex">See all Kente</Link>
+        </p>
+      </div>
+    </div>
+  );
+};
 
 const Notice = ({ message, productId }: { message: string; productId?: number }) => (
   <div className="max-w-xl mx-auto bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 text-center">
@@ -113,10 +174,9 @@ const RUNNING_COPY: Record<string, string> = {
 
 interface ProductTryOnProps {
   productId: number;
-  yards: string | null;
 }
 
-const ProductTryOn = ({ productId, yards }: ProductTryOnProps) => {
+const ProductTryOn = ({ productId }: ProductTryOnProps) => {
   // The public product endpoint applies the same visibility rules as the
   // product page (approved product, approved vendor).
   const { data: product, isLoading, error: productError } = useGetProductsDetailsQuery(productId);
@@ -234,7 +294,6 @@ const ProductTryOn = ({ productId, yards }: ProductTryOnProps) => {
           originalImage={modelImage}
           resultImage={phase.imageUrl}
           product={product as Product}
-          yards={yards}
           onTryAgain={handleTryAgain}
         />
       </div>

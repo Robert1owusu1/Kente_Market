@@ -39,13 +39,21 @@ describe('remapServerLine', () => {
 });
 
 describe('migrateCartItem', () => {
-  test('size backfills yards; default color never surfaces', () => {
+  test('a yardage the buyer picked on an old cart line is dropped, not shown as the piece length; default color never surfaces', () => {
     const r = migrateCartItem({
-      id: 3, quantity: 1, price: 50, selectedSize: '4',
+      id: 3, quantity: 1, price: 50, selectedSize: '4', yards: '4', yardsAvailable: ['2', '4'],
       selectedColor: 'default', colorsAvailable: ['blue'],
     } as unknown as CartItem);
-    expect(r.yards).toBe('4');
+    expect(r.yards).toBeNull();
+    expect(r.selectedSize).toBeNull();
+    expect(r.quantity).toBe(1);
+    expect(r.price).toBe(50);
     expect(r.colors).toEqual(['blue']);
+  });
+
+  test("a current line keeps the seller's piece length", () => {
+    const r = migrateCartItem({ id: 4, quantity: 2, price: 1000, yards: 6, selectedSize: null } as unknown as CartItem);
+    expect(r.yards).toBe(6);
   });
 });
 

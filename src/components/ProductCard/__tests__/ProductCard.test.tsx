@@ -35,6 +35,14 @@ describe('ProductCard', () => {
     expect(onToggleWishlist).toHaveBeenCalledWith(11);
   });
 
+  it('shows what one price buys: the piece length the seller set, nothing when unset', () => {
+    renderCard({ yards: '6.00' });
+    expect(screen.getByText('per piece · 6 yards')).toBeInTheDocument();
+    cleanup();
+    renderCard({});
+    expect(screen.queryByText(/per piece/)).not.toBeInTheDocument();
+  });
+
   it('a sold-out product cannot be added to the cart', () => {
     const { onAddToCart } = renderCard({ stock: 0 });
     const btn = screen.getByRole('button', { name: 'Adinkra Royal Stole is sold out' });

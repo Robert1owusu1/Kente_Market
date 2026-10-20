@@ -404,7 +404,7 @@ const OrderDetails = () => {
                   <p className="font-medium text-gray-900 dark:text-white truncate">{itemName(it)}</p>
                   {(it.selectedColor || it.selectedSize || it.yards) && (
                     <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {[it.selectedColor, it.yards != null ? `${it.yards} yd` : it.selectedSize]
+                      {[it.selectedColor, it.yards != null ? `${Number(it.yards)} yd per piece` : it.selectedSize]
                         .filter(Boolean).join(' / ')}
                     </p>
                   )}

@@ -12,7 +12,6 @@ import {
 import { ProductGridSkeleton } from "../loader/Skeleton";
 import ProductCard from "../ProductCard/ProductCard";
 import { toCartItem } from "../../utils/cartItem";
-import { yardOptionsFor } from "../../utils/yards";
 import type { Product } from "../../types/domain";
 
 interface TopProduct extends Product {
@@ -57,7 +56,7 @@ const TopProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
 
   const handleAddToCart = (product: TopProduct) => {
     // Kente is pre-designed: no colour/size choice — yardage only (even numbers).
-    const cartItem = toCartItem(product as unknown as Product, yardOptionsFor(product)[0], 1);
+    const cartItem = toCartItem(product as unknown as Product, 1);
     addToCart(cartItem);
 
     if (handleOrderPopup) {
