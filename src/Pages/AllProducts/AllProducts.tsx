@@ -289,6 +289,9 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
           <Brands />
         </div>
 
+        {/* Only while AI try-on is switched on: it tells shoppers to tap a
+            "Try It On" button that does not exist otherwise. */}
+        {tryOnEnabled && (
         <div className="bg-gradient-to-b from-gray-50 via-white to-gray-100 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 py-16">
       <div className="container mx-auto px-6">
         <div data-aos="fade-up" className="text-center">
@@ -307,6 +310,7 @@ const AllProducts = ({ handleOrderPopup }: { handleOrderPopup?: () => void }) =>
         </div>
       </div>
     </div>
+        )}
 
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-4 mb-8">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">

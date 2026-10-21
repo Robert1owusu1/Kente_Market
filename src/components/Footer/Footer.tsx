@@ -4,6 +4,7 @@ import { toast } from "react-toastify";
 import { useSubscribeNewsletterMutation } from "../../slices/miscApiSlice";
 import footerLogo from "../../assets/logo.png";
 import Banner from "../../assets/website/footer-pattern.webp";
+import { useTryOnEnabled } from "../../slices/tryOnApiSlice";
 import {
   FaFacebook,
   FaInstagram,
@@ -196,6 +197,9 @@ const SocialTiles = () => (
 
 const Footer = ({ className = '' }: { className?: string }) => {
   const year = new Date().getFullYear();
+  // AI try-on is linked only while the server has it switched on.
+  const tryOnEnabled = useTryOnEnabled();
+  const shopLinks = ShopLinks.filter((l) => l.link !== "/ai-tryon" || tryOnEnabled);
 
   return (
     <footer
@@ -254,7 +258,7 @@ const Footer = ({ className = '' }: { className?: string }) => {
 
           {/* Link columns */}
           <div className="lg:col-span-4 sm:col-span-2 grid grid-cols-2 gap-8">
-            <FooterLinkList heading="Shop" links={ShopLinks} />
+            <FooterLinkList heading="Shop" links={shopLinks} />
             <FooterLinkList heading="Explore" links={ExploreLinks} />
           </div>
 

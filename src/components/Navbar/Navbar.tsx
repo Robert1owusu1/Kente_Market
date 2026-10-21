@@ -20,6 +20,7 @@ import { useAppSelector, useAppDispatch } from "../../store";
 import type { Product } from "../../types/domain";
 import TestingModeNotice from "../TestingModeNotice/TestingModeNotice";
 import { formatCedi } from '../../utils/formatCurrency';
+import { useTryOnEnabled } from '../../slices/tryOnApiSlice';
 
 // Menu Configuration
 const Menu = [
@@ -90,6 +91,11 @@ const DarkMode = React.memo(function DarkMode() {
 
 // Main Navbar Component
 const Navbar = () => {
+  // AI try-on is offered only while the server has it switched on (see
+  // AI_TRYON_PROVIDER_SETUP.md); while it is off this link would open a page
+  // that only says it is offline.
+  const tryOnEnabled = useTryOnEnabled();
+  const menu = Menu.filter((item) => item.link !== "/ai-tryon" || tryOnEnabled);
   const searchRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const { cartItems, clearCart } = useCart();
@@ -657,7 +663,7 @@ const Navbar = () => {
           under ~940px. lg is the first breakpoint where it actually fits. */}
         <div className="flex justify-center">
           <ul className="lg:flex hidden items-center gap-4">
-            {Menu.map((data) => (
+            {menu.map((data) => (
               <li key={data.id}>
                 <a 
                   href={data.link} 
@@ -712,7 +718,7 @@ const Navbar = () => {
             </div>
 
             <ul className="flex flex-col px-3 pb-2">
-              {Menu.map((data) => (
+              {menu.map((data) => (
                 <li key={data.id}>
                   <a 
                     href={data.link} 

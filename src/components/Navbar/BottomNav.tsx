@@ -4,9 +4,12 @@ import { IoShirtOutline } from "react-icons/io5";
 import type { IconType } from "react-icons";
 import { Link, useLocation } from "react-router-dom";
 import { useCart } from "../../Context/CartContext";
+import { useTryOnEnabled } from "../../slices/tryOnApiSlice";
 
 const BottomNav = () => {
   const { pathname } = useLocation();
+  // Try-On only while the server has AI try-on switched on.
+  const tryOnEnabled = useTryOnEnabled();
   const { cartItems } = useCart();
   const cartCount = cartItems.reduce((total, item) => total + (Number(item.quantity) || 0), 0);
 
@@ -19,7 +22,7 @@ const BottomNav = () => {
     { to: "/products", icon: FaBox, label: "Products" },
     { to: "/cartpage", icon: FaCartShopping, label: "Cart", badge: cartCount },
     { to: "/profile", icon: FaUser, label: "Profile" },
-  ];
+  ].filter((link) => link.to !== "/ai-tryon" || tryOnEnabled);
 
   return (
     <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-900 shadow-t sm:hidden z-50 border-t border-gray-200 dark:border-gray-800 safe-bottom">
