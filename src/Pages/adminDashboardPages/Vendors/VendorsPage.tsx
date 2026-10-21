@@ -43,7 +43,12 @@ interface VendorRow {
   status: string;
   verificationLevel: string;
   badges: string[] | string;
+  domesticDelivery?: 'seller' | 'platform' | null;
+  internationalDelivery?: 'seller' | 'platform' | null;
 }
+
+const deliveredByLabel = (v?: 'seller' | 'platform' | null) =>
+  v === 'platform' ? 'Platform (hub)' : v === 'seller' ? 'Seller' : 'Not chosen';
 
 interface VendorEditor {
   vendor: VendorRow;
@@ -201,6 +206,7 @@ const VendorsPage = () => {
                   <th className="p-4">Business</th>
                   <th>Contact</th>
                   <th>Payout Method</th>
+                  <th>Delivers</th>
                   <th>Fee</th>
                   <th>Performance</th>
                   <th>Joined</th>
@@ -233,6 +239,10 @@ const VendorsPage = () => {
                             <span className="text-gray-500 dark:text-gray-400"> ({maskAccount(vr.accountNumber)})</span>
                           </>
                         )}
+                      </td>
+                      <td className="text-xs text-gray-800 dark:text-white">
+                        <p>Ghana: {deliveredByLabel(vr.domesticDelivery)}</p>
+                        <p>Abroad: {deliveredByLabel(vr.internationalDelivery)}</p>
                       </td>
                       <td className="text-sm text-gray-800 dark:text-white">
                         {((parseFloat(String(vr.platformFeeRate)) || 0) * 100).toFixed(1)}%

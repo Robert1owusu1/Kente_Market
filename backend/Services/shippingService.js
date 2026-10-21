@@ -273,6 +273,35 @@ const queryApplicableRates = async ({ originCountry = 'GH', destinationCountry, 
   return rates;
 };
 
+// ---------------------------------------------------------------------------
+// Who delivers: each seller chooses, separately for Ghana and for abroad,
+// whether they deliver themselves ('seller': their fee applies and is paid out
+// to them) or drop the parcel at the platform hub ('platform': the platform's
+// default fee applies and the platform keeps it). The platform's own products
+// are always delivered by the platform.
+// ---------------------------------------------------------------------------
+
+/** @param {any} v @returns {v is 'seller'|'platform'} */
+export const isDeliveredBy = (v) => v === 'seller' || v === 'platform';
+
+/**
+ * Who delivers this seller's parcels to a destination. A seller row without a
+ * choice (created before the setting existed) keeps the old behaviour: the
+ * seller delivers.
+ * @param {number|string|null} vendorId - seller user id; null = platform product
+ * @param {string} destinationCountry
+ * @returns {Promise<'seller'|'platform'>}
+ */
+export const getDeliveredBy = async (vendorId, destinationCountry) => {
+  if (vendorId == null) return 'platform';
+  const column = String(destinationCountry || '').toUpperCase() === 'GH' ? 'domesticDelivery' : 'internationalDelivery';
+  const [rows] = /** @type {[any[], any]} */ (await pool.execute(
+    `SELECT ${column} AS deliveredBy FROM vendors WHERE userId = ? LIMIT 1`,
+    [vendorId]
+  ));
+  return rows[0]?.deliveredBy === 'platform' ? 'platform' : 'seller';
+};
+
 /**
  * Chargeable international shipping in GHS for order creation/update.
  * Server-authoritative: the returned amount is what the order/escrow/Paystack
@@ -288,6 +317,8 @@ const queryApplicableRates = async ({ originCountry = 'GH', destinationCountry, 
  * @param {string} args.destinationCountry
  * @param {string} [args.destinationRegion]
  * @param {number|string|null} [args.vendorId]
+ * @param {'seller'|'platform'} [args.deliveredBy] - 'platform' prices the lane
+ *   at the platform default even for a seller with their own fee
  * @param {Array<{productId: number, qty: number, weightKg?: number}>} [args.items]
  * @param {number} [args.subtotal] - order subtotal in GHS
  * @returns {Promise<{ok: true, amountGHS: number, carrier: string, serviceLevel: string, isFree: boolean, staleRate: boolean, freeThresholdGHS: number|null}|{ok: false, status: number, code: string, message: string}>}
@@ -297,6 +328,7 @@ export const getChargeableShippingGHS = async ({
   destinationCountry,
   destinationRegion,
   vendorId = null,
+  deliveredBy = 'seller',
   items = [],
   subtotal = 0,
 }) => {
@@ -311,7 +343,9 @@ export const getChargeableShippingGHS = async ({
     const effectiveDate = today.toISOString().split('T')[0];
 
     const rates = await queryApplicableRates({
-      originCountry, destinationCountry: code, destinationRegion, vendorId, weightKg, effectiveDate,
+      originCountry, destinationCountry: code, destinationRegion,
+      vendorId: deliveredBy === 'platform' ? null : vendorId,
+      weightKg, effectiveDate,
     });
 
     // Candidate legs normalized to GHS: {amountGHS, thresholdGHS, carrier, serviceLevel}.
@@ -391,12 +425,16 @@ export const getChargeableShippingGHS = async ({
 };
 
 /**
- * Shipping for a whole order: every seller ships their own parcel, so each
- * seller group (and the platform's own products as one group) is charged its
- * own fee, resolved by getChargeableShippingGHS (seller's rate for the
- * country, else the platform default; with neither the lane is unavailable), with that
- * group's subtotal tested against its free-shipping threshold. The order is
- * charged the sum. Quote and booking both call this, so they cannot differ.
+ * Shipping for a whole order: every seller's items travel as their own
+ * parcel, so each seller group (and the platform's own products as one group)
+ * is charged its own fee, with that group's subtotal tested against its
+ * free-shipping threshold. The order is charged the sum. Quote and booking
+ * both call this, so they cannot differ.
+ *
+ * The fee follows who delivers (getDeliveredBy): a seller who delivers
+ * themselves is charged their own fee for the country, else the platform
+ * default; a parcel the platform delivers is always charged the platform
+ * default. With no fee at all the lane is unavailable.
  *
  * Fail-closed everywhere, Ghana included: a missing table, FX rate or fee
  * refuses the order instead of pricing it from a hard-coded figure.
@@ -405,27 +443,81 @@ export const getChargeableShippingGHS = async ({
  * @param {string} args.destinationCountry
  * @param {string|null} [args.destinationRegion]
  * @param {Array<{vendorId: number|string|null, items: Array<{productId: number, qty: number}>, subtotalGHS: number}>} args.groups
- * @returns {Promise<{ok: true, amountGHS: number, groups: Array<{vendorId: number|null, amountGHS: number, isFree: boolean, freeThresholdGHS: number|null, subtotalGHS: number}>}|{ok: false, status: number, code: string, message: string}>}
+ * @returns {Promise<{ok: true, amountGHS: number, groups: OrderShippingGroup[]}|{ok: false, status: number, code: string, message: string}>}
  */
 export const getOrderShippingGHS = async ({ destinationCountry, destinationRegion = null, groups }) => {
   const code = String(destinationCountry || '').toUpperCase();
-  /** @type {Array<{vendorId: number|null, amountGHS: number, isFree: boolean, freeThresholdGHS: number|null, subtotalGHS: number}>} */
+  /** @type {OrderShippingGroup[]} */
   const out = [];
   let total = 0;
   for (const g of groups) {
     const subtotalGHS = Math.round((Number(g.subtotalGHS) || 0) * 100) / 100;
+    const vendorId = g.vendorId == null ? null : Number(g.vendorId);
+    const deliveredBy = await getDeliveredBy(vendorId, code);
     const ship = await getChargeableShippingGHS({
       destinationCountry: code,
       destinationRegion: destinationRegion || undefined,
-      vendorId: g.vendorId ?? null,
+      vendorId,
+      deliveredBy,
       items: g.items,
       subtotal: subtotalGHS,
     });
     if (!ship.ok) return ship;
-    out.push({ vendorId: g.vendorId == null ? null : Number(g.vendorId), amountGHS: ship.amountGHS, isFree: ship.isFree, freeThresholdGHS: ship.freeThresholdGHS, subtotalGHS });
+    out.push({ vendorId, deliveredBy, amountGHS: ship.amountGHS, isFree: ship.isFree, freeThresholdGHS: ship.freeThresholdGHS, subtotalGHS });
     total += ship.amountGHS;
   }
   return { ok: true, amountGHS: Math.round(total * 100) / 100, groups: out };
+};
+
+/**
+ * @typedef {Object} OrderShippingGroup
+ * @property {number|null} vendorId - null = the platform's own products
+ * @property {'seller'|'platform'} deliveredBy
+ * @property {number} amountGHS
+ * @property {boolean} isFree
+ * @property {number|null} freeThresholdGHS
+ * @property {number} subtotalGHS
+ */
+
+/**
+ * Freeze who delivers each seller's parcel, and its fee, on the order. Later
+ * changes to a seller's setting never move an order that was already placed.
+ * Replaces the order's rows, so a pre-payment address change re-freezes them.
+ * The platform's own products need no row (always platform-delivered).
+ * @param {any} executor - pool or transaction connection
+ * @param {number|string} orderId
+ * @param {OrderShippingGroup[]} groups
+ */
+export const saveOrderDeliveryParts = async (executor, orderId, groups) => {
+  await executor.execute(`DELETE FROM order_delivery_parts WHERE orderId = ?`, [orderId]);
+  for (const g of groups) {
+    if (g.vendorId == null) continue;
+    await executor.execute(
+      `INSERT INTO order_delivery_parts (orderId, vendorId, deliveredBy, shippingFee) VALUES (?, ?, ?, ?)`,
+      [orderId, g.vendorId, g.deliveredBy, Math.round((Number(g.amountGHS) || 0) * 100) / 100]
+    );
+  }
+};
+
+/**
+ * The frozen delivery parts of an order.
+ * @param {number|string} orderId
+ * @param {any} [executor]
+ * @returns {Promise<Array<{vendorId: number, deliveredBy: 'seller'|'platform', shippingFee: number, handedOverAt: any, hubReceivedAt: any}>>}
+ */
+export const getOrderDeliveryParts = async (orderId, executor = pool) => {
+  const [rows] = /** @type {[any[], any]} */ (await executor.execute(
+    `SELECT vendorId, deliveredBy, shippingFee, handedOverAt, hubReceivedAt
+       FROM order_delivery_parts WHERE orderId = ?`,
+    [orderId]
+  ));
+  return rows.map((r) => ({
+    vendorId: Number(r.vendorId),
+    deliveredBy: r.deliveredBy,
+    shippingFee: Number(r.shippingFee) || 0,
+    handedOverAt: r.handedOverAt || null,
+    hubReceivedAt: r.hubReceivedAt || null,
+  }));
 };
 
 /**
@@ -551,8 +643,11 @@ export const getShippingOptions = async (input) => {
     const weightKg = await calculateOrderWeight(items);
     const effectiveDate = today.toISOString().split('T')[0];
 
+    const deliveredBy = await getDeliveredBy(vendorId ?? null, destinationCountry);
     const rates = await queryApplicableRates({
-      originCountry, destinationCountry, destinationRegion, vendorId, weightKg, effectiveDate,
+      originCountry, destinationCountry, destinationRegion,
+      vendorId: deliveredBy === 'platform' ? null : vendorId,
+      weightKg, effectiveDate,
     });
 
     // Tables exist but no fee is configured for this lane: not available,
@@ -648,7 +743,10 @@ export const getShippingOptions = async (input) => {
 };
 
 /**
- * Check if a vendor can ship to a destination
+ * Check if a vendor's items can be delivered to a destination. A seller who
+ * delivers abroad themselves must list the country; when the platform
+ * delivers for them, the platform's own price list decides (a country with no
+ * platform fee is then refused when the order is priced).
  * @param {number|string} vendorId
  * @param {string} countryCode
  * @param {string} [region]
@@ -657,6 +755,7 @@ export const getShippingOptions = async (input) => {
 export const checkVendorDestination = async (vendorId, countryCode, region) => {
   const code = String(countryCode || "").toUpperCase();
   if (!code) return false;
+  if (code !== 'GH' && (await getDeliveredBy(vendorId, code)) === 'platform') return true;
   const [rows] = await pool.execute(
     `SELECT isActive FROM vendor_shipping_destinations
      WHERE vendorId = ? AND countryCode = ?

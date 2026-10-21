@@ -285,7 +285,8 @@ browser crawl 351 pages × 3 full runs + 2 targeted runs, 0 console errors / fai
 | SHIP-2 | No admin or seller control of delivery fees | FIXED — admin platform default per country; seller override per country; audit-logged |
 | SHIP-3 | Multi-seller carts paid one shipping charge (first seller's rate) | CHANGED (owner decision) — each seller's parcel is charged its own fee; free-delivery threshold per seller |
 | SHIP-4 | Checkout showed Ghana's flat shipping for diaspora addresses (lower than charged) | FIXED (b068e98) |
-| SHIP-5 | Who receives the delivery fee | DECIDED 2026-10-19 (owner): the platform/admin keeps all delivery fees, including fees sellers set; seller payouts stay item-only (no code change) |
+| SHIP-5 | Who receives the delivery fee | REVISED 2026-10-21 (owner): each seller chooses, for Ghana and for abroad, who delivers. Seller delivers → their fee (else the platform default) is charged and paid to them as a commission-free `shipping` escrow allocation. Platform delivers → seller drops the parcel at the hub, the platform default is charged and the platform keeps it. Frozen per order in `order_delivery_parts` (migrateDeliveryResponsibility.js). Supersedes the 2026-10-19 decision that the platform keeps all delivery fees |
+| SHIP-8 | Hub parcels | Seller marks packed → "dropped at the hub"; admin Delivery Hub page receives the parcel and moves that seller's parcel on (shipped/arrived/delivered, tracking); hub address set there |
 | SHIP-6 | 15% VAT is added to export orders | DECIDED 2026-10-19 (owner): keep as is (no code change) |
 | SHIP-7 | Pickup orders are charged the delivery fee | DECIDED 2026-10-19 (owner): pickup stays charged as part of the delivery fee (no code change) |
 

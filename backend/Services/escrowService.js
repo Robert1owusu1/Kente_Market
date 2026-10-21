@@ -11,7 +11,7 @@ import { recordFinancialEvent } from './ledgerService.js';
 import { reconcileTerminalOrderCharge } from './paymentReconciliationService.js';
 import { ESCROW_RELEASE_DAYS } from '../config/businessConfig.js';
 import { CHARGED_CURRENCY } from './paymentCurrency.js';
-import { buildEscrowAllocationRows, allocationFees, readCommissionSnapshot } from './commissionService.js';
+import { buildEscrowAllocationRows, buildDeliveryFeeRows, allocationFees, readCommissionSnapshot } from './commissionService.js';
 import { recordReferralForOrder, recordPaymentInstrument, adjustReferralForRefund } from './referralService.js';
 import Notification from '../models/notificationModel.js';
 import Coupon from '../models/couponModel.js';
@@ -189,8 +189,14 @@ export const createEscrowAllocations = async (orderId, items, { advanceRatio = 0
   const { rows, snapshot } = await buildEscrowAllocationRows(pool, items, { advanceRatio, discount, couponVendorId });
   // Frozen per-line record (P, r, F, Da, Ds) for revenue, partial refunds and referrals.
   await pool.execute(`UPDATE orders SET commissionSnapshot = ? WHERE id = ?`, [JSON.stringify(snapshot), orderId]);
+  // Sellers who deliver their own parcels are owed the delivery fee frozen on
+  // the order at checkout (order_delivery_parts); the platform keeps the rest.
+  const [parts] = await pool.execute(
+    `SELECT vendorId, deliveredBy, shippingFee FROM order_delivery_parts WHERE orderId = ?`,
+    [orderId]
+  );
   let created = 0;
-  for (const r of rows) {
+  for (const r of [...rows, ...buildDeliveryFeeRows(parts)]) {
     const [insert] = await pool.execute(
       `INSERT IGNORE INTO escrow_allocations
          (orderId, vendorId, amount, platformFeeRate, platformFee, payoutAmount, status, allocationType)
@@ -897,7 +903,7 @@ export const flagReleasedAllocationsAfterRefund = async (orderId, vendorId) => {
     const scoped = vendorId != null;
     const [rows] = await pool.execute(
       `SELECT id, vendorId, payoutAmount FROM escrow_allocations
-        WHERE orderId = ? AND status = 'released'${scoped ? ' AND vendorId = ?' : ''}`,
+        WHERE orderId = ? AND status = 'released'${scoped ? " AND vendorId = ? AND allocationType <> 'shipping'" : ''}`,
       scoped ? [orderId, parseInt(vendorId, 10)] : [orderId]
     );
     const list = /** @type {any[]} */ (rows);
@@ -936,17 +942,19 @@ export const flagReleasedAllocationsAfterRefund = async (orderId, vendorId) => {
  */
 export const voidVendorEscrow = async (orderId, vendorId) => {
   const vid = parseInt(vendorId, 10);
+  // A partial refund returns the seller's goods only, never the delivery fee,
+  // so a seller who delivered keeps their 'shipping' allocation.
   await pool.execute(
     `UPDATE escrow_allocations
      SET status = 'failed', reason = 'voided (partial vendor refund)', updated_at = CURRENT_TIMESTAMP
-     WHERE orderId = ? AND vendorId = ? AND status IN ('pending', 'held')`,
+     WHERE orderId = ? AND vendorId = ? AND status IN ('pending', 'held') AND allocationType <> 'shipping'`,
     [orderId, vid]
   );
 
   const [availableRows] = await pool.execute(
     `SELECT id
      FROM escrow_allocations
-     WHERE orderId = ? AND vendorId = ? AND status = 'available'`,
+     WHERE orderId = ? AND vendorId = ? AND status = 'available' AND allocationType <> 'shipping'`,
     [orderId, vid]
   );
 

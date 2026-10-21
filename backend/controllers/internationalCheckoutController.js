@@ -553,7 +553,7 @@ export const getShippingOptions = async (req, res) => {
     // DB prices, so checkout and the cart can show the total that will be
     // charged. Display only: the order is still re-priced on the server.
     let chargeableShippingGHS = null;
-    /** @type {Array<{amountGHS: number, isFree: boolean, freeThresholdGHS: number|null, subtotalGHS: number}>} */
+    /** @type {Array<{amountGHS: number, isFree: boolean, freeThresholdGHS: number|null, subtotalGHS: number, deliveredBy: string}>} */
     let shippingGroups = [];
     if (lines.length > 0 && result?.supported !== false) {
       const ship = await getOrderShippingGHS({
@@ -563,7 +563,7 @@ export const getShippingOptions = async (req, res) => {
       });
       if (ship.ok) {
         chargeableShippingGHS = ship.amountGHS;
-        shippingGroups = ship.groups.map((g) => ({ amountGHS: g.amountGHS, isFree: g.isFree, freeThresholdGHS: g.freeThresholdGHS, subtotalGHS: g.subtotalGHS }));
+        shippingGroups = ship.groups.map((g) => ({ amountGHS: g.amountGHS, isFree: g.isFree, freeThresholdGHS: g.freeThresholdGHS, subtotalGHS: g.subtotalGHS, deliveredBy: g.deliveredBy }));
       }
     }
 

@@ -6,6 +6,8 @@ import { useApplyVendorMutation, useGetMyVendorProfileQuery } from '../../slices
 import Loader from '../../components/loader/Loader';
 import Footer from '../../components/Footer/Footer';
 import { FaStore, FaShieldAlt, FaCheckCircle, FaUniversity, FaMobileAlt } from 'react-icons/fa';
+import DeliveryChoice from '../../components/Shipping/DeliveryChoice';
+import type { DeliveredBy } from '../../slices/deliveryApiSlice';
 
 const inputCls =
   'w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 focus:outline-hidden focus:border-primary text-gray-900 dark:text-white';
@@ -28,6 +30,8 @@ type ApplyForm = {
   bankCode: string;
   momoProvider: string;
   momoNumber: string;
+  domesticDelivery: DeliveredBy | '';
+  internationalDelivery: DeliveredBy | '';
 };
 
 const VendorApply = () => {
@@ -43,6 +47,8 @@ const VendorApply = () => {
         bankCode?: string;
         momoProvider?: string;
         momoNumber?: string;
+        domesticDelivery?: DeliveredBy | null;
+        internationalDelivery?: DeliveredBy | null;
         [key: string]: unknown;
       };
     };
@@ -61,6 +67,8 @@ const VendorApply = () => {
     bankCode: '',
     momoProvider: '',
     momoNumber: '',
+    domesticDelivery: '',
+    internationalDelivery: '',
   });
 
   useEffect(() => {
@@ -74,6 +82,8 @@ const VendorApply = () => {
         bankCode: existing.vendor.bankCode || '',
         momoProvider: existing.vendor.momoProvider || '',
         momoNumber: existing.vendor.momoNumber || '',
+        domesticDelivery: existing.vendor.domesticDelivery || '',
+        internationalDelivery: existing.vendor.internationalDelivery || '',
       });
     }
   }, [existing]);
@@ -94,6 +104,10 @@ const VendorApply = () => {
       }
     } else if (!form.bankName || !form.accountNumber || !form.bankCode) {
       toast.error('Please fill in all bank fields');
+      return;
+    }
+    if (!form.domesticDelivery || !form.internationalDelivery) {
+      toast.error('Choose who delivers your orders, within Ghana and outside Ghana');
       return;
     }
     try {
@@ -231,6 +245,17 @@ const VendorApply = () => {
                 </div>
               </>
             )}
+
+            <div>
+              <h2 className="text-base font-semibold text-gray-900 dark:text-white">Who delivers your orders?</h2>
+              <p className="mt-1 mb-3 text-sm text-gray-600 dark:text-gray-400">
+                You can change this later from your Shipping page. It applies to new orders.
+              </p>
+              <DeliveryChoice
+                value={{ domesticDelivery: form.domesticDelivery || null, internationalDelivery: form.internationalDelivery || null }}
+                onChange={(scope, value) => setForm((f) => ({ ...f, [scope]: value }))}
+              />
+            </div>
 
             <button
               type="submit"

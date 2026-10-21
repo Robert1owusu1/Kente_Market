@@ -34,7 +34,7 @@ import { auditFromRequest } from "../utils/auditLog.js";
 import { recordFinancialEvent } from "../Services/ledgerService.js";
 import { newOrderNumber } from "../utils/orderNumber.js";
 import { validateDestinationAddress, validateDestinationCountry } from "../utils/destinationValidation.js";
-import { checkVendorDestination, getOrderShippingGHS, groupLinesByVendor } from "../Services/shippingService.js";
+import { checkVendorDestination, getOrderShippingGHS, groupLinesByVendor, saveOrderDeliveryParts } from "../Services/shippingService.js";
 import { CHARGED_CURRENCY } from "../Services/paymentCurrency.js";
 import { buildRefundClaim } from "../utils/refundClaim.js";
 
@@ -278,8 +278,10 @@ export const restoreStockForOrder = async (items, { skipProductIds = new Set(), 
  * default, or the fallback table), with its own free-shipping threshold —
  * never a client figure (Services/shippingService.js#getOrderShippingGHS).
  *
- * Returns { shippingGHS } or { error } (caller must 4xx/5xx + roll back any
- * reservation, mirroring the other creation gates).
+ * Returns { shippingGHS, groups } or { error } (caller must 4xx/5xx + roll
+ * back any reservation, mirroring the other creation gates). `groups` says,
+ * per seller, who delivers and the fee — the caller freezes it on the order
+ * (saveOrderDeliveryParts).
  *
  * @param {string} destCode - validated ISO country code
  * @param {any} shippingAddress - raw address (for region)
@@ -318,7 +320,7 @@ const resolveOrderShipping = async (destCode, shippingAddress, lines) => {
   if (!ship.ok) {
     return { error: { status: ship.status, code: ship.code, message: ship.message } };
   }
-  return { shippingGHS: ship.amountGHS };
+  return { shippingGHS: ship.amountGHS, groups: ship.groups };
 };
 
 // @desc    Create new order
@@ -514,6 +516,8 @@ export const addOrderItems = async (req, res) => {
     // VAT rate is the admin setting (settings.tax_rate); fail-closed if unset.
     let { subtotal, tax } = calcOrderTotals(items, { taxRate: await getVatRate() });
     let shipping = 0;
+    /** @type {any[]} */
+    let deliveryGroups = [];
     {
       const intl = await resolveOrderShipping(destCountryCode, req.body.shippingAddress, items);
       if (intl.error) {
@@ -532,6 +536,7 @@ export const addOrderItems = async (req, res) => {
         return res.status(intl.error.status).json({ message: intl.error.message, code: intl.error.code });
       }
       shipping = intl.shippingGHS;
+      deliveryGroups = intl.groups;
     }
 
     // Coupon: discount is computed server-side and never trusted from the client.
@@ -659,6 +664,10 @@ export const addOrderItems = async (req, res) => {
     }
 
     newOrder = await Order.create(orderData);
+
+    // Who delivers each seller's parcel and its fee, frozen before escrow is
+    // allocated (a seller who delivers is owed that fee).
+    await saveOrderDeliveryParts(pool, newOrder.id, deliveryGroups);
 
     // N-7/V-04: ONE use was already taken above, atomically, and is recorded on
     // the order (couponUseState = 1). Payment/settlement only flips that to 2 —
@@ -866,6 +875,10 @@ export const updateOrder = async (req, res) => {
   let newCouponSlotTaken = false;
   let newCouponId = null;
   let replacedCouponId = null;
+  // Set when a pre-payment address change re-priced delivery: who delivers
+  // each seller's parcel (and its fee) is re-frozen after the update.
+  /** @type {any[] | null} */
+  let resyncedDeliveryGroups = null;
   try {
     if (!isValidId(req.params.id)) {
       return res.status(400).json({ message: "Invalid order ID" });
@@ -1007,6 +1020,7 @@ export const updateOrder = async (req, res) => {
           return res.status(synced.error.status).json({ message: synced.error.message, code: synced.error.code });
         }
         const syncedShipping = synced.shippingGHS;
+        resyncedDeliveryGroups = synced.groups;
         const syncDiscount = Number(existingOrder.discount ?? 0);
         const syncTax = Number(existingOrder.tax ?? calcTax(syncSubtotal, await getVatRate()));
         const syncApplied = round2(Math.min(Math.max(syncDiscount, 0), syncSubtotal));
@@ -1185,6 +1199,9 @@ export const updateOrder = async (req, res) => {
     // If this throws, the outer catch hands back the reservation taken above
     // (the order still points at the old coupon, so the slot would be orphaned).
     const updatedOrder = await Order.update(req.params.id, body);
+    if (resyncedDeliveryGroups) {
+      await saveOrderDeliveryParts(pool, req.params.id, resyncedDeliveryGroups);
+    }
 
     if (newCouponSlotTaken) {
       newCouponSlotTaken = false;
@@ -1209,10 +1226,13 @@ export const updateOrder = async (req, res) => {
     // Re-allocate net of the new discount. Only runs on the owner-coupon
     // path (body.discount set above while order is unpaid); held/released
     // allocations are never touched by reallocateOrderEscrow.
-    if (req.user.role !== 'admin' && couponCode && body.discount !== undefined) {
+    // A pre-payment address change re-priced delivery: a seller who delivers
+    // is owed the new fee, so their delivery-fee allocation is rebuilt too.
+    const couponChanged = req.user.role !== 'admin' && couponCode && body.discount !== undefined;
+    if (couponChanged || resyncedDeliveryGroups) {
       try {
         const storedItems = updatedOrder && Array.isArray(updatedOrder.items) ? updatedOrder.items : [];
-        await reallocateOrderEscrow(req.params.id, storedItems, { discount: body.discount });
+        await reallocateOrderEscrow(req.params.id, storedItems, { discount: couponChanged ? body.discount : Number(updatedOrder?.discount ?? existingOrder.discount ?? 0) });
       } catch (reallocErr) {
         console.warn(` Coupon escrow realloc failed for order ${req.params.id}: ${reallocErr.message}`);
         try {
@@ -1221,8 +1241,8 @@ export const updateOrder = async (req, res) => {
             await Notification.create({
               userId: admin.id,
               type: 'system',
-              title: 'Escrow realloc failed after coupon change',
-              message: `Order #${req.params.id} discount changed but escrow re-allocation failed. Re-run allocation manually before payment.`,
+              title: 'Escrow realloc failed after order change',
+              message: `Order #${req.params.id} discount or delivery changed but escrow re-allocation failed. Re-run allocation manually before payment.`,
               link: `/admin/orders`,
             });
           }

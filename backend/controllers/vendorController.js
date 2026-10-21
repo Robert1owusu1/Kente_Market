@@ -10,6 +10,7 @@ import { resolveCommissionRate } from '../Services/commissionService.js';
 import { hasInvalidYards, INVALID_YARDS_MESSAGE, pieceLengthError, kenteDetailsError } from '../utils/yards.js';
 import { toNonNegativeInt } from '../utils/nonNegativeInt.js';
 import { clearCache } from '../middleware/cacheMiddleware.js';
+import Setting from '../models/settingModel.js';
 
 // Create a URL-safe slug from a business name (Ghanaian accents transliterated
 // to ASCII; everything else stripped).
@@ -31,6 +32,18 @@ export const applyVendor = async (req, res) => {
     const { businessName, contactPhone, payoutType, bankName, accountNumber, bankCode, momoProvider, momoNumber } = req.body;
 
     if (!businessName) return res.status(400).json({ message: 'Business name is required' });
+
+    // Who delivers: required on a new application, optional on an update
+    // (changed later from the seller's Shipping page).
+    const { domesticDelivery, internationalDelivery } = req.body;
+    const { isDeliveredBy } = await import('../Services/shippingService.js');
+    const existingVendor = await Vendor.findByUserId(req.user.id);
+    for (const [value, label] of [[domesticDelivery, 'within Ghana'], [internationalDelivery, 'outside Ghana']]) {
+      if (value === undefined && existingVendor) continue;
+      if (!isDeliveredBy(value)) {
+        return res.status(400).json({ message: `Choose who delivers your orders ${label}: you, or the platform` });
+      }
+    }
 
     const type = payoutType === 'momo' ? 'momo' : 'bank';
 
@@ -85,7 +98,11 @@ export const applyVendor = async (req, res) => {
       });
     }
 
-    const existing = await Vendor.findByUserId(req.user.id);
+    const existing = existingVendor;
+    const deliveryFields = {
+      ...(domesticDelivery !== undefined ? { domesticDelivery } : {}),
+      ...(internationalDelivery !== undefined ? { internationalDelivery } : {}),
+    };
 
     // Build the payout fields based on the chosen type. Values from the
     // non-selected method are cleared so stale bank/momo data never lingers.
@@ -113,6 +130,7 @@ export const applyVendor = async (req, res) => {
         businessName,
         contactPhone: contactPhone || existing.contactPhone,
         ...payoutFields,
+        ...deliveryFields,
         recipientCode: recipientCode || existing.recipientCode,
         recipientType: recipientType || existing.recipientType,
       });
@@ -122,6 +140,7 @@ export const applyVendor = async (req, res) => {
         businessName,
         contactPhone,
         ...payoutFields,
+        ...deliveryFields,
         recipientCode,
         recipientType,
         platformFeeRate: PLATFORM_FEE_RATE,
@@ -1444,5 +1463,52 @@ export const removeVendorShippingRate = async (req, res) => {
   } catch (error) {
     console.error('Error removing vendor shipping rate:', error.message);
     res.status(500).json({ message: 'Failed to remove delivery fee' });
+  }
+};
+
+// @desc    Who delivers the seller's parcels, and the hub address for drop-offs
+// @route   GET /api/vendors/shipping/delivery
+// @access  Private (vendor, manage_orders)
+export const getVendorDeliverySettings = async (req, res) => {
+  try {
+    const vendor = await Vendor.findByUserId(req.user.id);
+    if (!vendor) return res.status(404).json({ message: 'No seller profile found' });
+    res.json({
+      domesticDelivery: vendor.domesticDelivery,
+      internationalDelivery: vendor.internationalDelivery,
+      hubAddress: (await Setting.get('delivery.hubAddress')) || '',
+    });
+  } catch (error) {
+    console.error('Error fetching delivery settings:', error.message);
+    res.status(500).json({ message: 'Failed to fetch delivery settings' });
+  }
+};
+
+// @desc    Change who delivers the seller's parcels (applies to new orders only;
+//          orders already placed keep the choice they were priced with)
+// @route   PUT /api/vendors/shipping/delivery
+// @access  Private (vendor, manage_orders)
+export const updateVendorDeliverySettings = async (req, res) => {
+  try {
+    const { isDeliveredBy } = await import('../Services/shippingService.js');
+    const vendor = await Vendor.findByUserId(req.user.id);
+    if (!vendor) return res.status(404).json({ message: 'No seller profile found' });
+    const patch = {};
+    for (const key of ['domesticDelivery', 'internationalDelivery']) {
+      const value = req.body?.[key];
+      if (value === undefined) continue;
+      if (!isDeliveredBy(value)) return res.status(400).json({ message: `${key} must be 'seller' or 'platform'` });
+      patch[key] = value;
+    }
+    if (Object.keys(patch).length === 0) return res.status(400).json({ message: 'Nothing to change' });
+    const updated = await Vendor.update(vendor.id, patch);
+    res.json({
+      message: 'Delivery settings saved. They apply to new orders.',
+      domesticDelivery: updated.domesticDelivery,
+      internationalDelivery: updated.internationalDelivery,
+    });
+  } catch (error) {
+    console.error('Error saving delivery settings:', error.message);
+    res.status(500).json({ message: 'Failed to save delivery settings' });
   }
 };

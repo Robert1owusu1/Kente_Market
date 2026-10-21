@@ -87,6 +87,8 @@ export const apiSlice = createApi({
     'VendorShipping',
     'ShippingRates',
     'ExchangeRates',
+    'DeliverySettings',
+    'HubParcels',
     'Payout',
     'Referral',
   ],

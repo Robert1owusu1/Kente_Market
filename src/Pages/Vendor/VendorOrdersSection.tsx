@@ -1,12 +1,14 @@
 // Pages/Vendor/VendorOrdersSection.jsx
 // Integrated order management with filters, status tracking, export
 import { useState } from 'react';
-import { FaTruck, FaMapMarkerAlt, FaBoxOpen, FaCheckCircle, FaClock, FaStickyNote, FaCalendarAlt, FaSpinner, FaSearch, FaDownload } from "react-icons/fa";
+import { FaTruck, FaMapMarkerAlt, FaBoxOpen, FaCheckCircle, FaClock, FaStickyNote, FaCalendarAlt, FaSpinner, FaSearch, FaDownload, FaWarehouse } from "react-icons/fa";
 import { toast } from 'react-toastify';
 import {
   useGetVendorOrdersQuery,
   useUpdateVendorOrderStatusMutation,
 } from '../../slices/vendorsApiSlice';
+import { useGetDeliverySettingsQuery, useHandOverToHubMutation } from '../../slices/deliveryApiSlice';
+import { formatCedi } from '../../utils/formatCurrency';
 import Loader from '../../components/loader/Loader';
 import { describeMutationError } from '../../utils/mutationError';
 import type { KeyedState, Order, OrderItem } from '../../types/domain';
@@ -22,7 +24,13 @@ interface VendorOrderRow extends Order {
   // total, no buyer surname/email/addresses, no payment reference).
   ownSubtotal?: number;
   itemCount?: number;
-  shipping?: { city?: string | null; deliveryMethod?: string | null; pickupStation?: string | null; phone?: string | null };
+  // Full address only when the seller delivers this parcel themselves.
+  shipping?: {
+    city?: string | null; deliveryMethod?: string | null; pickupStation?: string | null; phone?: string | null;
+    recipient?: string | null; address?: string | null; region?: string | null; postalCode?: string | null; country?: string | null;
+  };
+  // Who delivers this seller's parcel, frozen when the order was placed.
+  delivery?: { deliveredBy: 'seller' | 'platform'; fee: number | null; handedOverAt: string | null; hubReceivedAt: string | null };
   productionNote?: string;
   created_at?: string;
   myStatus?: string;
@@ -57,6 +65,8 @@ const VendorOrdersSection = () => {
   const { data, isLoading, refetch } = useGetVendorOrdersQuery();
   const orders = (data || []) as VendorOrderRow[];
   const [updateStatus, { isLoading: updating }] = useUpdateVendorOrderStatusMutation();
+  const [handOver, { isLoading: handingOver }] = useHandOverToHubMutation();
+  const { data: deliverySettings } = useGetDeliverySettingsQuery();
   const [busyOrderId, setBusyOrderId] = useState<number | string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
@@ -87,6 +97,21 @@ const VendorOrdersSection = () => {
       const { message, uncertain } = describeMutationError(error, 'Failed to update order status');
       toast.error(message);
       if (uncertain) refetch(); // the server may have applied it — show the truth
+    } finally {
+      setBusyOrderId(null);
+    }
+  };
+
+  const handleHandOver = async (order: VendorOrderRow) => {
+    setBusyOrderId(order.id);
+    try {
+      await handOver(order.id).unwrap();
+      toast.success(`Order ${order.orderNumber}: marked as dropped off at the hub`);
+      refetch();
+    } catch (error) {
+      const { message, uncertain } = describeMutationError(error, 'Could not record the drop-off');
+      toast.error(message);
+      if (uncertain) refetch();
     } finally {
       setBusyOrderId(null);
     }
@@ -192,9 +217,16 @@ const VendorOrdersSection = () => {
         <div className="space-y-4">
           {filteredOrders.map((order) => {
             const isCustomised = (Array.isArray(order.items) ? (order.items as VendorOrderItem[]) : []).some((it) => !!it.isCustomizable);
-            const currentIdx = PIPELINE.indexOf(order.orderStatus || '');
-            const step = currentIdx >= 0 && currentIdx < PIPELINE.length - 1 ? nextStatus[order.orderStatus || ''] : null;
+            // The seller moves their own parcel; on a multi-seller order the
+            // order status follows the slowest seller.
+            const ownStatus = order.myStatus || order.orderStatus || '';
+            const currentIdx = PIPELINE.indexOf(ownStatus);
+            const viaHub = order.delivery?.deliveredBy === 'platform';
+            // A hub parcel: the seller packs it and drops it off; the platform does the rest.
+            const step = currentIdx >= 0 && currentIdx < PIPELINE.length - 1 && !(viaHub && currentIdx >= 1)
+              ? nextStatus[ownStatus] : null;
             const lastNote = order.productionNote;
+            const busy = (updating || handingOver) && busyOrderId === order.id;
 
             return (
               <div key={order.id} className="bg-white dark:bg-gray-800 rounded-xl shadow-xs border border-gray-200 dark:border-gray-700 p-4 sm:p-5">
@@ -235,8 +267,32 @@ const VendorOrdersSection = () => {
                   ))}
                 </div>
 
-                {/* Delivery preference */}
-                {(() => {
+                {/* Who delivers this parcel */}
+                {viaHub ? (
+                  <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
+                    <p className="flex items-center gap-1.5 font-medium"><FaWarehouse aria-hidden="true" /> The platform delivers this parcel</p>
+                    <p className="mt-1 text-xs">
+                      Pack it and drop it at the hub{deliverySettings?.hubAddress ? `: ${deliverySettings.hubAddress}` : '.'}
+                    </p>
+                  </div>
+                ) : order.shipping?.address || order.shipping?.recipient ? (
+                  <div className="mb-3 rounded-lg bg-gray-50 p-3 text-sm text-gray-700 dark:bg-gray-700/40 dark:text-gray-200">
+                    <p className="flex items-center gap-1.5 font-medium"><FaTruck aria-hidden="true" /> You deliver this parcel</p>
+                    <p className="mt-1 text-xs leading-relaxed">
+                      {[order.shipping.recipient, order.shipping.address, order.shipping.city, order.shipping.region, order.shipping.postalCode, order.shipping.country]
+                        .filter(Boolean).join(', ')}
+                      {order.shipping.phone ? ` · ${order.shipping.phone}` : ''}
+                    </p>
+                    {typeof order.delivery?.fee === 'number' && order.delivery.fee > 0 && (
+                      <p className="mt-1 text-xs text-green-700 dark:text-green-400">
+                        Delivery fee paid to you with this sale: {formatCedi(order.delivery.fee)}
+                      </p>
+                    )}
+                  </div>
+                ) : null}
+
+                {/* Delivery preference (the seller's concern only when they deliver) */}
+                {!viaHub && (() => {
                   const sa = (order.shipping as { deliveryMethod?: string; pickupStation?: string } | undefined)
                     || (typeof order.shippingAddress === 'string'
                     ? (() => { try { return JSON.parse(order.shippingAddress as string); } catch { return {}; } })()
@@ -282,31 +338,33 @@ const VendorOrdersSection = () => {
                   </p>
                 )}
 
-                {/* Parcel tracking number (your shipment only) */}
-                <div className="mb-4 flex flex-col sm:flex-row sm:items-end gap-3">
-                  <div className="flex-1">
-                    <label className="flex items-center gap-1 text-xs text-gray-600 dark:text-gray-400 mb-1">
-                      <FaTruck /> Tracking number
-                    </label>
-                    <input
-                      type="text"
-                      value={trackingNumber[String(order.id)] ?? order.myTracking ?? ''}
-                      onChange={(e) => setTrackingNumber((s) => ({ ...s, [String(order.id)]: e.target.value }))}
-                      placeholder="e.g. DHL 1234567890"
-                      className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    />
+                {/* Parcel tracking number (your shipment only; the platform adds its own for hub parcels) */}
+                {!viaHub && (
+                  <div className="mb-4 flex flex-col sm:flex-row sm:items-end gap-3">
+                    <div className="flex-1">
+                      <label className="flex items-center gap-1 text-xs text-gray-600 dark:text-gray-400 mb-1">
+                        <FaTruck /> Tracking number
+                      </label>
+                      <input
+                        type="text"
+                        value={trackingNumber[String(order.id)] ?? order.myTracking ?? ''}
+                        onChange={(e) => setTrackingNumber((s) => ({ ...s, [String(order.id)]: e.target.value }))}
+                        placeholder="e.g. DHL 1234567890"
+                        className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      />
+                    </div>
+                    <div>
+                      <button
+                        onClick={() => handleProgress(order)}
+                        disabled={updating && busyOrderId === order.id}
+                        className="inline-flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-60 font-medium"
+                      >
+                        {updating && busyOrderId === order.id ? <FaSpinner className="animate-spin" /> : <FaCheckCircle />}
+                        Save Update
+                      </button>
+                    </div>
                   </div>
-                  <div>
-                    <button
-                      onClick={() => handleProgress(order)}
-                      disabled={updating && busyOrderId === order.id}
-                      className="inline-flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-60 font-medium"
-                    >
-                      {updating && busyOrderId === order.id ? <FaSpinner className="animate-spin" /> : <FaCheckCircle />}
-                      Save Update
-                    </button>
-                  </div>
-                </div>
+                )}
 
                 {/* Customised production controls */}
                 {isCustomised && order.orderStatus !== 'delivered' && (
@@ -359,12 +417,26 @@ const VendorOrdersSection = () => {
                   {step ? (
                     <button
                       onClick={() => handleStatus(order, step.status)}
-                      disabled={updating && busyOrderId === order.id}
+                      disabled={busy}
                       className="inline-flex items-center gap-2 px-4 py-2 text-sm bg-gradient-to-r from-blue-600 to-[#92400e] text-white rounded-lg hover:opacity-90 disabled:opacity-60 font-medium"
                     >
-                      {updating && busyOrderId === order.id ? <FaSpinner className="animate-spin" /> : <step.Icon />}
-                      {step.label}
+                      {busy ? <FaSpinner className="animate-spin" /> : <step.Icon />}
+                      {viaHub ? 'Mark as Packed' : step.label}
                     </button>
+                  ) : viaHub && ownStatus === 'packaging' && !order.delivery?.handedOverAt ? (
+                    <button
+                      onClick={() => handleHandOver(order)}
+                      disabled={busy}
+                      className="inline-flex items-center gap-2 px-4 py-2 text-sm bg-gradient-to-r from-blue-600 to-[#92400e] text-white rounded-lg hover:opacity-90 disabled:opacity-60 font-medium"
+                    >
+                      {busy ? <FaSpinner className="animate-spin" /> : <FaWarehouse />}
+                      I dropped it at the hub
+                    </button>
+                  ) : viaHub && ownStatus !== 'delivered' ? (
+                    <span className="inline-flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400">
+                      <FaWarehouse />
+                      {order.delivery?.hubReceivedAt ? 'At the hub — the platform is delivering it' : 'Dropped off — waiting for the hub to confirm'}
+                    </span>
                   ) : (
                     <span className="inline-flex items-center gap-1.5 text-sm text-gray-400">
                       {order.orderStatus === 'delivered'

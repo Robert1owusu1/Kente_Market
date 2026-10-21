@@ -6,7 +6,7 @@ import pool from "../config/db.js";
 import CustomRequest from "../models/customRequestModel.js";
 import Order from "../models/orderModel.js";
 import Notification from "../models/notificationModel.js";
-import { buildEscrowAllocationRows, allocationFees } from "../Services/commissionService.js";
+import { buildEscrowAllocationRows, buildDeliveryFeeRows, allocationFees } from "../Services/commissionService.js";
 import { recordFinancialEvent } from "../Services/ledgerService.js";
 import { CUSTOM_ADVANCE_RATIO } from "../config/businessConfig.js";
 import { issueCertificateForOrder } from "../Services/certificateService.js";
@@ -15,7 +15,7 @@ import { CHARGED_CURRENCY } from "../Services/paymentCurrency.js";
 import { newOrderNumber } from "../utils/orderNumber.js";
 import { round2, calcTax } from "../../shared/pricing.js";
 import { getVatRate, PricingConfigError } from "../Services/pricingConfig.js";
-import { getOrderShippingGHS, checkVendorDestination } from "../Services/shippingService.js";
+import { getOrderShippingGHS, checkVendorDestination, saveOrderDeliveryParts, isDeliveredBy } from "../Services/shippingService.js";
 import { validateDestinationCountry } from "../utils/destinationValidation.js";
 
 // Combine needed-for date + time into a contractually visible completion date.
@@ -284,9 +284,10 @@ export const priceRequest = async (req, res) => {
 
     const [upd] = await pool.execute(
       `UPDATE custom_requests
-          SET pricedSubtotal = ?, pricedTax = ?, pricedShipping = ?, pricedTotal = ?, pricedCountry = ?, pricedAt = NOW()
+          SET pricedSubtotal = ?, pricedTax = ?, pricedShipping = ?, pricedTotal = ?, pricedCountry = ?,
+              pricedDeliveredBy = ?, pricedAt = NOW()
         WHERE id = ? AND customerId = ? AND status = 'accepted'`,
-      [price, tax, ship.amountGHS, total, country, request.id, req.user.id]
+      [price, tax, ship.amountGHS, total, country, ship.groups[0].deliveredBy, request.id, req.user.id]
     );
     if (!upd.affectedRows) return res.status(409).json({ message: "This request can no longer be paid" });
     res.json({ subtotal: price, tax, shipping: ship.amountGHS, total, country, currency: CHARGED_CURRENCY });
@@ -361,6 +362,9 @@ export const checkoutRequest = async (req, res) => {
       tax: round2(parseFloat(request.pricedTax)),
       shipping: round2(parseFloat(request.pricedShipping)),
       total: round2(parseFloat(request.pricedTotal)),
+      // Who delivers, as priced (a request priced before this was recorded
+      // was priced on the seller's own fee: the seller delivers).
+      deliveredBy: isDeliveredBy(request.pricedDeliveredBy) ? request.pricedDeliveredBy : 'seller',
     };
 
     // SECURITY: Verify Paystack server-side that the charge succeeded, settled
@@ -520,7 +524,11 @@ export const checkoutRequest = async (req, res) => {
       discount: 0, // custom orders have no coupon discount
     });
     await connection.execute(`UPDATE orders SET commissionSnapshot = ? WHERE id = ?`, [JSON.stringify(snapshot), orderId]);
-    for (const r of allocationRows) {
+    // Who delivers and the delivery fee, frozen as priced; a seller who
+    // delivers is owed that fee (a 'shipping' allocation, held until delivery).
+    const deliveryParts = [{ vendorId: request.vendorId, deliveredBy: priced.deliveredBy, amountGHS: priced.shipping, shippingFee: priced.shipping }];
+    await saveOrderDeliveryParts(connection, orderId, /** @type {any} */ (deliveryParts));
+    for (const r of [...allocationRows, ...buildDeliveryFeeRows(deliveryParts)]) {
       await connection.execute(
         `INSERT IGNORE INTO escrow_allocations
            (orderId, vendorId, amount, platformFeeRate, platformFee, payoutAmount, status, allocationType)

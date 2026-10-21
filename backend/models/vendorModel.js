@@ -51,6 +51,11 @@ class Vendor {
     this.verificationLevel = data.verificationLevel || 'pending';
     this.badges = safeParse(data.badges) || [];
     this.weaverVideo = data.weaverVideo || null;
+    // Who delivers this seller's parcels: 'seller' (they deliver and are paid
+    // the delivery fee) or 'platform' (they drop parcels at the hub). Null only
+    // for rows created before the choice existed.
+    this.domesticDelivery = data.domesticDelivery || null;
+    this.internationalDelivery = data.internationalDelivery || null;
     // Joined user info
     this.firstName = data.firstName;
     this.lastName = data.lastName;
@@ -149,7 +154,7 @@ class Vendor {
       'recipientCode', 'recipientType', 'platformFeeRate', 'status',
       'slug', 'logo', 'coverImage', 'businessDescription', 'weaverStory',
       'yearsExperience', 'location', 'workshop', 'socialMedia',
-      'verificationLevel', 'badges'
+      'verificationLevel', 'badges', 'domesticDelivery', 'internationalDelivery'
     ];
     const cols = [];
     const placeholders = [];
@@ -176,7 +181,8 @@ class Vendor {
       'bankCode', 'momoProvider', 'momoNumber', 'recipientCode', 'recipientType',
       'platformFeeRate', 'status', 'slug', 'logo', 'coverImage',
       'businessDescription', 'weaverStory', 'yearsExperience', 'location',
-      'workshop', 'socialMedia', 'verificationLevel', 'badges', 'weaverVideo'
+      'workshop', 'socialMedia', 'verificationLevel', 'badges', 'weaverVideo',
+      'domesticDelivery', 'internationalDelivery'
     ];
     const sets = [];
     const values = [];

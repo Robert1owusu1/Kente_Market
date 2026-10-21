@@ -131,8 +131,9 @@ export const computeCommission = async ({ grossAmount, productId, vendorId, cate
 /**
  * @typedef {Object} AllocationRow
  * @property {number | string} vendorId
- * @property {'standard' | 'advance' | 'balance'} allocationType
+ * @property {'standard' | 'advance' | 'balance' | 'shipping'} allocationType
  * @property {number} amount what the customer paid for this vendor's goods
+ *   ('shipping': the delivery fee of a seller who delivers themselves)
  * @property {number} platformFeeRate gross line-weighted platform rate, informational, 4 dp
  * @property {number} platformFee platform's take after any admin coupon, frozen at order time
  * @property {number} payoutAmount seller proceeds = amount - platformFee
@@ -231,6 +232,21 @@ export const buildAllocationRows = (lines, { advanceRatio = 0 } = {}) => {
   }
   return rows;
 };
+
+/**
+ * Pure: delivery-fee allocations for sellers who deliver their own parcels.
+ * The fee is the seller's in full: no commission, no coupon share (coupons
+ * discount goods only). Parcels the platform delivers produce no row — the
+ * platform keeps that fee.
+ * @param {Array<{ vendorId: any, deliveredBy: string, shippingFee: any }>} parts
+ * @returns {AllocationRow[]}
+ */
+export const buildDeliveryFeeRows = (parts) => (parts || [])
+  .filter((p) => p.vendorId != null && p.deliveredBy === 'seller' && round2(Number(p.shippingFee) || 0) > 0)
+  .map((p) => {
+    const amount = round2(Number(p.shippingFee));
+    return { vendorId: p.vendorId, allocationType: /** @type {const} */ ('shipping'), amount, platformFeeRate: 0, platformFee: 0, payoutAmount: amount };
+  });
 
 /**
  * Compact, auditable per-line record stored on the order

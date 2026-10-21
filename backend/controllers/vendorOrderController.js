@@ -7,6 +7,12 @@
 //     post progress notes; the buyer sees "X days left" counted down from it.
 // The customer's final "I received my order" step is handled by the existing
 // confirmOrderReceived flow (escrow release).
+// Who delivers is frozen per seller on each order (order_delivery_parts):
+//   'seller'   — the seller ships and moves their parcel through every stage;
+//                they see the full delivery address.
+//   'platform' — the seller packs the parcel and drops it at the hub
+//                (POST /orders/:id/handover); the platform moves it on from
+//                there (admin: POST /orders/:id/status with { vendorId }).
 
 import Order from "../models/orderModel.js";
 import pool from "../config/db.js";
@@ -74,7 +80,7 @@ const buildProductVendorMap = async (order) => {
  * name + fulfilment routing. Stock conflicts filtered to the caller's own
  * products (entries carry vendorId from flagStockShortfall).
  */
-const projectVendorOrder = (order, vendorUserId, productVendor) => {
+const projectVendorOrder = (order, vendorUserId, productVendor, part = null) => {
   const items = Array.isArray(order.items) ? order.items : [];
   const ownsLine = (it) => {
     if (it.vendorId != null && parseInt(it.vendorId, 10) === vendorUserId) return true;
@@ -95,6 +101,29 @@ const projectVendorOrder = (order, vendorUserId, productVendor) => {
   const sa = order.shippingAddress && typeof order.shippingAddress === 'object' ? order.shippingAddress : {};
   const ownConflicts = (Array.isArray(order.stockConflicts) ? order.stockConflicts : [])
     .filter((c) => c && parseInt(c.vendorId, 10) === vendorUserId);
+  // No row: an order placed before the choice existed, which the seller delivered.
+  const deliveredBy = part?.deliveredBy || 'seller';
+  // A seller who delivers needs the full address; one who drops the parcel at
+  // the hub needs none of the buyer's contact details.
+  const shipping = deliveredBy === 'seller'
+    ? {
+      city: sa.city || null,
+      deliveryMethod: sa.deliveryMethod || null,
+      pickupStation: sa.pickupStation || null,
+      phone: sa.phone || null,
+      recipient: sa.fullName || [sa.firstName, sa.lastName].filter(Boolean).join(' ') || null,
+      address: sa.address || sa.street || null,
+      region: sa.region || sa.state || null,
+      postalCode: sa.postalCode || sa.zipCode || sa.zip || null,
+      country: sa.country || null,
+    }
+    : {
+      city: sa.city || null,
+      deliveryMethod: sa.deliveryMethod || null,
+      pickupStation: null,
+      phone: null,
+      country: sa.country || null,
+    };
   return {
     id: order.id,
     orderNumber: order.orderNumber,
@@ -106,11 +135,12 @@ const projectVendorOrder = (order, vendorUserId, productVendor) => {
     items: ownItems,
     itemCount: ownItems.length,
     ownSubtotal: round2(ownItems.reduce((sum, it) => sum + it.price * it.qty, 0)),
-    shipping: {
-      city: sa.city || null,
-      deliveryMethod: sa.deliveryMethod || null,
-      pickupStation: sa.pickupStation || null,
-      phone: sa.phone || null,
+    shipping,
+    delivery: {
+      deliveredBy,
+      fee: part ? part.shippingFee : null,
+      handedOverAt: part?.handedOverAt || null,
+      hubReceivedAt: part?.hubReceivedAt || null,
     },
     productionNote: order.productionNote || null,
     expectedCompletionDate: order.expectedCompletionDate || null,
@@ -148,6 +178,19 @@ export const getOrderVendorIds = async (order) => {
     }
   }
   return [...ids];
+};
+
+/**
+ * This seller's frozen delivery part for an order, or null for an order
+ * placed before the choice existed (the seller delivered those).
+ */
+const getDeliveryPart = async (orderId, vendorUserId) => {
+  const [[row]] = await pool.execute(
+    `SELECT deliveredBy, shippingFee, handedOverAt, hubReceivedAt
+       FROM order_delivery_parts WHERE orderId = ? AND vendorId = ?`,
+    [parseInt(orderId, 10), parseInt(vendorUserId, 10)]
+  );
+  return row ? { ...row, shippingFee: Number(row.shippingFee) || 0 } : null;
 };
 
 const getVendorMark = async (orderId, vendorUserId) => {
@@ -287,8 +330,18 @@ export const getVendorOrders = async (req, res) => {
         }
       } catch { /* marks table missing or unreadable: rows ship without progress */ }
     }
+    const partsByOrder = new Map();
+    if (vendorOrders.length > 0) {
+      const oids = vendorOrders.map((o) => o.id);
+      const [prows] = await pool.execute(
+        `SELECT orderId, deliveredBy, shippingFee, handedOverAt, hubReceivedAt
+           FROM order_delivery_parts WHERE vendorId = ? AND orderId IN (${oids.map(() => '?').join(', ')})`,
+        [vendorUserId, ...oids]
+      );
+      for (const p of prows) partsByOrder.set(p.orderId, { ...p, shippingFee: Number(p.shippingFee) || 0 });
+    }
     res.json(vendorOrders.map((o) => {
-      const projected = projectVendorOrder(o, vendorUserId, productVendor);
+      const projected = projectVendorOrder(o, vendorUserId, productVendor, partsByOrder.get(o.id) || null);
       const marks = marksByOrder.get(o.id) || [];
       const mine = marks.find((m) => parseInt(m.vendorId, 10) === vendorUserId);
       const ahead = marks.filter((m) => PIPELINE.indexOf(m.status) > 0).length;
@@ -361,6 +414,15 @@ export const updateVendorOrderStatus = async (req, res) => {
     const vendorUserId = parseInt(req.user.id, 10);
     const vendorIds = await getOrderVendorIds(order);
     const isAdmin = req.user.role === 'admin';
+    // An admin may act for ONE seller's parcel ({ vendorId }): how the platform
+    // moves a parcel it delivers once it reaches the hub. Without it an admin
+    // write moves the whole order, as before.
+    const adminForVendor = isAdmin && req.body.vendorId != null ? parseInt(req.body.vendorId, 10) : null;
+    if (adminForVendor != null && !vendorIds.includes(adminForVendor)) {
+      return res.status(400).json({ message: "That seller has no items on this order" });
+    }
+    const markVendorId = adminForVendor ?? vendorUserId;
+    const part = !isAdmin || adminForVendor != null ? await getDeliveryPart(req.params.id, markVendorId) : null;
     let ownStatus = 'processing';
     if (!isAdmin) {
       try {
@@ -388,6 +450,22 @@ export const updateVendorOrderStatus = async (req, res) => {
           message: `Invalid transition: must advance one stage at a time. Next allowed: '${PIPELINE[ownIdx + 1]}'`,
         });
       }
+      // The platform delivers this parcel: the seller packs it and drops it
+      // at the hub; shipping and delivery are the platform's to record.
+      if (part?.deliveredBy === 'platform' && nextIdx > PIPELINE.indexOf('packaging')) {
+        return res.status(400).json({
+          message: "The platform delivers this parcel. Pack it, drop it at the hub and mark it as dropped off; we update the delivery from there.",
+          code: 'PLATFORM_DELIVERS',
+        });
+      }
+    }
+    // Moving a hub parcel on implies it reached the hub.
+    if (adminForVendor != null && part?.deliveredBy === 'platform' && !part.hubReceivedAt
+      && PIPELINE.indexOf(orderStatus) >= PIPELINE.indexOf('shipped')) {
+      await pool.execute(
+        `UPDATE order_delivery_parts SET hubReceivedAt = NOW() WHERE orderId = ? AND vendorId = ? AND hubReceivedAt IS NULL`,
+        [parseInt(req.params.id, 10), adminForVendor]
+      );
     }
 
     // Only meaningful for customised orders, but allow on any to keep flow simple.
@@ -404,7 +482,7 @@ export const updateVendorOrderStatus = async (req, res) => {
     // vendor (missing mark = processing). A single vendor reaching 'delivered'
     // no longer flips the whole multi-vendor order.
     let consensus = order.orderStatus;
-    if (isAdmin) {
+    if (isAdmin && adminForVendor == null) {
       consensus = orderStatus;
       // Mirror to marks so a later vendor write recomputes from the admin's
       // position instead of dragging consensus back to 'processing'. Skip when
@@ -424,7 +502,7 @@ export const updateVendorOrderStatus = async (req, res) => {
          ON DUPLICATE KEY UPDATE status = ?, note = COALESCE(?, note),
            expectedCompletionDate = COALESCE(?, expectedCompletionDate),
            trackingNumber = COALESCE(?, trackingNumber)`,
-        [parseInt(req.params.id, 10), vendorUserId, orderStatus, productionNote || null, finalCompletion, trackingNumber,
+        [parseInt(req.params.id, 10), markVendorId, orderStatus, productionNote || null, finalCompletion, trackingNumber,
          orderStatus, productionNote || null, finalCompletion, trackingNumber]
       );
       const [markRows] = await pool.execute(
@@ -536,6 +614,69 @@ export const updateVendorOrderStatus = async (req, res) => {
     })();
   } catch (error) {
     console.error("Error updating vendor order status:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+// @desc    Seller dropped a parcel the platform delivers at the hub
+// @route   POST /api/vendors/orders/:id/handover
+// @access  Private/Vendor
+// Records the drop-off (once) after the seller marked the parcel packed.
+// Admins are told so they can receive it.
+export const handOverToHub = async (req, res) => {
+  try {
+    if (!isValidId(req.params.id)) {
+      return res.status(400).json({ message: "Invalid order ID" });
+    }
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ message: "Order not found" });
+
+    const vendorUserId = parseInt(req.user.id, 10);
+    if (!(await orderHasVendorItem(order, vendorUserId))) {
+      return res.status(403).json({ message: "Not authorized to update this order" });
+    }
+    if (!['processing', 'packaging', 'shipped', 'arrived'].includes(order.orderStatus) || order.paymentStatus !== 'paid') {
+      return res.status(400).json({ message: `This order is not waiting for drop-off (current: ${order.orderStatus}).` });
+    }
+    const part = await getDeliveryPart(req.params.id, vendorUserId);
+    if (part?.deliveredBy !== 'platform') {
+      return res.status(400).json({ message: "You deliver this order yourself; there is nothing to drop at the hub." });
+    }
+    if (part.handedOverAt) {
+      return res.json({ message: "Already marked as dropped off", handedOverAt: part.handedOverAt });
+    }
+    const mark = await getVendorMark(req.params.id, vendorUserId);
+    if ((mark?.status || 'processing') !== 'packaging') {
+      return res.status(400).json({ message: "Mark the parcel as packed before dropping it at the hub." });
+    }
+
+    const orderId = parseInt(req.params.id, 10);
+    await pool.execute(
+      `UPDATE order_delivery_parts SET handedOverAt = NOW()
+        WHERE orderId = ? AND vendorId = ? AND handedOverAt IS NULL`,
+      [orderId, vendorUserId]
+    );
+    const updated = await getDeliveryPart(orderId, vendorUserId);
+    res.json({ message: "Marked as dropped off at the hub", handedOverAt: updated?.handedOverAt || null });
+
+    void (async () => {
+      try {
+        const [admins] = await pool.execute(`SELECT id FROM users WHERE role = 'admin' ORDER BY id ASC LIMIT 5`);
+        for (const a of admins) {
+          await Notification.create({
+            userId: a.id,
+            type: 'system',
+            title: `Parcel dropped at the hub — ${order.orderNumber}`,
+            message: `A seller dropped their parcel for order ${order.orderNumber} at the hub. Confirm receipt and send it on.`,
+            link: `/admin?section=hub`,
+          });
+        }
+      } catch (notifyErr) {
+        console.warn(` Could not notify admins of hub drop-off: ${notifyErr.message}`);
+      }
+    })();
+  } catch (error) {
+    console.error("Error recording hub drop-off:", error);
     res.status(500).json({ message: "Internal server error" });
   }
 };

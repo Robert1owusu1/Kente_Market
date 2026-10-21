@@ -36,10 +36,13 @@ import {
   getVendorShippingRates,
   setVendorShippingRate,
   removeVendorShippingRate,
+  getVendorDeliverySettings,
+  updateVendorDeliverySettings,
 } from '../controllers/vendorController.js';
 import {
   getVendorOrders,
   updateVendorOrderStatus,
+  handOverToHub,
 } from '../controllers/vendorOrderController.js';
 import { getVendorMessages } from '../controllers/messageController.js';
 import { getVendorFulfilment, getVendorInsights } from '../controllers/vendorController.js';
@@ -115,6 +118,8 @@ router.route('/withdrawals').get(vendorOrStaff, requireVendorPermission('view_ea
 // POST /api/vendors/orders/:id/status → advance fulfilment / post progress
 router.route('/orders').get(vendorOrStaff, requireVendorPermission('view_customers'), getVendorOrders);
 router.route('/orders/:id/status').post(vendorOrStaff, requireVendorPermission('manage_orders'), updateVendorOrderStatus);
+// POST /api/vendors/orders/:id/handover → seller dropped a platform-delivered parcel at the hub
+router.route('/orders/:id/handover').post(vendorOrStaff, requireVendorPermission('manage_orders'), handOverToHub);
 
 // GET /api/vendors/shipping/destinations → vendor's shipping destinations
 // POST /api/vendors/shipping/destinations → add/update shipping destination
@@ -124,6 +129,10 @@ router.route('/shipping/destinations')
   .post(vendorOrStaff, requireVendorPermission('manage_orders'), addVendorShippingDestination);
 router.route('/shipping/destinations/:id')
   .delete(vendorOrStaff, requireVendorPermission('manage_orders'), removeVendorShippingDestination);
+// GET/PUT /api/vendors/shipping/delivery → who delivers (seller or platform hub), Ghana and abroad
+router.route('/shipping/delivery')
+  .get(vendorOrStaff, requireVendorPermission('manage_orders'), getVendorDeliverySettings)
+  .put(vendorOrStaff, requireVendorPermission('manage_orders'), updateVendorDeliverySettings);
 // GET /api/vendors/shipping/rates → seller's own delivery fees + platform defaults
 // PUT/DELETE /api/vendors/shipping/rates/:countryCode → set / remove the seller's fee for a country
 router.route('/shipping/rates')
