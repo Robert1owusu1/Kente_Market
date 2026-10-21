@@ -5,6 +5,31 @@ import pool from "../config/db.js";
 import Review from "../models/reviewModel.js";
 
 // POST /api/reviews - create/update a review (authenticated user only)
+// Reviews are published as soon as they are written, so only someone who
+// bought and received the piece may write one (pentest 2026-10-21, F-2: any
+// account could rate any product, so a seller could inflate their own or sink
+// a competitor's). Same rule as POST /api/reviews/order, but the qualifying
+// order is found for the customer.
+const MAX_REVIEW_LENGTH = 2000;
+
+/** The customer's most recent paid, delivered order that contains this product. */
+const findDeliveredOrderFor = async (userId, productId) => {
+  const [orders] = await pool.execute(
+    `SELECT id, items FROM orders
+      WHERE userId = ? AND paymentStatus = 'paid' AND orderStatus = 'delivered'
+      ORDER BY id DESC LIMIT 200`,
+    [userId]
+  );
+  for (const order of orders) {
+    let items = order.items;
+    if (typeof items === 'string') { try { items = JSON.parse(items); } catch { items = []; } }
+    const item = (Array.isArray(items) ? items : []).find((it) =>
+      Number(it?.product ?? it?.productId ?? it?.id) === Number(productId));
+    if (item) return { orderId: order.id, item };
+  }
+  return null;
+};
+
 export const createReview = async (req, res) => {
   try {
     const { productId, rating, comment } = req.body || {};
@@ -20,6 +45,24 @@ export const createReview = async (req, res) => {
     if (!comment || !comment.trim()) {
       return res.status(400).json({ message: "Please write a review comment" });
     }
+    if (comment.trim().length > MAX_REVIEW_LENGTH) {
+      return res.status(400).json({ message: `Reviews can be up to ${MAX_REVIEW_LENGTH} characters` });
+    }
+
+    const [[product]] = await pool.execute("SELECT vendorId FROM product WHERE id = ?", [parseInt(productId)]);
+    if (!product) {
+      return res.status(404).json({ message: "Product not found" });
+    }
+    if (product.vendorId != null && Number(product.vendorId) === Number(userId)) {
+      return res.status(403).json({ message: "Sellers can't review their own products" });
+    }
+    const purchase = await findDeliveredOrderFor(userId, productId);
+    if (!purchase) {
+      return res.status(403).json({
+        message: "Only customers who received this piece can review it. You can review it once your order is delivered.",
+        code: "REVIEW_REQUIRES_PURCHASE",
+      });
+    }
 
     const userName = `${req.user.firstName || ""} ${req.user.lastName || ""}`.trim();
 
@@ -29,6 +72,9 @@ export const createReview = async (req, res) => {
       rating: ratingNum,
       comment: comment.trim(),
       userName,
+      orderId: purchase.orderId,
+      vendorId: purchase.item.vendorId || product.vendorId || null,
+      isVerified: 1,
     });
 
     res.status(201).json({
@@ -131,6 +177,9 @@ export const addOrderReview = async (req, res) => {
     }
     if (!comment || !comment.trim()) {
       return res.status(400).json({ message: "Please write a review comment" });
+    }
+    if (comment.trim().length > MAX_REVIEW_LENGTH) {
+      return res.status(400).json({ message: `Reviews can be up to ${MAX_REVIEW_LENGTH} characters` });
     }
 
     // Order must belong to the user and be delivered to be reviewable.

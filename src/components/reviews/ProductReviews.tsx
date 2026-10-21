@@ -152,6 +152,9 @@ const ProductReviews = ({ productId }: { productId?: number | string }) => {
       {userInfo ? (
         <form onSubmit={handleSubmit} className="border-b dark:border-gray-700 py-6 space-y-4">
           <h3 className="font-semibold text-gray-900 dark:text-white">Write a Review</h3>
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            Reviews are open to customers who have received this piece.
+          </p>
           <div className="flex items-center gap-3">
             <span className="text-sm text-gray-600 dark:text-gray-300">Your rating:</span>
             <StarRatingInput value={rating} onChange={setRating} disabled={submitting} />
