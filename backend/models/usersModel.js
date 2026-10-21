@@ -1031,6 +1031,14 @@ class User {
     delete profile.password;
     delete profile.resetPasswordToken;
     delete profile.resetPasswordExpire;
+    // Session-revocation counter and login-lockout state are server-side
+    // security internals; no screen uses them and they don't belong in an API
+    // response (pentest 2026-10-21, F-2). termsVersion stays: the re-consent
+    // gate reads it.
+    delete profile.tokenVersion;
+    delete profile.failedLoginAttempts;
+    delete profile.lockedUntil;
+    delete profile.lastFailedAt;
     return profile;
   }
 

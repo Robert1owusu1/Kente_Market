@@ -6,7 +6,14 @@ import { sendContactConfirmation } from "../utils/emailService.js";
 // POST /api/contact - submit a contact message (public)
 export const submitContact = async (req, res) => {
   try {
-    const { name, email, phone, subject, message } = req.body || {};
+    const { name, email, phone, subject, message, website } = req.body || {};
+
+    // Honeypot: `website` is a field the form hides from people. Only bots
+    // fill it in; they get the normal reply so they don't adapt, but nothing
+    // is stored or emailed (pentest 2026-10-21, F-1).
+    if (typeof website === "string" && website.trim() !== "") {
+      return res.status(201).json({ message: "Message sent successfully! We'll get back to you soon." });
+    }
 
     if (!name || !name.trim()) {
       return res.status(400).json({ message: "Name is required" });
@@ -33,9 +40,9 @@ export const submitContact = async (req, res) => {
     sendContactConfirmation(contact.email, contact.name || "customer")
       .catch((e) => console.error("Contact confirmation email error:", e.message));
 
+    // The stored record is not echoed back: the form only needs the message.
     res.status(201).json({
       message: "Message sent successfully! We'll get back to you soon.",
-      contact,
     });
   } catch (error) {
  console.error(" submitContact error:", error.message);

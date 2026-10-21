@@ -1,0 +1,7 @@
+# Security contact for Bonwire Kente (RFC 9116).
+# Please report vulnerabilities privately to the address below; do not
+# test against other people's accounts or move real money.
+Contact: mailto:hello@bonwirekente.com
+Expires: 2027-10-21T00:00:00.000Z
+Preferred-Languages: en
+Canonical: https://kente-market.vercel.app/.well-known/security.txt

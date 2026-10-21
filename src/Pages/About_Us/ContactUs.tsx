@@ -11,6 +11,8 @@ interface ContactFormData extends Record<string, unknown> {
   phone: string;
   subject: string;
   message: string;
+  // Honeypot: hidden from people, filled only by bots (the server drops those).
+  website: string;
 }
 
 
@@ -21,6 +23,7 @@ const Contact = () => {
     phone: "",
     subject: "",
     message: "",
+    website: "",
   });
   const [errors, setErrors] = useState<FormErrors>({});
   const [submitContact, { isLoading }] = useSubmitContactMutation();
@@ -53,7 +56,7 @@ const Contact = () => {
     try {
       await submitContact(formData).unwrap();
       toast.success("Message sent successfully! We'll get back to you soon.");
-      setFormData({ name: "", email: "", phone: "", subject: "", message: "" });
+      setFormData({ name: "", email: "", phone: "", subject: "", message: "", website: "" });
     } catch (err) {
       const apiErr = err as { data?: { message?: string }; message?: string; error?: string } | undefined;
       toast.error(apiErr?.data?.message || apiErr?.message || "Failed to send message. Please try again.");
@@ -113,6 +116,14 @@ const Contact = () => {
           <h3 className="text-2xl font-semibold text-gray-900 dark:text-white">
             Send Us a Message
           </h3>
+
+          {/* Honeypot: off-screen and skipped by keyboard and screen readers. */}
+          <div aria-hidden="true" className="absolute -left-[9999px] h-px w-px overflow-hidden">
+            <label>
+              Website
+              <input type="text" name="website" tabIndex={-1} autoComplete="off" value={formData.website} onChange={handleChange} />
+            </label>
+          </div>
 
           <div>
             <input

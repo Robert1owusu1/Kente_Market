@@ -21,7 +21,9 @@ const looksInternal = (message) =>
 import { redactUrl } from '../utils/logger.js';
 
 const notFound = (req, res, next) => {
-    const error = new Error(`Not Found - ${req.originalUrl}`);
+    // Static body: echoing the requested path back is a needless reflection
+    // surface (pentest 2026-10-21, F-4). The path is still in the access log.
+    const error = new Error('Not Found');
     res.status(404);
     next(error);
 };
