@@ -162,6 +162,28 @@ export const recomputeOrderEscrowStatus = async (orderId) => {
 };
 
 /**
+ * Run an idempotent statement again when MySQL picks it as a deadlock victim.
+ * MySQL rolls the victim back in full, so re-running a single autocommit
+ * statement that cannot double-apply (INSERT IGNORE on a unique key, a SET to
+ * a fixed value) is the documented remedy. Concurrent checkouts deadlocked here
+ * on the foreign-key locks the escrow insert takes on orders/users.
+ * @template T
+ * @param {() => Promise<T>} run
+ * @param {{ attempts?: number, delayMs?: number }} [opts]
+ * @returns {Promise<T>}
+ */
+export const retryOnDeadlock = async (run, { attempts = 3, delayMs = 25 } = {}) => {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await run();
+    } catch (err) {
+      if (/** @type {any} */ (err)?.code !== 'ER_LOCK_DEADLOCK' || attempt >= attempts) throw err;
+      await new Promise((resolve) => setTimeout(resolve, delayMs * attempt));
+    }
+  }
+};
+
+/**
  * Create per-vendor escrow allocations from order items at order placement.
  * Items with a vendor-owned product produce an allocation keyed by vendorId.
  *
@@ -188,7 +210,7 @@ export const createEscrowAllocations = async (orderId, items, { advanceRatio = 0
   const couponVendorId = couponRow?.couponVendorId ?? null;
   const { rows, snapshot } = await buildEscrowAllocationRows(pool, items, { advanceRatio, discount, couponVendorId });
   // Frozen per-line record (P, r, F, Da, Ds) for revenue, partial refunds and referrals.
-  await pool.execute(`UPDATE orders SET commissionSnapshot = ? WHERE id = ?`, [JSON.stringify(snapshot), orderId]);
+  await retryOnDeadlock(() => pool.execute(`UPDATE orders SET commissionSnapshot = ? WHERE id = ?`, [JSON.stringify(snapshot), orderId]));
   // Sellers who deliver their own parcels are owed the delivery fee frozen on
   // the order at checkout (order_delivery_parts); the platform keeps the rest.
   const [parts] = await pool.execute(
@@ -197,12 +219,12 @@ export const createEscrowAllocations = async (orderId, items, { advanceRatio = 0
   );
   let created = 0;
   for (const r of [...rows, ...buildDeliveryFeeRows(parts)]) {
-    const [insert] = await pool.execute(
+    const [insert] = await retryOnDeadlock(() => pool.execute(
       `INSERT IGNORE INTO escrow_allocations
          (orderId, vendorId, amount, platformFeeRate, platformFee, payoutAmount, status, allocationType)
        VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)`,
       [orderId, r.vendorId, r.amount, r.platformFeeRate, r.platformFee, r.payoutAmount, r.allocationType]
-    );
+    ));
     created += insert.affectedRows;
   }
   return created;
