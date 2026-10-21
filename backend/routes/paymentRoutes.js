@@ -332,9 +332,17 @@ router.post('/verify-paystack', protect, async (req, res) => {
     }
   } catch (error) {
     console.error('Paystack verification error:', error.response?.data || error.message);
-    res.status(500).json({
+    // Paystack answered with a 4xx (unknown or malformed reference): that is
+    // the caller's bad input, not our fault — 400, never a 500. No answer or
+    // a Paystack 5xx means the provider is unreachable — 502, so the client
+    // can retry. Paystack's own wording is logged above, not echoed.
+    const providerStatus = error.response?.status;
+    if (providerStatus >= 400 && providerStatus < 500) {
+      return res.status(400).json({ status: 'failed', message: 'Payment reference not recognised' });
+    }
+    res.status(502).json({
       status: 'error',
-      message: error.response?.data?.message || 'Payment verification failed',
+      message: 'Payment provider unavailable; please try again shortly',
     });
   }
 });

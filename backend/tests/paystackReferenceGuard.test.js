@@ -66,6 +66,8 @@ const state = { userId: null, token: null };
 let server = null;
 let calls = [];
 let stubResponse = { data: { status: false, data: null } };
+// When set, the stubbed Paystack call fails with this instead of answering.
+let stubError = null;
 
 // The attack catalogue. Each entry is a reference that must not reach the
 // wire, with the reason it is dangerous. The first two are the interesting
@@ -128,6 +130,7 @@ describe('V-09: a crafted reference never leaves the building', { skip: !dbAvail
     calls = [];
     mock.method(axios, 'get', async (url) => {
       calls.push(String(url));
+      if (stubError) throw stubError;
       return stubResponse;
     });
   });
@@ -201,6 +204,33 @@ describe('V-09: a crafted reference never leaves the building', { skip: !dbAvail
       assert.equal(r.json?.data?.orderMarkedPaid, false, 'no order carries this reference');
     } finally {
       stubResponse = { data: { status: false, data: null } };
+    }
+  });
+
+  // Pentest 2026-10-21 (F-5): an unknown reference used to come back as a
+  // 500 carrying Paystack's own wording. Paystack's 4xx is the caller's bad
+  // input (400); no answer at all is a provider outage (502, retryable).
+  test('a reference Paystack does not know is a 400, not a 500', async () => {
+    stubError = Object.assign(new Error('Request failed with status code 400'), {
+      response: { status: 400, data: { status: false, message: 'Transaction reference not found' } },
+    });
+    try {
+      const r = await post({ reference: `UNKNOWN-${ts}` });
+      assert.equal(r.status, 400, `got ${r.status}: ${r.text.slice(0, 200)}`);
+      assert.equal(r.json?.message, 'Payment reference not recognised');
+      assert.ok(!r.text.includes('Transaction reference not found'), "Paystack's wording is not echoed");
+    } finally {
+      stubError = null;
+    }
+  });
+
+  test('Paystack unreachable is a 502 the client can retry', async () => {
+    stubError = Object.assign(new Error('connect ETIMEDOUT'), { code: 'ETIMEDOUT' });
+    try {
+      const r = await post({ reference: `TIMEOUT-${ts}` });
+      assert.equal(r.status, 502, `got ${r.status}: ${r.text.slice(0, 200)}`);
+    } finally {
+      stubError = null;
     }
   });
 });
