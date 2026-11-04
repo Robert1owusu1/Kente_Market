@@ -365,6 +365,185 @@ class PaystackService {
       );
     }
   }
+
+  // --- Vendor plan subscriptions (recurring billing) ----------------------
+
+  /**
+   * Create a billing Plan on Paystack. Called when an admin activates a vendor
+   * plan; the returned plan_code is initialized against to start subscriptions.
+   * @param {string} name
+   * @param {number} amount - Amount in GHS (converted to pesewas)
+   * @param {'monthly'|'annually'} interval
+   * @returns {Promise<PaystackEnvelope>} { data: { plan_code, ... } }
+   */
+  async createPlan(name, amount, interval) {
+    try {
+      const response = await axios.post(
+        `${this.baseUrl}/plan`,
+        { name, amount: Math.round(amount * 100), interval, currency: CHARGED_CURRENCY },
+        { headers: this.headers, timeout: PAYSTACK_TIMEOUT_MS }
+      );
+      return response.data;
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to create plan');
+    }
+  }
+
+  /**
+   * Update a Paystack Plan's amount/name (admin edits a plan's price).
+   * @param {string} planCode
+   * @param {{ name?: string, amount?: number, interval?: 'monthly'|'annually' }} fields
+   * @returns {Promise<PaystackEnvelope>}
+   */
+  async updatePlan(planCode, fields) {
+    try {
+      const body = { ...fields };
+      if (typeof fields.amount === 'number') body.amount = Math.round(fields.amount * 100);
+      const response = await axios.put(
+        `${this.baseUrl}/plan/${encodeURIComponent(planCode)}`,
+        body,
+        { headers: this.headers, timeout: PAYSTACK_TIMEOUT_MS }
+      );
+      return response.data;
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to update plan');
+    }
+  }
+
+  /**
+   * Start a subscription checkout: initialize a transaction bound to a plan.
+   * Once the vendor pays, Paystack creates the subscription and charges it on
+   * the plan's interval automatically. A unique `reference` lets us correlate
+   * the first charge.success webhook back to our pending subscription row.
+   * @param {string} email
+   * @param {number} amount - Amount in GHS (the plan fee)
+   * @param {string} planCode - Paystack plan_code
+   * @param {string} reference - our unique reference
+   * @param {object} metadata
+   * @returns {Promise<PaystackEnvelope>} { data: { authorization_url, reference, ... } }
+   */
+  async initializeSubscription(email, amount, planCode, reference, metadata = {}) {
+    try {
+      const response = await axios.post(
+        `${this.baseUrl}/transaction/initialize`,
+        {
+          email,
+          amount: Math.round(amount * 100),
+          currency: CHARGED_CURRENCY,
+          plan: planCode,
+          reference,
+          metadata,
+          callback_url: frontendBaseUrl() ? `${frontendBaseUrl()}/vendor/plan/success` : undefined,
+        },
+        { headers: this.headers, timeout: PAYSTACK_TIMEOUT_MS }
+      );
+      return response.data;
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to start subscription');
+    }
+  }
+
+  /**
+   * Start a gift-card purchase checkout: a one-off charge with our own
+   * reference + metadata so the charge.success webhook can issue the card.
+   * @param {string} email buyer email
+   * @param {number} amount gift-card value in GHS
+   * @param {string} reference our unique reference
+   * @param {object} metadata
+   * @returns {Promise<PaystackEnvelope>} { data: { authorization_url, reference } }
+   */
+  async initializeGiftCardPurchase(email, amount, reference, metadata = {}) {
+    try {
+      const response = await axios.post(
+        `${this.baseUrl}/transaction/initialize`,
+        {
+          email,
+          amount: Math.round(amount * 100),
+          currency: CHARGED_CURRENCY,
+          reference,
+          metadata,
+          callback_url: frontendBaseUrl() ? `${frontendBaseUrl()}/gift-cards/success` : undefined,
+        },
+        { headers: this.headers, timeout: PAYSTACK_TIMEOUT_MS }
+      );
+      return response.data;
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to start gift card purchase');
+    }
+  }
+
+  /**
+   * Start a Kente Club membership checkout (recurring, bound to a plan).
+   * @param {string} email @param {number} amount GHS @param {string} planCode
+   * @param {string} reference @param {object} metadata
+   * @returns {Promise<PaystackEnvelope>}
+   */
+  async initializeMembership(email, amount, planCode, reference, metadata = {}) {
+    try {
+      const response = await axios.post(
+        `${this.baseUrl}/transaction/initialize`,
+        {
+          email,
+          amount: Math.round(amount * 100),
+          currency: CHARGED_CURRENCY,
+          plan: planCode,
+          reference,
+          metadata,
+          callback_url: frontendBaseUrl() ? `${frontendBaseUrl()}/kente-club/success` : undefined,
+        },
+        { headers: this.headers, timeout: PAYSTACK_TIMEOUT_MS }
+      );
+      return response.data;
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to start membership');
+    }
+  }
+
+  /**
+   * Start a featured-listing purchase (one-off charge, our own reference).
+   * @param {string} email @param {number} amount GHS @param {string} reference
+   * @param {object} metadata
+   * @returns {Promise<PaystackEnvelope>}
+   */
+  async initializeFeaturedPurchase(email, amount, reference, metadata = {}) {
+    try {
+      const response = await axios.post(
+        `${this.baseUrl}/transaction/initialize`,
+        {
+          email,
+          amount: Math.round(amount * 100),
+          currency: CHARGED_CURRENCY,
+          reference,
+          metadata,
+          callback_url: frontendBaseUrl() ? `${frontendBaseUrl()}/vendor` : undefined,
+        },
+        { headers: this.headers, timeout: PAYSTACK_TIMEOUT_MS }
+      );
+      return response.data;
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to start featured purchase');
+    }
+  }
+
+  /**
+   * Disable (cancel) a subscription at Paystack. Needs the subscription code
+   * and its email_token (both captured from the subscription.create webhook).
+   * @param {string} subscriptionCode
+   * @param {string} emailToken
+   * @returns {Promise<PaystackEnvelope>}
+   */
+  async disableSubscription(subscriptionCode, emailToken) {
+    try {
+      const response = await axios.post(
+        `${this.baseUrl}/subscription/disable`,
+        { code: subscriptionCode, token: emailToken },
+        { headers: this.headers, timeout: PAYSTACK_TIMEOUT_MS }
+      );
+      return response.data;
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to cancel subscription');
+    }
+  }
 }
 
 export default new PaystackService();

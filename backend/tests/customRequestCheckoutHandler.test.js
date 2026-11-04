@@ -137,11 +137,15 @@ describe('custom request checkout handler (C-1 / C-2)', { skip: !dbAvailable }, 
     const reference = `crh-ok-${TS}`;
     fx.refs.push(reference);
     const address = GH_ADDRESS;
-    // Quote 500 + 15% VAT 75 + Ghana delivery 0 (500 is over the GH₵200 free threshold).
+    // Quote 500 + VAT (admin rate) + Ghana delivery 0 (500 is over the GH₵200 free threshold).
+    const { getVatRate } = await import('../Services/pricingConfig.js');
+    const { calcTax, round2 } = await import('../../shared/pricing.js');
+    const tax500 = calcTax(500, await getVatRate());
+    const total500 = round2(500 + tax500 + 0);
     const priced = await priceIt(id, address);
     assert.equal(priced.statusCode, 200, JSON.stringify(priced.body));
-    assert.deepEqual(priced.body, { subtotal: 500, tax: 75, shipping: 0, total: 575, country: 'GH', currency: 'GHS' });
-    verifyStub.set(reference, successTx(reference, 57500));
+    assert.deepEqual(priced.body, { subtotal: 500, tax: tax500, shipping: 0, total: total500, country: 'GH', currency: 'GHS' });
+    verifyStub.set(reference, successTx(reference, Math.round(total500 * 100)));
 
     const res = mockRes();
     await checkoutRequest(req(id, { paymentReference: reference, paymentMethod: 'Mobile Money', shippingAddress: address }), res);
@@ -159,8 +163,8 @@ describe('custom request checkout handler (C-1 / C-2)', { skip: !dbAvailable }, 
     const bill = typeof order.billingAddress === 'string' ? JSON.parse(order.billingAddress) : order.billingAddress;
     assert.deepEqual(ship, address, 'the vendor must know where to deliver the custom piece');
     assert.deepEqual(bill, address);
-    assert.equal(Number(order.totalAmount), 575, 'order total is quote + VAT + delivery, priced on the server');
-    assert.equal(Number(order.tax), 75);
+    assert.equal(Number(order.totalAmount), total500, 'order total is quote + VAT + delivery, priced on the server');
+    assert.equal(Number(order.tax), tax500);
     assert.equal(Number(order.shippingCost), 0);
 
     const [[cr]] = await pool.execute(`SELECT status, orderId FROM custom_requests WHERE id = ?`, [id]);
@@ -183,8 +187,11 @@ describe('custom request checkout handler (C-1 / C-2)', { skip: !dbAvailable }, 
     const id = await mkAcceptedRequest(500, null);
     const reference = `crh-noprod-${TS}`;
     fx.refs.push(reference);
-    assert.equal((await priceIt(id)).body.total, 575);
-    verifyStub.set(reference, successTx(reference, 57500));
+    const { getVatRate } = await import('../Services/pricingConfig.js');
+    const { calcTax, round2 } = await import('../../shared/pricing.js');
+    const total500 = round2(500 + calcTax(500, await getVatRate()) + 0);
+    assert.equal((await priceIt(id)).body.total, total500);
+    verifyStub.set(reference, successTx(reference, Math.round(total500 * 100)));
     const res = mockRes();
     await checkoutRequest(req(id, { paymentReference: reference, shippingAddress: GH_ADDRESS }), res);
     assert.equal(res.statusCode, 201, `expected 201, got ${res.statusCode}: ${JSON.stringify(res.body)}`);
@@ -229,8 +236,9 @@ describe('custom request checkout handler (C-1 / C-2)', { skip: !dbAvailable }, 
     const id = await mkAcceptedRequest(500);
     const reference = `crh-short-${TS}`;
     fx.refs.push(reference);
-    await priceIt(id);
-    verifyStub.set(reference, successTx(reference, 57499));
+    // One kobo under the live server total, whatever the admin VAT/delivery is.
+    const priced = await priceIt(id);
+    verifyStub.set(reference, successTx(reference, Math.round(Number(priced.body.total) * 100) - 1));
     const res = mockRes();
     await checkoutRequest(req(id, { paymentReference: reference, shippingAddress: GH_ADDRESS }), res);
     assert.equal(res.statusCode, 400);
@@ -286,10 +294,14 @@ describe('custom request checkout handler (C-1 / C-2)', { skip: !dbAvailable }, 
   });
 
   test('pricing: below the free threshold delivery is charged; abroad needs the weaver to ship there', async () => {
+    const { getVatRate } = await import('../Services/pricingConfig.js');
+    const { calcTax, round2 } = await import('../../shared/pricing.js');
+    const vat = await getVatRate();
     const small = await mkAcceptedRequest(150);
     const p = await priceIt(small);
-    // 150 + VAT 22.50 + Ghana delivery 15 (under GH₵200).
-    assert.deepEqual([p.body.tax, p.body.shipping, p.body.total], [22.5, 15, 187.5]);
+    // 150 + VAT (admin rate) + Ghana delivery 15 (under GH₵200).
+    const tax150 = calcTax(150, vat);
+    assert.deepEqual([p.body.tax, p.body.shipping, p.body.total], [tax150, 15, round2(150 + tax150 + 15)]);
 
     const abroad = await mkAcceptedRequest(500);
     const refused = await priceIt(abroad, { ...GH_ADDRESS, country: 'GB', postalCode: 'SW1A 1AA' });
@@ -301,7 +313,7 @@ describe('custom request checkout handler (C-1 / C-2)', { skip: !dbAvailable }, 
       const gb = await priceIt(abroad, { ...GH_ADDRESS, country: 'GB', postalCode: 'SW1A 1AA' });
       assert.equal(gb.statusCode, 200, JSON.stringify(gb.body));
       assert.ok(gb.body.shipping > 0, 'UK delivery is charged');
-      assert.equal(gb.body.total, Math.round((500 + 75 + gb.body.shipping) * 100) / 100);
+      assert.equal(gb.body.total, round2(500 + calcTax(500, vat) + gb.body.shipping));
     } finally {
       await pool.execute(`DELETE FROM vendor_shipping_destinations WHERE vendorId = ?`, [fx.vendor]);
     }

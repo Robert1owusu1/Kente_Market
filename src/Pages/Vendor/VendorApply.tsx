@@ -32,6 +32,9 @@ type ApplyForm = {
   momoNumber: string;
   domesticDelivery: DeliveredBy | '';
   internationalDelivery: DeliveredBy | '';
+  originTown: string;
+  originRegion: string;
+  originEvidence: string;
 };
 
 const VendorApply = () => {
@@ -69,6 +72,9 @@ const VendorApply = () => {
     momoNumber: '',
     domesticDelivery: '',
     internationalDelivery: '',
+    originTown: 'Bonwire',
+    originRegion: 'Ashanti',
+    originEvidence: '',
   });
 
   useEffect(() => {
@@ -84,6 +90,9 @@ const VendorApply = () => {
         momoNumber: existing.vendor.momoNumber || '',
         domesticDelivery: existing.vendor.domesticDelivery || '',
         internationalDelivery: existing.vendor.internationalDelivery || '',
+        originTown: (existing.vendor.originTown as string) || 'Bonwire',
+        originRegion: (existing.vendor.originRegion as string) || 'Ashanti',
+        originEvidence: (existing.vendor.originEvidence as string) || '',
       });
     }
   }, [existing]);
@@ -108,6 +117,10 @@ const VendorApply = () => {
     }
     if (!form.domesticDelivery || !form.internationalDelivery) {
       toast.error('Choose who delivers your orders, within Ghana and outside Ghana');
+      return;
+    }
+    if (!form.originTown.trim()) {
+      toast.error('Tell us the town where you weave — Bonwire origin is required to sell here');
       return;
     }
     try {
@@ -245,6 +258,33 @@ const VendorApply = () => {
                 </div>
               </>
             )}
+
+            <div className="border-t border-gray-200 dark:border-gray-700 pt-5">
+              <h2 className="text-base font-semibold text-gray-900 dark:text-white">Your Bonwire origin</h2>
+              <p className="mt-1 mb-3 text-sm text-gray-600 dark:text-gray-400">
+                We only list weavers from <span className="font-semibold">Bonwire</span>, the home of Kente. An admin
+                contacts you to confirm this before your store goes live.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                <div>
+                  <label className={labelCls}>Town / village *</label>
+                  <input className={inputCls} value={form.originTown} onChange={set('originTown')} placeholder="e.g. Bonwire" />
+                </div>
+                <div>
+                  <label className={labelCls}>Region</label>
+                  <input className={inputCls} value={form.originRegion} onChange={set('originRegion')} placeholder="e.g. Ashanti" />
+                </div>
+              </div>
+              <div className="mt-5">
+                <label className={labelCls}>How can we confirm your Bonwire roots?</label>
+                <textarea
+                  className={`${inputCls} min-h-[90px]`}
+                  value={form.originEvidence}
+                  onChange={(e) => setForm((f) => ({ ...f, originEvidence: e.target.value }))}
+                  placeholder="Workshop name, family/weaving lineage, a referee we can call, or anything that confirms you weave in Bonwire."
+                />
+              </div>
+            </div>
 
             <div>
               <h2 className="text-base font-semibold text-gray-900 dark:text-white">Who delivers your orders?</h2>

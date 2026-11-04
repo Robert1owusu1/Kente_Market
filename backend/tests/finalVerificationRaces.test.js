@@ -128,7 +128,7 @@ describe('final verification regressions', { skip: !dbAvailable }, () => {
           if (prop === 'execute') {
             return async (sql, params) => {
               const out = await target.execute(sql, params);
-              if (!bound && /SELECT id, totalAmount, paymentStatus FROM orders WHERE paymentReference/.test(sql)) {
+              if (!bound && /SELECT id, totalAmount,.*paymentStatus FROM orders WHERE paymentReference/.test(sql)) {
                 bound = true;
                 await pool.execute(`UPDATE orders SET paymentReference = ? WHERE id = ?`, [reference, orderId]);
               }
@@ -176,7 +176,7 @@ describe('final verification regressions', { skip: !dbAvailable }, () => {
           if (prop === 'execute') {
             return async (sql, params) => {
               const out = await target.execute(sql, params);
-              if (!bound && /SELECT id, totalAmount, paymentStatus FROM orders WHERE paymentReference/.test(sql)) {
+              if (!bound && /SELECT id, totalAmount,.*paymentStatus FROM orders WHERE paymentReference/.test(sql)) {
                 bound = true;
                 await pool.execute(`UPDATE orders SET paymentReference = ? WHERE id = ?`, [reference, orderId]);
               }

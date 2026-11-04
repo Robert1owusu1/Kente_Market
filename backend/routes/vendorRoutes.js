@@ -11,6 +11,7 @@ import {
   getMyVendorProfile,
   listVendors,
   updateVendorStatus,
+  verifyVendorOrigin,
   getMyProducts,
   getVendorInventory,
   createVendorProduct,
@@ -46,6 +47,16 @@ import {
 } from '../controllers/vendorOrderController.js';
 import { getVendorMessages } from '../controllers/messageController.js';
 import { getVendorFulfilment, getVendorInsights } from '../controllers/vendorController.js';
+import {
+  getSelectablePlans,
+  getMySubscription,
+  subscribeToPlan,
+  cancelMySubscription,
+} from '../controllers/vendorSubscriptionController.js';
+import { requirePlanFeature } from '../middleware/planGate.js';
+import { PLAN_FEATURES } from '../../shared/plans.js';
+import { getVendorFeaturedConfig, createFeaturedPurchase, listMyFeatured } from '../controllers/featuredController.js';
+import { getVendorQuoteRequests, vendorQuote } from '../controllers/wholesaleController.js';
 
 // Public: GET /api/vendors/store/:slugOrId → public storefront
 router.route('/store/:slugOrId').get(getPublicStorefront);
@@ -56,8 +67,8 @@ router.route('/directory').get(getVendorDirectory);
 // Public: GET /api/vendors/fulfillment/:vendorId → on-time delivery scorecard
 router.route('/fulfillment/:vendorId').get(getVendorFulfilment);
 
-// GET /api/vendors/insights → demand-prediction digest (vendor)
-router.route('/insights').get(vendorOrStaff, requireVendorPermission('view_earnings'), getVendorInsights);
+// GET /api/vendors/insights → demand-prediction digest (vendor; plan: analytics)
+router.route('/insights').get(vendorOrStaff, requireVendorPermission('view_earnings'), requirePlanFeature(PLAN_FEATURES.ANALYTICS), getVendorInsights);
 
 // GET /api/vendors/admin-scorecard → on-time%, response time, rating (admin only)
 router.route('/admin-scorecard').get(protect, admin, getAdminVendorScorecard);
@@ -67,6 +78,28 @@ router.route('/messages').get(vendorOrStaff, requireVendorPermission('view_custo
 
 // POST /api/vendors/apply → become/update vendor application (any logged-in user with verified email)
 router.route('/apply').post(protect, requireVerifiedEmail, applyVendor);
+
+// --- Vendor plan selection + pay-for-plan (Phase 2, Step 4) ---
+// GET  /api/vendors/plans        → plans a vendor can subscribe to
+// GET  /api/vendors/subscription → current subscription (portal gate)
+// POST /api/vendors/subscribe    → start Paystack checkout for a plan
+// DELETE /api/vendors/subscription → cancel current subscription
+// Plan/billing routes carry view_earnings (owners always pass; staff need the
+// earnings permission to see or change the store's billing). A8 contract: every
+// vendorOrStaff route — especially mutating ones — goes through the permission layer.
+router.route('/plans').get(vendorOrStaff, requireVendorPermission('view_earnings'), getSelectablePlans);
+// Paid featured listings (plan: featured_eligible — enforced in the service).
+router.route('/featured/config').get(vendorOrStaff, requireVendorPermission('manage_storefront'), getVendorFeaturedConfig);
+router.route('/featured')
+  .get(vendorOrStaff, requireVendorPermission('manage_storefront'), listMyFeatured)
+  .post(vendorOrStaff, requireVendorPermission('manage_storefront'), createFeaturedPurchase);
+// B2B wholesale: quote requests on the vendor's products (plan gate in controller).
+router.route('/wholesale/quotes').get(vendorOrStaff, requireVendorPermission('manage_orders'), getVendorQuoteRequests);
+router.route('/wholesale/quotes/:id/quote').post(vendorOrStaff, requireVendorPermission('manage_orders'), vendorQuote);
+router.route('/subscription')
+  .get(vendorOrStaff, requireVendorPermission('view_earnings'), getMySubscription)
+  .delete(vendorOrStaff, requireVendorPermission('view_earnings'), cancelMySubscription);
+router.route('/subscribe').post(vendorOrStaff, requireVendorPermission('view_earnings'), subscribeToPlan);
 
 // GET /api/vendors/me → own vendor profile + escrow summary (vendor, staff w/ view_earnings, or admin)
 router.route('/me').get(vendorOrStaff, requireVendorPermission('view_earnings'), getMyVendorProfile);
@@ -79,7 +112,7 @@ router.route('/me').get(vendorOrStaff, requireVendorPermission('view_earnings'),
 router.route('/profile').put(vendorOrStaff, requireVendorPermission('manage_storefront'), updateVendorProfile);
 
 // GET /api/vendors/analytics → vendor analytics (financial)
-router.route('/analytics').get(vendorOrStaff, requireVendorPermission('view_earnings'), getVendorAnalytics);
+router.route('/analytics').get(vendorOrStaff, requireVendorPermission('view_earnings'), requirePlanFeature(PLAN_FEATURES.ANALYTICS), getVendorAnalytics);
 
 // GET /api/vendors/inventory → vendor inventory (stock, SKU, alerts)
 router.route('/inventory').get(vendorOrStaff, requireVendorPermission('manage_inventory'), getVendorInventory);
@@ -93,8 +126,8 @@ router.route('/returns').get(vendorOrStaff, requireVendorPermission('view_custom
 // GET /api/vendors/coupons → vendor's coupons
 // POST /api/vendors/coupons → create vendor coupon
 router.route('/coupons').get(vendorOrStaff, requireVendorPermission('manage_coupons'), getVendorCoupons);
-router.route('/coupons').post(vendorOrStaff, requireVendorPermission('manage_coupons'), createVendorCoupon);
-router.route('/coupons/:id').put(vendorOrStaff, requireVendorPermission('manage_coupons'), updateVendorCoupon);
+router.route('/coupons').post(vendorOrStaff, requireVendorPermission('manage_coupons'), requirePlanFeature(PLAN_FEATURES.PROMOTIONS), createVendorCoupon);
+router.route('/coupons/:id').put(vendorOrStaff, requireVendorPermission('manage_coupons'), requirePlanFeature(PLAN_FEATURES.PROMOTIONS), updateVendorCoupon);
 router.route('/coupons/:id').delete(vendorOrStaff, requireVendorPermission('manage_coupons'), deleteVendorCoupon);
 
 // GET /api/vendors/myproducts → vendor's own products
@@ -146,6 +179,9 @@ router.route('/').get(protect, admin, listVendors);
 
 // PUT /api/vendors/:id/status → approve/suspend (admin only)
 router.route('/:id/status').put(protect, admin, updateVendorStatus);
+
+// PUT /api/vendors/:id/origin → verify/revoke Bonwire origin (admin only, hard gate)
+router.route('/:id/origin').put(protect, admin, verifyVendorOrigin);
 
 // PUT /api/vendors/:id/verification → set verification level + badges (admin only)
 router.route('/:id/verification').put(protect, admin, updateVendorVerification);

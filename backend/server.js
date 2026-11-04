@@ -75,6 +75,12 @@ import certificateRoutes from './routes/certificateRoutes.js'; // NEW - Authenti
 import commissionRoutes from './routes/commissionRoutes.js'; // NEW - Commission engine
 import moderationRoutes from './routes/moderationRoutes.js'; // NEW - Product moderation
 import adminOpsRoutes from './routes/adminOpsRoutes.js'; // Audit log + scheduler status
+import platformRevenueRoutes from './routes/platformRevenueRoutes.js'; // Admin platform earnings report
+import planRoutes from './routes/planRoutes.js'; // Admin vendor plan management
+import giftCardRoutes from './routes/giftCardRoutes.js'; // Gift cards + store credit
+import featuredRoutes from './routes/featuredRoutes.js'; // Admin featured-listing config
+import wholesaleRoutes from './routes/wholesaleRoutes.js'; // B2B wholesale bulk quotes
+import { membershipRouter, adminMembershipRouter } from './routes/membershipRoutes.js'; // Kente Club
 import shippingAdminRoutes from './routes/shippingAdminRoutes.js'; // Platform delivery fees + exchange rates
 import { referralRouter, adminReferralRouter } from './routes/referralRoutes.js';
 import adminPayoutRoutes from './routes/adminPayoutRoutes.js'; // Payout investigation + verify-only recovery
@@ -464,6 +470,13 @@ app.use('/api/certificates', certificateRoutes);
 app.use('/api/admin/commissions', commissionRoutes);
 app.use('/api/admin/moderation', moderationRoutes);
 app.use('/api/admin/ops', adminOpsRoutes);
+app.use('/api/admin/platform-revenue', platformRevenueRoutes);
+app.use('/api/admin/plans', planRoutes);
+app.use('/api/gift-cards', giftCardRoutes);
+app.use('/api/admin/featured', featuredRoutes);
+app.use('/api/wholesale', wholesaleRoutes);
+app.use('/api/kente-club', membershipRouter);
+app.use('/api/admin/kente-club', adminMembershipRouter);
 app.use('/api/admin/shipping', shippingAdminRoutes);
 app.use('/api/admin/payouts', adminPayoutRoutes);
 app.use('/api/referrals', referralRouter);

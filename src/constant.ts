@@ -15,6 +15,7 @@ export const COUPONS_URL = '/api/coupons';
 export const WISHLIST_URL = '/api/wishlist';
 export const RETURNS_URL = '/api/returns';
 export const ADMIN_PAYOUTS_URL = '/api/admin/payouts';
+export const ADMIN_PLATFORM_REVENUE_URL = '/api/admin/platform-revenue';
 export const REFERRALS_URL = '/api/referrals';
 export const ADMIN_REFERRALS_URL = '/api/admin/referrals';
 export const NOTIFICATIONS_URL = '/api/notifications';

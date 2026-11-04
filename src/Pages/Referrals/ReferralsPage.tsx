@@ -6,6 +6,7 @@
 import { useRef, useState, type FormEvent } from 'react';
 import { FaSpinner, FaGift, FaCopy, FaWallet, FaMoneyBillWave } from 'react-icons/fa';
 import { toast } from 'react-toastify';
+import CreatorApplicationCard from './CreatorApplicationCard';
 import {
   useGetMyReferralsQuery,
   useSetReferralPayoutAccountMutation,
@@ -89,6 +90,8 @@ const ReferralsPage = () => {
         {!data.enabled && <p className="mt-2 text-sm text-amber-700 dark:text-amber-300">The referral programme is not active yet. Your link will start earning once it is.</p>}
         {data.suspended && <p className="mt-2 text-sm text-red-700 dark:text-red-300">Your referral account is suspended. Contact support.</p>}
       </div>
+
+      <CreatorApplicationCard isCreator={data.tier === 'super'} rate={data.rate} />
 
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-5">
         <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">Your referral link {data.tier === 'super' && <span className="ml-2 px-2 py-0.5 rounded-full text-xs bg-primary/10 text-primary">Super ambassador</span>}</p>

@@ -21,6 +21,7 @@ import {
   requestReferralWithdrawal, payOrderWithReferralCredit, reconcileReferralWithdrawals,
 } from '../Services/referralPayoutService.js';
 import { frontendBaseUrl } from '../config/frontendOrigins.js';
+import CreatorApplication from '../models/creatorApplicationModel.js';
 
 const REQUEST_KEY_RE = /^[A-Za-z0-9_-]{8,64}$/;
 const n2 = (v) => Math.round((Number(v) || 0) * 100) / 100;
@@ -377,5 +378,134 @@ export const adminVerifyWithdrawal = async (req, res) => {
   } catch (error) {
     console.error('adminVerifyWithdrawal error:', error);
     res.status(500).json({ message: 'Verification failed' });
+  }
+};
+
+// --- Creator / affiliate program (Phase 3, Step 6) -----------------------
+// A self-service application layer over the ambassador engine. Approval
+// promotes the user to the 'super' tier with a granted rate; the referral
+// code, link, attribution, wallet and withdrawals already exist.
+
+const normStrList = (v) =>
+  Array.isArray(v) ? v.map((x) => String(x).trim()).filter(Boolean).slice(0, 20) : [];
+
+// @desc    Submit / re-submit a creator application
+// @route   POST /api/referrals/creator/apply
+// @access  Private
+export const applyAsCreator = async (req, res) => {
+  try {
+    const existing = await CreatorApplication.findByUserId(req.user.id);
+    if (existing && existing.status === 'approved') {
+      return res.status(409).json({ message: 'You are already an approved creator' });
+    }
+    const { audienceSize, niche, pitch, requestedRate } = req.body || {};
+
+    let rate = null;
+    if (requestedRate !== undefined && requestedRate !== null && requestedRate !== '') {
+      rate = parseRate(requestedRate);
+      if (rate === null) return res.status(400).json({ message: 'Requested rate must be a decimal between 0 and 0.5' });
+      const ceiling = await platformCeiling();
+      if (rate > ceiling) return res.status(400).json({ message: `Requested rate cannot exceed the platform commission (${(ceiling * 100).toFixed(2)}%)` });
+    }
+
+    const app = await CreatorApplication.submit(req.user.id, {
+      platforms: normStrList(req.body?.platforms),
+      socialLinks: normStrList(req.body?.socialLinks),
+      audienceSize: Number.isFinite(Number(audienceSize)) && Number(audienceSize) >= 0 ? Math.floor(Number(audienceSize)) : null,
+      niche: niche ? String(niche).slice(0, 160) : null,
+      pitch: pitch ? String(pitch).slice(0, 2000) : null,
+      requestedRate: rate,
+    });
+    res.status(201).json({ message: 'Creator application submitted', application: app });
+  } catch (error) {
+    console.error('applyAsCreator error:', error);
+    res.status(500).json({ message: 'Failed to submit creator application' });
+  }
+};
+
+// @desc    The caller's own creator application
+// @route   GET /api/referrals/creator/application
+// @access  Private
+export const getMyCreatorApplication = async (req, res) => {
+  try {
+    const app = await CreatorApplication.findByUserId(req.user.id);
+    res.json({ application: app });
+  } catch (error) {
+    console.error('getMyCreatorApplication error:', error);
+    res.status(500).json({ message: 'Failed to load creator application' });
+  }
+};
+
+// @desc    Admin: list creator applications
+// @route   GET /api/admin/referrals/creator-applications?status=&search=
+// @access  Private/Admin
+export const adminListCreatorApplications = async (req, res) => {
+  try {
+    const status = ['pending', 'approved', 'rejected'].includes(req.query.status) ? req.query.status : null;
+    const search = req.query.search ? String(req.query.search) : null;
+    const apps = await CreatorApplication.findAll({ status, search });
+    res.json(apps);
+  } catch (error) {
+    console.error('adminListCreatorApplications error:', error);
+    res.status(500).json({ message: 'Failed to list creator applications' });
+  }
+};
+
+// @desc    Admin: approve/reject a creator application
+// @route   POST /api/admin/referrals/creator-applications/:id/review
+//          { decision: 'approve'|'reject', rate?, note? }
+// @access  Private/Admin
+export const adminReviewCreatorApplication = async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ message: 'Invalid application id' });
+    const app = await CreatorApplication.findById(id);
+    if (!app) return res.status(404).json({ message: 'Application not found' });
+
+    const { decision, rate, note } = req.body || {};
+    if (!['approve', 'reject'].includes(decision)) {
+      return res.status(400).json({ message: "decision must be 'approve' or 'reject'" });
+    }
+
+    if (decision === 'reject') {
+      const updated = await CreatorApplication.review(id, {
+        status: 'rejected', reviewedBy: req.user.id, reviewNote: note ? String(note).slice(0, 1000) : null,
+      });
+      await auditFromRequest(req, { action: 'creator.application.reject', entityType: 'creator_application', entityId: id, after: { status: 'rejected' } });
+      return res.json({ message: 'Application rejected', application: updated });
+    }
+
+    // Approve: a rate is required (fall back to the creator's requested rate).
+    const chosen = rate !== undefined && rate !== null && rate !== '' ? rate : app.requestedRate;
+    const grantedRate = parseRate(chosen);
+    if (grantedRate === null) {
+      return res.status(400).json({ message: 'Set a rate (decimal 0–0.5) to approve this creator' });
+    }
+    const ceiling = await platformCeiling();
+    if (grantedRate > ceiling) {
+      return res.status(400).json({ message: `Rate cannot exceed the platform commission (${(ceiling * 100).toFixed(2)}%)` });
+    }
+    if (!(grantedRate > 0)) {
+      return res.status(400).json({ message: 'A creator needs a rate above 0' });
+    }
+
+    // Promote to the super ambassador tier (reuses the whole referral engine).
+    await pool.execute(
+      `UPDATE users SET ambassadorTier = 'super', ambassadorRate = ?, ambassadorSuspended = 0 WHERE id = ?`,
+      [grantedRate, app.userId]
+    );
+    await ensureReferralCode(app.userId); // make sure they have a shareable code
+    const updated = await CreatorApplication.review(id, {
+      status: 'approved', approvedRate: grantedRate, reviewedBy: req.user.id,
+      reviewNote: note ? String(note).slice(0, 1000) : null,
+    });
+    await auditFromRequest(req, {
+      action: 'creator.application.approve', entityType: 'creator_application', entityId: id,
+      after: { status: 'approved', userId: app.userId, rate: grantedRate },
+    });
+    res.json({ message: 'Creator approved', application: updated });
+  } catch (error) {
+    console.error('adminReviewCreatorApplication error:', error);
+    res.status(500).json({ message: 'Failed to review creator application' });
   }
 };

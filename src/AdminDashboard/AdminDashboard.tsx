@@ -2,7 +2,7 @@
 // DESCRIPTION: Enhanced Admin Dashboard with real data, analytics, and settings
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { FaHome, FaBox, FaShoppingCart, FaUsers, FaChartLine, FaCog, FaStore, FaTag, FaPercent, FaUndo, FaStar, FaEnvelope, FaListUl, FaClipboardCheck, FaCoins, FaCertificate, FaBullhorn, FaInbox, FaLightbulb, FaClipboardList, FaChartPie, FaRecycle, FaMoneyCheckAlt, FaGift, FaTruck, FaWarehouse } from 'react-icons/fa';
+import { FaHome, FaBox, FaShoppingCart, FaUsers, FaChartLine, FaCog, FaStore, FaTag, FaPercent, FaUndo, FaStar, FaEnvelope, FaListUl, FaClipboardCheck, FaCoins, FaCertificate, FaBullhorn, FaInbox, FaLightbulb, FaClipboardList, FaChartPie, FaRecycle, FaMoneyCheckAlt, FaGift, FaTruck, FaWarehouse, FaMoneyBillWave } from 'react-icons/fa';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, AreaChart, Area } from 'recharts';
 import ProductsPage from '../Pages/adminDashboardPages/products/ProductsPage';
 import OrdersPage from '../Pages/adminDashboardPages/Orders/OrdersPage';
@@ -27,6 +27,9 @@ import BuybackAdmin from '../Pages/adminDashboardPages/Buyback/BuybackAdmin';
 import ProductTypeInsights from '../Pages/adminDashboardPages/insights/ProductTypeInsights';
 import ShippingAdminPage from '../Pages/adminDashboardPages/Shipping/ShippingAdminPage';
 import HubAdminPage from '../Pages/adminDashboardPages/Hub/HubAdminPage';
+import PlatformEarningsPage from '../Pages/adminDashboardPages/Earnings/PlatformEarningsPage';
+import PlansPage from '../Pages/adminDashboardPages/Plans/PlansPage';
+import KenteClubAdminPage from '../Pages/adminDashboardPages/KenteClub/KenteClubAdminPage';
 import { useGetAllOrdersQuery } from '../slices/ordersApiSlice';
 import { useGetSettingsQuery, useUpdateSettingsMutation } from '../slices/settingsApiSlice';
 import { formatCurrency } from '../utils/formatCurrency';
@@ -168,6 +171,9 @@ const AdminDashboard = () => {
     { id: 'moderation', name: 'Moderation', icon: FaClipboardCheck },
     { id: 'campaigns', name: 'Campaigns', icon: FaBullhorn },
     { id: 'commissions', name: 'Commissions', icon: FaCoins },
+    { id: 'plans', name: 'Vendor Plans', icon: FaStore },
+    { id: 'kenteClub', name: 'Kente Club', icon: FaGift },
+    { id: 'earnings', name: 'Platform Earnings', icon: FaMoneyBillWave },
     { id: 'shipping', name: 'Shipping & FX', icon: FaTruck },
     { id: 'hub', name: 'Delivery Hub', icon: FaWarehouse },
     { id: 'referrals', name: 'Referrals', icon: FaGift },
@@ -595,6 +601,12 @@ const AdminDashboard = () => {
         return <CampaignsPage />;
       case 'commissions':
         return <CommissionsPage />;
+      case 'plans':
+        return <PlansPage />;
+      case 'kenteClub':
+        return <KenteClubAdminPage />;
+      case 'earnings':
+        return <PlatformEarningsPage />;
       case 'shipping':
         return <ShippingAdminPage />;
       case 'hub':

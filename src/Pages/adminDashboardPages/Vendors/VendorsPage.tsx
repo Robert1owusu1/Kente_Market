@@ -1,10 +1,11 @@
 // Pages/adminDashboardPages/Vendors/VendorsPage.jsx
 import { useState, useCallback } from 'react';
-import { FaStore, FaSpinner, FaSearch, FaCheck, FaBan, FaAward, FaTimes } from 'react-icons/fa';
+import { FaStore, FaSpinner, FaSearch, FaCheck, FaBan, FaAward, FaTimes, FaMapMarkerAlt, FaCheckCircle } from 'react-icons/fa';
 import { toast } from 'react-toastify';
 import {
   useGetAllVendorsQuery,
   useUpdateVendorStatusMutation,
+  useVerifyVendorOriginMutation,
   useGetAdminScorecardQuery,
 } from '../../../slices/vendorsApiSlice';
 import { useUpdateVendorVerificationMutation } from '../../../slices/marketplaceApiSlice';
@@ -43,6 +44,10 @@ interface VendorRow {
   status: string;
   verificationLevel: string;
   badges: string[] | string;
+  originTown?: string | null;
+  originRegion?: string | null;
+  originEvidence?: string | null;
+  originVerified?: boolean;
   domesticDelivery?: 'seller' | 'platform' | null;
   internationalDelivery?: 'seller' | 'platform' | null;
 }
@@ -97,6 +102,7 @@ const VendorsPage = () => {
     { skipPollingIfUnfocused: true }
   );
   const [updateVendorStatus, { isLoading: updating }] = useUpdateVendorStatusMutation();
+  const [verifyVendorOrigin, { isLoading: verifyingOrigin }] = useVerifyVendorOriginMutation();
   const [updateVerification, { isLoading: savingVerification }] = useUpdateVendorVerificationMutation();
   const { data: scorecard = {} } = useGetAdminScorecardQuery(undefined, {
     skipPollingIfUnfocused: true,
@@ -117,6 +123,20 @@ const VendorsPage = () => {
       toast.error(err?.data?.message || 'Failed to update vendor status');
     }
   }, [updateVendorStatus, refetch]);
+
+  const handleVerifyOrigin = useCallback(async (v: VendorRow, verified: boolean) => {
+    const note = verified
+      ? (window.prompt('How did you confirm this weaver is from Bonwire? (optional note)') ?? undefined)
+      : undefined;
+    try {
+      await verifyVendorOrigin({ id: v.id, verified, note }).unwrap();
+      toast.success(verified ? 'Bonwire origin verified' : 'Origin verification revoked');
+      refetch();
+    } catch (error) {
+      const err = error as { data?: { message?: string }; message?: string } | undefined;
+      toast.error(err?.data?.message || 'Failed to update origin verification');
+    }
+  }, [verifyVendorOrigin, refetch]);
 
   const openEditor = (v: VendorRow) => {
     let badges: string[] | string = v.badges;
@@ -270,6 +290,17 @@ const VendorsPage = () => {
                         <span className={`px-3 py-1 rounded-full text-xs font-medium ${statusBadge(vr.status)}`}>
                           {vr.status}
                         </span>
+                        <div className="mt-1.5">
+                          {vr.originVerified ? (
+                            <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 dark:text-emerald-400" title={vr.originTown ? `Verified: ${vr.originTown}` : 'Verified Bonwire origin'}>
+                              <FaCheckCircle /> Bonwire ✓
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-600 dark:text-amber-400" title={vr.originTown ? `Claims: ${vr.originTown}` : 'Origin not verified'}>
+                              <FaMapMarkerAlt /> Origin unverified
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="text-sm">
                         <span className="capitalize text-gray-800 dark:text-white">
@@ -281,12 +312,31 @@ const VendorsPage = () => {
                       </td>
                       <td>
                         <div className="flex gap-2">
+                          {!vr.originVerified ? (
+                            <button
+                              onClick={() => handleVerifyOrigin(vr, true)}
+                              disabled={verifyingOrigin}
+                              className="p-2 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900 rounded"
+                              title="Verify Bonwire origin"
+                            >
+                              <FaMapMarkerAlt />
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleVerifyOrigin(vr, false)}
+                              disabled={verifyingOrigin}
+                              className="p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                              title="Revoke Bonwire origin verification"
+                            >
+                              <FaMapMarkerAlt className="opacity-50" />
+                            </button>
+                          )}
                           {vr.status !== 'approved' && (
                             <button
                               onClick={() => handleStatus(vr.id, 'approved')}
                               disabled={updating}
                               className="p-2 text-green-600 hover:bg-green-50 dark:hover:bg-green-900 rounded"
-                              title="Approve"
+                              title={vr.originVerified ? 'Approve' : 'Verify Bonwire origin before approving'}
                             >
                               <FaCheck />
                             </button>

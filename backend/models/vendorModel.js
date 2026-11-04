@@ -36,6 +36,17 @@ class Vendor {
       ? null
       : Number(data.platformFeeRate);
     this.status = data.status;
+    // Current plan (denormalised pointer into plans.id; null until the vendor
+    // subscribes). Subscription lifecycle lives in vendor_subscriptions.
+    this.planId = data.planId === null || data.planId === undefined ? null : Number(data.planId);
+    // Bonwire origin verification (hard gate before approval).
+    this.originTown = data.originTown || null;
+    this.originRegion = data.originRegion || null;
+    this.originEvidence = data.originEvidence || null;
+    this.originVerified = !!data.originVerified;
+    this.originVerifiedBy = data.originVerifiedBy ?? null;
+    this.originVerifiedAt = data.originVerifiedAt ?? null;
+    this.originVerificationNote = data.originVerificationNote || null;
     this.created_at = data.created_at;
     this.updated_at = data.updated_at;
     // Storefront fields
@@ -82,6 +93,9 @@ class Vendor {
       badges: this.badges,
       weaverVideo: this.weaverVideo,
       status: this.status,
+      // Trust signal: confirmed Bonwire origin (town shown, evidence/notes hidden).
+      originTown: this.originTown,
+      originVerified: this.originVerified,
       firstName: this.firstName,
       lastName: this.lastName,
     };
@@ -151,10 +165,11 @@ class Vendor {
     const fields = [
       'userId', 'businessName', 'contactPhone', 'payoutType', 'bankName',
       'accountNumber', 'bankCode', 'momoProvider', 'momoNumber',
-      'recipientCode', 'recipientType', 'platformFeeRate', 'status',
+      'recipientCode', 'recipientType', 'platformFeeRate', 'status', 'planId',
       'slug', 'logo', 'coverImage', 'businessDescription', 'weaverStory',
       'yearsExperience', 'location', 'workshop', 'socialMedia',
-      'verificationLevel', 'badges', 'domesticDelivery', 'internationalDelivery'
+      'verificationLevel', 'badges', 'domesticDelivery', 'internationalDelivery',
+      'originTown', 'originRegion', 'originEvidence'
     ];
     const cols = [];
     const placeholders = [];
@@ -179,10 +194,12 @@ class Vendor {
     const fields = [
       'businessName', 'contactPhone', 'payoutType', 'bankName', 'accountNumber',
       'bankCode', 'momoProvider', 'momoNumber', 'recipientCode', 'recipientType',
-      'platformFeeRate', 'status', 'slug', 'logo', 'coverImage',
+      'platformFeeRate', 'status', 'planId', 'slug', 'logo', 'coverImage',
       'businessDescription', 'weaverStory', 'yearsExperience', 'location',
       'workshop', 'socialMedia', 'verificationLevel', 'badges', 'weaverVideo',
-      'domesticDelivery', 'internationalDelivery'
+      'domesticDelivery', 'internationalDelivery',
+      'originTown', 'originRegion', 'originEvidence', 'originVerified',
+      'originVerifiedBy', 'originVerifiedAt', 'originVerificationNote'
     ];
     const sets = [];
     const values = [];

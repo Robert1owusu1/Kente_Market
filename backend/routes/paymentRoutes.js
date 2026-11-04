@@ -20,6 +20,10 @@ import {
 import { reconcileTerminalOrderCharge } from '../Services/paymentReconciliationService.js';
 import { recordFinancialEvent } from '../Services/ledgerService.js';
 import { notifyAdmins } from '../utils/adminAlerts.js';
+import { processSubscriptionWebhook } from '../Services/vendorSubscriptionService.js';
+import { processGiftCardWebhook } from '../Services/giftCardService.js';
+import { processFeaturedWebhook } from '../Services/featuredListingService.js';
+import { processMembershipWebhook } from '../Services/membershipService.js';
 
 // Provider evidence carried by a signed transfer webhook: amount in pesewas and
 // currency. Settlement refuses to book a transfer whose evidence differs from
@@ -151,7 +155,7 @@ router.post('/verify-paystack', protect, async (req, res) => {
       // Fallback: if the webhook missed this order, mark it paid here.
       // The webhook_events idempotency guard prevents double-processing.
       const [existing] = await pool.execute(
-        `SELECT id, userId, totalAmount, paymentStatus, orderStatus, refundReference, paymentReference, couponId, items, discount FROM orders WHERE paymentReference = ?`,
+        `SELECT id, userId, totalAmount, storeCreditApplied, paymentStatus, orderStatus, refundReference, paymentReference, couponId, items, discount FROM orders WHERE paymentReference = ?`,
         [reference]
       );
       let orderMarkedPaid = false;
@@ -201,7 +205,8 @@ router.post('/verify-paystack', protect, async (req, res) => {
         // reference to a large cancelled order and have the terminal branch
         // book order.totalAmount as collected (see audit). Mirrors the
         // webhook, which validates before its own terminal-order branch.
-        const expectedKobo = Math.round(parseFloat(order.totalAmount) * 100);
+        // Split payment: Paystack only covers the total minus any store credit applied.
+        const expectedKobo = Math.round((parseFloat(order.totalAmount) - (parseFloat(order.storeCreditApplied) || 0)) * 100);
         const paidKobo = parseInt(data.amount, 10);
         if (
           data.currency !== CHARGED_CURRENCY ||
@@ -397,6 +402,40 @@ router.post('/paystack-webhook', webhookLimiter, async (req, res) => {
           }
           claimedWebhook = { event: event.event, reference };
 
+          // Vendor plan subscription charge? Correlated by our own reference.
+          // Handle it and stop — it is not an order. A throw propagates to the
+          // outer catch (marks the claim failed → 500 so Paystack redelivers).
+          const subCharge = await processSubscriptionWebhook({ event: event.event, data: event.data });
+          if (subCharge.handled) {
+            await completeWebhook(event.event, reference);
+            claimedWebhook = null;
+            return res.status(200).send('Subscription charge processed');
+          }
+
+          // Gift-card purchase charge? Issue the card + email the recipient.
+          const giftCharge = await processGiftCardWebhook({ event: event.event, data: event.data });
+          if (giftCharge.handled) {
+            await completeWebhook(event.event, reference);
+            claimedWebhook = null;
+            return res.status(200).send('Gift card charge processed');
+          }
+
+          // Featured-listing purchase charge? Feature the product + book revenue.
+          const featuredCharge = await processFeaturedWebhook({ event: event.event, data: event.data });
+          if (featuredCharge.handled) {
+            await completeWebhook(event.event, reference);
+            claimedWebhook = null;
+            return res.status(200).send('Featured charge processed');
+          }
+
+          // Kente Club membership charge?
+          const membershipCharge = await processMembershipWebhook({ event: event.event, data: event.data });
+          if (membershipCharge.handled) {
+            await completeWebhook(event.event, reference);
+            claimedWebhook = null;
+            return res.status(200).send('Membership charge processed');
+          }
+
           // Retry loop: the POST /api/orders may not have completed yet when
           // this webhook fires. We retry up to 5 times with increasing delays
           // to wait for the order row (and its escrow allocations) to exist.
@@ -425,7 +464,7 @@ router.post('/paystack-webhook', webhookLimiter, async (req, res) => {
               // FULL order amount, in GHS. A reference must also map to exactly
               // one order — multiple matches means a reused/forged reference.
               const [preRows] = await connection.execute(
-                `SELECT id, totalAmount, paymentStatus FROM orders WHERE paymentReference = ?`,
+                `SELECT id, totalAmount, storeCreditApplied, paymentStatus FROM orders WHERE paymentReference = ?`,
                 [reference]
               );
               if (preRows.length > 1) {
@@ -433,7 +472,7 @@ router.post('/paystack-webhook', webhookLimiter, async (req, res) => {
                 break;
               }
               if (preRows.length === 1) {
-                const expectedKobo = Math.round(parseFloat(preRows[0].totalAmount) * 100);
+                const expectedKobo = Math.round((parseFloat(preRows[0].totalAmount) - (parseFloat(preRows[0].storeCreditApplied) || 0)) * 100);
                 const paidKobo = parseInt(event.data?.amount, 10);
                 if (
                   event.data?.currency !== CHARGED_CURRENCY ||
@@ -765,6 +804,35 @@ case 'transfer.success': {
             await failWebhook(event.event, key, error);
             throw error; // → 500 so Paystack redelivers
           }
+        }
+        break;
+      }
+
+      case 'subscription.create':
+      case 'subscription.disable':
+      case 'subscription.not_renew':
+      case 'invoice.create':
+      case 'invoice.update':
+      case 'invoice.payment_failed': {
+        const subRef =
+          event.data?.subscription_code ||
+          event.data?.subscription?.subscription_code ||
+          event.data?.invoice_code ||
+          event.data?.id;
+        if (!subRef) { console.log(`Subscription event without a code: ${event.event}`); break; }
+        const claimRef = `${event.event}:${subRef}`.slice(0, 255);
+        if (!(await claimWebhook(event.event, claimRef, JSON.stringify(event.data || null)))) {
+          return res.status(200).send('Duplicate ignored');
+        }
+        try {
+          // Route to whichever subscription this belongs to — vendor plan or
+          // Kente Club membership (each matches only its own records by code).
+          await processSubscriptionWebhook({ event: event.event, data: event.data });
+          await processMembershipWebhook({ event: event.event, data: event.data });
+          await completeWebhook(event.event, claimRef);
+        } catch (error) {
+          await failWebhook(event.event, claimRef, error);
+          throw error; // → 500 so Paystack redelivers
         }
         break;
       }

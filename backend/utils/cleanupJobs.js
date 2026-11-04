@@ -5,6 +5,9 @@ import { sendEmailSafely } from './emailService.js';
 import { scanWishlistRestocks } from '../Services/wishlistRestockService.js';
 import { scanWishlistPriceDrops } from '../Services/wishlistPriceDropService.js';
 import { releaseExpiredReservations } from '../Services/reservationService.js';
+import { expireFeaturedPlacements } from '../Services/featuredListingService.js';
+import { reconcileStoreCreditRefunds } from '../Services/giftCardService.js';
+import { evaluateGroupBuyCampaigns } from '../Services/groupBuyService.js';
 import { sendWeeklyVendorDigest } from './marketInsights.js';
 import {
   reconcileStuckTransfers,
@@ -234,6 +237,9 @@ const scheduleJobs = () => {
   run('scanWishlistRestocks', scanWishlistRestocks, HOUR);
   run('scanWishlistPriceDrops', scanWishlistPriceDrops, HOUR);
   run('sendAbandonedCartEmails', sendAbandonedCartEmails, HOUR);
+  run('expireFeaturedPlacements', expireFeaturedPlacements, HOUR);
+  run('reconcileStoreCreditRefunds', reconcileStoreCreditRefunds, HOUR);
+  run('evaluateGroupBuyCampaigns', evaluateGroupBuyCampaigns, HOUR);
   run('reconcileStuckTransfers', reconcileStuckTransfers, 30 * 60 * 1000);
   run('reclaimStaleProcessingWebhooks', reclaimStaleProcessingWebhooks, 15 * 60 * 1000);
   run('reconcileAvailableAllocations', reconcileAvailableAllocations, 15 * 60 * 1000);

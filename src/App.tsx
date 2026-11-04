@@ -78,6 +78,9 @@ const SuggestionsPage = lazy(() => import('./Pages/Suggestions/SuggestionsPage')
 const MyMessages = lazy(() => import('./Pages/Messages/MyMessages'));
 const MyCertificates = lazy(() => import('./Pages/Certificates/MyCertificates'));
 const ReferralsPage = lazy(() => import('./Pages/Referrals/ReferralsPage'));
+const GiftCardsPage = lazy(() => import('./Pages/GiftCards/GiftCardsPage'));
+const KenteClubPage = lazy(() => import('./Pages/KenteClub/KenteClubPage'));
+const BuyerWholesalePage = lazy(() => import('./Pages/Wholesale/BuyerWholesalePage'));
 const CustomRequestForm = lazy(() => import('./Pages/CustomRequest/CustomRequestForm'));
 const MyCustomRequests = lazy(() => import('./Pages/CustomRequest/MyCustomRequests'));
 const CustomRequestCheckout = lazy(() => import('./Pages/CustomRequest/CustomRequestCheckout'));
@@ -159,6 +162,8 @@ const App = () => {
               <Route path='/vendors' element={<VendorDirectory />} />
               <Route path='/store/:slug' element={<VendorStorefront />} />
               <Route path='/museum' element={<KenteMuseum />} />
+              <Route path='/kente-club' element={<KenteClubPage />} />
+              <Route path='/kente-club/success' element={<KenteClubPage />} />
               <Route path='/suggestions' element={<SuggestionsPage />} />
               <Route path='/unsubscribe' element={<UnsubscribePage />} />
               <Route path='/cartpage' element={<CartPage />} />
@@ -191,6 +196,10 @@ const App = () => {
                 <Route path='/messages' element={<MyMessages />} />
                 <Route path='/certificates' element={<MyCertificates />} />
                 <Route path='/referrals' element={<ReferralsPage />} />
+                <Route path='/gift-cards' element={<GiftCardsPage />} />
+                <Route path='/gift-cards/redeem' element={<GiftCardsPage />} />
+                <Route path='/gift-cards/success' element={<GiftCardsPage />} />
+                <Route path='/wholesale/quotes' element={<BuyerWholesalePage />} />
                 <Route path='/customize/:id' element={<CustomRequestForm />} />
                 <Route path='/custom-requests' element={<MyCustomRequests />} />
                 <Route path='/custom-requests/:id/checkout' element={<CustomRequestCheckout />} />

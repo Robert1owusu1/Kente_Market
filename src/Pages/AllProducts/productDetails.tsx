@@ -14,6 +14,8 @@ import { pieceLengthLabel } from "../../utils/yards";
 import { toCartItem } from "../../utils/cartItem";
 import tryOnService, { type TryOnEligibility } from "../../ai-tryon/api/tryOnService";
 import { useWishlistToggle } from "../../hooks/useWishlistToggle";
+import BulkQuoteButton from "./BulkQuoteButton";
+import GroupBuyProgress from "./GroupBuyProgress";
 
 const ProductDetails = () => {
   const { id: productId } = useParams();
@@ -277,6 +279,22 @@ const ProductDetails = () => {
             )}
           </div>
 
+          {(product as { groupBuyStatus?: string | null }).groupBuyStatus ? <GroupBuyProgress productId={product.id} /> : null}
+
+          {(product as { isPreorder?: boolean | number }).isPreorder ? (
+            <div className="mb-3 rounded-xl border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-3">
+              <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">
+                Pre-order — this is a limited run
+              </p>
+              <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5">
+                {(product as { preorderAvailableOn?: string | null }).preorderAvailableOn
+                  ? `Ships around ${new Date((product as { preorderAvailableOn?: string }).preorderAvailableOn as string).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}.`
+                  : 'Ships once this run is woven.'}
+                {stockLevel > 0 ? ` Only ${stockLevel} left in this run.` : ''} You pay now; funds are held in escrow until it ships.
+              </p>
+            </div>
+          ) : null}
+
           {/* Try It On + Add to cart */}
           <div className="flex flex-col xs:flex-row gap-3 sm:gap-4">
             {tryOnChecking && (
@@ -310,7 +328,7 @@ const ProductDetails = () => {
               className="flex-1 px-6 py-3 bg-gray-800 dark:bg-gray-100 dark:text-gray-800 text-white rounded-xl shadow-md hover:bg-gray-700 transition flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-gray-800"
             >
               <FaShoppingCart />
-              {isOutOfStock ? 'Sold out' : 'Add to Cart'}
+              {isOutOfStock ? 'Sold out' : (product as { isPreorder?: boolean | number }).isPreorder ? 'Pre-order now' : 'Add to Cart'}
             </button>
             {(() => {
               const saved = wishlist.isSaved(product.id);
@@ -347,6 +365,13 @@ const ProductDetails = () => {
               Need another length or colours? Request a custom piece
             </button>
           )}
+
+          {(product as { wholesaleEnabled?: boolean | number }).wholesaleEnabled ? (
+            <BulkQuoteButton
+              productId={Number(product.id)}
+              minQty={(product as { wholesaleMinQty?: number | null }).wholesaleMinQty}
+            />
+          ) : null}
         </div>
       </div>
 

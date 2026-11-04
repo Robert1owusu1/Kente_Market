@@ -29,9 +29,15 @@ export const MAX_REFERRAL_RATE = 0.5;
 // helpers
 // ---------------------------------------------------------------------------
 
-/** Keyed hash so raw device ids / IPs / payment instruments are never stored. */
-export const keyedHash = (/** @type {string} */ kind, /** @type {string} */ value) =>
-  crypto.createHmac('sha256', String(process.env.JWT_SECRET || 'referral')).update(`${kind}:${value}`).digest('hex');
+/** Keyed hash so raw device ids / IPs / payment instruments are never stored.
+ *  Keyed with JWT_SECRET (required at boot in production — see server.js); no
+ *  predictable fallback, so these fraud-signal hashes can never be keyed with a
+ *  guessable constant. */
+export const keyedHash = (/** @type {string} */ kind, /** @type {string} */ value) => {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) throw new Error('JWT_SECRET is required for referral keyed hashing');
+  return crypto.createHmac('sha256', String(secret)).update(`${kind}:${value}`).digest('hex');
+};
 
 /**
  * Canonical mailbox for alias detection: lower-case; "+tag" removed; for
@@ -176,7 +182,7 @@ export const signVisitToken = (/** @type {string} */ code) =>
 export const readVisitToken = (token) => {
   if (!token || typeof token !== 'string') return null;
   try {
-    const d = /** @type {any} */ (jwt.verify(token, String(process.env.JWT_SECRET)));
+    const d = /** @type {any} */ (jwt.verify(token, String(process.env.JWT_SECRET), { algorithms: ['HS256'] }));
     return d?.purpose === 'referral_visit' && REFERRAL_CODE_RE.test(d.code) ? d.code : null;
   } catch {
     return null;
@@ -366,7 +372,7 @@ const reviewSignals = async (order, customer, referrer) => {
  */
 export const recordReferralForOrder = async (orderId) => {
   const [[order]] = await pool.execute(
-    `SELECT id, userId, paymentStatus, orderStatus, paymentMethod, created_at, shippingAddress, paymentInstrumentHash
+    `SELECT id, userId, paymentStatus, orderStatus, paymentMethod, created_at, shippingAddress, paymentInstrumentHash, referrerUserId
        FROM orders WHERE id = ?`, [orderId]
   );
   if (!order) return true;
@@ -378,17 +384,31 @@ export const recordReferralForOrder = async (orderId) => {
   const [[customer]] = await pool.execute(
     `SELECT id, phone, referredBy, referredAt, signupIpHash FROM users WHERE id = ?`, [order.userId]
   );
-  if (!customer?.referredBy || !customer.referredAt) return true;
+  if (!customer) return true;
+
+  // Attribution: LAST-CLICK (a referral link clicked within the cookie window,
+  // captured on the order at checkout — works for existing customers too) takes
+  // precedence over SIGNUP attribution (users.referredBy, set once at signup).
+  const lastClickReferrer = order.referrerUserId ? Number(order.referrerUserId) : null;
+  const effectiveReferrerId = lastClickReferrer ?? (customer.referredBy ? Number(customer.referredBy) : null);
+  if (!effectiveReferrerId) return true;
+  // Signup attribution needs referredAt (to apply the window); last-click does not.
+  if (!lastClickReferrer && !customer.referredAt) return true;
+
   const [[referrer]] = await pool.execute(
     `SELECT id, phone, isActive, ambassadorSuspended, ambassadorTier, ambassadorRate, signupIpHash FROM users WHERE id = ?`,
-    [customer.referredBy]
+    [effectiveReferrerId]
   );
   if (!referrer || referrer.id === customer.id || !referrer.isActive || referrer.ambassadorSuspended) return true;
 
   const settings = await getReferralSettings();
   if (!settings.enabled) return true;
-  const windowEnd = new Date(new Date(customer.referredAt).getTime() + settings.windowDays * 86400000);
-  if (new Date(order.created_at) > windowEnd) return true;
+  // The signup window bounds signup attribution; last-click is already bounded by
+  // the referral cookie's TTL at the moment the order was placed.
+  if (!lastClickReferrer) {
+    const windowEnd = new Date(new Date(customer.referredAt).getTime() + settings.windowDays * 86400000);
+    if (new Date(order.created_at) > windowEnd) return true;
+  }
 
   const superRate = referrer.ambassadorTier === 'super' && referrer.ambassadorRate !== null ? Number(referrer.ambassadorRate) : null;
   const rate = superRate !== null && Number.isFinite(superRate) ? superRate : settings.standardRate;

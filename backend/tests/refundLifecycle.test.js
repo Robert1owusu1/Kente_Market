@@ -153,12 +153,12 @@ describe('refund lifecycle gaps (REF-ASYNC, REF-RELEASED)', { skip: !dbAvailable
     const { voidEscrowForOrder } = await import('../Services/escrowService.js');
     const orderId = await mkOrder(`rl_${TS}_rel`, { paymentStatus: 'refunded', orderStatus: 'cancelled' });
     const [a1] = await pool.execute(
-      `INSERT INTO escrow_allocations (orderId, vendorId, amount, platformFee, payoutAmount, status)
-       VALUES (?, ?, 100, 10, 90, 'released')`, [orderId, fx.vendor]
+      `INSERT INTO escrow_allocations (orderId, vendorId, amount, platformFeeRate, platformFee, payoutAmount, status)
+       VALUES (?, ?, 100, 0.1, 10, 90, 'released')`, [orderId, fx.vendor]
     );
     const [a2] = await pool.execute(
-      `INSERT INTO escrow_allocations (orderId, vendorId, amount, platformFee, payoutAmount, status)
-       VALUES (?, ?, 20, 2, 18, 'held')`, [orderId, fx.vendor2]
+      `INSERT INTO escrow_allocations (orderId, vendorId, amount, platformFeeRate, platformFee, payoutAmount, status)
+       VALUES (?, ?, 20, 0.1, 2, 18, 'held')`, [orderId, fx.vendor2]
     );
     const walletBefore = (await pool.execute(`SELECT COUNT(*) AS n FROM wallet_transactions WHERE vendorId = ?`, [fx.vendor]))[0][0].n;
 

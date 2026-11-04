@@ -6,6 +6,8 @@ import Order from "../models/orderModel.js";
 import pool from "../config/db.js";
 import Coupon from "../models/couponModel.js";
 import { capCouponDiscount } from "../Services/commissionService.js";
+import { getActiveMembershipDiscountPercent } from "../Services/membershipService.js";
+import { readVisitToken, findActiveReferrer, REFERRAL_COOKIE } from "../Services/referralService.js";
 import Notification from "../models/notificationModel.js";
 import isValidId from "../utils/isValidId.js";
 import { computeTopProductTypes } from "../utils/marketInsights.js";
@@ -592,6 +594,20 @@ export const addOrderItems = async (req, res) => {
       // exceed that seller's proceeds. The order is booked at the capped value.
       discount = await capCouponDiscount(pool, items, discount, c.vendorId ?? null);
       appliedCouponId = c.id;
+    } else {
+      // Kente Club: an active member gets their tier's members-only discount
+      // when no coupon is used. It is PLATFORM-funded (couponId stays NULL, so
+      // createEscrowAllocations treats it as an admin discount) and capped at
+      // the platform commission — the platform never pays out of pocket.
+      try {
+        const memberPct = await getActiveMembershipDiscountPercent(Number(req.user.id));
+        if (memberPct > 0) {
+          const nominal = round2(subtotal * (memberPct / 100));
+          discount = await capCouponDiscount(pool, items, nominal, null);
+        }
+      } catch (memErr) {
+        console.warn(` membership discount skipped: ${memErr.message}`);
+      }
     }
 
     // NOTE: shipping above may be the international GHS resolution (not the
@@ -664,6 +680,21 @@ export const addOrderItems = async (req, res) => {
     }
 
     newOrder = await Order.create(orderData);
+
+    // Last-click affiliate attribution: if the buyer arrived via a referral link
+    // (signed kref cookie), credit that referrer for THIS order (works for
+    // existing customers, not just new signups). Never self-refer. Best-effort.
+    try {
+      const refCode = readVisitToken(req.cookies?.[REFERRAL_COOKIE]);
+      if (refCode) {
+        const referrer = await findActiveReferrer(refCode);
+        if (referrer && Number(referrer.id) !== Number(req.user.id)) {
+          await pool.execute(`UPDATE orders SET referrerUserId = ? WHERE id = ?`, [referrer.id, newOrder.id]);
+        }
+      }
+    } catch (refErr) {
+      console.warn(` last-click attribution skipped: ${refErr.message}`);
+    }
 
     // Who delivers each seller's parcel and its fee, frozen before escrow is
     // allocated (a seller who delivers is owed that fee).

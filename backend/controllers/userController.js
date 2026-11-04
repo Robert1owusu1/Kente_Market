@@ -230,7 +230,7 @@ const logoutUser = asyncHandler(async (req, res) => {
   const token = req.cookies?.jwt;
   if (token) {
     try {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
       if (decoded?.id) {
         // SECURITY FIX (V-06): Branch on role to bump the correct tokenVersion.
         // Staff tokens carry role='vendor_staff' and must bump vendor_staff.tokenVersion,

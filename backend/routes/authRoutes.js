@@ -32,7 +32,7 @@ const signConsentToken = () =>
 // token issued for the CURRENT terms revision.
 const isConsentTokenValid = (token) => {
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
     return decoded.purpose === 'legal_consent' && decoded.termsVersion === TERMS_VERSION;
   } catch {
     return false;
@@ -117,7 +117,7 @@ const signOAuthState = () =>
 // consuming that nonce server-side, not just by the browser dropping a cookie.
 const decodeOAuthState = (token) => {
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
     return decoded.purpose === 'oauth_state' && decoded.nonce ? decoded : null;
   } catch {
     return null;
@@ -286,7 +286,7 @@ router.post('/oauth/exchange', async (req, res) => {
     // and callback for signup only. Login must not require it, and the
     // exchange token itself is purpose-bound, short-lived, and single-use.
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
     if (decoded.purpose !== 'oauth_exchange') {
       return res.status(401).json({ message: 'Invalid token' });
     }

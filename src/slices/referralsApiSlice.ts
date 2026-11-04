@@ -165,8 +165,57 @@ export const referralsApiSlice = apiSlice.injectEndpoints({
       query: (id) => ({ url: `${ADMIN_REFERRALS_URL}/withdrawals/${id}/verify`, method: 'POST' }),
       invalidatesTags: ['Referral'],
     }),
+
+    // --- Creator / affiliate program (Phase 3, Step 6) ---
+    getMyCreatorApplication: builder.query<{ application: CreatorApplication | null }, void>({
+      query: () => ({ url: `${REFERRALS_URL}/creator/application` }),
+      providesTags: ['Referral'],
+    }),
+    applyAsCreator: builder.mutation<{ message: string; application: CreatorApplication }, CreatorApplicationInput>({
+      query: (body) => ({ url: `${REFERRALS_URL}/creator/apply`, method: 'POST', body }),
+      invalidatesTags: ['Referral'],
+    }),
+    getCreatorApplications: builder.query<CreatorApplication[], { status?: string; search?: string } | void>({
+      query: (args) => ({ url: `${ADMIN_REFERRALS_URL}/creator-applications`, params: args || {} }),
+      providesTags: ['Referral'],
+    }),
+    reviewCreatorApplication: builder.mutation<
+      { message: string; application: CreatorApplication },
+      { id: number; decision: 'approve' | 'reject'; rate?: string; note?: string }
+    >({
+      query: ({ id, ...body }) => ({ url: `${ADMIN_REFERRALS_URL}/creator-applications/${id}/review`, method: 'POST', body }),
+      invalidatesTags: ['Referral'],
+    }),
   }),
 });
+
+export interface CreatorApplicationInput {
+  platforms?: string[];
+  socialLinks?: string[];
+  audienceSize?: number | string;
+  niche?: string;
+  pitch?: string;
+  requestedRate?: string;
+}
+
+export interface CreatorApplication {
+  id: number;
+  userId: number;
+  status: 'pending' | 'approved' | 'rejected';
+  platforms: string[];
+  socialLinks: string[];
+  audienceSize: number | null;
+  niche: string | null;
+  pitch: string | null;
+  requestedRate: number | null;
+  approvedRate: number | null;
+  reviewNote: string | null;
+  created_at?: string;
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  referralCode?: string;
+}
 
 export const {
   useCaptureReferralVisitMutation,
@@ -182,4 +231,8 @@ export const {
   useReviewReferralCommissionMutation,
   useGetReferralWithdrawalsQuery,
   useVerifyReferralWithdrawalMutation,
+  useGetMyCreatorApplicationQuery,
+  useApplyAsCreatorMutation,
+  useGetCreatorApplicationsQuery,
+  useReviewCreatorApplicationMutation,
 } = referralsApiSlice;

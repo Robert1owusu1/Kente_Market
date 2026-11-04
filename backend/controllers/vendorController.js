@@ -11,6 +11,9 @@ import { hasInvalidYards, INVALID_YARDS_MESSAGE, pieceLengthError, kenteDetailsE
 import { toNonNegativeInt } from '../utils/nonNegativeInt.js';
 import { clearCache } from '../middleware/cacheMiddleware.js';
 import Setting from '../models/settingModel.js';
+import VendorSubscription from '../models/vendorSubscriptionModel.js';
+import { getPlanAccess, hasFeature } from '../Services/planAccessService.js';
+import { PLAN_FEATURES } from '../../shared/plans.js';
 
 // Create a URL-safe slug from a business name (Ghanaian accents transliterated
 // to ASCII; everything else stripped).
@@ -30,6 +33,7 @@ const slugify = (value) =>
 export const applyVendor = async (req, res) => {
   try {
     const { businessName, contactPhone, payoutType, bankName, accountNumber, bankCode, momoProvider, momoNumber } = req.body;
+    const { originTown, originRegion, originEvidence } = req.body;
 
     if (!businessName) return res.status(400).json({ message: 'Business name is required' });
 
@@ -104,6 +108,20 @@ export const applyVendor = async (req, res) => {
       ...(internationalDelivery !== undefined ? { internationalDelivery } : {}),
     };
 
+    // Bonwire origin claim the vendor submits. The vendor may (re)submit the
+    // CLAIM; only an admin can set `originVerified` (verifyVendorOrigin). If a
+    // verified vendor edits their claim, re-verification is required.
+    const originFields = {
+      ...(originTown !== undefined ? { originTown } : {}),
+      ...(originRegion !== undefined ? { originRegion } : {}),
+      ...(originEvidence !== undefined ? { originEvidence } : {}),
+    };
+    const originClaimChanged = existingVendor && existingVendor.originVerified && (
+      (originTown !== undefined && originTown !== existingVendor.originTown) ||
+      (originRegion !== undefined && originRegion !== existingVendor.originRegion) ||
+      (originEvidence !== undefined && originEvidence !== existingVendor.originEvidence)
+    );
+
     // Build the payout fields based on the chosen type. Values from the
     // non-selected method are cleared so stale bank/momo data never lingers.
     const payoutFields = type === 'momo'
@@ -131,6 +149,11 @@ export const applyVendor = async (req, res) => {
         contactPhone: contactPhone || existing.contactPhone,
         ...payoutFields,
         ...deliveryFields,
+        ...originFields,
+        // A verified vendor who changes their origin claim must be re-verified.
+        ...(originClaimChanged
+          ? { originVerified: 0, originVerifiedBy: null, originVerifiedAt: null }
+          : {}),
         recipientCode: recipientCode || existing.recipientCode,
         recipientType: recipientType || existing.recipientType,
       });
@@ -141,6 +164,7 @@ export const applyVendor = async (req, res) => {
         contactPhone,
         ...payoutFields,
         ...deliveryFields,
+        ...originFields,
         recipientCode,
         recipientType,
         platformFeeRate: PLATFORM_FEE_RATE,
@@ -177,7 +201,42 @@ export const getMyVendorProfile = async (req, res) => {
     // alone is shadowed by any active global rule, so showing it misinformed
     // vendors. Product/category rules can still differ per item.
     const commissionRate = await resolveCommissionRate({ vendorId: req.user.id });
-    res.json({ vendor, summary, payouts, walletTransactions, commission: { rate: commissionRate, perItemRulesMayApply: true } });
+
+    // Pay-for-plan gate: an approved vendor must have an active subscription to
+    // unlock the dashboard (only when vendorPlans.required is on).
+    const subscription = await VendorSubscription.findCurrent(req.user.id);
+    let plansRequired = false;
+    try {
+      const s = await Setting.get('vendorPlans.required');
+      plansRequired = s === true || s === 'true';
+    } catch { /* default off */ }
+    const planGate = {
+      required: plansRequired,
+      hasActivePlan: !!subscription,
+      // Locked = plans enforced, store approved, but no active plan yet.
+      locked: plansRequired && vendor.status === 'approved' && !subscription,
+    };
+
+    // What the vendor's plan unlocks (drives which dashboard features show).
+    const access = await getPlanAccess(req.user.id);
+    const [[prodCount]] = await pool.execute(
+      `SELECT COUNT(*) AS n FROM product WHERE vendorId = ?`, [req.user.id]
+    );
+    const planAccess = {
+      enforced: access.enforced,
+      features: access.features,
+      productLimit: access.productLimit,
+      productCount: Number(prodCount?.n) || 0,
+      planName: access.planName,
+    };
+
+    res.json({
+      vendor, summary, payouts, walletTransactions,
+      commission: { rate: commissionRate, perItemRulesMayApply: true },
+      subscription,
+      planGate,
+      planAccess,
+    });
   } catch (error) {
     console.error('Error fetching vendor profile:', error);
     res.status(500).json({ message: 'Failed to fetch vendor profile' });
@@ -218,6 +277,16 @@ export const updateVendorStatus = async (req, res) => {
     // fail.
     if (status === 'approved') {
       const problems = [];
+      // HARD GATE: a vendor must be a verified Bonwire artisan before approval
+      // (toggle: settings vendorPlans.bonwireVerificationRequired, default on).
+      let bonwireRequired = true;
+      try {
+        const setting = await Setting.get('vendorPlans.bonwireVerificationRequired');
+        if (setting !== null && setting !== undefined) bonwireRequired = setting === true || setting === 'true';
+      } catch { /* default to required on read failure */ }
+      if (bonwireRequired && !vendor.originVerified) {
+        problems.push('Bonwire origin is not verified — confirm the weaver is from Bonwire first');
+      }
       if (!vendor.recipientCode) {
         problems.push('Paystack recipient code is missing');
       }
@@ -258,6 +327,43 @@ export const updateVendorStatus = async (req, res) => {
   } catch (error) {
     console.error('Error updating vendor status:', error);
     res.status(500).json({ message: 'Failed to update vendor status' });
+  }
+};
+
+// @desc    Verify (or revoke) a vendor's Bonwire origin — the hard gate the
+//          admin clears after contacting the weaver and confirming they are
+//          from Bonwire. Approval (updateVendorStatus) is blocked until this
+//          is set while vendorPlans.bonwireVerificationRequired is on.
+// @route   PUT /api/vendors/:id/origin   { verified: boolean, note?: string }
+// @access  Private/Admin
+export const verifyVendorOrigin = async (req, res) => {
+  try {
+    const { verified, note } = req.body || {};
+    if (typeof verified !== 'boolean') {
+      return res.status(400).json({ message: 'verified (true/false) is required' });
+    }
+
+    const vendor = await Vendor.findById(req.params.id);
+    if (!vendor) {
+      return res.status(404).json({ message: 'Vendor not found' });
+    }
+
+    // MySQL DATETIME string (the generic model update JSON-stringifies Date objects).
+    const nowSql = new Date().toISOString().slice(0, 19).replace('T', ' ');
+    const updatedVendor = await Vendor.update(req.params.id, {
+      originVerified: verified ? 1 : 0,
+      originVerifiedBy: verified ? req.user.id : null,
+      originVerifiedAt: verified ? nowSql : null,
+      ...(note !== undefined ? { originVerificationNote: note } : {}),
+    });
+
+    res.json({
+      message: verified ? 'Bonwire origin verified' : 'Bonwire origin verification revoked',
+      vendor: updatedVendor,
+    });
+  } catch (error) {
+    console.error('Error verifying vendor origin:', error);
+    res.status(500).json({ message: 'Failed to update origin verification' });
   }
 };
 
@@ -331,6 +437,22 @@ export const createVendorProduct = async (req, res) => {
     const pendingVendor = await Vendor.findByUserId(req.user.id);
     if (req.user.role !== 'admin' && (!pendingVendor || pendingVendor.status !== 'approved')) {
       return res.status(403).json({ message: 'Vendor application must be approved to add products' });
+    }
+
+    // Plan product-limit gate (non-admin vendors only).
+    if (req.user.role !== 'admin') {
+      const access = await getPlanAccess(req.user.id);
+      if (access.enforced && access.productLimit != null) {
+        const [[cnt]] = await pool.execute(
+          `SELECT COUNT(*) AS n FROM product WHERE vendorId = ?`, [req.user.id]
+        );
+        if (Number(cnt.n) >= access.productLimit) {
+          return res.status(403).json({
+            message: `Your plan allows up to ${access.productLimit} products. Upgrade your plan to add more.`,
+            code: 'PLAN_PRODUCT_LIMIT',
+          });
+        }
+      }
     }
 
     const {
@@ -456,6 +578,9 @@ export const updateVendorProduct = async (req, res) => {
       'isRentable', 'rentPricePerDay',
       'threadTypes', 'dominantThread',
       'advanceRatio',
+      'wholesaleEnabled', 'wholesaleMinQty',
+      'isPreorder', 'preorderAvailableOn',
+      'groupBuyTarget', 'groupBuyDeadline',
     ];
     const sets = [];
     const values = [];
@@ -464,9 +589,18 @@ export const updateVendorProduct = async (req, res) => {
         if (['colors', 'sizes', 'occasions', 'gallery', 'threadTypes'].includes(key)) {
           sets.push(`${key} = ?`);
           values.push(req.body[key] ? JSON.stringify(req.body[key]) : null);
-        } else if (['isCustomizable', 'madeToOrder', 'isRentable'].includes(key)) {
+        } else if (['isCustomizable', 'madeToOrder', 'isRentable', 'wholesaleEnabled', 'isPreorder'].includes(key)) {
           sets.push(`${key} = ?`);
           values.push(req.body[key] ? 1 : 0);
+        } else if (key === 'wholesaleMinQty') {
+          sets.push(`${key} = ?`);
+          values.push(req.body[key] !== '' && req.body[key] != null ? toNonNegativeInt(req.body[key]) : null);
+        } else if (key === 'preorderAvailableOn' || key === 'groupBuyDeadline') {
+          sets.push(`${key} = ?`);
+          values.push(req.body[key] ? String(req.body[key]).slice(0, 10) : null);
+        } else if (key === 'groupBuyTarget') {
+          sets.push(`${key} = ?`);
+          values.push(req.body[key] !== '' && req.body[key] != null ? toNonNegativeInt(req.body[key]) : null);
         } else if (['price', 'originalPrice', 'yards', 'weight', 'wholesalePrice', 'retailPrice', 'rentPricePerDay'].includes(key)) {
           sets.push(`${key} = ?`);
           values.push(req.body[key] !== '' && req.body[key] != null ? parseFloat(req.body[key]) : null);
@@ -482,6 +616,16 @@ export const updateVendorProduct = async (req, res) => {
     if (sets.length === 0) return res.status(400).json({ message: 'No fields to update' });
     values.push(productId);
     await pool.execute(`UPDATE product SET ${sets.join(', ')} WHERE id = ?`, values);
+
+    // Group-buy: once a target + deadline are set, start the campaign as 'pending'
+    // (the deadline sweep resolves it). Clearing the target ends the campaign.
+    await pool.execute(
+      `UPDATE product SET groupBuyStatus = CASE
+         WHEN groupBuyTarget > 0 AND groupBuyDeadline IS NOT NULL AND groupBuyStatus IS NULL THEN 'pending'
+         WHEN (groupBuyTarget IS NULL OR groupBuyTarget = 0 OR groupBuyDeadline IS NULL) AND groupBuyStatus = 'pending' THEN NULL
+         ELSE groupBuyStatus END
+       WHERE id = ?`, [productId]
+    );
 
     const [[updated]] = await pool.execute(`SELECT * FROM product WHERE id = ?`, [productId]);
 
@@ -1384,6 +1528,17 @@ export const addVendorShippingDestination = async (req, res) => {
     const { countryCode, region, isActive } = req.body;
     if (!countryCode || typeof countryCode !== 'string') {
       return res.status(400).json({ message: 'countryCode is required' });
+    }
+    // Plan gate: shipping outside Ghana requires the international_shipping feature.
+    if (req.user.role !== 'admin' && countryCode.toUpperCase() !== 'GH') {
+      const access = await getPlanAccess(req.user.id);
+      if (!hasFeature(access, PLAN_FEATURES.INTERNATIONAL_SHIPPING)) {
+        return res.status(403).json({
+          message: 'Your plan does not include international shipping. Upgrade your plan to ship outside Ghana.',
+          code: 'PLAN_FEATURE_REQUIRED',
+          feature: PLAN_FEATURES.INTERNATIONAL_SHIPPING,
+        });
+      }
     }
     const { setVendorShippingDestination } = await import('../Services/shippingService.js');
     const destination = await setVendorShippingDestination(req.user.id, countryCode, region, isActive);

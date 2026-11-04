@@ -5,6 +5,36 @@ import type { Product, Order, Review, Coupon } from "../types/domain";
 
 const VENDORS_URL = "/api/vendors";
 
+/** A plan a vendor can subscribe to (public view). */
+export interface PlanOption {
+  id: number;
+  slug: string;
+  name: string;
+  description: string | null;
+  price: number;
+  currency: string;
+  billingInterval: "monthly" | "annually";
+  commissionRate: number | null;
+  features: string[];
+  productLimit: number | null;
+  sortOrder: number;
+}
+
+/** A vendor's subscription row. */
+export interface VendorSubscription {
+  id: number;
+  planId: number;
+  planName?: string;
+  planSlug?: string;
+  status: "pending" | "active" | "past_due" | "cancelled" | "expired";
+  priceAtSubscribe: number;
+  commissionRateAtSubscribe: number | null;
+  currency: string;
+  billingInterval: string;
+  currentPeriodEnd?: string | null;
+  nextPaymentAt?: string | null;
+}
+
 /** One row of the admin performance scorecard (GET /admin-scorecard). */
 interface AdminScorecard {
   userId: number;
@@ -38,6 +68,23 @@ export const vendorsApiSlice = apiSlice.injectEndpoints({
       }),
       providesTags: ["Vendor"],
       keepUnusedDataFor: 5,
+    }),
+
+    // --- Plan selection + pay-for-plan (Phase 2, Step 4) ---
+    getSelectablePlans: builder.query<PlanOption[], void>({
+      query: () => `${VENDORS_URL}/plans`,
+    }),
+    getMySubscription: builder.query<{ subscription: VendorSubscription | null; active: boolean }, void>({
+      query: () => `${VENDORS_URL}/subscription`,
+      providesTags: ["Vendor"],
+    }),
+    subscribeToPlan: builder.mutation<{ authorizationUrl: string; reference: string; subscriptionId: number }, { planId: number | string }>({
+      query: (body) => ({ url: `${VENDORS_URL}/subscribe`, method: "POST", body }),
+      invalidatesTags: ["Vendor"],
+    }),
+    cancelMySubscription: builder.mutation<{ message: string }, void>({
+      query: () => ({ url: `${VENDORS_URL}/subscription`, method: "DELETE" }),
+      invalidatesTags: ["Vendor"],
     }),
 
  // Vendor's own products (detailed)
@@ -213,6 +260,19 @@ export const vendorsApiSlice = apiSlice.injectEndpoints({
       invalidatesTags: ["Vendor"],
     }),
 
+ // Admin: verify / revoke a vendor's Bonwire origin (hard gate before approval)
+    verifyVendorOrigin: builder.mutation<
+      { message: string; vendor: Vendor },
+      { id: number | string; verified: boolean; note?: string }
+    >({
+      query: ({ id, verified, note }) => ({
+        url: `${VENDORS_URL}/${id}/origin`,
+        method: "PUT",
+        body: { verified, note },
+      }),
+      invalidatesTags: ["Vendor"],
+    }),
+
  // Public fulfilment scorecard — on-time delivery record for a store.
     getVendorFulfilment: builder.query<
       { fulfilled: number; withDeadline: number; onTime: number; onTimeRate: number; avgDaysEarly: number },
@@ -311,6 +371,11 @@ export const {
   useWithdrawVendorMutation,
   useGetAllVendorsQuery,
   useUpdateVendorStatusMutation,
+  useVerifyVendorOriginMutation,
+  useGetSelectablePlansQuery,
+  useGetMySubscriptionQuery,
+  useSubscribeToPlanMutation,
+  useCancelMySubscriptionMutation,
   useGetVendorOrdersQuery,
   useUpdateVendorOrderStatusMutation,
   useGetVendorFulfilmentQuery,

@@ -1703,7 +1703,7 @@ const CustomerProfile = () => {
     switch (activeSection) {
       case 'dashboard': return renderDashboard();
       case 'orders': return renderOrders();
-      case 'custom-requests': return <MyCustomRequestsSection />;
+      case 'customRequests': return <MyCustomRequestsSection />;
       case 'returns': return <MyReturnsSection />;
       case 'designs': return <MyDesignsSection />;
       case 'addresses': return <MyAddressesSection />;
@@ -1752,18 +1752,12 @@ const CustomerProfile = () => {
               <nav className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-2 mb-4">
                 {menuItems.map((item) => {
                   const Icon = item.icon;
-                  const isCustomRequests = item.id === 'customRequests';
                   return (
                     <button
                       key={item.id}
                       onClick={() => {
-                        if (isCustomRequests) {
-                          navigate('/custom-requests');
-                          setMobileMenuOpen(false);
-                        } else {
-                          setActiveSection(item.id);
-                          setMobileMenuOpen(false);
-                        }
+                        setActiveSection(item.id);
+                        setMobileMenuOpen(false);
                       }}
                       className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors text-left ${
                         activeSection === item.id
@@ -1797,16 +1791,11 @@ const CustomerProfile = () => {
               <nav className="p-2">
                 {menuItems.map((item) => {
                   const Icon = item.icon;
-                  const isCustomRequests = item.id === 'customRequests';
                   return (
                     <button
                       key={item.id}
                       onClick={() => {
-                        if (isCustomRequests) {
-                          navigate('/custom-requests');
-                        } else {
-                          setActiveSection(item.id);
-                        }
+                        setActiveSection(item.id);
                       }}
                       className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors text-left ${
                         activeSection === item.id

@@ -329,10 +329,15 @@ describe('P-GP-7: every charge/verify site uses the constant (no stray literals)
       false,
       "a literal 'GHS' is still being posted to Paystack"
     );
+    // One per provider charge/plan payload that carries a currency: the original
+    // 5 (initialize, chargeAuthorization, createTransferRecipient, initiateTransfer,
+    // createMomoRecipient) + the 5 added for recurring/one-off revenue features
+    // (initializeSubscription, initializeMembership, initializeGiftCardPurchase,
+    // initializeFeaturedPurchase, createPlan). Bump this when a new charge site is added.
     assert.equal(
       (src.match(/currency:\s*CHARGED_CURRENCY/g) || []).length,
-      5,
-      'expected all five provider payloads to use CHARGED_CURRENCY'
+      10,
+      'every provider payload must use CHARGED_CURRENCY (update the count when adding a charge site)'
     );
   });
 

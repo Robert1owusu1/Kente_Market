@@ -28,6 +28,7 @@ import {
 } from '../../utils/paymentRef';
 import { useGetOrderByIdQuery, useUpdateOrderMutation, useCreateOrderMutation } from '../../slices/ordersApiSlice';
 import { useGetMyReferralsQuery, usePayOrderWithEarningsMutation } from '../../slices/referralsApiSlice';
+import { useGetStoreCreditQuery, usePayOrderWithStoreCreditMutation, useApplyStoreCreditToOrderMutation } from '../../slices/giftCardsApiSlice';
 import axios from 'axios';
 import type { FormErrors } from "../../types/domain";
 import { formatCedi } from '../../utils/formatCurrency';
@@ -742,6 +743,48 @@ export default function CheckoutPage() {
     }
   };
 
+  // Store credit (gift cards, Phase 3 Step 7): pay the WHOLE order from store
+  // credit. Final — not refundable to cash. Mirrors referral earnings.
+  const { data: storeCredit } = useGetStoreCreditQuery();
+  const [payOrderWithStoreCredit, { isLoading: payingWithCredit }] = usePayOrderWithStoreCreditMutation();
+  const [acceptCreditFinal, setAcceptCreditFinal] = useState(false);
+  const storeCreditBalance = Number(storeCredit?.balance ?? 0);
+  const canPayWithCredit = Number.isFinite(payableTotal) && payableTotal > 0 && storeCreditBalance >= payableTotal
+    && !serverOrder?.paymentReference;
+  // Split: partial store credit + Paystack for the remainder.
+  const [applyStoreCredit] = useApplyStoreCreditToOrderMutation();
+  const [useSplitCredit, setUseSplitCredit] = useState(false);
+  const appliedCreditRef = useRef<number>(0);
+  const canSplitWithCredit = Number.isFinite(payableTotal) && payableTotal > 0
+    && storeCreditBalance > 0 && storeCreditBalance < payableTotal && !serverOrder?.paymentReference;
+
+  const payWithStoreCredit = async () => {
+    if (!acceptCreditFinal) {
+      toast.error('Please confirm that orders paid with store credit cannot be refunded to cash.');
+      return;
+    }
+    if (deliveryMethod === 'home' && isInternational && shippingEligibility?.supported !== true) {
+      toast.error(shippingEligibility?.message || 'Checking shipping availability for this destination…');
+      return;
+    }
+    const synced = await syncAddressTotals();
+    if (synced === null) return;
+    if (storeCreditBalance < synced) {
+      toast.error('Your store credit does not cover the full order total.');
+      return;
+    }
+    const orderId = preOrderId ?? ensuredOrderIdRef.current;
+    if (!orderId) return;
+    try {
+      await payOrderWithStoreCredit({ orderId, acceptFinal: true }).unwrap();
+      clearCart();
+      toast.success('Order paid with your store credit');
+      navigate(`/order/${orderId}`);
+    } catch (err) {
+      toast.error((err as { data?: { message?: string } })?.data?.message || 'Payment with store credit failed');
+    }
+  };
+
   const payWithPaystack = async () => {
     // 🌍 Fail-closed + amount-freeze guards: never initialize a charge for an
     // unsupported/unresolved international destination, and never silently
@@ -779,17 +822,47 @@ export default function CheckoutPage() {
       return;
     }
     initialPayableRef.current = syncedTotal;
-    const syncedPesewas = Math.round(syncedTotal * 100);
+    let chargePesewas = Math.round(syncedTotal * 100);
+
+    // Split payment: apply store credit, then charge Paystack for the remainder.
+    // The server's amount check subtracts orders.storeCreditApplied, so the
+    // reduced charge reconciles exactly.
+    if (useSplitCredit && appliedCreditRef.current === 0) {
+      const scOrderId = preOrderId ?? ensuredOrderIdRef.current;
+      if (scOrderId) {
+        try {
+          const r = await applyStoreCredit({ orderId: scOrderId }).unwrap();
+          if (r.coversFull) {
+            await payOrderWithStoreCredit({ orderId: scOrderId, acceptFinal: true }).unwrap();
+            clearCart();
+            toast.success('Order paid with your store credit');
+            navigate(`/order/${scOrderId}`);
+            return;
+          }
+          if (typeof r.applied === 'number') {
+            appliedCreditRef.current = r.applied;
+            chargePesewas = Math.round(Math.max(0, syncedTotal - r.applied) * 100);
+          }
+        } catch (scErr) {
+          toast.error((scErr as { data?: { message?: string } })?.data?.message || 'Could not apply store credit');
+          setIsProcessing(false);
+          return;
+        }
+      }
+    } else if (appliedCreditRef.current > 0) {
+      // Credit already applied on a prior attempt — charge the remainder.
+      chargePesewas = Math.round(Math.max(0, syncedTotal - appliedCreditRef.current) * 100);
+    }
 
     try {
       const paystack = makePaystackPopup();
-      
+
       const config = {
         key: paystackPublicKey,
         email: effectiveShippingAddress.email,
         // Charge the pre-charge server sync total (authoritative shipping
-        // included), never raw localStorage prices.
-        amount: syncedPesewas,
+        // included) minus any store credit applied, never raw localStorage prices.
+        amount: chargePesewas,
         currency: "GHS",
         ref: `ORDER_${Date.now()}_${Math.random().toString(36).substring(7)}`,
         channels: paymentMethod === 'momo' 
@@ -1593,6 +1666,32 @@ export default function CheckoutPage() {
               className="w-full py-3 rounded-lg font-semibold text-white bg-amber-600 hover:bg-amber-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
             >
               {payingWithEarnings ? 'Paying…' : shownPayable === null ? 'Pay with referral earnings' : `Pay ${formatCedi(shownPayable)} with referral earnings`}
+            </button>
+          </div>
+        )}
+
+        {canSplitWithCredit && (
+          <label className="mt-4 flex items-start gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900 cursor-pointer">
+            <input type="checkbox" checked={useSplitCredit} onChange={(e) => setUseSplitCredit(e.target.checked)} className="mt-1" />
+            <span>Use my {formatCedi(storeCreditBalance)} store credit and pay the rest by card/MoMo.</span>
+          </label>
+        )}
+
+        {canPayWithCredit && (
+          <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 space-y-3">
+            <p className="text-sm text-emerald-900">
+              You have {formatCedi(storeCreditBalance)} in store credit — enough to pay this whole order.
+            </p>
+            <label className="flex items-start gap-2 text-sm text-emerald-900">
+              <input type="checkbox" checked={acceptCreditFinal} onChange={(e) => setAcceptCreditFinal(e.target.checked)} className="mt-1" />
+              I understand that an order paid with store credit is final and cannot be refunded to cash.
+            </label>
+            <button
+              onClick={payWithStoreCredit}
+              disabled={payingWithCredit || isProcessing || !acceptCreditFinal}
+              className="w-full py-3 rounded-lg font-semibold text-white bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+            >
+              {payingWithCredit ? 'Paying…' : shownPayable === null ? 'Pay with store credit' : `Pay ${formatCedi(shownPayable)} with store credit`}
             </button>
           </div>
         )}

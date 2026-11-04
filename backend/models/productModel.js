@@ -161,6 +161,16 @@ class Product {
     this.lowStockThreshold = parseInt(data.lowStockThreshold) || 0;
     this.isRentable = !!data.isRentable;
     this.rentPricePerDay = data.rentPricePerDay ? parseFloat(data.rentPricePerDay) : null;
+    // Pre-order / limited run: ships on preorderAvailableOn; run size = stock.
+    this.isPreorder = !!data.isPreorder;
+    this.preorderAvailableOn = data.preorderAvailableOn || null;
+    // Group-buy campaign (optional).
+    this.groupBuyTarget = data.groupBuyTarget != null ? parseInt(data.groupBuyTarget) : null;
+    this.groupBuyDeadline = data.groupBuyDeadline || null;
+    this.groupBuyStatus = data.groupBuyStatus || null;
+    // Wholesale (B2B) display flags.
+    this.wholesaleEnabled = !!data.wholesaleEnabled;
+    this.wholesaleMinQty = data.wholesaleMinQty != null ? parseInt(data.wholesaleMinQty) : null;
   }
 
   /**

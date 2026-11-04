@@ -113,7 +113,10 @@ describe(`international quote agrees with order booking${dbAvailable ? '' : ' â€
     // sweeps running in parallel, which would release its stock under them.
     await pool.execute(`UPDATE orders SET escrowStatus = 'releasing' WHERE id = ?`, [o.body.order.id]);
     const booked = Number(o.body.order.totalAmount);
-    const tax = Math.round(subtotal * 0.15 * 100) / 100;
+    // VAT is the admin-controlled settings.tax_rate, not a frozen 15%.
+    const { getVatRate } = await import('../Services/pricingConfig.js');
+    const { calcTax } = await import('../../shared/pricing.js');
+    const tax = calcTax(subtotal, await getVatRate());
     assert.equal(booked, Math.round((subtotal + tax + q.body.chargeableShippingGHS) * 100) / 100);
   });
 });

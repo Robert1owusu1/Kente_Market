@@ -128,7 +128,10 @@ describe(`delivery fees set by admin and sellers${dbAvailable ? '' : ' — SKIPP
     const o = await book('GH', [[fx.a120, 1]]);
     assert.equal(o.code, 201, JSON.stringify(o.body));
     assert.equal(bookedShipping(o), 15);
-    assert.equal(Number(o.body.order.totalAmount), 120 + 18 + 15);
+    const { getVatRate } = await import('../Services/pricingConfig.js');
+    const { calcTax, round2 } = await import('../../shared/pricing.js');
+    const vat = await getVatRate();
+    assert.equal(Number(o.body.order.totalAmount), round2(120 + calcTax(120, vat) + 15));
     const free = await quote('GH', [{ productId: fx.a450, qty: 1 }]);
     assert.equal(free.body.chargeableShippingGHS, 0);
   });

@@ -345,8 +345,20 @@ const getCategories = asyncHandler(async (req, res) => {
   }
 });
 
+// @desc    Live group-buy campaign status for a product
+// @route   GET /api/products/:id/group-buy
+// @access  Public
+const getGroupBuyStatusForProduct = asyncHandler(async (req, res) => {
+  const product = await Product.findById(req.params.id);
+  if (!product) { res.status(404); throw new Error('Product not found'); }
+  const { getGroupBuyStatus } = await import('../Services/groupBuyService.js');
+  const status = await getGroupBuyStatus(product);
+  res.json(status || { active: false });
+});
+
 // EXPORT ALL FUNCTIONS
 export {
+  getGroupBuyStatusForProduct,
   getProducts,
   getProductById,
   getProductsByCategory,

@@ -33,7 +33,7 @@ const optionalAuth = asyncHandler(async (req, res, next) => {
   const token = req.cookies?.jwt;
   if (token) {
     try {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
       const user = isPurposeToken(decoded) ? null : await User.findById(decoded.id);
       if (
         user && user.isActive &&
@@ -103,7 +103,7 @@ const protect = asyncHandler(async(req, res, next) => {
     if (token) {
         try {
             // Verify token
-            const decoded = jwt.verify(token, process.env.JWT_SECRET);
+            const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
 
             // Explicitly reject staff tokens here. Staff and users share one
             // signing key and one cookie name, and staff ids live in the same
@@ -288,7 +288,7 @@ const vendorOrStaff = async (req, res, next) => {
     try {
         const token = req.cookies.jwt;
         if (!token) throw new Error('Not authorized, no token');
-        decoded = jwt.verify(token, process.env.JWT_SECRET);
+        decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
         if (isPurposeToken(decoded)) throw new Error('Not authorized, token failed');
     } catch (error) {
         res.status(401);

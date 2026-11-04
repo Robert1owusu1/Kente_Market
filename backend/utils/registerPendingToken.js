@@ -37,7 +37,7 @@ export const signRegisterPendingToken = (email) => {
  */
 export const decodeRegisterPendingToken = (token) => {
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
     return decoded?.purpose === 'register_pending' && typeof decoded.email === 'string'
       ? decoded
       : null;

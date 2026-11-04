@@ -61,7 +61,11 @@ const cookieParser = (await import('cookie-parser')).default;
 const authRoutes = (await import('../routes/authRoutes.js')).default;
 const { startServer } = await import('./helpers/httpHarness.js');
 
-const FRONTEND = process.env.FRONTEND_URL;
+// FRONTEND_URL is a comma-separated list of allowed origins; the app redirects
+// to the FIRST one (see config/frontendOrigins.js -> frontendBaseUrl). Mirror
+// that here so the expectation holds whether the env has one origin (CI) or
+// several (local dev: 5173,5174,5175).
+const FRONTEND = String(process.env.FRONTEND_URL || '').split(',')[0].trim();
 const REFUSED = `${FRONTEND}/login?error=invalid_oauth_state`;
 const PROVIDER_PREFIX = 'https://accounts.google.com/o/oauth2/v2/auth?';
 

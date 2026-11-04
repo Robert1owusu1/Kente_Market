@@ -13,6 +13,7 @@ import {
   captureReferralVisit, getMyReferrals, setPayoutAccount, withdrawReferralEarnings, payOrderWithEarnings,
   adminGetReferralSettings, adminUpdateReferralSettings, adminListAmbassadors, adminUpdateAmbassador,
   adminListCommissions, adminReviewCommission, adminListWithdrawals, adminVerifyWithdrawal,
+  applyAsCreator, getMyCreatorApplication, adminListCreatorApplications, adminReviewCreatorApplication,
 } from '../controllers/referralController.js';
 
 export const referralRouter = express.Router();
@@ -21,6 +22,9 @@ referralRouter.get('/me', protect, getMyReferrals);
 referralRouter.post('/payout-account', protect, moneyLimiter, setPayoutAccount);
 referralRouter.post('/withdraw', protect, moneyLimiter, withdrawReferralEarnings);
 referralRouter.post('/pay-order', protect, moneyLimiter, payOrderWithEarnings);
+// Creator / affiliate program (self-service application).
+referralRouter.get('/creator/application', protect, getMyCreatorApplication);
+referralRouter.post('/creator/apply', protect, applyAsCreator);
 
 export const adminReferralRouter = express.Router();
 adminReferralRouter.use(protect, admin);
@@ -32,3 +36,5 @@ adminReferralRouter.get('/commissions', adminListCommissions);
 adminReferralRouter.post('/commissions/:id/review', adminReviewCommission);
 adminReferralRouter.get('/withdrawals', adminListWithdrawals);
 adminReferralRouter.post('/withdrawals/:id/verify', adminVerifyWithdrawal);
+adminReferralRouter.get('/creator-applications', adminListCreatorApplications);
+adminReferralRouter.post('/creator-applications/:id/review', adminReviewCreatorApplication);

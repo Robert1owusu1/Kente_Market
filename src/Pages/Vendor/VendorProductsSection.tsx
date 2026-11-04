@@ -3,6 +3,7 @@
 import { useState, useRef } from 'react';
 import { FaTimes, FaImage, FaPlus, FaTrash, FaSpinner, FaCheckCircle, FaClock, FaEdit, FaSearch, FaFilter, FaBox } from 'react-icons/fa';
 import { toast } from 'react-toastify';
+import FeatureProductButton from './FeatureProductButton';
 import { useUploadImageMutation } from '../../slices/uploadApiSlice';
 import { resolveImageUrl } from '../../utils/imageUrl';
 import {
@@ -35,6 +36,13 @@ interface ProductForm {
   stock: string;
   threadTypes: string;
   dominantThread: string;
+  wholesaleEnabled: boolean;
+  wholesalePrice: string;
+  wholesaleMinQty: string;
+  isPreorder: boolean;
+  preorderAvailableOn: string;
+  groupBuyTarget: string;
+  groupBuyDeadline: string;
 }
 
 const emptyForm: ProductForm = {
@@ -55,6 +63,13 @@ const emptyForm: ProductForm = {
   stock: '',
   threadTypes: '',
   dominantThread: '',
+  wholesaleEnabled: false,
+  wholesalePrice: '',
+  wholesaleMinQty: '',
+  isPreorder: false,
+  preorderAvailableOn: '',
+  groupBuyTarget: '',
+  groupBuyDeadline: '',
 };
 
 const VendorProductsSection = ({ vendorStatus }: { vendorStatus?: string }) => {
@@ -146,6 +161,13 @@ const VendorProductsSection = ({ vendorStatus }: { vendorStatus?: string }) => {
       stock: product.stock != null ? String(product.stock) : '',
       threadTypes: Array.isArray(product.threadTypes) ? product.threadTypes.join(', ') : '',
       dominantThread: (product.dominantThread as string) || '',
+      wholesaleEnabled: (product as { wholesaleEnabled?: boolean | number }).wholesaleEnabled ? true : false,
+      wholesalePrice: (product as { wholesalePrice?: number | null }).wholesalePrice != null ? String((product as { wholesalePrice?: number | null }).wholesalePrice) : '',
+      wholesaleMinQty: (product as { wholesaleMinQty?: number | null }).wholesaleMinQty != null ? String((product as { wholesaleMinQty?: number | null }).wholesaleMinQty) : '',
+      isPreorder: (product as { isPreorder?: boolean | number }).isPreorder ? true : false,
+      preorderAvailableOn: (product as { preorderAvailableOn?: string | null }).preorderAvailableOn ? String((product as { preorderAvailableOn?: string }).preorderAvailableOn).slice(0, 10) : '',
+      groupBuyTarget: (product as { groupBuyTarget?: number | null }).groupBuyTarget != null ? String((product as { groupBuyTarget?: number }).groupBuyTarget) : '',
+      groupBuyDeadline: (product as { groupBuyDeadline?: string | null }).groupBuyDeadline ? String((product as { groupBuyDeadline?: string }).groupBuyDeadline).slice(0, 10) : '',
     });
     setImage(product.img || '');
     setShowForm(true);
@@ -195,6 +217,14 @@ const VendorProductsSection = ({ vendorStatus }: { vendorStatus?: string }) => {
       stock,
       threadTypes: parsedThreads,
       dominantThread: form.dominantThread.trim() || null,
+      // Wholesale (persisted on edit; see createVendorProduct note).
+      wholesaleEnabled: form.wholesaleEnabled,
+      wholesalePrice: form.wholesalePrice ? parseFloat(form.wholesalePrice) : null,
+      wholesaleMinQty: form.wholesaleMinQty ? parseInt(form.wholesaleMinQty, 10) : null,
+      isPreorder: form.isPreorder,
+      preorderAvailableOn: form.preorderAvailableOn || null,
+      groupBuyTarget: form.groupBuyTarget ? parseInt(form.groupBuyTarget, 10) : null,
+      groupBuyDeadline: form.groupBuyDeadline || null,
     };
 
     try {
@@ -407,6 +437,48 @@ const VendorProductsSection = ({ vendorStatus }: { vendorStatus?: string }) => {
                   )}
                 </div>
 
+                {editingProduct && (
+                  <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
+                    <label className="flex items-center gap-2 text-sm font-medium text-gray-800 dark:text-gray-200">
+                      <input type="checkbox" name="wholesaleEnabled" checked={form.wholesaleEnabled} onChange={handleChange} className="w-4 h-4" />
+                      Offer this product for wholesale (bulk quotes)
+                    </label>
+                    {form.wholesaleEnabled && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+                        <input name="wholesalePrice" type="number" min="0" step="0.01" value={form.wholesalePrice} onChange={handleChange}
+                          placeholder="Indicative wholesale price (GH₵)" className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm" />
+                        <input name="wholesaleMinQty" type="number" min="1" value={form.wholesaleMinQty} onChange={handleChange}
+                          placeholder="Minimum order quantity" className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm" />
+                      </div>
+                    )}
+                    <p className="text-xs text-gray-400 mt-2">Buyers request a quote; you reply with a unit price. Requires a plan with wholesale.</p>
+
+                    <label className="flex items-center gap-2 text-sm font-medium text-gray-800 dark:text-gray-200 mt-4">
+                      <input type="checkbox" name="isPreorder" checked={form.isPreorder} onChange={handleChange} className="w-4 h-4" />
+                      Sell as a pre-order / limited run
+                    </label>
+                    {form.isPreorder && (
+                      <div className="mt-3">
+                        <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Expected ship date</label>
+                        <input name="preorderAvailableOn" type="date" value={form.preorderAvailableOn} onChange={handleChange}
+                          className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm" />
+                        <p className="text-xs text-gray-400 mt-1">The run size is this product's stock. Buyers pay now; funds are held in escrow until you ship.</p>
+                      </div>
+                    )}
+
+                    <div className="mt-4">
+                      <p className="text-sm font-medium text-gray-800 dark:text-gray-200">Group buy (optional)</p>
+                      <p className="text-xs text-gray-400 mb-2">Set a target and deadline. If the target isn't reached by the deadline, pledgers are auto-refunded.</p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <input name="groupBuyTarget" type="number" min="0" value={form.groupBuyTarget} onChange={handleChange}
+                          placeholder="Target units (blank = off)" className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm" />
+                        <input name="groupBuyDeadline" type="date" value={form.groupBuyDeadline} onChange={handleChange}
+                          className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm" />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex justify-end gap-3 pt-4">
                   <button type="button" onClick={resetForm} className="px-6 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">
                     Cancel
@@ -486,6 +558,7 @@ const VendorProductsSection = ({ vendorStatus }: { vendorStatus?: string }) => {
                         <button onClick={() => setDeleteConfirm(p)} className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg" title="Delete">
                           <FaTrash />
                         </button>
+                        <FeatureProductButton productId={Number(p.id)} isFeatured={!!p.featured} />
                       </div>
                     </td>
                   </tr>

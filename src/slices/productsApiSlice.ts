@@ -54,6 +54,13 @@ export const productsApiSlice = apiSlice.injectEndpoints({
       providesTags: (_result, _error, id) => [{ type: 'Product', id }] as const,
     }),
 
+    getGroupBuyStatus: builder.query<
+      { active?: false } | { target: number; committed: number; remaining: number; deadline: string; status: string; reached: boolean; deadlinePassed: boolean },
+      number | string
+    >({
+      query: (productId) => `${PRODUCTS_URL}/${productId}/group-buy`,
+    }),
+
     getFeaturedProducts: builder.query<Product[], ProductQueryParams>({
       query: (params = {}) => {
         const queryParams = new URLSearchParams();
@@ -118,6 +125,7 @@ export const {
   useGetProductsQuery,
   useLazyGetProductsQuery,
   useGetProductsDetailsQuery,
+  useGetGroupBuyStatusQuery,
   useGetFeaturedProductsQuery,
   useGetTrendingProductsQuery,
   useCreateProductMutation,

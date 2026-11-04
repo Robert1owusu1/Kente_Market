@@ -21,6 +21,8 @@ vi.mock('../../../slices/referralsApiSlice', () => ({
   useGetMyReferralsQuery: () => ({ data, isLoading: false, isError: false }),
   useSetReferralPayoutAccountMutation: () => [vi.fn(), { isLoading: false }],
   useWithdrawReferralEarningsMutation: () => [withdrawMock, { isLoading: false }],
+  useGetMyCreatorApplicationQuery: () => ({ data: undefined }),
+  useApplyAsCreatorMutation: () => [vi.fn(() => ({ unwrap: () => Promise.resolve({}) })), { isLoading: false }],
 }));
 const { default: ReferralsPage } = await import('../ReferralsPage');
 

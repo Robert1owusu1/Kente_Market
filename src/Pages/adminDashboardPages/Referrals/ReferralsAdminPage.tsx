@@ -16,6 +16,8 @@ import {
   useReviewReferralCommissionMutation,
   useGetReferralWithdrawalsQuery,
   useVerifyReferralWithdrawalMutation,
+  useGetCreatorApplicationsQuery,
+  useReviewCreatorApplicationMutation,
   type ReferralCommissionStatus,
   type AdminAmbassador,
 } from '../../../slices/referralsApiSlice';
@@ -244,10 +246,81 @@ const WithdrawalsCard = () => {
   );
 };
 
+const CreatorApplicationsCard = () => {
+  const [status, setStatus] = useState('pending');
+  const { data = [], isFetching } = useGetCreatorApplicationsQuery(status ? { status } : undefined);
+  const [review, { isLoading }] = useReviewCreatorApplicationMutation();
+
+  const act = async (id: number, decision: 'approve' | 'reject') => {
+    let rate: string | undefined;
+    let note: string | undefined;
+    if (decision === 'approve') {
+      rate = window.prompt('Commission rate for this creator (decimal, e.g. 0.05 for 5%):') ?? undefined;
+      if (!rate) return;
+    } else {
+      note = window.prompt('Reason (optional):') ?? undefined;
+    }
+    try {
+      await review({ id, decision, rate, note }).unwrap();
+      toast.success(decision === 'approve' ? 'Creator approved' : 'Application rejected');
+    } catch (e) {
+      toast.error(errMsg(e));
+    }
+  };
+
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md">
+      <div className="flex items-center justify-between p-5 pb-3">
+        <h3 className="font-semibold text-gray-900 dark:text-white">Creator applications</h3>
+        <select value={status} onChange={(e) => setStatus(e.target.value)} className={inputCls}>
+          <option value="pending">Pending</option>
+          <option value="approved">Approved</option>
+          <option value="rejected">Rejected</option>
+          <option value="">All</option>
+        </select>
+      </div>
+      {isFetching ? <div className="p-5"><FaSpinner className="animate-spin" /></div> : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-left text-gray-500 dark:text-gray-400 border-b dark:border-gray-700">
+              <tr><th className="p-3">Creator</th><th className="p-3">Platforms</th><th className="p-3">Audience</th><th className="p-3">Asked</th><th className="p-3">Status</th><th className="p-3">Actions</th></tr>
+            </thead>
+            <tbody>
+              {data.map((a) => (
+                <tr key={a.id} className="border-b dark:border-gray-700">
+                  <td className="p-3">
+                    <div className="font-medium text-gray-900 dark:text-white">{a.firstName} {a.lastName}</div>
+                    <div className="text-xs text-gray-500">{a.email}</div>
+                    {a.niche && <div className="text-xs text-gray-400">{a.niche}</div>}
+                  </td>
+                  <td className="p-3 text-xs text-gray-600 dark:text-gray-300">{(a.platforms || []).join(', ') || '—'}</td>
+                  <td className="p-3">{a.audienceSize != null ? a.audienceSize.toLocaleString() : '—'}</td>
+                  <td className="p-3">{pct(a.requestedRate)}</td>
+                  <td className="p-3 capitalize">{a.status}{a.status === 'approved' && a.approvedRate != null ? ` (${pct(a.approvedRate)})` : ''}</td>
+                  <td className="p-3">
+                    {a.status !== 'approved' && (
+                      <button disabled={isLoading} onClick={() => act(a.id, 'approve')} className="px-2 py-1 text-xs rounded bg-emerald-600 text-white mr-1"><FaCheck /></button>
+                    )}
+                    {a.status === 'pending' && (
+                      <button disabled={isLoading} onClick={() => act(a.id, 'reject')} className="px-2 py-1 text-xs rounded bg-red-100 text-red-700"><FaTimes /></button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {data.length === 0 && <p className="p-5 text-sm text-gray-500">No creator applications.</p>}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const ReferralsAdminPage = () => (
   <div className="space-y-6">
     <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2"><FaGift /> Referrals</h2>
     <SettingsCard />
+    <CreatorApplicationsCard />
     <CommissionsCard />
     <AmbassadorsCard />
     <WithdrawalsCard />

@@ -23,6 +23,8 @@ vi.mock('../../../../slices/referralsApiSlice', () => ({
     isFetching: false,
   }),
   useVerifyReferralWithdrawalMutation: () => [vi.fn(), { isLoading: false }],
+  useGetCreatorApplicationsQuery: () => ({ data: [], isFetching: false }),
+  useReviewCreatorApplicationMutation: () => [vi.fn(() => ({ unwrap: () => Promise.resolve({}) })), { isLoading: false }],
 }));
 const { default: ReferralsAdminPage } = await import('../ReferralsAdminPage');
 

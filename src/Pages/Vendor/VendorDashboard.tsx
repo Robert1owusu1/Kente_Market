@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { FaHome, FaBox, FaShoppingCart, FaChartLine, FaCog, FaStore, FaTag, FaPercent, FaStar, FaUndo, FaWallet, FaPlus, FaBoxes, FaEnvelope, FaUserCog, FaClipboardList, FaGift, FaTruck } from 'react-icons/fa';
 import { useGetMyVendorProfileQuery } from '../../slices/vendorsApiSlice';
+import VendorPlanGate from './VendorPlanGate';
 import Loader from '../../components/loader/Loader';
 import VendorOverview from './VendorOverview';
 import VendorProductsSection from './VendorProductsSection';
@@ -20,8 +21,19 @@ import VendorStaff from './VendorStaff';
 import VendorCustomRequests from './VendorCustomRequests';
 import VendorInsights from './VendorInsights';
 import VendorReferrals from './VendorReferrals';
+import VendorWholesale from './VendorWholesale';
 import VendorShipping from './VendorShipping';
 import Footer from '../../components/Footer/Footer';
+
+// Dashboard sections that a plan feature unlocks. Sections not listed here are
+// always available (overview, products, orders, etc.).
+const SECTION_FEATURE: Record<string, string> = {
+  insights: 'analytics',
+  analytics: 'analytics',
+  coupons: 'promotions',
+  customRequests: 'custom_requests',
+  wholesale: 'bulk_wholesale',
+};
 
 const menuItems = [
   { id: 'overview', name: 'Overview', icon: FaHome },
@@ -39,6 +51,7 @@ const menuItems = [
   { id: 'customRequests', name: 'Custom Requests', icon: FaClipboardList },
   { id: 'payouts', name: 'Payouts', icon: FaWallet },
   { id: 'referrals', name: 'Refer Customers', icon: FaGift },
+  { id: 'wholesale', name: 'Wholesale', icon: FaBoxes },
   { id: 'settings', name: 'Settings', icon: FaCog },
 ];
 
@@ -61,6 +74,8 @@ const VendorDashboard = () => {
         businessName?: string;
         [key: string]: unknown;
       };
+      planGate?: { required: boolean; hasActivePlan: boolean; locked: boolean };
+      planAccess?: { enforced: boolean; features: string[]; productLimit: number | null; productCount: number; planName: string | null };
     };
     isLoading: boolean;
     isError: boolean;
@@ -88,8 +103,25 @@ const VendorDashboard = () => {
 
   const { vendor } = data;
 
+  // Pay-for-plan gate: approved but no active plan → lock the dashboard behind
+  // the plan-selection + payment screen.
+  if (data.planGate?.locked) {
+    return <VendorPlanGate businessName={typeof vendor.businessName === 'string' ? vendor.businessName : undefined} />;
+  }
+
+  // Hide sections the vendor's plan does not unlock (only when enforced).
+  const access = data.planAccess;
+  const isSectionAllowed = (id: string) => {
+    const feature = SECTION_FEATURE[id];
+    if (!feature) return true;
+    if (!access?.enforced) return true;
+    return access.features.includes(feature);
+  };
+  const visibleMenuItems = menuItems.filter((m) => isSectionAllowed(m.id));
+  const currentSection = isSectionAllowed(activeSection) ? activeSection : 'overview';
+
   const renderContent = () => {
-    switch (activeSection) {
+    switch (currentSection) {
       case 'overview':
         return <VendorOverview />;
       case 'products':
@@ -120,6 +152,8 @@ const VendorDashboard = () => {
         return <VendorPayouts />;
       case 'referrals':
         return <VendorReferrals storeSlug={typeof vendor.slug === 'string' ? vendor.slug : null} />;
+      case 'wholesale':
+        return <VendorWholesale />;
       case 'settings':
         return <VendorSettings vendor={vendor} />;
       default:
@@ -158,7 +192,7 @@ const VendorDashboard = () => {
           </button>
           {mobileMenuOpen && (
             <nav className="mt-2 bg-white dark:bg-gray-800 rounded-lg shadow-md p-2">
-              {menuItems.map((item) => {
+              {visibleMenuItems.map((item) => {
                 const Icon = item.icon;
                 return (
                   <button
@@ -187,7 +221,7 @@ const VendorDashboard = () => {
               <p className="text-sm text-gray-800 mt-1">Seller Dashboard</p>
             </div>
             <nav className="p-2">
-              {menuItems.map((item) => {
+              {visibleMenuItems.map((item) => {
                 const Icon = item.icon;
                 return (
                   <button

@@ -43,6 +43,8 @@ const ExploreLinks = [
   { title: "Our Story", link: "/aboutus" },
   { title: "Vendor Directory", link: "/vendors" },
   { title: "Kente Museum", link: "/museum" },
+  { title: "Gift Cards", link: "/gift-cards" },
+  { title: "Kente Club", link: "/kente-club" },
   { title: "Customer Reviews", link: "/reviews" },
   { title: "Help Center", link: "/help" },
   { title: "Contact Us", link: "/contactus" },

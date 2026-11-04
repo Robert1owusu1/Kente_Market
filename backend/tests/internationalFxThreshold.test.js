@@ -35,6 +35,8 @@
 import { test, describe, before, after } from 'node:test';
 import { isDisposableDb } from './helpers/disposableDb.mjs';
 import { mysqlTls } from '../config/mysqlTls.js';
+import { round2, calcTax } from '../../shared/pricing.js';
+import { getVatRate } from '../Services/pricingConfig.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { execFile } from 'node:child_process';
@@ -94,7 +96,15 @@ const state = {
   prodC: null,
   gbRateId: null, // seeded GH->GB platform rate row (currency GBP)
   ghsGbpRow: null, // original exchange_rates GHS->GBP row (restored in finally)
+  ghsGbp: null, // GHS->GBP rate as a number (admin-controlled; read live)
+  vat: null, // VAT fraction from settings.tax_rate (admin-controlled; read live)
 };
+
+// GBP -> GHS exactly as the app does it: the stored row is GHS->GBP, so the
+// X->GHS leg is the inverse (1/rate), then round2 (Services/shippingService.js
+// #toGHS). Derived from the LIVE rate so the suite holds for whatever rate the
+// platform admin has set, not a frozen seed number.
+const ghsFromGBP = (gbp) => round2(Number(gbp) / state.ghsGbp);
 
 const addrGH = {
   countryCode: 'GH', firstName: 'Kwame', lastName: 'Asante',
@@ -251,6 +261,8 @@ before(async () => {
       WHERE baseCurrency='GHS' AND targetCurrency='GBP' ORDER BY effectiveDate DESC LIMIT 1`
   );
   state.ghsGbpRow = ghsGbp ?? null;
+  state.ghsGbp = state.ghsGbpRow ? Number(state.ghsGbpRow.rate) : null;
+  state.vat = await getVatRate();
 });
 
 after(async () => {
@@ -777,11 +789,13 @@ describe('F-7: free-shipping threshold is compared in GHS everywhere', () => {
     const opt = q.body.options.find((/** @type {any} */ o) => o.serviceLevel === 'standard')
       ?? q.body.options[0];
     assert.equal(opt.rateCurrency, 'GBP', 'the source currency must be explicit');
-    assert.equal(opt.freeThreshold, 100, 'stored threshold is in the rate currency');
-    assert.ok(opt.freeThresholdGHS > 1000,
-      `the compared threshold must be the GHS figure, got ${opt.freeThresholdGHS}`);
-    assert.ok(Math.abs(opt.freeThresholdGHS - 100 / 0.054) < 0.01,
-      `expected 100 GBP in GHS, got ${opt.freeThresholdGHS}`);
+    assert.ok(Number(opt.freeThreshold) > 0, 'a GBP threshold is reported in the rate currency');
+    // F-7 invariant: the compared figure is the GBP threshold converted to GHS
+    // at the live rate (admin-controlled), not the raw GBP number.
+    assert.ok(Math.abs(opt.freeThresholdGHS - Number(opt.freeThreshold) / state.ghsGbp) < 0.01,
+      `freeThresholdGHS must be the GBP threshold converted at the live rate, got ${opt.freeThresholdGHS}`);
+    assert.ok(opt.freeThresholdGHS > opt.freeThreshold,
+      'GBP->GHS must inflate the number (1 GHS < 1 GBP)');
   });
 
   test('F-7 regression: a GHS subtotal is never compared raw with a GBP threshold', { skip: !runOk }, async () => {
@@ -893,8 +907,9 @@ describe('F-7: free-shipping threshold is compared in GHS everywhere', () => {
     const q = await quote({ countryCode: 'GB', subtotal: 100 });
     const opt = q.body.options[0];
     assert.equal(opt.currency, 'GBP', 'display currency is unchanged');
-    assert.equal(opt.amount, 12, 'display amount is the GBP figure');
-    assert.equal(opt.amountGHS, 222.22, 'charge figure is the GHS figure');
+    assert.ok(Number(opt.amount) > 0, 'display amount is the GBP figure');
+    assert.equal(opt.amountGHS, ghsFromGBP(opt.amount), 'charge figure is the GBP amount converted to GHS');
+    assert.notEqual(opt.amountGHS, opt.amount, 'the GBP display amount must not leak in as the GHS charge');
     assert.equal(q.body.chargeCurrency, 'GHS');
   });
 });
@@ -913,9 +928,13 @@ describe('F-7: booked shippingCost and totalAmount match the quote exactly', () 
 
     assert.equal(Number(row.shippingCost), quoteGHS,
       `persisted shippingCost ${row.shippingCost} must equal the quoted ${quoteGHS}`);
-    // subtotal 100 + tax 15 + shipping 222.22 - discount 0
-    assert.equal(Number(row.tax), 15);
-    assert.equal(Number(row.totalAmount), 337.22, 'exact persisted totalAmount');
+    // subtotal 100 + VAT (admin rate) + shipping (converted) - discount 0
+    assert.equal(Number(row.tax), calcTax(100, state.vat), 'VAT is the admin rate applied to the subtotal');
+    assert.equal(
+      Number(row.totalAmount),
+      round2(100 + Number(row.tax) + Number(row.shippingCost) - Number(row.discount)),
+      'persisted totalAmount is subtotal + VAT + shipping - discount'
+    );
     assert.equal(
       Number(row.totalAmount),
       Math.round((100 + Number(row.tax) + Number(row.shippingCost) - Number(row.discount)) * 100) / 100,
@@ -928,8 +947,14 @@ describe('F-7: booked shippingCost and totalAmount match the quote exactly', () 
     const created = await placeOrder({ products: [state.prodA], address: addrGH });
     assert.equal(created.status, 201, JSON.stringify(created.body));
     const row = await orderRow(created.orderId);
-    assert.equal(Number(row.shippingCost), 15);
-    assert.equal(Number(row.totalAmount), 130, 'subtotal 100 + tax 15 + shipping 15');
+    // GH ships in GHS (no conversion); read the admin-set GH fee from a quote.
+    const ghShip = (await quote({ countryCode: 'GH', subtotal: 100 })).body.options[0].amountGHS;
+    assert.equal(Number(row.shippingCost), ghShip);
+    assert.equal(
+      Number(row.totalAmount),
+      round2(100 + calcTax(100, state.vat) + ghShip),
+      'subtotal + VAT + GH shipping'
+    );
   });
 
   // Owner decision 2026-10-18: sellers may set their own delivery fees, so
@@ -941,10 +966,10 @@ describe('F-7: booked shippingCost and totalAmount match the quote exactly', () 
       subtotal: 150,
       items: [{ productId: state.prodA, qty: 1 }, { productId: state.prodB, qty: 1 }],
     });
-    const perParcel = q.body.options[0].amountGHS; // GBP 12 -> 222.22 GHS
-    assert.equal(perParcel, 222.22);
-    // A (100) and B (50) are each far below GB's GBP 100 (~1851.85 GHS) threshold.
-    assert.equal(q.body.chargeableShippingGHS, 444.44, 'two parcels, each charged once');
+    const perParcel = q.body.options[0].amountGHS; // GBP baseCost converted to GHS
+    assert.equal(perParcel, ghsFromGBP(q.body.options[0].amount), 'per-parcel charge is the GBP fee in GHS');
+    // A (100) and B (50) are each far below GB's threshold, so both parcels pay.
+    assert.equal(q.body.chargeableShippingGHS, round2(2 * perParcel), 'two parcels, each charged once');
     assert.equal(q.body.shippingGroups.length, 2);
 
     const created = await placeOrder({ products: [state.prodA, state.prodB], address: addrGB });
@@ -952,9 +977,13 @@ describe('F-7: booked shippingCost and totalAmount match the quote exactly', () 
     const row = await orderRow(created.orderId);
 
     assert.equal(Number(row.shippingCost), q.body.chargeableShippingGHS, 'booking equals the quote');
-    // subtotal 150 -> tax 22.50 -> total 150 + 22.50 + 444.44
-    assert.equal(Number(row.tax), 22.5);
-    assert.equal(Number(row.totalAmount), 616.94, 'exact persisted totalAmount');
+    // subtotal 150 -> VAT (admin rate) -> total 150 + VAT + both parcels
+    assert.equal(Number(row.tax), calcTax(150, state.vat));
+    assert.equal(
+      Number(row.totalAmount),
+      round2(150 + Number(row.tax) + q.body.chargeableShippingGHS),
+      'persisted totalAmount is subtotal + VAT + shipping'
+    );
   });
 
   test('a vendor that does not ship to GB blocks the order (server-side)', { skip: !runOk }, async () => {
@@ -982,7 +1011,8 @@ describe('F-7: address changes recalculate shipping before payment and freeze af
     const created = await placeOrder({ products: [state.prodA], address: addrGH });
     assert.equal(created.status, 201, JSON.stringify(created.body));
     const before = await orderRow(created.orderId);
-    assert.equal(Number(before.shippingCost), 15);
+    const ghShip = (await quote({ countryCode: 'GH', subtotal: 100 })).body.options[0].amountGHS;
+    assert.equal(Number(before.shippingCost), ghShip);
 
     const updated = await putOrder(created.orderId, { shippingAddress: addrGB });
     assert.equal(updated.status, 200, JSON.stringify(updated.body));
@@ -991,8 +1021,11 @@ describe('F-7: address changes recalculate shipping before payment and freeze af
     const q = await quote({ countryCode: 'GB', subtotal: 100 });
     assert.equal(Number(after.shippingCost), q.body.options[0].amountGHS,
       'the recalculated shipping must equal the fresh quote');
-    assert.equal(Number(after.shippingCost), 222.22);
-    assert.equal(Number(after.totalAmount), 337.22, 'totalAmount recalculated with the new shipping');
+    assert.equal(
+      Number(after.totalAmount),
+      round2(100 + calcTax(100, state.vat) + Number(after.shippingCost)),
+      'totalAmount recalculated with the new shipping'
+    );
   });
 
   test('destination change after payment initialization is refused', { skip: !runOk }, async () => {
@@ -1012,7 +1045,8 @@ describe('F-7: address changes recalculate shipping before payment and freeze af
     const [[addr]] = await pool.execute(`SELECT shippingAddress FROM orders WHERE id = ?`, [orderId]);
     const stored = asObj(addr.shippingAddress);
     assert.equal(stored.countryCode, 'GB', 'destination must be unchanged after charge init');
-    assert.equal(Number(row.shippingCost), 222.22, 'shipping must be unchanged after charge init');
+    const gbShip = (await quote({ countryCode: 'GB', subtotal: 100 })).body.options[0].amountGHS;
+    assert.equal(Number(row.shippingCost), gbShip, 'shipping must be unchanged after charge init');
   });
 
   test('same-country edit after charge init recomputes to the identical figure', { skip: !runOk }, async () => {
@@ -1024,8 +1058,13 @@ describe('F-7: address changes recalculate shipping before payment and freeze af
     const res = await putOrder(orderId, { shippingAddress: { ...addrGB, city: 'Manchester' } });
     assert.equal(res.status, 200, JSON.stringify(res.body));
     const row = await orderRow(orderId);
-    assert.equal(Number(row.shippingCost), 222.22, 'same destination: identical shipping');
-    assert.equal(Number(row.totalAmount), 337.22, 'same destination: identical total');
+    const gbShip = (await quote({ countryCode: 'GB', subtotal: 100 })).body.options[0].amountGHS;
+    assert.equal(Number(row.shippingCost), gbShip, 'same destination: identical shipping');
+    assert.equal(
+      Number(row.totalAmount),
+      round2(100 + calcTax(100, state.vat) + gbShip),
+      'same destination: identical total'
+    );
   });
 
   test('address change on a paid order is refused (snapshot immutable)', { skip: !runOk }, async () => {

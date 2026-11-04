@@ -18,6 +18,7 @@ import {
   updateProduct,
   deleteProduct,
   getCategories,
+  getGroupBuyStatusForProduct,
 } from "../controllers/productController.js";
 
 // ========================================
@@ -40,6 +41,7 @@ router.get('/category/:category', optionalAuth, cacheMiddleware(60), getProducts
 
 // 4. ID route (MUST BE LAST among GET routes)
 router.get('/:id', optionalAuth, cacheMiddleware(60), getProductById);
+router.get('/:id/group-buy', getGroupBuyStatusForProduct);
 
 // ========================================
 // ADMIN ROUTES (POST, PUT, DELETE)
