@@ -9,7 +9,6 @@
 //     commission) so the plan's economics take effect.
 //   - processSubscriptionWebhook: drive the lifecycle from Paystack events
 //     (activate, renew, past_due, cancel). Idempotent — safe to replay.
-import pool from '../config/db.js';
 import crypto from 'crypto';
 import paystack from './paystackservices.js';
 import Vendor from '../models/vendorModel.js';
