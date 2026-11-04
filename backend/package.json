@@ -71,6 +71,7 @@
   "overrides": {
     "express-mysql-session": {
       "mysql2": "^3.24.3"
-    }
+    },
+    "follow-redirects": "^1.16.2"
   }
 }
